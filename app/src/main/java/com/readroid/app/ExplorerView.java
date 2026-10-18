@@ -22,6 +22,7 @@ public final class ExplorerView {
     private final LinearLayout list;
     private final TextView breadcrumb;
     private final TextView countLabel;
+    private final Button upButton;
     private final EditText search;
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
@@ -52,10 +53,9 @@ public final class ExplorerView {
         countLabel.setTextColor(NegrescoTheme.MUTED);
         countLabel.setTextSize(12);
         parent.addView(countLabel);
-        Button up = NegrescoTheme.action(activity, "← Pasta anterior", false);
-        up.setText("← Pasta anterior");
-        parent.addView(up);
-        up.setOnClickListener(v -> {
+        upButton = NegrescoTheme.action(activity, "← Pasta anterior", false);
+        parent.addView(upButton);
+        upButton.setOnClickListener(v -> {
             if (folder.isEmpty()) return;
             String current = folder.substring(0, folder.length() - 1);
             int slash = current.lastIndexOf('/');
@@ -89,7 +89,13 @@ public final class ExplorerView {
     private void render() {
         list.removeAllViews();
         String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-        breadcrumb.setText(query.isEmpty() ? "APK / " + folder : "Resultados da busca: " + query);
+        breadcrumb.setText(query.isEmpty() ? "APK / " + folder : "Busca em todo o APK: " + query);
+        upButton.setEnabled(!folder.isEmpty() || !query.isEmpty());
+        breadcrumb.setOnClickListener(v -> {
+            folder = "";
+            search.setText("");
+            render();
+        });
         LinkedHashSet<String> folders = new LinkedHashSet<>();
         ArrayList<JSONObject> visible = new ArrayList<>();
         for (JSONObject item : files) {
@@ -158,8 +164,14 @@ public final class ExplorerView {
             activity.runOnUiThread(() -> {
                 EditText editor = new EditText(activity);
                 editor.setText(original);
-                editor.setMinLines(6);
-                editor.setMaxLines(14);
+                editor.setTextColor(NegrescoTheme.TEXT);
+                editor.setBackground(NegrescoTheme.panel(activity));
+                editor.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14),
+                    NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14));
+                editor.setHorizontallyScrolling(true);
+                editor.setTypeface(android.graphics.Typeface.MONOSPACE);
+                editor.setMinLines(9);
+                editor.setMaxLines(18);
                 editor.setTextSize(13);
                 new android.app.AlertDialog.Builder(activity)
                     .setTitle("Planejar alteração: " + path)
@@ -192,6 +204,10 @@ public final class ExplorerView {
                 ScrollView scroll = new ScrollView(activity);
                 TextView content = new TextView(activity);
                 content.setText(text);
+                content.setTextColor(NegrescoTheme.TEXT);
+                content.setTypeface(android.graphics.Typeface.MONOSPACE);
+                content.setTextSize(13);
+                content.setBackgroundColor(NegrescoTheme.BACKGROUND);
                 content.setTextIsSelectable(true);
                 content.setPadding(24, 20, 24, 20);
                 scroll.addView(content);
