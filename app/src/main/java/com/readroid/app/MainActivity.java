@@ -243,6 +243,36 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Cancelar", null).show();
         });
+        Button appearancePreview = NegrescoTheme.action(this, "Prévia da aparência", false);
+        homeSection.addView(appearancePreview);
+        appearancePreview.setOnClickListener(v -> {
+            android.widget.LinearLayout preview = new android.widget.LinearLayout(this);
+            preview.setOrientation(android.widget.LinearLayout.VERTICAL);
+            preview.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 20),
+                NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 20));
+            preview.setBackgroundColor(NegrescoTheme.BACKGROUND);
+            TextView previewTitle = NegrescoTheme.heading(this,
+                getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                    .getString("display_name", "NEGRESCODROID"),
+                getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                    .getString("display_subtitle", "APK ENGINEERING STUDIO"));
+            preview.addView(previewTitle);
+            TextView previewCard = new TextView(this);
+            previewCard.setText("PROJETO DE EXEMPLO\\n\\nArquivos  •  Construção  •  Segurança");
+            previewCard.setTextSize(14 * NegrescoTheme.FONT_SCALE);
+            previewCard.setTextColor(NegrescoTheme.TEXT);
+            previewCard.setPadding(NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 16),
+                NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 16));
+            previewCard.setBackground(NegrescoTheme.panel(this));
+            preview.addView(previewCard);
+            Button previewButton = NegrescoTheme.action(this, "Ação principal de exemplo", true);
+            preview.addView(previewButton);
+            previewButton.setEnabled(false);
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Prévia do tema atual")
+                .setView(preview)
+                .setPositiveButton("Fechar", null).show();
+        });
         Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
         homeSection.addView(resetAppearance);
         resetAppearance.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
