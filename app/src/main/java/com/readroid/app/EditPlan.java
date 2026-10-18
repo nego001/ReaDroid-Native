@@ -27,6 +27,12 @@ public final class EditPlan {
 
     public int size() { return replacements.size(); }
 
+    public boolean remove(String path) { return replacements.remove(path) != null; }
+
+    public boolean contains(String path) { return replacements.containsKey(path); }
+
+    public String get(String path) { return replacements.get(path); }
+
     public Map<String, String> snapshot() { return new LinkedHashMap<>(replacements); }
 
     public void clear() { replacements.clear(); }
