@@ -71,7 +71,11 @@ public class MainActivity extends Activity {
         setContentView(shell);
 
         TextView title = new TextView(this);
-        title.setText("NEGRESCODROID\nAPK ENGINEERING STUDIO");
+        android.content.SharedPreferences appearance =
+            getSharedPreferences("v3_personalizacao", MODE_PRIVATE);
+        String displayName = appearance.getString("display_name", "NEGRESCODROID");
+        String displaySubtitle = appearance.getString("display_subtitle", "APK ENGINEERING STUDIO");
+        title.setText(displayName + "\\n" + displaySubtitle);
         title.setTextSize(25 * NegrescoTheme.FONT_SCALE);
         title.setTextColor(NegrescoTheme.TEXT);
         root.addView(title);
@@ -199,6 +203,45 @@ public class MainActivity extends Activity {
                         dialog.dismiss();
                         recreate();
                     }).setNegativeButton("Cancelar", null).show();
+        });
+        Button identityPicker = NegrescoTheme.action(this, "Identidade da tela inicial", false);
+        homeSection.addView(identityPicker);
+        identityPicker.setOnClickListener(v -> {
+            android.widget.LinearLayout form = new android.widget.LinearLayout(this);
+            form.setOrientation(android.widget.LinearLayout.VERTICAL);
+            form.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 8),
+                NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 8));
+            android.widget.EditText nameInput = new android.widget.EditText(this);
+            nameInput.setSingleLine(true);
+            nameInput.setHint("Nome exibido");
+            nameInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+            nameInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(30)});
+            nameInput.setText(getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                .getString("display_name", "NEGRESCODROID"));
+            form.addView(nameInput);
+            android.widget.EditText subtitleInput = new android.widget.EditText(this);
+            subtitleInput.setSingleLine(true);
+            subtitleInput.setHint("Subtítulo");
+            subtitleInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(48)});
+            subtitleInput.setText(getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                .getString("display_subtitle", "APK ENGINEERING STUDIO"));
+            form.addView(subtitleInput);
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Identidade visual")
+                .setMessage("Altera somente o cabeçalho do aplicativo. Não muda o nome instalado nem a assinatura.")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    String name = nameInput.getText().toString().trim();
+                    String subtitle = subtitleInput.getText().toString().trim();
+                    if (name.isEmpty()) name = "NEGRESCODROID";
+                    if (subtitle.isEmpty()) subtitle = "APK ENGINEERING STUDIO";
+                    getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                        .putString("display_name", name)
+                        .putString("display_subtitle", subtitle).apply();
+                    recreate();
+                })
+                .setNegativeButton("Cancelar", null).show();
         });
         Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
         homeSection.addView(resetAppearance);
