@@ -110,8 +110,10 @@ public final class ExplorerView {
             list.addView(line);
             line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
                 .setTitle(name)
-                .setMessage("Caminho: " + path + "\nTipo: " + file.optString("category") + "\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes\n\nVisualização de metadados. Edição e pré-visualização de conteúdo ainda não disponíveis.")
-                .setPositiveButton("Fechar", null).show());
+                .setMessage("Caminho: " + path + "\\nTipo: " + file.optString("category") + "\\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes")
+                .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
+                .setNeutralButton("Analisar com IA", (dialog, which) -> AiBridge.shareFile(activity, path, file.optString("category")))
+                .setNegativeButton("Fechar", null).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
         if (shown > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
