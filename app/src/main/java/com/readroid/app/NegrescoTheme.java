@@ -11,13 +11,32 @@ import android.widget.TextView;
 
 /** NegrescoDroid visual tokens and reusable native widgets. */
 public final class NegrescoTheme {
-    public static final int BACKGROUND = 0xff05080e;
-    public static final int SURFACE = 0xff101925;
-    public static final int BORDER = 0xff25364b;
-    public static final int ACCENT = 0xff1688ff;
-    public static final int TEXT = 0xfff1f6ff;
-    public static final int MUTED = 0xff93a6be;
+    public static int BACKGROUND = 0xff05080e;
+    public static int SURFACE = 0xff101925;
+    public static int BORDER = 0xff25364b;
+    public static int ACCENT = 0xff1688ff;
+    public static int TEXT = 0xfff1f6ff;
+    public static int MUTED = 0xff93a6be;
     private NegrescoTheme() {}
+
+    public static void apply(Context context) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("v3_personalizacao", Context.MODE_PRIVATE);
+        String theme = prefs.getString("theme", "oled");
+        if ("light".equals(theme)) {
+            BACKGROUND = 0xfff2f5fa; SURFACE = 0xffffffff; BORDER = 0xffd9e2ee;
+            TEXT = 0xff152238; MUTED = 0xff53657c;
+        } else if ("graphite".equals(theme)) {
+            BACKGROUND = 0xff111217; SURFACE = 0xff1c1e26; BORDER = 0xff343843;
+            TEXT = 0xfff4f5fa; MUTED = 0xffa1a6b7;
+        } else {
+            BACKGROUND = 0xff000000; SURFACE = 0xff101925; BORDER = 0xff25364b;
+            TEXT = 0xfff1f6ff; MUTED = 0xff93a6be;
+        }
+        String accent = prefs.getString("accent", "blue");
+        ACCENT = "purple".equals(accent) ? 0xff9b6dff
+            : "green".equals(accent) ? 0xff27c99a
+            : "orange".equals(accent) ? 0xffffa24a : 0xff1688ff;
+    }
 
     public static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
