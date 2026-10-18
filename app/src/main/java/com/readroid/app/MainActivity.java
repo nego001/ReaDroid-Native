@@ -122,6 +122,8 @@ public class MainActivity extends Activity {
         customizationTitle.setTextSize(12);
         customizationTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
         homeSection.addView(customizationTitle);
+        customizationTitle.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        customizationTitle.setLetterSpacing(0.08f);
         TextView customizationHint = new TextView(this);
         customizationHint.setText("Deixe o estúdio com a sua cara");
         customizationHint.setTextSize(13 * NegrescoTheme.FONT_SCALE);
@@ -447,12 +449,18 @@ public class MainActivity extends Activity {
             NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 14));
         homeSection.addView(projectMetrics);
 
+        TextView shortcutHint = new TextView(this);
+        shortcutHint.setText("Continue de onde parou");
+        shortcutHint.setTextColor(NegrescoTheme.MUTED);
+        shortcutHint.setTextSize(13 * NegrescoTheme.FONT_SCALE);
+        shortcutHint.setPadding(0, 0, 0, NegrescoTheme.dp(this, 8));
         TextView shortcutsTitle = new TextView(this);
         shortcutsTitle.setText("ACESSO RÁPIDO");
         shortcutsTitle.setTextColor(NegrescoTheme.ACCENT);
         shortcutsTitle.setTextSize(12);
         shortcutsTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
         homeSection.addView(shortcutsTitle);
+        homeSection.addView(shortcutHint);
         LinearLayout quickActions = new LinearLayout(this);
         quickActions.setOrientation(LinearLayout.VERTICAL);
         homeSection.addView(quickActions);
