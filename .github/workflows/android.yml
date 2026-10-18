@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [main, feature/v3-personalizacao]
+    branches: [main, feature/v3-personalizacao, feature/ota-seguro]
   pull_request:
   workflow_dispatch:
 permissions:
