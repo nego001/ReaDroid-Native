@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
     private TextView output;
     private Button share;
     private JSONObject report;
+    private ExplorerView explorerView;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -60,6 +61,8 @@ public class MainActivity extends Activity {
         output.setPadding(0, 25, 0, 25);
         root.addView(output);
 
+        explorerView = new ExplorerView(this, root);
+
         share = new Button(this);
         share.setText("Compartilhar relatório JSON");
         share.setEnabled(false);
@@ -85,6 +88,8 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     report = resultJson;
                     output.setText(formatReport(resultJson));
+                    JSONObject tree = resultJson.optJSONObject("explorer");
+                    explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"));
                     share.setEnabled(true);
                 });
             } catch (Exception error) {
@@ -160,18 +165,8 @@ public class MainActivity extends Activity {
         out.append("Tamanho: ").append(data.optLong("sizeBytes") / 1024).append(" KB\\n");
         out.append("SHA-256: ").append(data.optString("sha256")).append("\\n\\n");
         JSONObject explorer = data.optJSONObject("explorer");
-        if (explorer != null) {
-            out.append("EXPLORADOR DE ARQUIVOS (SOMENTE LEITURA)\\n");
-            out.append("Arquivos: ").append(explorer.optInt("fileCount")).append("\\n\\n");
-            JSONArray files = explorer.optJSONArray("files");
-            if (files != null) {
-                for (int i = 0; i < files.length() && i < 150; i++) {
-                    JSONObject item = files.optJSONObject(i);
-                    if (item != null) out.append("• ").append(item.optString("path")).append("  [").append(item.optString("category")).append("]\\n");
-                }
-                if (files.length() > 150) out.append("\\nMais ").append(files.length() - 150).append(" arquivos no relatório JSON.\\n");
-            }
-        }
+        if (explorer != null) out.append("Arquivos no APK: ").append(explorer.optInt("fileCount")).append("\\n");
+        out.append("\\nNavegue pelas pastas e pesquise os arquivos abaixo.\\n");
         out.append("\\nRelatório completo disponível em Compartilhar JSON.");
         return out.toString();
     }
