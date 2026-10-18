@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -22,15 +24,22 @@ public final class ApkExplorer {
         try (ZipFile zip = new ZipFile(apk)) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             int count = 0;
+            Set<String> seen = new HashSet<>();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 if (++count > 150000) throw new IOException("APK com entradas demais");
                 String name = entry.getName();
                 if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
                     throw new IOException("Caminho ZIP potencialmente inseguro: " + name);
+                if (!seen.add(name)) throw new IOException("Entrada ZIP duplicada: " + name);
                 if (entry.isDirectory()) { directories++; continue; }
                 long size = entry.getSize();
-                if (size > 0) totalUncompressed += size;
+                if (size > 1073741824L) throw new IOException("Entrada maior que 1 GB: " + name);
+                if (size > 0) {
+                    if (totalUncompressed > 2147483648L - size)
+                        throw new IOException("APK excede o limite total de 2 GB descomprimidos");
+                    totalUncompressed += size;
+                }
                 JSONObject item = new JSONObject();
                 item.put("path", name);
                 item.put("sizeBytes", size);
