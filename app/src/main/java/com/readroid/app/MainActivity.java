@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
                                 .setMessage("Versão " + release.versionCode + "\\nCanal: "
                                     + release.channel + "\\nTamanho: " + release.sizeBytes
                                     + " bytes\\n\\n" + release.notes
-                                    + "\\n\\nO download e a instalação ainda não estão liberados nesta interface.")
+                                    + "\\n\\nO download pode ser verificado. A instalação ainda não está disponível.")
                                 .setPositiveButton("Baixar e verificar", (dialog, which) ->
                                     confirmOtaDownload(release))
                                 .setNegativeButton("Cancelar", null).show();
