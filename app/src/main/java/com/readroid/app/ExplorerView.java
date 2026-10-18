@@ -24,6 +24,8 @@ public final class ExplorerView {
     private final TextView countLabel;
     private final Button upButton;
     private final EditText search;
+    private final Button filterButton;
+    private String activeCategory = "Todos";
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
     private java.io.File apkFile;
@@ -45,6 +47,22 @@ public final class ExplorerView {
         search.setBackground(NegrescoTheme.panel(activity));
         search.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12));
         parent.addView(search);
+        filterButton = NegrescoTheme.action(activity, "Filtro: Todos  ▾", false);
+        parent.addView(filterButton);
+        filterButton.setOnClickListener(v -> {
+            String[] categories = {"Todos", "Código DEX", "Bibliotecas", "Recursos", "Assets",
+                "Assinaturas/metadados", "Manifesto", "Outros", "Editáveis", "Alterados"};
+            new android.app.AlertDialog.Builder(activity)
+                .setTitle("Filtrar arquivos")
+                .setSingleChoiceItems(categories, java.util.Arrays.asList(categories).indexOf(activeCategory),
+                    (dialog, which) -> {
+                        activeCategory = categories[which];
+                        filterButton.setText("Filtro: " + activeCategory + "  ▾");
+                        render();
+                        dialog.dismiss();
+                    })
+                .setNegativeButton("Cancelar", null).show();
+        });
         breadcrumb = new TextView(activity);
         breadcrumb.setTextColor(NegrescoTheme.ACCENT);
         breadcrumb.setPadding(0, 14, 0, 10);
@@ -82,6 +100,8 @@ public final class ExplorerView {
         this.apkFile = apkFile;
         files.clear();
         folder = "";
+        activeCategory = "Todos";
+        filterButton.setText("Filtro: Todos  ▾");
         search.setText("");
         if (array != null) for (int i = 0; i < array.length(); i++) {
             JSONObject file = array.optJSONObject(i);
@@ -104,6 +124,10 @@ public final class ExplorerView {
         ArrayList<JSONObject> visible = new ArrayList<>();
         for (JSONObject item : files) {
             String path = item.optString("path");
+            if (!activeCategory.equals("Todos")
+                && !(activeCategory.equals("Editáveis") && EditPlan.isEditable(path))
+                && !(activeCategory.equals("Alterados") && editPlan.contains(path))
+                && !activeCategory.equals(item.optString("category"))) continue;
             if (!query.isEmpty()) {
                 if (path.toLowerCase(Locale.ROOT).contains(query)) visible.add(item);
             } else if (path.startsWith(folder)) {
