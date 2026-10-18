@@ -6,7 +6,8 @@
 - [x] Paletas OLED, grafite e clara, com persistência local.
 - [x] Quatro cores de destaque e restauração das preferências visuais.
 - [ ] Aplicar cores corretamente a todas as telas, ícones, gráficos e estados de seleção.
-- [ ] Ajustes de densidade, tamanho de texto e acessibilidade.
+- [x] Ajustes iniciais de densidade e escala de texto nos componentes reutilizáveis.
+- [ ] Cobertura de escala tipográfica em todas as telas, leitores e diálogos; auditoria de acessibilidade.
 - [ ] Preferências de navegação, atalhos e organização da tela inicial.
 - [ ] Prévia visual e identidade (nome/logotipo de exibição, quando viável).
 - [ ] Exportação e importação de configurações com validação e sem segredos.
