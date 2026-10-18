@@ -58,6 +58,7 @@ public final class ExplorerView {
                 .setSingleChoiceItems(categories, java.util.Arrays.asList(categories).indexOf(activeCategory),
                     (dialog, which) -> {
                         activeCategory = categories[which];
+                        pageLimit = 120;
                         filterButton.setText("Filtro: " + activeCategory + "  ▾");
                         render();
                         dialog.dismiss();
@@ -83,6 +84,7 @@ public final class ExplorerView {
             String current = folder.substring(0, folder.length() - 1);
             int slash = current.lastIndexOf('/');
             folder = slash < 0 ? "" : current.substring(0, slash + 1);
+            pageLimit = 120;
             search.setText("");
             render();
         });
@@ -91,7 +93,7 @@ public final class ExplorerView {
         parent.addView(list);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) { render(); }
+            public void onTextChanged(CharSequence s, int start, int before, int count) { pageLimit = 120; render(); }
             public void afterTextChanged(Editable e) {}
         });
         render();
@@ -146,7 +148,7 @@ public final class ExplorerView {
             if (shown++ >= pageLimit) break;
             TextView line = item("▸  " + child + "\nPASTA");
             list.addView(line);
-            line.setOnClickListener(v -> { folder += child; render(); });
+            line.setOnClickListener(v -> { folder += child; pageLimit = 120; render(); });
         }
         for (JSONObject file : visible) {
             if (shown++ >= 120) break;
