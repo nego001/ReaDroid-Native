@@ -35,6 +35,8 @@ public class MainActivity extends Activity {
     private Button signingTest;
     private static final int REQUEST_EXPORT_APK = 2;
     private static final int REQUEST_COMPARE_APK = 3;
+    private static final int REQUEST_EXPORT_APPEARANCE = 41;
+    private static final int REQUEST_IMPORT_APPEARANCE = 42;
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
@@ -272,6 +274,23 @@ public class MainActivity extends Activity {
                 .setTitle("Prévia do tema atual")
                 .setView(preview)
                 .setPositiveButton("Fechar", null).show();
+        });
+        Button exportAppearance = NegrescoTheme.action(this, "Exportar personalização", false);
+        homeSection.addView(exportAppearance);
+        exportAppearance.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, "negrescodroid-v3-visual.json");
+            startActivityForResult(intent, REQUEST_EXPORT_APPEARANCE);
+        });
+        Button importAppearance = NegrescoTheme.action(this, "Importar personalização", false);
+        homeSection.addView(importAppearance);
+        importAppearance.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent, REQUEST_IMPORT_APPEARANCE);
         });
         Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
         homeSection.addView(resetAppearance);
@@ -667,6 +686,52 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if ((request == REQUEST_EXPORT_APPEARANCE || request == REQUEST_IMPORT_APPEARANCE)
+            && result == RESULT_OK && data != null && data.getData() != null) {
+            Uri uri = data.getData();
+            try {
+                if (request == REQUEST_EXPORT_APPEARANCE) {
+                    byte[] bytes = AppearancePreset.exportSettings(this)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
+                        if (out == null) throw new IOException("Destino indisponível");
+                        out.write(bytes);
+                    }
+                    new android.app.AlertDialog.Builder(this).setTitle("Personalização exportada")
+                        .setMessage("O arquivo contém somente preferências visuais.")
+                        .setPositiveButton("OK", null).show();
+                } else {
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    try (InputStream in = getContentResolver().openInputStream(uri)) {
+                        if (in == null) throw new IOException("Arquivo indisponível");
+                        byte[] buffer = new byte[2048];
+                        int n;
+                        while ((n = in.read(buffer)) != -1) {
+                            if (bytes.size() + n > 8192) throw new IOException("Arquivo muito grande");
+                            bytes.write(buffer, 0, n);
+                        }
+                    }
+                    String json = bytes.toString("UTF-8");
+                    new android.app.AlertDialog.Builder(this).setTitle("Importar personalização?")
+                        .setMessage("Substituir apenas as preferências visuais atuais? Projetos e configurações de segurança serão preservados.")
+                        .setPositiveButton("Importar", (dialog, which) -> {
+                            try {
+                                AppearancePreset.importSettings(this, json);
+                                recreate();
+                            } catch (Exception error) {
+                                new android.app.AlertDialog.Builder(this)
+                                    .setTitle("Arquivo inválido").setMessage(error.getMessage())
+                                    .setPositiveButton("OK", null).show();
+                            }
+                        }).setNegativeButton("Cancelar", null).show();
+                }
+            } catch (Exception error) {
+                new android.app.AlertDialog.Builder(this).setTitle("Falha nas preferências")
+                    .setMessage(error.getMessage()).setPositiveButton("OK", null).show();
+            }
+            return;
+        }
+
         if (result != RESULT_OK || data == null || data.getData() == null) return;
         if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
         if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
