@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
         NegrescoTheme.apply(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 34), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
+        root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 18 : 34), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 24));
         root.setBackgroundColor(NegrescoTheme.BACKGROUND);
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
 
         TextView title = new TextView(this);
         title.setText("NEGRESCODROID\nAPK ENGINEERING STUDIO");
-        title.setTextSize(25);
+        title.setTextSize(25 * NegrescoTheme.FONT_SCALE);
         title.setTextColor(NegrescoTheme.TEXT);
         root.addView(title);
 
@@ -138,6 +138,35 @@ public class MainActivity extends Activity {
                     dialog.dismiss();
                     recreate();
                 }).setNegativeButton("Cancelar", null).show();
+        });
+        Button textScale = NegrescoTheme.action(this, "Tamanho do texto", false);
+        homeSection.addView(textScale);
+        textScale.setOnClickListener(v -> {
+            String[] labels = {"Pequeno (90%)", "Padrão (100%)", "Grande (115%)", "Muito grande (130%)"};
+            int[] values = {90, 100, 115, 130};
+            int current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("font_percent", 100);
+            int selected = 1;
+            for (int i = 0; i < values.length; i++) if (values[i] == current) selected = i;
+            new android.app.AlertDialog.Builder(this).setTitle("Tamanho do texto")
+                .setSingleChoiceItems(labels, selected, (dialog, which) -> {
+                    getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                        .putInt("font_percent", values[which]).apply();
+                    dialog.dismiss();
+                    recreate();
+                }).setNegativeButton("Cancelar", null).show();
+        });
+        Button densityPicker = NegrescoTheme.action(this, "Espaçamento da interface", false);
+        homeSection.addView(densityPicker);
+        densityPicker.setOnClickListener(v -> {
+            boolean compact = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getBoolean("compact", false);
+            new android.app.AlertDialog.Builder(this).setTitle("Espaçamento da interface")
+                .setSingleChoiceItems(new String[]{"Confortável", "Compacto"}, compact ? 1 : 0,
+                    (dialog, which) -> {
+                        getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                            .putBoolean("compact", which == 1).apply();
+                        dialog.dismiss();
+                        recreate();
+                    }).setNegativeButton("Cancelar", null).show();
         });
         Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
         homeSection.addView(resetAppearance);
