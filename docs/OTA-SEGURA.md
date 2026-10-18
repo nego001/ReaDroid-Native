@@ -16,7 +16,7 @@ Fluxo preparado:
    três redirecionamentos, limitados ao mesmo host ou `github.com` → CDN oficial
    `release-assets.githubusercontent.com` / `objects.githubusercontent.com`.
 6. Conferir tamanho exato, SHA-256, mesmo package ID, versão superior e certificado
-   de assinatura do Android compatível. Limpar o arquivo se houver falha.
+   de assinatura do Android compatível (API 26–27 via assinaturas legadas; API 28+ via\n   SigningInfo). Limpar o arquivo se houver falha.
 
 **Não existe instalação automática nem silenciosa.** No estágio atual o APK validado
 é excluído depois do teste. Um instalador com consentimento explícito do Android
@@ -84,7 +84,7 @@ O fluxo de teste da assinatura roda no GitHub Actions com uma chave de teste
 
 ## Portões para habilitar OTA real
 - [x] Verificação de manifesto RSA/SHA-256 e SHA-256/tamanho do APK
-- [x] Comparação de identidade, versão e assinatura Android
+- [x] Comparação de identidade, versão e assinatura Android (API 26+)
 - [x] Suporte limitado ao redirecionamento do GitHub Releases
 - [x] Feeds separados por canal e ferramenta de assinatura de manifesto
 - [x] Teste automatizado com chave efêmera
