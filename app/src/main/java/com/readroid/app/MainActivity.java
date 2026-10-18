@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private TextView apkSummary;
     private TextView projectMetrics;
     private ScrollView contentScroll;
+    private int selectedSection = 0;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -77,6 +78,8 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
+        boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+            .getBoolean("nav_labels", true);
         navigationItems = new TextView[tabs.length];
         navigationIcons = new NavGlyph[tabs.length];
         for (int index = 0; index < tabs.length; index++) {
@@ -91,7 +94,8 @@ public class MainActivity extends Activity {
             TextView label = new TextView(this);
             label.setText(tabs[index]);
             label.setGravity(android.view.Gravity.CENTER);
-            label.setTextSize(10);
+            label.setTextSize(10 * NegrescoTheme.FONT_SCALE);
+            label.setVisibility(showNavLabels ? View.VISIBLE : View.GONE);
             label.setTextColor(NegrescoTheme.MUTED);
             tabContainer.addView(label);
             navigationItems[index] = label;
@@ -164,6 +168,35 @@ public class MainActivity extends Activity {
                     (dialog, which) -> {
                         getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
                             .putBoolean("compact", which == 1).apply();
+                        dialog.dismiss();
+                        recreate();
+                    }).setNegativeButton("Cancelar", null).show();
+        });
+        Button navLabels = NegrescoTheme.action(this, "Rótulos da navegação", false);
+        homeSection.addView(navLabels);
+        navLabels.setOnClickListener(v -> {
+            boolean visible = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                .getBoolean("nav_labels", true);
+            new android.app.AlertDialog.Builder(this).setTitle("Rótulos da navegação")
+                .setSingleChoiceItems(new String[]{"Mostrar nomes e ícones", "Somente ícones"},
+                    visible ? 0 : 1, (dialog, which) -> {
+                        getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                            .putBoolean("nav_labels", which == 0).apply();
+                        dialog.dismiss();
+                        recreate();
+                    }).setNegativeButton("Cancelar", null).show();
+        });
+        Button favoriteShortcut = NegrescoTheme.action(this, "Atalho favorito", false);
+        homeSection.addView(favoriteShortcut);
+        favoriteShortcut.setOnClickListener(v -> {
+            String[] names = {"Arquivos", "Construir", "Segurança", "IA"};
+            int current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                .getInt("favorite_tab", 1);
+            new android.app.AlertDialog.Builder(this).setTitle("Primeiro atalho da tela inicial")
+                .setSingleChoiceItems(names, Math.max(0, Math.min(3, current - 1)),
+                    (dialog, which) -> {
+                        getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                            .putInt("favorite_tab", which + 1).apply();
                         dialog.dismiss();
                         recreate();
                     }).setNegativeButton("Cancelar", null).show();
@@ -307,8 +340,19 @@ public class MainActivity extends Activity {
         LinearLayout quickActions = new LinearLayout(this);
         quickActions.setOrientation(LinearLayout.VERTICAL);
         homeSection.addView(quickActions);
-        String[] quickLabels = {"Explorar arquivos  →", "Construir versão  →", "Inspecionar segurança  →"};
-        int[] quickTargets = {1, 2, 3};
+        String[] quickLabels = {"Explorar arquivos  →", "Construir versão  →", "Inspecionar segurança  →", "Assistente IA  →"};
+        int[] quickTargets = {1, 2, 3, 4};
+        int favorite = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("favorite_tab", 1);
+        if (favorite < 1 || favorite > 4) favorite = 1;
+        int preferredIndex = favorite - 1;
+        String preferredLabel = quickLabels[preferredIndex];
+        int preferredTarget = quickTargets[preferredIndex];
+        for (int i = preferredIndex; i > 0; i--) {
+            quickLabels[i] = quickLabels[i - 1];
+            quickTargets[i] = quickTargets[i - 1];
+        }
+        quickLabels[0] = "★ " + preferredLabel;
+        quickTargets[0] = preferredTarget;
         for (int i = 0; i < quickLabels.length; i++) {
             final int target = quickTargets[i];
             Button shortcut = NegrescoTheme.action(this, quickLabels[i], false);
@@ -539,6 +583,7 @@ public class MainActivity extends Activity {
     }
 
     private void showSection(int index) {
+        selectedSection = index;
         LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
         for (int i = 0; i < sections.length; i++) {
             sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
