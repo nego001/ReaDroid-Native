@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private Button localIdentity;
     private Button signingTest;
     private static final int REQUEST_EXPORT_APK = 2;
+    private static final int REQUEST_COMPARE_APK = 3;
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
@@ -160,6 +161,20 @@ public class MainActivity extends Activity {
         homeSection.addView(output);
 
         explorerView = new ExplorerView(this, filesSection);
+        Button compare = NegrescoTheme.action(this, "Comparar com outro APK", false);
+        filesSection.addView(compare);
+        compare.setOnClickListener(v -> {
+            if (currentApk == null) {
+                new android.app.AlertDialog.Builder(this)
+                    .setMessage("Abra primeiro o APK principal.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
+            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            pick.addCategory(Intent.CATEGORY_OPENABLE);
+            pick.setType("*/*");
+            startActivityForResult(pick, REQUEST_COMPARE_APK);
+        });
 
         ai = NegrescoTheme.action(this, "", false);
         ai.setText("Analisar com ChatGPT / IA");
@@ -374,6 +389,7 @@ public class MainActivity extends Activity {
         super.onActivityResult(request, result, data);
         if (result != RESULT_OK || data == null || data.getData() == null) return;
         if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
+        if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
         if (request != 1) return;
         Uri uri = data.getData();
         report = null;
@@ -417,6 +433,52 @@ public class MainActivity extends Activity {
                     apkSummary.setText("FALHA AO ABRIR PROJETO");
                     projectMetrics.setText("ESTRUTURA   •   Indisponível");
                 });
+            }
+        });
+    }
+
+    private void compareApk(Uri uri) {
+        if (currentApk == null) return;
+        final File baseline = currentApk;
+        executor.execute(() -> {
+            File candidate = null;
+            try {
+                candidate = File.createTempFile("negresco_compare_", ".apk", getCacheDir());
+                try (InputStream in = getContentResolver().openInputStream(uri);
+                     OutputStream out = new FileOutputStream(candidate)) {
+                    if (in == null) throw new IOException("Arquivo inacessível");
+                    byte[] buffer = new byte[65536];
+                    int n;
+                    long total = 0;
+                    while ((n = in.read(buffer)) != -1) {
+                        total += n;
+                        if (total > 1073741824L) throw new IOException("Limite de 1 GB excedido");
+                        out.write(buffer, 0, n);
+                    }
+                }
+                String result = ApkDiff.compare(baseline, candidate);
+                runOnUiThread(() -> {
+                    ScrollView scroll = new ScrollView(this);
+                    TextView details = new TextView(this);
+                    details.setText(result);
+                    details.setTextColor(NegrescoTheme.TEXT);
+                    details.setTextSize(13);
+                    details.setTypeface(android.graphics.Typeface.MONOSPACE);
+                    details.setTextIsSelectable(true);
+                    details.setPadding(24, 20, 24, 20);
+                    scroll.addView(details);
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Comparação de APKs")
+                        .setView(scroll)
+                        .setPositiveButton("Fechar", null).show();
+                });
+            } catch (Exception error) {
+                final String message = error.getMessage();
+                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                    .setTitle("Falha na comparação").setMessage(message)
+                    .setPositiveButton("OK", null).show());
+            } finally {
+                if (candidate != null) candidate.delete();
             }
         });
     }
