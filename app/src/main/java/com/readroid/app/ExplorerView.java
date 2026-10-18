@@ -137,7 +137,8 @@ public final class ExplorerView {
                 else visible.add(item);
             }
         }
-        countLabel.setText(folders.size() + " pastas  •  " + visible.size() + " arquivos");
+        countLabel.setText(folders.size() + " pastas  •  " + visible.size()
+            + " arquivos  •  " + editPlan.size() + " alterações pendentes");
         int shown = 0;
         for (String child : folders) {
             if (shown++ >= 120) break;
