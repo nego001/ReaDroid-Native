@@ -1,0 +1,84 @@
+name: Publish V3 Preview 2
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish-preview-2:
+    if: github.ref == 'refs/heads/feature/ota-seguro'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android command-line tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/android-tools.zip
+          unzip -q /tmp/android-tools.zip -d /tmp/android-tools
+          mv /tmp/android-tools/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+      - name: Install SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify APK, version and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools/35.0.0"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          "$TOOLS/zipalign" -c -p 4 "$APK"
+          "$TOOLS/aapt" dump badging "$APK" | grep -F "name='com.readroid.app' versionCode='2' versionName='3.0.0-preview.2'"
+          cp "$APK" NegrescoDroid-V3-Preview-2-debug.apk
+          sha256sum NegrescoDroid-V3-Preview-2-debug.apk > SHA256SUMS.txt
+      - name: Publish new pre-release, do not replace Preview 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v3.0.0-preview.2"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists: refusing to overwrite."
+            exit 1
+          fi
+          cat > RELEASE_NOTES.md <<'NOTES'
+          ## NegrescoDroid V3 Preview 2
+          Pré-lançamento para experimentar o novo painel visual e as melhorias internas de OTA.
+
+          ### Novidades
+          - Tela inicial com quatro atalhos em grade 2 × 2 e personalização recolhível.
+          - Correção das quebras de linha do cabeçalho e do status do aplicativo.
+          - Temas OLED/Grafite/Claro, escala de texto, atalhos e exportação/importação das preferências visuais.
+          - Estrutura de OTA mais segura: suporte controlado ao download pelo GitHub Releases, validação de SHA-256 e certificado, canais Beta/Estável separados.
+
+          ### Importante sobre instalação
+          Este é um APK de **debug para testes**. A assinatura pode ser diferente da Preview 1.
+          Caso o Android não permita atualizar por cima, exporte primeiro suas preferências visuais
+          (Personalização > Exportar personalização), guarde os arquivos importantes, desinstale
+          a versão anterior e instale este APK. A desinstalação pode apagar os dados locais.
+
+          A consulta de atualizações OTA assinadas continua **desativada** até a publicação de um
+          manifesto RSA assinado e uma chave pública de confiança fixada no app.
+          Não há instalação automática ou silenciosa. A versão final V3 ainda não foi lançada.
+          NOTES
+          gh release create "$TAG" NegrescoDroid-V3-Preview-2-debug.apk SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "NegrescoDroid V3 Preview 2" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
