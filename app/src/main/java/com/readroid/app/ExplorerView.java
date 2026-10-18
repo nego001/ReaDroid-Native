@@ -26,6 +26,7 @@ public final class ExplorerView {
     private final EditText search;
     private final Button filterButton;
     private String activeCategory = "Todos";
+    private int pageLimit = 120;
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
     private java.io.File apkFile;
@@ -101,6 +102,7 @@ public final class ExplorerView {
         files.clear();
         folder = "";
         activeCategory = "Todos";
+        pageLimit = 120;
         filterButton.setText("Filtro: Todos  ▾");
         search.setText("");
         if (array != null) for (int i = 0; i < array.length(); i++) {
@@ -141,7 +143,7 @@ public final class ExplorerView {
             + " arquivos  •  " + editPlan.size() + " alterações pendentes");
         int shown = 0;
         for (String child : folders) {
-            if (shown++ >= 120) break;
+            if (shown++ >= pageLimit) break;
             TextView line = item("▸  " + child + "\nPASTA");
             list.addView(line);
             line.setOnClickListener(v -> { folder += child; render(); });
@@ -165,7 +167,15 @@ public final class ExplorerView {
                 .setNegativeButton("Detalhes técnicos", (dialog, which) -> inspectEntry(path)).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
-        if (folders.size() + visible.size() > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
+        if (folders.size() + visible.size() > pageLimit) {
+            Button more = NegrescoTheme.action(activity,
+                "Carregar mais (" + Math.min(120, folders.size() + visible.size() - pageLimit) + ")", false);
+            list.addView(more);
+            more.setOnClickListener(v -> {
+                pageLimit += 120;
+                render();
+            });
+        }
     }
 
     private static String formatBytes(long bytes) {
