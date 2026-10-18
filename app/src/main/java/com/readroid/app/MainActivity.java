@@ -128,6 +128,7 @@ public class MainActivity extends Activity {
         customizationHint.setTextColor(NegrescoTheme.MUTED);
         customizationHint.setPadding(0, 0, 0, NegrescoTheme.dp(this, 12));
         homeSection.addView(customizationHint);
+        customizationHint.setText("Ajuste temas, cores e identidade no painel abaixo.");
         LinearLayout personalizationGroup = new LinearLayout(this);
         personalizationGroup.setOrientation(LinearLayout.VERTICAL);
         homeSection.addView(personalizationGroup);
