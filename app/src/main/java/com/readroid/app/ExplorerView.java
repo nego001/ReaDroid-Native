@@ -56,6 +56,10 @@ public final class ExplorerView {
         upButton = NegrescoTheme.action(activity, "← Pasta anterior", false);
         parent.addView(upButton);
         upButton.setOnClickListener(v -> {
+            if (!search.getText().toString().isEmpty()) {
+                search.setText("");
+                return;
+            }
             if (folder.isEmpty()) return;
             String current = folder.substring(0, folder.length() - 1);
             int slash = current.lastIndexOf('/');
@@ -128,7 +132,7 @@ public final class ExplorerView {
             list.addView(line);
             line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
                 .setTitle(name)
-                .setMessage("Caminho: " + path + "\\nTipo: " + file.optString("category") + "\\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes")
+                .setMessage("Caminho: " + path + "\nTipo: " + file.optString("category") + "\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes")
                 .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
                 .setNeutralButton(editable ? "Planejar edição" : "Somente leitura", (dialog, which) -> {
                     if (editable) planEdit(path);
@@ -136,7 +140,7 @@ public final class ExplorerView {
                 .setNegativeButton("Fechar", null).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
-        if (shown > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
+        if (folders.size() + visible.size() > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
     }
 
     private static String formatBytes(long bytes) {
@@ -147,6 +151,8 @@ public final class ExplorerView {
     }
 
     public EditPlan getEditPlan() { return editPlan; }
+
+    public void refresh() { render(); }
 
     private void planEdit(String path) {
         if (!EditPlan.isEditable(path)) {
