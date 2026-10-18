@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
     private TextView output;
     private Button share;
     private JSONObject report;
+    private File currentApk;
     private ExplorerView explorerView;
 
     @Override public void onCreate(Bundle state) {
@@ -80,6 +81,8 @@ public class MainActivity extends Activity {
         super.onActivityResult(request, result, data);
         if (request != 1 || result != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+        report = null;
+        if (currentApk != null) { currentApk.delete(); currentApk = null; }
         output.setText("Analisando...");
         share.setEnabled(false);
         executor.execute(() -> {
@@ -89,7 +92,7 @@ public class MainActivity extends Activity {
                     report = resultJson;
                     output.setText(formatReport(resultJson));
                     JSONObject tree = resultJson.optJSONObject("explorer");
-                    explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"));
+                    explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
                     share.setEnabled(true);
                 });
             } catch (Exception error) {
@@ -145,9 +148,11 @@ public class MainActivity extends Activity {
             json.put("hasManifest", manifest);
             try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
+            currentApk = file;
             return json;
-        } finally {
+        } catch (Exception error) {
             file.delete();
+            throw error;
         }
     }
 
@@ -173,6 +178,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         executor.shutdownNow();
+        if (currentApk != null) currentApk.delete();
         super.onDestroy();
     }
 }
