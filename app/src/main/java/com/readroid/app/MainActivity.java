@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
     private TextView apkSummary;
+    private TextView projectMetrics;
     private ScrollView contentScroll;
 
     @Override public void onCreate(Bundle state) {
@@ -123,6 +124,32 @@ public class MainActivity extends Activity {
         apkSummary.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
         apkSummary.setBackground(NegrescoTheme.panel(this));
         homeSection.addView(apkSummary);
+        projectMetrics = new TextView(this);
+        projectMetrics.setText("ESTRUTURA   •   Aguardando APK");
+        projectMetrics.setTextColor(NegrescoTheme.MUTED);
+        projectMetrics.setTextSize(13);
+        projectMetrics.setPadding(NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 14),
+            NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 14));
+        homeSection.addView(projectMetrics);
+
+        TextView shortcutsTitle = new TextView(this);
+        shortcutsTitle.setText("ACESSO RÁPIDO");
+        shortcutsTitle.setTextColor(NegrescoTheme.ACCENT);
+        shortcutsTitle.setTextSize(12);
+        shortcutsTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
+        homeSection.addView(shortcutsTitle);
+        LinearLayout quickActions = new LinearLayout(this);
+        quickActions.setOrientation(LinearLayout.VERTICAL);
+        homeSection.addView(quickActions);
+        String[] quickLabels = {"Explorar arquivos  →", "Construir versão  →", "Inspecionar segurança  →"};
+        int[] quickTargets = {1, 2, 3};
+        for (int i = 0; i < quickLabels.length; i++) {
+            final int target = quickTargets[i];
+            Button shortcut = NegrescoTheme.action(this, quickLabels[i], false);
+            quickActions.addView(shortcut);
+            shortcut.setOnClickListener(v -> showSection(target));
+        }
+
         TextView detailsTitle = new TextView(this);
         detailsTitle.setText("RELATÓRIO TÉCNICO");
         detailsTitle.setTextSize(12);
@@ -295,6 +322,7 @@ public class MainActivity extends Activity {
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
         output.setText("Analisando...");
         apkSummary.setText("ANÁLISE EM ANDAMENTO");
+        projectMetrics.setText("ESTRUTURA   •   Analisando...");
         share.setEnabled(false);
         ai.setEnabled(false);
         project.setEnabled(false);
@@ -313,6 +341,9 @@ public class MainActivity extends Activity {
                         + "\n\n" + resultJson.optInt("entries") + " arquivos  •  "
                         + (resultJson.optLong("sizeBytes") / 1024) + " KB"
                         + "\n\nSHA-256\n" + resultJson.optString("sha256"));
+                    projectMetrics.setText("DEX  " + resultJson.optJSONArray("dexFiles").length()
+                        + "     •     BIBLIOTECAS  " + resultJson.optJSONArray("nativeLibraries").length()
+                        + "     •     ASSETS  " + resultJson.optInt("assets"));
                     JSONObject tree = resultJson.optJSONObject("explorer");
                     explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
                     share.setEnabled(true);
@@ -322,7 +353,11 @@ public class MainActivity extends Activity {
                     signatureInfo.setEnabled(true);
                 });
             } catch (Exception error) {
-                runOnUiThread(() -> output.setText("Erro: " + error.getMessage()));
+                runOnUiThread(() -> {
+                    output.setText("Erro: " + error.getMessage());
+                    apkSummary.setText("FALHA AO ABRIR PROJETO");
+                    projectMetrics.setText("ESTRUTURA   •   Indisponível");
+                });
             }
         });
     }
