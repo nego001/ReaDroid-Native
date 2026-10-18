@@ -7,7 +7,6 @@ import android.text.TextWatcher;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -31,8 +30,8 @@ public final class ExplorerView {
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
         TextView heading = new TextView(activity);
-        heading.setText("EXPLORADOR DE ARQUIVOS");
-        heading.setTextColor(Color.WHITE);
+        heading.setText("EXPLORADOR  /  ARQUIVOS DO APK");
+        heading.setTextColor(NegrescoTheme.TEXT);
         heading.setTextSize(19);
         heading.setPadding(0, 24, 0, 10);
         parent.addView(heading);
@@ -40,13 +39,15 @@ public final class ExplorerView {
         search.setSingleLine(true);
         search.setHint("Buscar arquivo pelo nome ou caminho");
         search.setTextColor(Color.WHITE);
-        search.setHintTextColor(0xff9aa8bc);
+        search.setHintTextColor(NegrescoTheme.MUTED);
+        search.setBackground(NegrescoTheme.panel(activity));
+        search.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12));
         parent.addView(search);
         breadcrumb = new TextView(activity);
-        breadcrumb.setTextColor(0xff81b7ff);
+        breadcrumb.setTextColor(NegrescoTheme.ACCENT);
         breadcrumb.setPadding(0, 14, 0, 10);
         parent.addView(breadcrumb);
-        Button up = new Button(activity);
+        Button up = NegrescoTheme.action(activity, "← Pasta anterior", false);
         up.setText("Voltar uma pasta");
         parent.addView(up);
         up.setOnClickListener(v -> {
@@ -184,10 +185,10 @@ public final class ExplorerView {
     private TextView item(String value) {
         TextView view = new TextView(activity);
         view.setText(value);
-        view.setTextColor(0xffe2eaf7);
+        view.setTextColor(NegrescoTheme.TEXT);
         view.setTextSize(14);
-        view.setPadding(14, 16, 14, 16);
-        view.setBackgroundColor(0xff172030);
+        view.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14));
+        view.setBackground(NegrescoTheme.panel(activity));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.bottomMargin = 5;
         view.setLayoutParams(params);
