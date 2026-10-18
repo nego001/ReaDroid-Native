@@ -72,6 +72,8 @@ public final class NegrescoTheme {
         button.setText(label);
         button.setAllCaps(false);
         button.setTextColor(primary ? ON_ACCENT : TEXT);
+        button.setMinHeight(dp(context, 48));
+        button.setContentDescription(label);
         button.setTextSize(14 * FONT_SCALE);
         GradientDrawable d = new GradientDrawable();
         d.setColor(primary ? ACCENT : SURFACE);
@@ -79,7 +81,7 @@ public final class NegrescoTheme {
         if (!primary) d.setStroke(dp(context, 1), BORDER);
         button.setBackground(d);
         button.setPadding(dp(context, 16), dp(context, 9), dp(context, 16), dp(context, 9));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(context, COMPACT ? 46 : 56));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(context, COMPACT ? 48 : 56));
         lp.bottomMargin = dp(context, COMPACT ? 6 : 10);
         button.setLayoutParams(lp);
         return button;
