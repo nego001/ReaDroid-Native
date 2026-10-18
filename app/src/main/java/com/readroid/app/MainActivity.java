@@ -77,8 +77,11 @@ public class MainActivity extends Activity {
             getSharedPreferences("v3_personalizacao", MODE_PRIVATE);
         String displayName = appearance.getString("display_name", "NEGRESCODROID");
         String displaySubtitle = appearance.getString("display_subtitle", "APK ENGINEERING STUDIO");
-        title.setText(displayName + "\\n" + displaySubtitle);
-        title.setTextSize(25 * NegrescoTheme.FONT_SCALE);
+        title.setText(displayName + "\n" + displaySubtitle);
+        title.setTextSize(23 * NegrescoTheme.FONT_SCALE);
+        title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        title.setLetterSpacing(0.025f);
+        title.setPadding(0, 0, 0, NegrescoTheme.dp(this, 18));
         title.setTextColor(NegrescoTheme.TEXT);
         root.addView(title);
 
@@ -261,7 +264,7 @@ public class MainActivity extends Activity {
                     .getString("display_subtitle", "APK ENGINEERING STUDIO"));
             preview.addView(previewTitle);
             TextView previewCard = new TextView(this);
-            previewCard.setText("PROJETO DE EXEMPLO\\n\\nArquivos  •  Construção  •  Segurança");
+            previewCard.setText("PROJETO DE EXEMPLO\n\nArquivos  •  Construção  •  Segurança");
             previewCard.setTextSize(14 * NegrescoTheme.FONT_SCALE);
             previewCard.setTextColor(NegrescoTheme.TEXT);
             previewCard.setPadding(NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 16),
@@ -325,8 +328,8 @@ public class MainActivity extends Activity {
                 version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
             } catch (Exception ignored) { }
             otaStatus.setText("Versão instalada: " + version
-                + "\\nCanal: " + (channel.equals("beta") ? "Beta" : "Estável")
-                + "\\nOTA: em desenvolvimento. Nenhum download ou instalação automática.");
+                + "\nCanal: " + (channel.equals("beta") ? "Beta" : "Estável")
+                + "\nOTA: em desenvolvimento. Nenhum download ou instalação automática.");
         };
         otaChannel.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
             .setTitle("Canal de atualizações")
