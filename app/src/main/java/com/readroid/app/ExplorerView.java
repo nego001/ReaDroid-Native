@@ -137,7 +137,7 @@ public final class ExplorerView {
                 .setNeutralButton(editable ? "Planejar edição" : "Somente leitura", (dialog, which) -> {
                     if (editable) planEdit(path);
                 })
-                .setNegativeButton("Fechar", null).show());
+                .setNegativeButton("Detalhes técnicos", (dialog, which) -> inspectEntry(path)).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
         if (folders.size() + visible.size() > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
@@ -153,6 +153,27 @@ public final class ExplorerView {
     public EditPlan getEditPlan() { return editPlan; }
 
     public void refresh() { render(); }
+
+    private void inspectEntry(String path) {
+        if (apkFile == null || !apkFile.isFile()) return;
+        final java.io.File source = apkFile;
+        new Thread(() -> {
+            String details;
+            try { details = ApkEntryInspector.inspect(source, path); }
+            catch (Exception error) { details = "Inspeção indisponível: " + error.getMessage(); }
+            final String message = details;
+            activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity)
+                .setTitle("Propriedades do arquivo")
+                .setMessage(message)
+                .setPositiveButton("Fechar", null)
+                .setNeutralButton("Copiar dados", (dialog, which) -> {
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                        activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) clipboard.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Dados do arquivo", message));
+                }).show());
+        }).start();
+    }
 
     private void planEdit(String path) {
         if (!EditPlan.isEditable(path)) {
