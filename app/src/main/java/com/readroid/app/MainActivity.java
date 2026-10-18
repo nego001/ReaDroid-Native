@@ -172,7 +172,9 @@ public class MainActivity extends Activity {
                                     + release.channel + "\\nTamanho: " + release.sizeBytes
                                     + " bytes\\n\\n" + release.notes
                                     + "\\n\\nO download e a instalação ainda não estão liberados nesta interface.")
-                                .setPositiveButton("OK", null).show();
+                                .setPositiveButton("Baixar e verificar", (dialog, which) ->
+                                    confirmOtaDownload(release))
+                                .setNegativeButton("Cancelar", null).show();
                         }
                     });
                 } catch (Exception error) {
@@ -521,6 +523,34 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void confirmOtaDownload(OtaRelease release) {
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Baixar atualização verificada?")
+            .setMessage("O arquivo será baixado no cache privado e verificado por SHA-256, pacote e certificado Android. A instalação ainda não está disponível.")
+            .setPositiveButton("Baixar", (dialog, which) -> {
+                executor.execute(() -> {
+                    try {
+                        OtaUpdatePipeline.VerifiedUpdate verified =
+                            OtaUpdatePipeline.downloadAndVerify(this, release);
+                        // Installation is deliberately not enabled until a consent-based
+                        // PackageInstaller flow and real-device tests are complete.
+                        verified.apk.delete();
+                        runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                            .setTitle("Atualização verificada")
+                            .setMessage("O APK passou nas verificações e foi removido do cache. A instalação OTA será habilitada em uma etapa posterior.")
+                            .setPositiveButton("OK", null).show());
+                    } catch (Exception error) {
+                        final String message = error.getMessage();
+                        runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                            .setTitle("Falha no download OTA")
+                            .setMessage(message == null ? "Erro desconhecido" : message)
+                            .setPositiveButton("OK", null).show());
+                    }
+                });
+            })
+            .setNegativeButton("Cancelar", null).show();
     }
 
     private void compareApk(Uri uri) {
