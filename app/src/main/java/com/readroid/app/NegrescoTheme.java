@@ -17,6 +17,9 @@ public final class NegrescoTheme {
     public static int ACCENT = 0xff1688ff;
     public static int TEXT = 0xfff1f6ff;
     public static int MUTED = 0xff93a6be;
+    public static int ON_ACCENT = 0xffffffff;
+    public static float FONT_SCALE = 1f;
+    public static boolean COMPACT = false;
     private NegrescoTheme() {}
 
     public static void apply(Context context) {
@@ -33,9 +36,12 @@ public final class NegrescoTheme {
             TEXT = 0xfff1f6ff; MUTED = 0xff93a6be;
         }
         String accent = prefs.getString("accent", "blue");
+        FONT_SCALE = Math.max(0.85f, Math.min(1.35f, prefs.getInt("font_percent", 100) / 100f));
+        COMPACT = prefs.getBoolean("compact", false);
         ACCENT = "purple".equals(accent) ? 0xff9b6dff
             : "green".equals(accent) ? 0xff27c99a
             : "orange".equals(accent) ? 0xffffa24a : 0xff1688ff;
+        ON_ACCENT = "green".equals(accent) || "orange".equals(accent) ? 0xff101820 : 0xffffffff;
     }
 
     public static int dp(Context context, int value) {
@@ -53,7 +59,7 @@ public final class NegrescoTheme {
     public static TextView heading(Context context, String title, String subtitle) {
         TextView view = new TextView(context);
         view.setText(title + "\n" + subtitle);
-        view.setTextSize(23);
+        view.setTextSize(23 * FONT_SCALE);
         view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         view.setTextColor(TEXT);
         view.setLineSpacing(dp(context, 5), 1f);
@@ -65,16 +71,16 @@ public final class NegrescoTheme {
         Button button = new Button(context);
         button.setText(label);
         button.setAllCaps(false);
-        button.setTextColor(TEXT);
-        button.setTextSize(14);
+        button.setTextColor(primary ? ON_ACCENT : TEXT);
+        button.setTextSize(14 * FONT_SCALE);
         GradientDrawable d = new GradientDrawable();
         d.setColor(primary ? ACCENT : SURFACE);
-        d.setCornerRadius(dp(context, 13));
+        d.setCornerRadius(dp(context, COMPACT ? 8 : 13));
         if (!primary) d.setStroke(dp(context, 1), BORDER);
         button.setBackground(d);
         button.setPadding(dp(context, 16), dp(context, 9), dp(context, 16), dp(context, 9));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(context, 56));
-        lp.bottomMargin = dp(context, 10);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(context, COMPACT ? 46 : 56));
+        lp.bottomMargin = dp(context, COMPACT ? 6 : 10);
         button.setLayoutParams(lp);
         return button;
     }
