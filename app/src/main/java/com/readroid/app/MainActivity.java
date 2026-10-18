@@ -41,6 +41,8 @@ public class MainActivity extends Activity {
     private LinearLayout securitySection;
     private LinearLayout buildSection;
     private LinearLayout aiSection;
+    private TextView[] navigationItems;
+    private ScrollView contentScroll;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -48,9 +50,19 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 34), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
         root.setBackgroundColor(NegrescoTheme.BACKGROUND);
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(root);
-        setContentView(scroll);
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setBackgroundColor(NegrescoTheme.BACKGROUND);
+        contentScroll = new ScrollView(this);
+        contentScroll.setFillViewport(true);
+        contentScroll.addView(root);
+        shell.addView(contentScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setPadding(NegrescoTheme.dp(this, 6), NegrescoTheme.dp(this, 7), NegrescoTheme.dp(this, 6), NegrescoTheme.dp(this, 8));
+        nav.setBackgroundColor(NegrescoTheme.SURFACE);
+        shell.addView(nav);
+        setContentView(shell);
 
         TextView title = new TextView(this);
         title.setText("NEGRESCODROID\nAPK ENGINEERING STUDIO");
@@ -58,18 +70,19 @@ public class MainActivity extends Activity {
         title.setTextColor(NegrescoTheme.TEXT);
         root.addView(title);
 
-        LinearLayout nav = new LinearLayout(this);
-        nav.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(nav);
         String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
+        String[] symbols = {"⌂", "▤", "⬡", "◇", "✧"};
+        navigationItems = new TextView[tabs.length];
         for (int index = 0; index < tabs.length; index++) {
             final int target = index;
-            Button tab = NegrescoTheme.action(this, tabs[index], false);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 52), 1f);
-            lp.setMargins(0, 0, NegrescoTheme.dp(this, 3), NegrescoTheme.dp(this, 12));
-            tab.setLayoutParams(lp);
-            tab.setTextSize(10);
-            nav.addView(tab);
+            TextView tab = new TextView(this);
+            tab.setText(symbols[index] + "\n" + tabs[index]);
+            tab.setGravity(android.view.Gravity.CENTER);
+            tab.setTextSize(11);
+            tab.setTextColor(NegrescoTheme.MUTED);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 58), 1f);
+            nav.addView(tab, lp);
+            navigationItems[index] = tab;
             tab.setOnClickListener(v -> showSection(target));
         }
         homeSection = section(root);
@@ -242,7 +255,12 @@ public class MainActivity extends Activity {
 
     private void showSection(int index) {
         LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
-        for (int i = 0; i < sections.length; i++) sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
+        for (int i = 0; i < sections.length; i++) {
+            sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
+            navigationItems[i].setTextColor(i == index ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
+            navigationItems[i].setTypeface(null, i == index ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        }
+        contentScroll.scrollTo(0, 0);
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
