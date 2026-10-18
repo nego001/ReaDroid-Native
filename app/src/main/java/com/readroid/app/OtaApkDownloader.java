@@ -44,9 +44,13 @@ public final class OtaApkDownloader {
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Accept", "application/vnd.android.package-archive");
             int code;
+            boolean accepted = false;
             try {
                 code = connection.getResponseCode();
-                if (code == HttpURLConnection.HTTP_OK) return connection;
+                if (code == HttpURLConnection.HTTP_OK) {
+                    accepted = true;
+                    return connection;
+                }
                 if (code != HttpURLConnection.HTTP_MOVED_PERM
                     && code != HttpURLConnection.HTTP_MOVED_TEMP
                     && code != HttpURLConnection.HTTP_SEE_OTHER
@@ -63,7 +67,7 @@ public final class OtaApkDownloader {
                     throw new SecurityException("Redirecionamento OTA para domínio não autorizado");
                 current = next;
             } finally {
-                connection.disconnect();
+                if (!accepted) connection.disconnect();
             }
         }
         throw new SecurityException("Redirecionamentos OTA excedidos");
