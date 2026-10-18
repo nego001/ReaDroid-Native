@@ -27,6 +27,8 @@ public class MainActivity extends Activity {
     private Button ai;
     private Button project;
     private Button editExport;
+    private Button rebuild;
+    private static final int REQUEST_EXPORT_APK = 2;
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
@@ -94,6 +96,28 @@ public class MainActivity extends Activity {
             }
         });
 
+        rebuild = new Button(this);
+        rebuild.setText("Exportar APK modificado (sem assinatura)");
+        rebuild.setEnabled(false);
+        root.addView(rebuild);
+        rebuild.setOnClickListener(v -> {
+            if (currentApk == null || explorerView.getEditPlan().size() == 0) {
+                new android.app.AlertDialog.Builder(this).setMessage("Primeiro registre uma alteração textual no explorador.").setPositiveButton("OK", null).show();
+                return;
+            }
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Reconstrução experimental")
+                .setMessage("O resultado NÃO estará assinado e pode não instalar ou funcionar. O APK original será preservado. Continuar?")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Escolher destino", (dialog, which) -> {
+                    Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    create.addCategory(Intent.CATEGORY_OPENABLE);
+                    create.setType("application/vnd.android.package-archive");
+                    create.putExtra(Intent.EXTRA_TITLE, "readroid-modificado-unsigned.apk");
+                    startActivityForResult(create, REQUEST_EXPORT_APK);
+                }).show();
+        });
+
         share = new Button(this);
         share.setText("Compartilhar relatório JSON");
         share.setEnabled(false);
@@ -109,7 +133,9 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != 1 || result != RESULT_OK || data == null || data.getData() == null) return;
+        if (result != RESULT_OK || data == null || data.getData() == null) return;
+        if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
+        if (request != 1) return;
         Uri uri = data.getData();
         report = null;
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
@@ -117,6 +143,8 @@ public class MainActivity extends Activity {
         share.setEnabled(false);
         ai.setEnabled(false);
         project.setEnabled(false);
+        rebuild.setEnabled(false);
+        explorerView.getEditPlan().clear();
         executor.execute(() -> {
             try {
                 JSONObject resultJson = analyze(uri);
@@ -128,9 +156,43 @@ public class MainActivity extends Activity {
                     share.setEnabled(true);
                     ai.setEnabled(true);
                     project.setEnabled(true);
+                    rebuild.setEnabled(true);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> output.setText("Erro: " + error.getMessage()));
+            }
+        });
+    }
+
+    private void exportRebuilt(Uri destination) {
+        if (currentApk == null) return;
+        final File source = currentApk;
+        final Map<String, String> changes = explorerView.getEditPlan().snapshot();
+        if (changes.isEmpty()) return;
+        rebuild.setEnabled(false);
+        executor.execute(() -> {
+            File temp = null;
+            try {
+                temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
+                ApkRebuilder.rebuild(source, temp, changes);
+                try (InputStream in = new FileInputStream(temp);
+                     OutputStream out = getContentResolver().openOutputStream(destination, "w")) {
+                    if (out == null) throw new IOException("Destino inacessível");
+                    byte[] buffer = new byte[65536];
+                    int n;
+                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                }
+                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                    .setTitle("APK não assinado exportado")
+                    .setMessage("Arquivo gerado. Ainda precisa ser assinado e validado antes de instalar.")
+                    .setPositiveButton("OK", null).show());
+            } catch (Exception error) {
+                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                    .setTitle("Falha na reconstrução").setMessage(error.getMessage())
+                    .setPositiveButton("OK", null).show());
+            } finally {
+                if (temp != null) temp.delete();
+                runOnUiThread(() -> rebuild.setEnabled(true));
             }
         });
     }
