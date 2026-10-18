@@ -17,7 +17,9 @@ public final class OtaPackageVerifier {
         if (context == null || candidate == null || !candidate.isFile() || release == null)
             throw new SecurityException("Pacote OTA indisponível");
         PackageManager manager = context.getPackageManager();
-        int flags = PackageManager.GET_SIGNING_CERTIFICATES;
+        // Android 8.0/8.1 lacks SigningInfo; the legacy signatures field is required there.
+        int flags = Build.VERSION.SDK_INT >= 28
+            ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
         PackageInfo installed = manager.getPackageInfo(context.getPackageName(), flags);
         PackageInfo incoming = manager.getPackageArchiveInfo(candidate.getAbsolutePath(), flags);
         if (incoming == null || incoming.packageName == null
@@ -27,12 +29,20 @@ public final class OtaPackageVerifier {
         long incomingCode = Build.VERSION.SDK_INT >= 28 ? incoming.getLongVersionCode() : incoming.versionCode;
         if (incomingCode != release.versionCode || incomingCode <= installedCode)
             throw new SecurityException("Versão OTA incompatível");
-        if (installed.signingInfo == null || incoming.signingInfo == null)
-            throw new SecurityException("Informações de assinatura indisponíveis");
-        if (installed.signingInfo.hasMultipleSigners() != incoming.signingInfo.hasMultipleSigners())
-            throw new SecurityException("Modelo de assinatura incompatível");
-        Signature[] installedSigners = installed.signingInfo.getApkContentsSigners();
-        Signature[] incomingSigners = incoming.signingInfo.getApkContentsSigners();
+        Signature[] installedSigners;
+        Signature[] incomingSigners;
+        if (Build.VERSION.SDK_INT >= 28) {
+            if (installed.signingInfo == null || incoming.signingInfo == null)
+                throw new SecurityException("Informações de assinatura indisponíveis");
+            if (installed.signingInfo.hasMultipleSigners() != incoming.signingInfo.hasMultipleSigners())
+                throw new SecurityException("Modelo de assinatura incompatível");
+            installedSigners = installed.signingInfo.getApkContentsSigners();
+            incomingSigners = incoming.signingInfo.getApkContentsSigners();
+        } else {
+            // Legacy fallback is used ONLY on API 26–27. Never trust a missing signer.
+            installedSigners = installed.signatures;
+            incomingSigners = incoming.signatures;
+        }
         if (installedSigners == null || incomingSigners == null
             || installedSigners.length == 0 || incomingSigners.length == 0
             || installedSigners.length != incomingSigners.length)
