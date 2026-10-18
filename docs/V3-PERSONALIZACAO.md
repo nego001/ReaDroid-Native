@@ -10,7 +10,8 @@
 - [ ] Cobertura de escala tipográfica em todas as telas, leitores e diálogos; auditoria de acessibilidade.
 - [x] Alternância de rótulos da navegação e prioridade do atalho favorito na tela inicial.
 - [ ] Organização avançada e reordenação de todos os atalhos.
-- [ ] Prévia visual e identidade (nome/logotipo de exibição, quando viável).
+- [x] Nome e subtítulo personalizados no cabeçalho (não altera identidade instalada).
+- [ ] Prévia visual e personalização de logotipo, quando viável.
 - [ ] Exportação e importação de configurações com validação e sem segredos.
 - [ ] Testes Android reais, testes de regressão e auditoria de contraste.
 - [ ] Preparar changelog, versão e artefato V3 único.
