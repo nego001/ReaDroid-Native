@@ -116,14 +116,20 @@ public class MainActivity extends Activity {
         output.setTextIsSelectable(true);
         output.setPadding(NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16));
         output.setBackground(NegrescoTheme.panel(this));
-        homeSection.addView(output);
         apkSummary = new TextView(this);
         apkSummary.setText("NENHUM PROJETO ABERTO\n\nSelecione um APK para visualizar seus detalhes.");
         apkSummary.setTextColor(NegrescoTheme.TEXT);
         apkSummary.setTextSize(15);
-        apkSummary.setPadding(20, 24, 20, 24);
+        apkSummary.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
         apkSummary.setBackground(NegrescoTheme.panel(this));
         homeSection.addView(apkSummary);
+        TextView detailsTitle = new TextView(this);
+        detailsTitle.setText("RELATÓRIO TÉCNICO");
+        detailsTitle.setTextSize(12);
+        detailsTitle.setTextColor(NegrescoTheme.ACCENT);
+        detailsTitle.setPadding(0, NegrescoTheme.dp(this, 22), 0, NegrescoTheme.dp(this, 8));
+        homeSection.addView(detailsTitle);
+        homeSection.addView(output);
 
         explorerView = new ExplorerView(this, filesSection);
 
@@ -343,7 +349,7 @@ public class MainActivity extends Activity {
                 }
                 runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
                     .setTitle("APK não assinado exportado")
-                    .setMessage(verification + "\\n\\nO arquivo original foi preservado.")
+                    .setMessage(verification + "\\n\\n" + preflight + "\\n\\nO arquivo original foi preservado.")
                     .setPositiveButton("OK", null).show());
             } catch (Exception error) {
                 runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
