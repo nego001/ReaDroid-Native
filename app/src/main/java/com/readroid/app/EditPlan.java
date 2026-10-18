@@ -27,6 +27,10 @@ public final class EditPlan {
 
     public int size() { return replacements.size(); }
 
+    public Map<String, String> snapshot() { return new LinkedHashMap<>(replacements); }
+
+    public void clear() { replacements.clear(); }
+
     public JSONObject toJson() throws Exception {
         JSONObject result = new JSONObject();
         result.put("format", "readroid-edit-plan-v1");
