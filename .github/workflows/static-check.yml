@@ -1,7 +1,7 @@
 name: Source checks
 on:
   push:
-    branches: [main]
+    branches: [main, feature/v3-personalizacao]
   pull_request:
   workflow_dispatch:
 permissions:
