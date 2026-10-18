@@ -160,9 +160,10 @@ public final class ExplorerView {
             return;
         }
         if (apkFile == null || !apkFile.exists()) return;
+        final java.io.File source = apkFile;
         new Thread(() -> {
             String original;
-            try { original = ApkPreview.readText(apkFile, path); }
+            try { original = ApkPreview.readText(source, path); }
             catch (Exception error) {
                 activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show());
                 return;
@@ -186,7 +187,9 @@ public final class ExplorerView {
                     .setNegativeButton("Cancelar", null)
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
                         try {
-                            editPlan.addTextReplacement(path, editor.getText().toString());
+                            String replacement = editor.getText().toString();
+                            if (replacement.equals(original)) editPlan.remove(path);
+                            else editPlan.addTextReplacement(path, replacement);
                             render();
                             new android.app.AlertDialog.Builder(activity).setMessage("Alteração registrada. Itens no plano: " + editPlan.size()).setPositiveButton("OK", null).show();
                         } catch (Exception error) {
@@ -202,9 +205,10 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("APK temporário indisponível. Analise o arquivo novamente.").setPositiveButton("OK", null).show();
             return;
         }
+        final java.io.File source = apkFile;
         new Thread(() -> {
             String value;
-            try { value = ApkPreview.readText(apkFile, path); }
+            try { value = ApkPreview.readText(source, path); }
             catch (Exception error) { value = "Não foi possível visualizar: " + error.getMessage(); }
             final String text = value;
             activity.runOnUiThread(() -> {
