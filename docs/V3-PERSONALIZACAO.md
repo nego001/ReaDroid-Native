@@ -13,7 +13,8 @@
 - [x] Nome e subtítulo personalizados no cabeçalho (não altera identidade instalada).
 - [x] Prévia não destrutiva do tema e cabeçalho atuais.
 - [ ] Personalização de logotipo, quando viável.
-- [ ] Exportação e importação de configurações com validação e sem segredos.
+- [x] Exportação e importação de preferências visuais JSON com validação, confirmação e limite de 8 KiB.
+- [ ] Validar importação/exportação em aparelho real.
 - [x] Workflows de compilação e inspeção de código habilitados na branch V3.
 - [ ] Confirmar resultados dos workflows, testes Android reais, regressão e auditoria de contraste.
 - [ ] Preparar changelog, versão e artefato V3 único.
