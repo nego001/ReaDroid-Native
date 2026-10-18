@@ -21,6 +21,7 @@ public final class ExplorerView {
     private final Activity activity;
     private final LinearLayout list;
     private final TextView breadcrumb;
+    private final TextView countLabel;
     private final EditText search;
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
@@ -47,8 +48,12 @@ public final class ExplorerView {
         breadcrumb.setTextColor(NegrescoTheme.ACCENT);
         breadcrumb.setPadding(0, 14, 0, 10);
         parent.addView(breadcrumb);
+        countLabel = new TextView(activity);
+        countLabel.setTextColor(NegrescoTheme.MUTED);
+        countLabel.setTextSize(12);
+        parent.addView(countLabel);
         Button up = NegrescoTheme.action(activity, "← Pasta anterior", false);
-        up.setText("Voltar uma pasta");
+        up.setText("← Pasta anterior");
         parent.addView(up);
         up.setOnClickListener(v -> {
             if (folder.isEmpty()) return;
@@ -98,10 +103,11 @@ public final class ExplorerView {
                 else visible.add(item);
             }
         }
+        countLabel.setText(folders.size() + " pastas  •  " + visible.size() + " arquivos");
         int shown = 0;
         for (String child : folders) {
             if (shown++ >= 120) break;
-            TextView line = item("📁  " + child);
+            TextView line = item("▸  " + child + "\nPASTA");
             list.addView(line);
             line.setOnClickListener(v -> { folder += child; render(); });
         }
@@ -109,17 +115,29 @@ public final class ExplorerView {
             if (shown++ >= 120) break;
             String path = file.optString("path");
             String name = query.isEmpty() ? path.substring(folder.length()) : path;
-            TextView line = item("📄  " + name + "\n" + file.optString("category") + " • " + file.optLong("sizeBytes", -1) + " bytes");
+            boolean editable = EditPlan.isEditable(path);
+            TextView line = item(name + "\n" + file.optString("category")
+                + "  •  " + formatBytes(file.optLong("sizeBytes", -1))
+                + (editable ? "  •  EDITÁVEL" : "  •  LEITURA"));
             list.addView(line);
             line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
                 .setTitle(name)
                 .setMessage("Caminho: " + path + "\\nTipo: " + file.optString("category") + "\\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes")
                 .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
-                .setNeutralButton("Planejar edição", (dialog, which) -> planEdit(path))
+                .setNeutralButton(editable ? "Planejar edição" : "Somente leitura", (dialog, which) -> {
+                    if (editable) planEdit(path);
+                })
                 .setNegativeButton("Fechar", null).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
         if (shown > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 0) return "Tamanho desconhecido";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1048576) return String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0);
+        return String.format(Locale.ROOT, "%.1f MB", bytes / 1048576.0);
     }
 
     public EditPlan getEditPlan() { return editPlan; }
