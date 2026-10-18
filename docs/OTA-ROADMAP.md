@@ -49,3 +49,7 @@ A verificação do manifesto não substitui a conferência da assinatura Android
 - `OtaApkDownloader`: download em arquivo temporário privado, limite de tamanho e SHA-256, sem instalação.
 - **Ainda falta:** configurar chave pública confiável e endpoint real; ligar a consulta e o download à UI; conferir identidade de assinatura do APK; integrar instalador do Android; testar no dispositivo.
 - Não disponibilizar o arquivo baixado para instalação antes de conferir também a assinatura Android e o packageName.
+
+## Verificação de identidade de pacote
+
+`OtaPackageVerifier` compara o `packageName`, o `versionCode` e os certificados de assinatura apresentados pelo PackageManager com os do aplicativo instalado. Por enquanto exige os mesmos certificados, sem suporte a rotação de chaves. É um componente isolado, não conectado à instalação. Testar em dispositivos reais antes de liberar OTA; o instalador Android permanece responsável pela validação final do pacote.
