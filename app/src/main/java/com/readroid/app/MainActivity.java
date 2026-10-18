@@ -102,6 +102,44 @@ public class MainActivity extends Activity {
         securitySection = section(root);
         aiSection = section(root);
 
+        TextView otaTitle = new TextView(this);
+        otaTitle.setText("ATUALIZAÇÕES DO APLICATIVO");
+        otaTitle.setTextColor(NegrescoTheme.ACCENT);
+        otaTitle.setTextSize(12);
+        otaTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
+        homeSection.addView(otaTitle);
+        TextView otaStatus = new TextView(this);
+        otaStatus.setTextColor(NegrescoTheme.TEXT);
+        otaStatus.setTextSize(13);
+        otaStatus.setPadding(NegrescoTheme.dp(this, 14), NegrescoTheme.dp(this, 14),
+            NegrescoTheme.dp(this, 14), NegrescoTheme.dp(this, 14));
+        otaStatus.setBackground(NegrescoTheme.panel(this));
+        homeSection.addView(otaStatus);
+        Button otaChannel = NegrescoTheme.action(this, "Selecionar canal OTA", false);
+        homeSection.addView(otaChannel);
+        Runnable refreshOta = () -> {
+            String channel = getPreferences(MODE_PRIVATE).getString("ota_channel", "stable");
+            String version = "0.1.0";
+            try {
+                version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception ignored) { }
+            otaStatus.setText("Versão instalada: " + version
+                + "\\nCanal: " + (channel.equals("beta") ? "Beta" : "Estável")
+                + "\\nOTA: em desenvolvimento. Nenhum download ou instalação automática.");
+        };
+        otaChannel.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+            .setTitle("Canal de atualizações")
+            .setSingleChoiceItems(new String[]{"Estável", "Beta"},
+                getPreferences(MODE_PRIVATE).getString("ota_channel", "stable").equals("beta") ? 1 : 0,
+                (dialog, selected) -> {
+                    getPreferences(MODE_PRIVATE).edit()
+                        .putString("ota_channel", selected == 1 ? "beta" : "stable").apply();
+                    refreshOta.run();
+                    dialog.dismiss();
+                })
+            .setNegativeButton("Cancelar", null).show());
+        refreshOta.run();
+
         Button choose = NegrescoTheme.action(this, "ABRIR APK", true);
         choose.setText("Selecionar APK");
         homeSection.addView(choose);
