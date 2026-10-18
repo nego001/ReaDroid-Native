@@ -253,6 +253,7 @@ public class MainActivity extends Activity {
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
                 ApkRebuilder.rebuild(source, temp, changes);
                 final String verification = RebuildVerifier.verify(temp, changes);
+                final String preflight = SigningPreflight.inspect(temp);
                 try (InputStream in = new FileInputStream(temp);
                      OutputStream out = getContentResolver().openOutputStream(destination, "w")) {
                     if (out == null) throw new IOException("Destino inacessível");
