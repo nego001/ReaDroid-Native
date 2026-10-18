@@ -9,6 +9,7 @@ Keep private keys outside the repository and CI logs.
 import argparse
 import base64
 import json
+from urllib.parse import urlparse
 from pathlib import Path
 
 def main():
@@ -25,8 +26,15 @@ def main():
         raise ValueError("Missing release fields: " + ", ".join(sorted(required - release.keys())))
     if release["channel"] not in ("stable", "beta"):
         raise ValueError("Invalid release channel")
-    if not str(release["downloadUrl"]).startswith("https://"):
-        raise ValueError("Release download must use HTTPS")
+    uri = urlparse(str(release["downloadUrl"]))
+    if uri.scheme != "https" or not uri.hostname or uri.username or uri.password or uri.fragment:
+        raise ValueError("Release download must be an absolute HTTPS URL")
+    if not isinstance(release["versionCode"], int) or isinstance(release["versionCode"], bool) or release["versionCode"] < 1:
+        raise ValueError("Invalid versionCode")
+    if not isinstance(release["sizeBytes"], int) or isinstance(release["sizeBytes"], bool) or not (1 <= release["sizeBytes"] <= 1073741824):
+        raise ValueError("Invalid sizeBytes")
+    if not isinstance(release["sha256"], str) or len(release["sha256"]) != 64 or any(c not in "0123456789abcdefABCDEF" for c in release["sha256"]):
+        raise ValueError("Invalid SHA-256")
     payload = json.dumps(release, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     key = serialization.load_pem_private_key(Path(args.key).read_bytes(), password=None)
     if not isinstance(key, rsa.RSAPrivateKey) or key.key_size < 3072:
