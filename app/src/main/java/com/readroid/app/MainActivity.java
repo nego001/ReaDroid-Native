@@ -315,6 +315,17 @@ public class MainActivity extends Activity {
                 recreate();
             }).setNegativeButton("Cancelar", null).show());
 
+        Button togglePersonalization = NegrescoTheme.action(this, "Personalização  ▾", false);
+        homeSection.addView(togglePersonalization);
+        homeSection.removeView(personalizationGroup);
+        homeSection.addView(personalizationGroup);
+        personalizationGroup.setVisibility(View.GONE);
+        togglePersonalization.setOnClickListener(v -> {
+            boolean expand = personalizationGroup.getVisibility() != View.VISIBLE;
+            personalizationGroup.setVisibility(expand ? View.VISIBLE : View.GONE);
+            togglePersonalization.setText(expand ? "Personalização  ▴" : "Personalização  ▾");
+        });
+
         TextView otaTitle = new TextView(this);
         otaTitle.setText("ATUALIZAÇÕES DO APLICATIVO");
         otaTitle.setTextColor(NegrescoTheme.ACCENT);
