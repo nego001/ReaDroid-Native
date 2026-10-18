@@ -37,13 +37,13 @@ public final class ExplorerView {
         TextView heading = new TextView(activity);
         heading.setText("EXPLORADOR  /  ARQUIVOS DO APK");
         heading.setTextColor(NegrescoTheme.TEXT);
-        heading.setTextSize(19);
+        heading.setTextSize(19 * NegrescoTheme.FONT_SCALE);
         heading.setPadding(0, 24, 0, 10);
         parent.addView(heading);
         search = new EditText(activity);
         search.setSingleLine(true);
         search.setHint("Buscar arquivo pelo nome ou caminho");
-        search.setTextColor(Color.WHITE);
+        search.setTextColor(NegrescoTheme.TEXT);
         search.setHintTextColor(NegrescoTheme.MUTED);
         search.setBackground(NegrescoTheme.panel(activity));
         search.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12));
@@ -71,7 +71,7 @@ public final class ExplorerView {
         parent.addView(breadcrumb);
         countLabel = new TextView(activity);
         countLabel.setTextColor(NegrescoTheme.MUTED);
-        countLabel.setTextSize(12);
+        countLabel.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         parent.addView(countLabel);
         upButton = NegrescoTheme.action(activity, "← Pasta anterior", false);
         parent.addView(upButton);
