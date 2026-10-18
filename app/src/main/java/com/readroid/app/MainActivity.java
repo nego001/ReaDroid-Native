@@ -175,6 +175,7 @@ public class MainActivity extends Activity {
             try {
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
                 ApkRebuilder.rebuild(source, temp, changes);
+                final String verification = RebuildVerifier.verify(temp, changes);
                 try (InputStream in = new FileInputStream(temp);
                      OutputStream out = getContentResolver().openOutputStream(destination, "w")) {
                     if (out == null) throw new IOException("Destino inacessível");
@@ -184,7 +185,7 @@ public class MainActivity extends Activity {
                 }
                 runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
                     .setTitle("APK não assinado exportado")
-                    .setMessage("Arquivo gerado. Ainda precisa ser assinado e validado antes de instalar.")
+                    .setMessage(verification + "\\n\\nO arquivo original foi preservado.")
                     .setPositiveButton("OK", null).show());
             } catch (Exception error) {
                 runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
