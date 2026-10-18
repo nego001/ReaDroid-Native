@@ -27,3 +27,17 @@ Permitir atualização do próprio NegrescoDroid pelo Android, sem exigir downlo
 ## Restrições
 OTA atualiza o aplicativo NegrescoDroid, não os APKs de terceiros analisados.
 Não prometer instalação silenciosa, assinatura automática de APKs modificados ou atualização funcional antes de testes reais.
+
+## Formato inicial do envelope assinado
+
+```json
+{
+  "payload": "{\"versionCode\":2,\"versionName\":\"0.2.0\",\"channel\":\"stable\",\"downloadUrl\":\"https://updates.example.org/app.apk\",\"sha256\":\"<64 hex chars>\",\"sizeBytes\":123456,\"notes\":\"Mudanças\"}",
+  "signature": "<base64 RSA-SHA256 sobre os bytes UTF-8 exatos de payload>"
+}
+```
+
+O endereço acima é apenas ilustrativo e não é um endpoint configurado.
+A chave pública RSA X.509/SPKI confiável deve ser incorporada à aplicação antes de qualquer consulta.
+Sem chave configurada, a verificação falha de modo seguro. Nunca aceitar metadados sem assinatura válida.
+A verificação do manifesto não substitui a conferência da assinatura Android do APK instalado.
