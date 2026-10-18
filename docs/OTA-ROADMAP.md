@@ -41,3 +41,11 @@ O endereço acima é apenas ilustrativo e não é um endpoint configurado.
 A chave pública RSA X.509/SPKI confiável deve ser incorporada à aplicação antes de qualquer consulta.
 Sem chave configurada, a verificação falha de modo seguro. Nunca aceitar metadados sem assinatura válida.
 A verificação do manifesto não substitui a conferência da assinatura Android do APK instalado.
+
+## Implementação parcial (2026-10-18)
+
+- `OtaManifestVerifier`: valida envelope assinado RSA-SHA256.
+- `OtaUpdateChecker`: busca HTTPS sem redirects e aceita somente manifesto autenticado.
+- `OtaApkDownloader`: download em arquivo temporário privado, limite de tamanho e SHA-256, sem instalação.
+- **Ainda falta:** configurar chave pública confiável e endpoint real; ligar a consulta e o download à UI; conferir identidade de assinatura do APK; integrar instalador do Android; testar no dispositivo.
+- Não disponibilizar o arquivo baixado para instalação antes de conferir também a assinatura Android e o packageName.
