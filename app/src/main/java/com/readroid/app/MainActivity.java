@@ -29,6 +29,7 @@ public class MainActivity extends Activity {
     private Button editExport;
     private Button rebuild;
     private Button signatureInfo;
+    private Button signingGuide;
     private static final int REQUEST_EXPORT_APK = 2;
     private JSONObject report;
     private File currentApk;
@@ -112,6 +113,14 @@ public class MainActivity extends Activity {
                     .setPositiveButton("OK", null).show());
             });
         });
+
+        signingGuide = new Button(this);
+        signingGuide.setText("Assinatura: requisitos e segurança");
+        root.addView(signingGuide);
+        signingGuide.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+            .setTitle("Assinatura de APK modificado")
+            .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO ReaDroid ainda NÃO assina APKs modificados.")
+            .setPositiveButton("Entendi", null).show());
 
         rebuild = new Button(this);
         rebuild.setText("Exportar APK modificado (sem assinatura)");
