@@ -7,6 +7,7 @@ import android.text.TextWatcher;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -25,6 +26,7 @@ public final class ExplorerView {
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
     private java.io.File apkFile;
+    private final EditPlan editPlan = new EditPlan();
 
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
@@ -112,11 +114,49 @@ public final class ExplorerView {
                 .setTitle(name)
                 .setMessage("Caminho: " + path + "\\nTipo: " + file.optString("category") + "\\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes")
                 .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
-                .setNeutralButton("Analisar com IA", (dialog, which) -> AiBridge.shareFile(activity, path, file.optString("category")))
+                .setNeutralButton("Planejar edição", (dialog, which) -> planEdit(path))
                 .setNegativeButton("Fechar", null).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
         if (shown > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
+    }
+
+    public EditPlan getEditPlan() { return editPlan; }
+
+    private void planEdit(String path) {
+        if (!EditPlan.isEditable(path)) {
+            new android.app.AlertDialog.Builder(activity).setMessage("Edição textual ainda não suportada para este formato.").setPositiveButton("OK", null).show();
+            return;
+        }
+        if (apkFile == null || !apkFile.exists()) return;
+        new Thread(() -> {
+            String original;
+            try { original = ApkPreview.readText(apkFile, path); }
+            catch (Exception error) {
+                activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show());
+                return;
+            }
+            activity.runOnUiThread(() -> {
+                EditText editor = new EditText(activity);
+                editor.setText(original);
+                editor.setMinLines(6);
+                editor.setMaxLines(14);
+                editor.setTextSize(13);
+                new android.app.AlertDialog.Builder(activity)
+                    .setTitle("Planejar alteração: " + path)
+                    .setMessage("A edição será registrada no plano. O APK original não será alterado.")
+                    .setView(editor)
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Salvar no plano", (dialog, which) -> {
+                        try {
+                            editPlan.addTextReplacement(path, editor.getText().toString());
+                            new android.app.AlertDialog.Builder(activity).setMessage("Alteração registrada. Itens no plano: " + editPlan.size()).setPositiveButton("OK", null).show();
+                        } catch (Exception error) {
+                            new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show();
+                        }
+                    }).show();
+            });
+        }).start();
     }
 
     private void preview(String path) {
