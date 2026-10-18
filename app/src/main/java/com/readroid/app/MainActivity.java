@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        NegrescoTheme.apply(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 34), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
@@ -101,6 +102,52 @@ public class MainActivity extends Activity {
         buildSection = section(root);
         securitySection = section(root);
         aiSection = section(root);
+
+        TextView customizationTitle = new TextView(this);
+        customizationTitle.setText("V3 • PERSONALIZAÇÃO");
+        customizationTitle.setTextColor(NegrescoTheme.ACCENT);
+        customizationTitle.setTextSize(12);
+        customizationTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
+        homeSection.addView(customizationTitle);
+        Button themePicker = NegrescoTheme.action(this, "Tema visual", false);
+        homeSection.addView(themePicker);
+        themePicker.setOnClickListener(v -> {
+            String[] options = {"OLED preto", "Grafite", "Claro"};
+            String[] values = {"oled", "graphite", "light"};
+            String current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getString("theme", "oled");
+            int selected = java.util.Arrays.asList(values).indexOf(current);
+            new android.app.AlertDialog.Builder(this).setTitle("Tema visual")
+                .setSingleChoiceItems(options, Math.max(0, selected), (dialog, which) -> {
+                    getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                        .putString("theme", values[which]).apply();
+                    dialog.dismiss();
+                    recreate();
+                }).setNegativeButton("Cancelar", null).show();
+        });
+        Button accentPicker = NegrescoTheme.action(this, "Cor de destaque", false);
+        homeSection.addView(accentPicker);
+        accentPicker.setOnClickListener(v -> {
+            String[] options = {"Azul", "Roxo", "Verde", "Laranja"};
+            String[] values = {"blue", "purple", "green", "orange"};
+            String current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getString("accent", "blue");
+            int selected = java.util.Arrays.asList(values).indexOf(current);
+            new android.app.AlertDialog.Builder(this).setTitle("Cor de destaque")
+                .setSingleChoiceItems(options, Math.max(0, selected), (dialog, which) -> {
+                    getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                        .putString("accent", values[which]).apply();
+                    dialog.dismiss();
+                    recreate();
+                }).setNegativeButton("Cancelar", null).show();
+        });
+        Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
+        homeSection.addView(resetAppearance);
+        resetAppearance.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+            .setTitle("Restaurar aparência?")
+            .setMessage("Os temas e as cores voltarão ao padrão. Seus projetos não serão alterados.")
+            .setPositiveButton("Restaurar", (dialog, which) -> {
+                getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit().clear().apply();
+                recreate();
+            }).setNegativeButton("Cancelar", null).show());
 
         TextView otaTitle = new TextView(this);
         otaTitle.setText("ATUALIZAÇÕES DO APLICATIVO");
