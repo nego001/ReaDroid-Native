@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="ReaDroid Native" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
+    <application android:label="NegrescoDroid" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
