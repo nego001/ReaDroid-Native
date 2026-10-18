@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
     private TextView output;
     private Button share;
     private Button ai;
+    private Button project;
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
@@ -71,6 +72,12 @@ public class MainActivity extends Activity {
         root.addView(ai);
         ai.setOnClickListener(v -> AiBridge.shareReport(this, report));
 
+        project = new Button(this);
+        project.setText("Criar minha versão");
+        project.setEnabled(false);
+        root.addView(project);
+        project.setOnClickListener(v -> ProjectBrief.create(this, report));
+
         share = new Button(this);
         share.setText("Compartilhar relatório JSON");
         share.setEnabled(false);
@@ -93,6 +100,7 @@ public class MainActivity extends Activity {
         output.setText("Analisando...");
         share.setEnabled(false);
         ai.setEnabled(false);
+        project.setEnabled(false);
         executor.execute(() -> {
             try {
                 JSONObject resultJson = analyze(uri);
@@ -103,6 +111,7 @@ public class MainActivity extends Activity {
                     explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
                     share.setEnabled(true);
                     ai.setEnabled(true);
+                    project.setEnabled(true);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> output.setText("Erro: " + error.getMessage()));
