@@ -29,7 +29,7 @@ public final class OtaUpdatePipeline {
 
     public static VerifiedUpdate downloadAndVerify(Context context, OtaRelease release) throws Exception {
         if (context == null || release == null) throw new IllegalArgumentException("Atualização inválida");
-        String channel = context.getSharedPreferences(context.getClass().getSimpleName(), Context.MODE_PRIVATE)
+        String channel = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
             .getString("ota_channel", "stable");
         // The caller must provide a release obtained through OtaUpdatePipeline.check.
         // This stage additionally enforces the user-selected channel.
