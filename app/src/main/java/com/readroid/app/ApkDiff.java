@@ -3,7 +3,6 @@ package com.readroid.app;
 import java.io.File;
 import java.io.IOException;
 import java.util.TreeMap;
-import java.util.TreeMap;
 import java.util.Map;
 
 import java.util.zip.ZipEntry;
@@ -48,7 +47,7 @@ public final class ApkDiff {
                 ZipEntry entry = it.nextElement();
                 if (++count > 150000) throw new IOException("Entradas demais");
                 String name = entry.getName();
-                if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
+                if (name.isEmpty() || name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
                     throw new IOException("Caminho ZIP inseguro");
                 if (result.put(name, (entry.isDirectory() ? "DIR:" : "FILE:") + entry.getCrc() + ":" + entry.getSize()) != null)
                     throw new IOException("Entrada ZIP duplicada");
