@@ -1,0 +1,26 @@
+name: Source checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Android project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s settings.gradle.kts
+          test -s app/build.gradle.kts
+          test -s app/src/main/AndroidManifest.xml
+          test -s app/src/main/java/com/readroid/app/MainActivity.java
+          test -s app/src/main/java/com/readroid/app/ManifestInspector.java
+          test -s app/src/main/java/com/readroid/app/SecurityScanner.java
+          grep -q 'ManifestInspector.inspect' app/src/main/java/com/readroid/app/MainActivity.java
+          grep -q 'SecurityScanner.scan' app/src/main/java/com/readroid/app/MainActivity.java
+          echo "Source layout checks passed"
