@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
     private Button signatureInfo;
     private Button signingGuide;
     private Button localIdentity;
+    private Button signingTest;
     private static final int REQUEST_EXPORT_APK = 2;
     private JSONObject report;
     private File currentApk;
@@ -151,6 +152,24 @@ public class MainActivity extends Activity {
                         })).show())
                 .show());
         }));
+
+        signingTest = new Button(this);
+        signingTest.setText("Testar assinatura da chave local");
+        root.addView(signingTest);
+        signingTest.setOnClickListener(v -> {
+            signingTest.setEnabled(false);
+            executor.execute(() -> {
+                String message;
+                try { message = SigningSelfTest.run(); }
+                catch (Exception error) { message = "Teste falhou: " + error.getMessage(); }
+                final String result = message;
+                runOnUiThread(() -> {
+                    signingTest.setEnabled(true);
+                    new android.app.AlertDialog.Builder(this).setTitle("Autoteste criptográfico")
+                        .setMessage(result).setPositiveButton("OK", null).show();
+                });
+            });
+        });
 
         rebuild = new Button(this);
         rebuild.setText("Exportar APK modificado (sem assinatura)");
