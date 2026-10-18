@@ -53,3 +53,15 @@ A verificação do manifesto não substitui a conferência da assinatura Android
 ## Verificação de identidade de pacote
 
 `OtaPackageVerifier` compara o `packageName`, o `versionCode` e os certificados de assinatura apresentados pelo PackageManager com os do aplicativo instalado. Por enquanto exige os mesmos certificados, sem suporte a rotação de chaves. É um componente isolado, não conectado à instalação. Testar em dispositivos reais antes de liberar OTA; o instalador Android permanece responsável pela validação final do pacote.
+
+## Publicação offline do manifesto
+
+1. Gere uma chave RSA 3072+ dedicada ao manifesto OTA em ambiente seguro, fora do repositório.
+2. Publique **somente a chave pública SPKI/X.509 Base64** no `OtaConfig.TRUSTED_RELEASE_PUBLIC_KEY`, junto com a URL HTTPS de distribuição em `OtaConfig.RELEASE_ENDPOINT`.
+3. Crie `release.json` com `versionCode`, `versionName`, `channel`, `downloadUrl`, `sha256`, `sizeBytes` e `notes`.
+4. Instale `cryptography` em um ambiente de publicação confiável e execute:
+   `python tools/create_ota_envelope.py --release release.json --key /caminho/seguro/release-private.pem --output signed-release.json`
+5. Hospede `signed-release.json` por HTTPS no endpoint configurado.
+6. Use o **mesmo certificado de assinatura Android** da versão já instalada para assinar o APK de atualização. A chave RSA do manifesto não substitui essa assinatura.
+
+Nunca coloque a chave privada no GitHub, APK, logs ou exemplos versionados.
