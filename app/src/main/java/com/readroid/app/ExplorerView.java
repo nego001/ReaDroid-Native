@@ -24,6 +24,7 @@ public final class ExplorerView {
     private final EditText search;
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
+    private java.io.File apkFile;
 
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
@@ -65,7 +66,8 @@ public final class ExplorerView {
         render();
     }
 
-    public void setFiles(JSONArray array) {
+    public void setFiles(JSONArray array, java.io.File apkFile) {
+        this.apkFile = apkFile;
         files.clear();
         folder = "";
         search.setText("");
@@ -113,6 +115,28 @@ public final class ExplorerView {
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
         if (shown > 120) list.addView(item("Mostrando os primeiros 120 itens. Use a busca para filtrar."));
+    }
+
+    private void preview(String path) {
+        if (apkFile == null || !apkFile.exists()) {
+            new android.app.AlertDialog.Builder(activity).setMessage("APK temporário indisponível. Analise o arquivo novamente.").setPositiveButton("OK", null).show();
+            return;
+        }
+        new Thread(() -> {
+            String value;
+            try { value = ApkPreview.readText(apkFile, path); }
+            catch (Exception error) { value = "Não foi possível visualizar: " + error.getMessage(); }
+            final String text = value;
+            activity.runOnUiThread(() -> {
+                ScrollView scroll = new ScrollView(activity);
+                TextView content = new TextView(activity);
+                content.setText(text);
+                content.setTextIsSelectable(true);
+                content.setPadding(24, 20, 24, 20);
+                scroll.addView(content);
+                new android.app.AlertDialog.Builder(activity).setTitle(path).setView(scroll).setPositiveButton("Fechar", null).show();
+            });
+        }).start();
     }
 
     private TextView item(String value) {
