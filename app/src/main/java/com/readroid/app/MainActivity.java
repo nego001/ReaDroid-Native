@@ -136,7 +136,8 @@ public class MainActivity extends Activity {
             json.put("nativeLibraries", libraries);
             json.put("assets", assets);
             json.put("hasManifest", manifest);
-            json.put("note", "V0.1: não decodifica manifesto binário nem verifica assinatura.");
+            try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
+            json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
             return json;
         } finally {
             file.delete();
