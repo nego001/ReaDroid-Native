@@ -41,19 +41,19 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(28, 48, 28, 28);
-        root.setBackgroundColor(0xff080b12);
+        root.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 34), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
+        root.setBackgroundColor(NegrescoTheme.BACKGROUND);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
         setContentView(scroll);
 
         TextView title = new TextView(this);
-        title.setText("ReaDroid Native\nAnálise de APK sem Termux");
-        title.setTextSize(26);
-        title.setTextColor(Color.WHITE);
+        title.setText("NEGRESCODROID\nAPK ENGINEERING STUDIO");
+        title.setTextSize(25);
+        title.setTextColor(NegrescoTheme.TEXT);
         root.addView(title);
 
-        Button choose = new Button(this);
+        Button choose = NegrescoTheme.action(this, "ABRIR APK", true);
         choose.setText("Selecionar APK");
         root.addView(choose);
         choose.setOnClickListener(v -> {
@@ -65,27 +65,28 @@ public class MainActivity extends Activity {
 
         output = new TextView(this);
         output.setText("Selecione um APK para começar.");
-        output.setTextColor(0xffc3d5ee);
+        output.setTextColor(NegrescoTheme.MUTED);
         output.setTextSize(15);
         output.setTextIsSelectable(true);
-        output.setPadding(0, 25, 0, 25);
+        output.setPadding(NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16));
+        output.setBackground(NegrescoTheme.panel(this));
         root.addView(output);
 
         explorerView = new ExplorerView(this, root);
 
-        ai = new Button(this);
+        ai = NegrescoTheme.action(this, "", false);
         ai.setText("Analisar com ChatGPT / IA");
         ai.setEnabled(false);
         root.addView(ai);
         ai.setOnClickListener(v -> AiBridge.shareReport(this, report));
 
-        project = new Button(this);
+        project = NegrescoTheme.action(this, "", false);
         project.setText("Criar minha versão");
         project.setEnabled(false);
         root.addView(project);
         project.setOnClickListener(v -> ProjectBrief.create(this, report));
 
-        editExport = new Button(this);
+        editExport = NegrescoTheme.action(this, "", false);
         editExport.setText("Compartilhar plano de alterações");
         root.addView(editExport);
         editExport.setOnClickListener(v -> {
@@ -100,7 +101,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        signatureInfo = new Button(this);
+        signatureInfo = NegrescoTheme.action(this, "", false);
         signatureInfo.setText("Ver certificado de assinatura");
         signatureInfo.setEnabled(false);
         root.addView(signatureInfo);
@@ -116,7 +117,7 @@ public class MainActivity extends Activity {
             });
         });
 
-        signingGuide = new Button(this);
+        signingGuide = NegrescoTheme.action(this, "", false);
         signingGuide.setText("Assinatura: requisitos e segurança");
         root.addView(signingGuide);
         signingGuide.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
@@ -124,7 +125,7 @@ public class MainActivity extends Activity {
             .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO ReaDroid ainda NÃO assina APKs modificados.")
             .setPositiveButton("Entendi", null).show());
 
-        localIdentity = new Button(this);
+        localIdentity = NegrescoTheme.action(this, "", false);
         localIdentity.setText("Minha chave de assinatura local");
         root.addView(localIdentity);
         localIdentity.setOnClickListener(v -> executor.execute(() -> {
@@ -153,7 +154,7 @@ public class MainActivity extends Activity {
                 .show());
         }));
 
-        signingTest = new Button(this);
+        signingTest = NegrescoTheme.action(this, "", false);
         signingTest.setText("Testar assinatura da chave local");
         root.addView(signingTest);
         signingTest.setOnClickListener(v -> {
@@ -171,7 +172,7 @@ public class MainActivity extends Activity {
             });
         });
 
-        rebuild = new Button(this);
+        rebuild = NegrescoTheme.action(this, "", false);
         rebuild.setText("Exportar APK modificado (sem assinatura)");
         rebuild.setEnabled(false);
         root.addView(rebuild);
@@ -188,12 +189,12 @@ public class MainActivity extends Activity {
                     Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     create.addCategory(Intent.CATEGORY_OPENABLE);
                     create.setType("application/vnd.android.package-archive");
-                    create.putExtra(Intent.EXTRA_TITLE, "readroid-modificado-unsigned.apk");
+                    create.putExtra(Intent.EXTRA_TITLE, "negrescodroid-modificado-unsigned.apk");
                     startActivityForResult(create, REQUEST_EXPORT_APK);
                 }).show();
         });
 
-        share = new Button(this);
+        share = NegrescoTheme.action(this, "", false);
         share.setText("Compartilhar relatório JSON");
         share.setEnabled(false);
         root.addView(share);
