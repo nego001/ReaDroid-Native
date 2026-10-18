@@ -29,6 +29,8 @@ public final class OtaPackageVerifier {
             throw new SecurityException("Versão OTA incompatível");
         if (installed.signingInfo == null || incoming.signingInfo == null)
             throw new SecurityException("Informações de assinatura indisponíveis");
+        if (installed.signingInfo.hasMultipleSigners() != incoming.signingInfo.hasMultipleSigners())
+            throw new SecurityException("Modelo de assinatura incompatível");
         Signature[] installedSigners = installed.signingInfo.getApkContentsSigners();
         Signature[] incomingSigners = incoming.signingInfo.getApkContentsSigners();
         if (installedSigners == null || incomingSigners == null
