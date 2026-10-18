@@ -78,7 +78,7 @@ public final class OtaApkDownloader {
             throw new IllegalArgumentException("Atualização ou cache inválido");
         URL url = new URL(release.downloadUrl);
         validateHttps(url);
-        File temporary = File.createTempFile("negresco_ota_", ".part", cacheDir);
+        File temporary = File.createTempFile("negresco_ota_", ".apk", cacheDir);
         boolean verified = false;
         HttpURLConnection connection = null;
         try {
