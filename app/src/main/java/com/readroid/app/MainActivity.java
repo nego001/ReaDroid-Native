@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView output;
     private Button share;
+    private Button ai;
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
@@ -64,6 +65,12 @@ public class MainActivity extends Activity {
 
         explorerView = new ExplorerView(this, root);
 
+        ai = new Button(this);
+        ai.setText("Analisar com ChatGPT / IA");
+        ai.setEnabled(false);
+        root.addView(ai);
+        ai.setOnClickListener(v -> AiBridge.shareReport(this, report));
+
         share = new Button(this);
         share.setText("Compartilhar relatório JSON");
         share.setEnabled(false);
@@ -85,6 +92,7 @@ public class MainActivity extends Activity {
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
         output.setText("Analisando...");
         share.setEnabled(false);
+        ai.setEnabled(false);
         executor.execute(() -> {
             try {
                 JSONObject resultJson = analyze(uri);
@@ -94,6 +102,7 @@ public class MainActivity extends Activity {
                     JSONObject tree = resultJson.optJSONObject("explorer");
                     explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
                     share.setEnabled(true);
+                    ai.setEnabled(true);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> output.setText("Erro: " + error.getMessage()));
