@@ -129,6 +129,7 @@ public class MainActivity extends Activity {
                 }
             }
             JSONObject json = new JSONObject();
+            json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
             json.put("sizeBytes", size);
             json.put("sha256", hash.toString());
             json.put("entries", entries);
