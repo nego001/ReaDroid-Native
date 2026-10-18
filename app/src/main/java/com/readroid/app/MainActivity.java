@@ -461,27 +461,58 @@ public class MainActivity extends Activity {
         shortcutsTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
         homeSection.addView(shortcutsTitle);
         homeSection.addView(shortcutHint);
-        LinearLayout quickActions = new LinearLayout(this);
-        quickActions.setOrientation(LinearLayout.VERTICAL);
-        homeSection.addView(quickActions);
-        String[] quickLabels = {"Explorar arquivos  →", "Construir versão  →", "Inspecionar segurança  →", "Assistente IA  →"};
+        String[] quickLabels = {"Explorar APK", "Construir", "Segurança", "Assistente IA"};
+        String[] quickIcons = {"▱", "⬡", "◇", "✧"};
         int[] quickTargets = {1, 2, 3, 4};
         int favorite = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("favorite_tab", 1);
         if (favorite < 1 || favorite > 4) favorite = 1;
         int preferredIndex = favorite - 1;
         String preferredLabel = quickLabels[preferredIndex];
+        String preferredIcon = quickIcons[preferredIndex];
         int preferredTarget = quickTargets[preferredIndex];
         for (int i = preferredIndex; i > 0; i--) {
             quickLabels[i] = quickLabels[i - 1];
+            quickIcons[i] = quickIcons[i - 1];
             quickTargets[i] = quickTargets[i - 1];
         }
-        quickLabels[0] = "★ " + preferredLabel;
+        quickLabels[0] = preferredLabel;
+        quickIcons[0] = preferredIcon;
         quickTargets[0] = preferredTarget;
-        for (int i = 0; i < quickLabels.length; i++) {
-            final int target = quickTargets[i];
-            Button shortcut = NegrescoTheme.action(this, quickLabels[i], false);
-            quickActions.addView(shortcut);
-            shortcut.setOnClickListener(v -> showSection(target));
+        for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
+            LinearLayout shortcutRow = new LinearLayout(this);
+            shortcutRow.setOrientation(LinearLayout.HORIZONTAL);
+            homeSection.addView(shortcutRow);
+            for (int column = 0; column < 2; column++) {
+                int item = rowIndex * 2 + column;
+                final int target = quickTargets[item];
+                LinearLayout tile = new LinearLayout(this);
+                tile.setOrientation(LinearLayout.VERTICAL);
+                tile.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                tile.setPadding(NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12),
+                    NegrescoTheme.dp(this, 10), NegrescoTheme.dp(this, 12));
+                tile.setBackground(NegrescoTheme.panel(this));
+                LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
+                    0, NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 94 : 112), 1f);
+                tileParams.setMargins(column == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
+                    column == 0 ? NegrescoTheme.dp(this, 5) : 0, NegrescoTheme.dp(this, 10));
+                shortcutRow.addView(tile, tileParams);
+                TextView symbol = new TextView(this);
+                symbol.setText(quickIcons[item]);
+                symbol.setTextColor(NegrescoTheme.ACCENT);
+                symbol.setTextSize(25 * NegrescoTheme.FONT_SCALE);
+                tile.addView(symbol);
+                TextView label = new TextView(this);
+                label.setText(quickLabels[item] + (item == 0 ? "  ★" : ""));
+                label.setTextColor(NegrescoTheme.TEXT);
+                label.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+                label.setTextSize(13 * NegrescoTheme.FONT_SCALE);
+                label.setMaxLines(2);
+                tile.addView(label);
+                tile.setContentDescription("Abrir " + quickLabels[item]);
+                tile.setClickable(true);
+                tile.setFocusable(true);
+                tile.setOnClickListener(v -> showSection(target));
+            }
         }
 
         TextView detailsTitle = new TextView(this);
