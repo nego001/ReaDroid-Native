@@ -27,6 +27,7 @@ public class MainActivity extends Activity {
     private Button ai;
     private Button project;
     private Button editExport;
+    private Button reviewChanges;
     private Button rebuild;
     private Button signatureInfo;
     private Button signingGuide;
@@ -172,6 +173,9 @@ public class MainActivity extends Activity {
         homeSection.addView(project);
         project.setOnClickListener(v -> ProjectBrief.create(this, report));
 
+        reviewChanges = NegrescoTheme.action(this, "Revisar alterações pendentes", true);
+        buildSection.addView(reviewChanges);
+        reviewChanges.setOnClickListener(v -> reviewEditPlan());
         editExport = NegrescoTheme.action(this, "", false);
         editExport.setText("Compartilhar plano de alterações");
         buildSection.addView(editExport);
@@ -292,6 +296,56 @@ public class MainActivity extends Activity {
             startActivity(Intent.createChooser(intent, "Compartilhar relatório"));
         });
         showSection(0);
+    }
+
+    private void reviewEditPlan() {
+        Map<String, String> changes = explorerView.getEditPlan().snapshot();
+        if (changes.isEmpty()) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Plano de alterações")
+                .setMessage("Nenhuma alteração pendente. Abra Arquivos e selecione um texto compatível para editar.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        String[] paths = changes.keySet().toArray(new String[0]);
+        String[] labels = new String[paths.length];
+        for (int i = 0; i < paths.length; i++) {
+            labels[i] = paths[i] + "  •  " + changes.get(paths[i]).length() + " caracteres";
+        }
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Alterações pendentes (" + paths.length + ")")
+            .setItems(labels, (dialog, index) -> reviewChange(paths[index]))
+            .setNegativeButton("Fechar", null)
+            .setNeutralButton("Limpar plano", (dialog, which) ->
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Descartar todas as alterações?")
+                    .setMessage("O APK original não será modificado.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Descartar", (d, w) -> explorerView.getEditPlan().clear())
+                    .show())
+            .show();
+    }
+
+    private void reviewChange(String path) {
+        String content = explorerView.getEditPlan().get(path);
+        if (content == null) return;
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        TextView preview = new TextView(this);
+        preview.setText(content);
+        preview.setTextColor(NegrescoTheme.TEXT);
+        preview.setTextSize(12);
+        preview.setTypeface(android.graphics.Typeface.MONOSPACE);
+        preview.setPadding(NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 16),
+            NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 16));
+        scroll.addView(preview);
+        new android.app.AlertDialog.Builder(this)
+            .setTitle(path)
+            .setView(scroll)
+            .setPositiveButton("Manter", null)
+            .setNegativeButton("Remover alteração", (dialog, which) -> {
+                explorerView.getEditPlan().remove(path);
+                reviewEditPlan();
+            }).show();
     }
 
     private LinearLayout section(LinearLayout parent) {
