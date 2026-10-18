@@ -42,6 +42,8 @@ public class MainActivity extends Activity {
     private LinearLayout buildSection;
     private LinearLayout aiSection;
     private TextView[] navigationItems;
+    private NavGlyph[] navigationIcons;
+    private TextView apkSummary;
     private ScrollView contentScroll;
 
     @Override public void onCreate(Bundle state) {
@@ -71,19 +73,25 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
-        String[] symbols = {"⌂", "▤", "⬡", "◇", "✧"};
         navigationItems = new TextView[tabs.length];
+        navigationIcons = new NavGlyph[tabs.length];
         for (int index = 0; index < tabs.length; index++) {
             final int target = index;
-            TextView tab = new TextView(this);
-            tab.setText(symbols[index] + "\n" + tabs[index]);
-            tab.setGravity(android.view.Gravity.CENTER);
-            tab.setTextSize(11);
-            tab.setTextColor(NegrescoTheme.MUTED);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 58), 1f);
-            nav.addView(tab, lp);
-            navigationItems[index] = tab;
-            tab.setOnClickListener(v -> showSection(target));
+            LinearLayout tabContainer = new LinearLayout(this);
+            tabContainer.setOrientation(LinearLayout.VERTICAL);
+            tabContainer.setGravity(android.view.Gravity.CENTER);
+            nav.addView(tabContainer, new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 62), 1f));
+            NavGlyph glyph = new NavGlyph(this, index);
+            tabContainer.addView(glyph, new LinearLayout.LayoutParams(NegrescoTheme.dp(this, 27), NegrescoTheme.dp(this, 27)));
+            navigationIcons[index] = glyph;
+            TextView label = new TextView(this);
+            label.setText(tabs[index]);
+            label.setGravity(android.view.Gravity.CENTER);
+            label.setTextSize(10);
+            label.setTextColor(NegrescoTheme.MUTED);
+            tabContainer.addView(label);
+            navigationItems[index] = label;
+            tabContainer.setOnClickListener(v -> showSection(target));
         }
         homeSection = section(root);
         filesSection = section(root);
@@ -109,6 +117,13 @@ public class MainActivity extends Activity {
         output.setPadding(NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16));
         output.setBackground(NegrescoTheme.panel(this));
         homeSection.addView(output);
+        apkSummary = new TextView(this);
+        apkSummary.setText("NENHUM PROJETO ABERTO\n\nSelecione um APK para visualizar seus detalhes.");
+        apkSummary.setTextColor(NegrescoTheme.TEXT);
+        apkSummary.setTextSize(15);
+        apkSummary.setPadding(20, 24, 20, 24);
+        apkSummary.setBackground(NegrescoTheme.panel(this));
+        homeSection.addView(apkSummary);
 
         explorerView = new ExplorerView(this, filesSection);
 
@@ -258,6 +273,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < sections.length; i++) {
             sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
             navigationItems[i].setTextColor(i == index ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
+            navigationIcons[i].setSelectedState(i == index);
             navigationItems[i].setTypeface(null, i == index ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         }
         contentScroll.scrollTo(0, 0);
@@ -272,6 +288,7 @@ public class MainActivity extends Activity {
         report = null;
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
         output.setText("Analisando...");
+        apkSummary.setText("ANÁLISE EM ANDAMENTO");
         share.setEnabled(false);
         ai.setEnabled(false);
         project.setEnabled(false);
@@ -284,6 +301,12 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     report = resultJson;
                     output.setText(formatReport(resultJson));
+                    JSONObject info = resultJson.optJSONObject("manifestAnalysis");
+                    String packageName = info == null ? "Desconhecido" : info.optString("packageName", "Desconhecido");
+                    apkSummary.setText("PROJETO CARREGADO\n\n" + packageName
+                        + "\n\n" + resultJson.optInt("entries") + " arquivos  •  "
+                        + (resultJson.optLong("sizeBytes") / 1024) + " KB"
+                        + "\n\nSHA-256\n" + resultJson.optString("sha256"));
                     JSONObject tree = resultJson.optJSONObject("explorer");
                     explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
                     share.setEnabled(true);
