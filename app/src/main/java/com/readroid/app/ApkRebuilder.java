@@ -30,7 +30,12 @@ public final class ApkRebuilder {
                     throw new IOException("Caminho inseguro: " + name);
                 if (!seen.add(name)) throw new IOException("Entrada duplicada: " + name);
                 // Signing metadata cannot be reused after modifications.
-                if (name.startsWith("META-INF/") && (name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC") || name.endsWith(".SF") || name.equals("META-INF/MANIFEST.MF"))) continue;
+                String upper = name.toUpperCase(Locale.ROOT);
+                if (upper.startsWith("META-INF/") &&
+                    (upper.endsWith(".RSA") || upper.endsWith(".DSA") || upper.endsWith(".EC")
+                        || upper.endsWith(".SF") || upper.equals("META-INF/MANIFEST.MF"))) continue;
+                if (entry.isDirectory() && edits.containsKey(name))
+                    throw new IOException("Não é possível editar diretório: " + name);
                 ZipEntry copy = new ZipEntry(name);
                 copy.setTime(entry.getTime());
                 output.putNextEntry(copy);
