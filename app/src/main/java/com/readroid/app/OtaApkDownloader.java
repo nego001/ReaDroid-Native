@@ -20,7 +20,9 @@ public final class OtaApkDownloader {
             || url.getRef() != null) throw new SecurityException("URL OTA inválida");
         File temporary = File.createTempFile("negresco_ota_", ".part", cacheDir);
         boolean verified = false;
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        HttpURLConnection connection;
+        try { connection = (HttpURLConnection) url.openConnection(); }
+        catch (Exception error) { temporary.delete(); throw error; }
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(30000);
         connection.setInstanceFollowRedirects(false);
