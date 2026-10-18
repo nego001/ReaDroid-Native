@@ -8,7 +8,8 @@
 - [ ] Aplicar cores corretamente a todas as telas, ícones, gráficos e estados de seleção.
 - [x] Ajustes iniciais de densidade e escala de texto nos componentes reutilizáveis.
 - [ ] Cobertura de escala tipográfica em todas as telas, leitores e diálogos; auditoria de acessibilidade.
-- [ ] Preferências de navegação, atalhos e organização da tela inicial.
+- [x] Alternância de rótulos da navegação e prioridade do atalho favorito na tela inicial.
+- [ ] Organização avançada e reordenação de todos os atalhos.
 - [ ] Prévia visual e identidade (nome/logotipo de exibição, quando viável).
 - [ ] Exportação e importação de configurações com validação e sem segredos.
 - [ ] Testes Android reais, testes de regressão e auditoria de contraste.
