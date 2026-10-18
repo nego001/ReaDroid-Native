@@ -36,6 +36,11 @@ public class MainActivity extends Activity {
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
+    private LinearLayout homeSection;
+    private LinearLayout filesSection;
+    private LinearLayout securitySection;
+    private LinearLayout buildSection;
+    private LinearLayout aiSection;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -53,9 +58,29 @@ public class MainActivity extends Activity {
         title.setTextColor(NegrescoTheme.TEXT);
         root.addView(title);
 
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(nav);
+        String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
+        for (int index = 0; index < tabs.length; index++) {
+            final int target = index;
+            Button tab = NegrescoTheme.action(this, tabs[index], false);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 52), 1f);
+            lp.setMargins(0, 0, NegrescoTheme.dp(this, 3), NegrescoTheme.dp(this, 12));
+            tab.setLayoutParams(lp);
+            tab.setTextSize(10);
+            nav.addView(tab);
+            tab.setOnClickListener(v -> showSection(target));
+        }
+        homeSection = section(root);
+        filesSection = section(root);
+        buildSection = section(root);
+        securitySection = section(root);
+        aiSection = section(root);
+
         Button choose = NegrescoTheme.action(this, "ABRIR APK", true);
         choose.setText("Selecionar APK");
-        root.addView(choose);
+        homeSection.addView(choose);
         choose.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -70,25 +95,25 @@ public class MainActivity extends Activity {
         output.setTextIsSelectable(true);
         output.setPadding(NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16));
         output.setBackground(NegrescoTheme.panel(this));
-        root.addView(output);
+        homeSection.addView(output);
 
-        explorerView = new ExplorerView(this, root);
+        explorerView = new ExplorerView(this, filesSection);
 
         ai = NegrescoTheme.action(this, "", false);
         ai.setText("Analisar com ChatGPT / IA");
         ai.setEnabled(false);
-        root.addView(ai);
+        aiSection.addView(ai);
         ai.setOnClickListener(v -> AiBridge.shareReport(this, report));
 
         project = NegrescoTheme.action(this, "", false);
         project.setText("Criar minha versão");
         project.setEnabled(false);
-        root.addView(project);
+        homeSection.addView(project);
         project.setOnClickListener(v -> ProjectBrief.create(this, report));
 
         editExport = NegrescoTheme.action(this, "", false);
         editExport.setText("Compartilhar plano de alterações");
-        root.addView(editExport);
+        buildSection.addView(editExport);
         editExport.setOnClickListener(v -> {
             try {
                 String content = explorerView.getEditPlan().toJson().toString(2);
@@ -104,7 +129,7 @@ public class MainActivity extends Activity {
         signatureInfo = NegrescoTheme.action(this, "", false);
         signatureInfo.setText("Ver certificado de assinatura");
         signatureInfo.setEnabled(false);
-        root.addView(signatureInfo);
+        securitySection.addView(signatureInfo);
         signatureInfo.setOnClickListener(v -> {
             if (currentApk == null) return;
             final File file = currentApk;
@@ -119,7 +144,7 @@ public class MainActivity extends Activity {
 
         signingGuide = NegrescoTheme.action(this, "", false);
         signingGuide.setText("Assinatura: requisitos e segurança");
-        root.addView(signingGuide);
+        securitySection.addView(signingGuide);
         signingGuide.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
             .setTitle("Assinatura de APK modificado")
             .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO ReaDroid ainda NÃO assina APKs modificados.")
@@ -127,7 +152,7 @@ public class MainActivity extends Activity {
 
         localIdentity = NegrescoTheme.action(this, "", false);
         localIdentity.setText("Minha chave de assinatura local");
-        root.addView(localIdentity);
+        securitySection.addView(localIdentity);
         localIdentity.setOnClickListener(v -> executor.execute(() -> {
             String status;
             try { status = LocalSigningIdentity.describe(); }
@@ -156,7 +181,7 @@ public class MainActivity extends Activity {
 
         signingTest = NegrescoTheme.action(this, "", false);
         signingTest.setText("Testar assinatura da chave local");
-        root.addView(signingTest);
+        securitySection.addView(signingTest);
         signingTest.setOnClickListener(v -> {
             signingTest.setEnabled(false);
             executor.execute(() -> {
@@ -175,7 +200,7 @@ public class MainActivity extends Activity {
         rebuild = NegrescoTheme.action(this, "", false);
         rebuild.setText("Exportar APK modificado (sem assinatura)");
         rebuild.setEnabled(false);
-        root.addView(rebuild);
+        buildSection.addView(rebuild);
         rebuild.setOnClickListener(v -> {
             if (currentApk == null || explorerView.getEditPlan().size() == 0) {
                 new android.app.AlertDialog.Builder(this).setMessage("Primeiro registre uma alteração textual no explorador.").setPositiveButton("OK", null).show();
@@ -197,7 +222,7 @@ public class MainActivity extends Activity {
         share = NegrescoTheme.action(this, "", false);
         share.setText("Compartilhar relatório JSON");
         share.setEnabled(false);
-        root.addView(share);
+        aiSection.addView(share);
         share.setOnClickListener(v -> {
             if (report == null) return;
             Intent intent = new Intent(Intent.ACTION_SEND);
@@ -205,6 +230,19 @@ public class MainActivity extends Activity {
             intent.putExtra(Intent.EXTRA_TEXT, report.toString());
             startActivity(Intent.createChooser(intent, "Compartilhar relatório"));
         });
+        showSection(0);
+    }
+
+    private LinearLayout section(LinearLayout parent) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        parent.addView(content);
+        return content;
+    }
+
+    private void showSection(int index) {
+        LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
+        for (int i = 0; i < sections.length; i++) sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
