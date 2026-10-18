@@ -48,7 +48,6 @@ public class MainActivity extends Activity {
     private TextView apkSummary;
     private TextView projectMetrics;
     private ScrollView contentScroll;
-    private int selectedSection = 0;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -583,7 +582,6 @@ public class MainActivity extends Activity {
     }
 
     private void showSection(int index) {
-        selectedSection = index;
         LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
         for (int i = 0; i < sections.length; i++) {
             sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
