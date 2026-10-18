@@ -84,7 +84,7 @@ public class MainActivity extends Activity {
                 JSONObject resultJson = analyze(uri);
                 runOnUiThread(() -> {
                     report = resultJson;
-                    output.setText(resultJson.toString());
+                    output.setText(formatReport(resultJson));
                     share.setEnabled(true);
                 });
             } catch (Exception error) {
@@ -130,6 +130,7 @@ public class MainActivity extends Activity {
             }
             JSONObject json = new JSONObject();
             json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
+            json.put("explorer", ApkExplorer.inspect(file));
             json.put("sizeBytes", size);
             json.put("sha256", hash.toString());
             json.put("entries", entries);
@@ -143,6 +144,36 @@ public class MainActivity extends Activity {
         } finally {
             file.delete();
         }
+    }
+
+    private String formatReport(JSONObject data) {
+        StringBuilder out = new StringBuilder();
+        JSONObject manifest = data.optJSONObject("manifestAnalysis");
+        out.append("VISÃO GERAL\\n\\n");
+        if (manifest != null) {
+            out.append("Pacote: ").append(manifest.optString("packageName", "Desconhecido")).append("\\n");
+            out.append("Versão: ").append(manifest.optString("versionName", "Desconhecida")).append("\\n");
+            out.append("Android mínimo (API): ").append(manifest.optString("minSdk", "?")).append("\\n");
+            out.append("Android alvo (API): ").append(manifest.optString("targetSdk", "?")).append("\\n");
+            out.append("Permissões: ").append(manifest.optJSONArray("requestedPermissions") == null ? 0 : manifest.optJSONArray("requestedPermissions").length()).append("\\n");
+        }
+        out.append("Tamanho: ").append(data.optLong("sizeBytes") / 1024).append(" KB\\n");
+        out.append("SHA-256: ").append(data.optString("sha256")).append("\\n\\n");
+        JSONObject explorer = data.optJSONObject("explorer");
+        if (explorer != null) {
+            out.append("EXPLORADOR DE ARQUIVOS (SOMENTE LEITURA)\\n");
+            out.append("Arquivos: ").append(explorer.optInt("fileCount")).append("\\n\\n");
+            JSONArray files = explorer.optJSONArray("files");
+            if (files != null) {
+                for (int i = 0; i < files.length() && i < 150; i++) {
+                    JSONObject item = files.optJSONObject(i);
+                    if (item != null) out.append("• ").append(item.optString("path")).append("  [").append(item.optString("category")).append("]\\n");
+                }
+                if (files.length() > 150) out.append("\\nMais ").append(files.length() - 150).append(" arquivos no relatório JSON.\\n");
+            }
+        }
+        out.append("\\nRelatório completo disponível em Compartilhar JSON.");
+        return out.toString();
     }
 
     @Override protected void onDestroy() {
