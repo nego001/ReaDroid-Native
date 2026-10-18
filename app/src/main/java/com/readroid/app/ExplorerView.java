@@ -122,9 +122,9 @@ public final class ExplorerView {
             String path = file.optString("path");
             String name = query.isEmpty() ? path.substring(folder.length()) : path;
             boolean editable = EditPlan.isEditable(path);
-            TextView line = item(name + "\n" + file.optString("category")
+            TextView line = item((editPlan.contains(path) ? "●  " : "") + name + "\n" + file.optString("category")
                 + "  •  " + formatBytes(file.optLong("sizeBytes", -1))
-                + (editable ? "  •  EDITÁVEL" : "  •  LEITURA"));
+                + (editPlan.contains(path) ? "  •  ALTERADO" : (editable ? "  •  EDITÁVEL" : "  •  LEITURA")));
             list.addView(line);
             line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
                 .setTitle(name)
@@ -163,7 +163,7 @@ public final class ExplorerView {
             }
             activity.runOnUiThread(() -> {
                 EditText editor = new EditText(activity);
-                editor.setText(original);
+                editor.setText(editPlan.contains(path) ? editPlan.get(path) : original);
                 editor.setTextColor(NegrescoTheme.TEXT);
                 editor.setBackground(NegrescoTheme.panel(activity));
                 editor.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14),
@@ -181,6 +181,7 @@ public final class ExplorerView {
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
                         try {
                             editPlan.addTextReplacement(path, editor.getText().toString());
+                            render();
                             new android.app.AlertDialog.Builder(activity).setMessage("Alteração registrada. Itens no plano: " + editPlan.size()).setPositiveButton("OK", null).show();
                         } catch (Exception error) {
                             new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show();
