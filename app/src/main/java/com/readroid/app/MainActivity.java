@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private Button project;
     private Button editExport;
     private Button rebuild;
+    private Button signatureInfo;
     private static final int REQUEST_EXPORT_APK = 2;
     private JSONObject report;
     private File currentApk;
@@ -96,6 +97,22 @@ public class MainActivity extends Activity {
             }
         });
 
+        signatureInfo = new Button(this);
+        signatureInfo.setText("Ver certificado de assinatura");
+        signatureInfo.setEnabled(false);
+        root.addView(signatureInfo);
+        signatureInfo.setOnClickListener(v -> {
+            if (currentApk == null) return;
+            final File file = currentApk;
+            executor.execute(() -> {
+                final String details = ApkSignatureInspector.inspect(this, file);
+                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                    .setTitle("Certificado do APK")
+                    .setMessage(details)
+                    .setPositiveButton("OK", null).show());
+            });
+        });
+
         rebuild = new Button(this);
         rebuild.setText("Exportar APK modificado (sem assinatura)");
         rebuild.setEnabled(false);
@@ -144,6 +161,7 @@ public class MainActivity extends Activity {
         ai.setEnabled(false);
         project.setEnabled(false);
         rebuild.setEnabled(false);
+        signatureInfo.setEnabled(false);
         explorerView.getEditPlan().clear();
         executor.execute(() -> {
             try {
@@ -157,6 +175,7 @@ public class MainActivity extends Activity {
                     ai.setEnabled(true);
                     project.setEnabled(true);
                     rebuild.setEnabled(true);
+                    signatureInfo.setEnabled(true);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> output.setText("Erro: " + error.getMessage()));
