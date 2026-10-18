@@ -104,6 +104,7 @@ public class MainActivity extends Activity {
             label.setTextColor(NegrescoTheme.MUTED);
             tabContainer.addView(label);
             navigationItems[index] = label;
+            tabContainer.setContentDescription("Abrir seção " + tabs[index]);
             tabContainer.setOnClickListener(v -> showSection(target));
         }
         homeSection = section(root);
