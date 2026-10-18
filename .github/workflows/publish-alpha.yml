@@ -1,0 +1,63 @@
+name: Publish ReaDroid Native v0.1.0 alpha
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-alpha.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download validated APK from successful build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39139871411 --repo "${{ github.repository }}" --name ReaDroid-Native-debug --dir apk
+          test -f apk/app-debug.apk
+          mv apk/app-debug.apk apk/ReaDroid-Native-v0.1.0-alpha.apk
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.1.0-alpha --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release v0.1.0-alpha already exists; refusing to overwrite."
+            exit 1
+          fi
+          gh release create v0.1.0-alpha apk/ReaDroid-Native-v0.1.0-alpha.apk \
+            --repo "${{ github.repository }}" \
+            --target 3ef6f290331d22d17e8e7551bcdeb8c8d02dc6e2 \
+            --title "ReaDroid Native v0.1.0 Alpha" \
+            --prerelease \
+            --notes-file <(cat <<'NOTES'
+          ## ReaDroid Native v0.1.0 Alpha
+          Primeira versão experimental para Android.
+
+          ### Recursos incluídos
+          - Seleção de arquivos APK no dispositivo
+          - Inventário dos arquivos internos, DEX, bibliotecas nativas e recursos
+          - Cálculo do hash SHA-256
+          - Verificações estáticas preliminares de segurança
+          - Inspeção básica do AndroidManifest.xml, permissões e componentes usando APIs do Android
+          - Geração e compartilhamento de relatório JSON
+
+          ### Compatibilidade
+          - Android 8.0 (API 26) ou superior
+          - APK de depuração (debug), assinado automaticamente para testes
+          - Versão do aplicativo: 0.1.0 (versionCode 1)
+
+          ### Limitações conhecidas
+          - Versão alpha, ainda não validada em aparelho físico
+          - Não inclui ainda descompilação profunda, edição visual ou reconstrução de APK
+          - A leitura de metadados pode variar conforme a versão do Android
+          - Não é uma auditoria de segurança completa
+
+          ### Instalação
+          Baixe o arquivo .apk em Assets desta versão e instale no Android.
+          NOTES
+          )
