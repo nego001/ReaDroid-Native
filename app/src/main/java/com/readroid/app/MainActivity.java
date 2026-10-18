@@ -122,8 +122,17 @@ public class MainActivity extends Activity {
         customizationTitle.setTextSize(12);
         customizationTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
         homeSection.addView(customizationTitle);
+        TextView customizationHint = new TextView(this);
+        customizationHint.setText("Deixe o estúdio com a sua cara");
+        customizationHint.setTextSize(13 * NegrescoTheme.FONT_SCALE);
+        customizationHint.setTextColor(NegrescoTheme.MUTED);
+        customizationHint.setPadding(0, 0, 0, NegrescoTheme.dp(this, 12));
+        homeSection.addView(customizationHint);
+        LinearLayout personalizationGroup = new LinearLayout(this);
+        personalizationGroup.setOrientation(LinearLayout.VERTICAL);
+        homeSection.addView(personalizationGroup);
         Button themePicker = NegrescoTheme.action(this, "Tema visual", false);
-        homeSection.addView(themePicker);
+        personalizationGroup.addView(themePicker);
         themePicker.setOnClickListener(v -> {
             String[] options = {"OLED preto", "Grafite", "Claro"};
             String[] values = {"oled", "graphite", "light"};
@@ -138,7 +147,7 @@ public class MainActivity extends Activity {
                 }).setNegativeButton("Cancelar", null).show();
         });
         Button accentPicker = NegrescoTheme.action(this, "Cor de destaque", false);
-        homeSection.addView(accentPicker);
+        personalizationGroup.addView(accentPicker);
         accentPicker.setOnClickListener(v -> {
             String[] options = {"Azul", "Roxo", "Verde", "Laranja"};
             String[] values = {"blue", "purple", "green", "orange"};
@@ -153,7 +162,7 @@ public class MainActivity extends Activity {
                 }).setNegativeButton("Cancelar", null).show();
         });
         Button textScale = NegrescoTheme.action(this, "Tamanho do texto", false);
-        homeSection.addView(textScale);
+        personalizationGroup.addView(textScale);
         textScale.setOnClickListener(v -> {
             String[] labels = {"Pequeno (90%)", "Padrão (100%)", "Grande (115%)", "Muito grande (130%)"};
             int[] values = {90, 100, 115, 130};
@@ -169,7 +178,7 @@ public class MainActivity extends Activity {
                 }).setNegativeButton("Cancelar", null).show();
         });
         Button densityPicker = NegrescoTheme.action(this, "Espaçamento da interface", false);
-        homeSection.addView(densityPicker);
+        personalizationGroup.addView(densityPicker);
         densityPicker.setOnClickListener(v -> {
             boolean compact = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getBoolean("compact", false);
             new android.app.AlertDialog.Builder(this).setTitle("Espaçamento da interface")
@@ -182,7 +191,7 @@ public class MainActivity extends Activity {
                     }).setNegativeButton("Cancelar", null).show();
         });
         Button navLabels = NegrescoTheme.action(this, "Rótulos da navegação", false);
-        homeSection.addView(navLabels);
+        personalizationGroup.addView(navLabels);
         navLabels.setOnClickListener(v -> {
             boolean visible = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
                 .getBoolean("nav_labels", true);
@@ -196,7 +205,7 @@ public class MainActivity extends Activity {
                     }).setNegativeButton("Cancelar", null).show();
         });
         Button favoriteShortcut = NegrescoTheme.action(this, "Atalho favorito", false);
-        homeSection.addView(favoriteShortcut);
+        personalizationGroup.addView(favoriteShortcut);
         favoriteShortcut.setOnClickListener(v -> {
             String[] names = {"Arquivos", "Construir", "Segurança", "IA"};
             int current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
@@ -211,7 +220,7 @@ public class MainActivity extends Activity {
                     }).setNegativeButton("Cancelar", null).show();
         });
         Button identityPicker = NegrescoTheme.action(this, "Identidade da tela inicial", false);
-        homeSection.addView(identityPicker);
+        personalizationGroup.addView(identityPicker);
         identityPicker.setOnClickListener(v -> {
             android.widget.LinearLayout form = new android.widget.LinearLayout(this);
             form.setOrientation(android.widget.LinearLayout.VERTICAL);
@@ -250,7 +259,7 @@ public class MainActivity extends Activity {
                 .setNegativeButton("Cancelar", null).show();
         });
         Button appearancePreview = NegrescoTheme.action(this, "Prévia da aparência", false);
-        homeSection.addView(appearancePreview);
+        personalizationGroup.addView(appearancePreview);
         appearancePreview.setOnClickListener(v -> {
             android.widget.LinearLayout preview = new android.widget.LinearLayout(this);
             preview.setOrientation(android.widget.LinearLayout.VERTICAL);
@@ -280,7 +289,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Fechar", null).show();
         });
         Button exportAppearance = NegrescoTheme.action(this, "Exportar personalização", false);
-        homeSection.addView(exportAppearance);
+        personalizationGroup.addView(exportAppearance);
         exportAppearance.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -289,7 +298,7 @@ public class MainActivity extends Activity {
             startActivityForResult(intent, REQUEST_EXPORT_APPEARANCE);
         });
         Button importAppearance = NegrescoTheme.action(this, "Importar personalização", false);
-        homeSection.addView(importAppearance);
+        personalizationGroup.addView(importAppearance);
         importAppearance.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -297,7 +306,7 @@ public class MainActivity extends Activity {
             startActivityForResult(intent, REQUEST_IMPORT_APPEARANCE);
         });
         Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
-        homeSection.addView(resetAppearance);
+        personalizationGroup.addView(resetAppearance);
         resetAppearance.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
             .setTitle("Restaurar aparência?")
             .setMessage("Os temas e as cores voltarão ao padrão. Seus projetos não serão alterados.")
