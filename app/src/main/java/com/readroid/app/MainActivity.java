@@ -370,11 +370,24 @@ public class MainActivity extends Activity {
         Button otaCheck = NegrescoTheme.action(this, "Verificar atualizações", true);
         homeSection.addView(otaCheck);
         otaCheck.setOnClickListener(v -> {
-            if (!OtaConfig.isConfigured()) {
+            String selectedOtaChannel = getPreferences(MODE_PRIVATE).getString("ota_channel", "stable");
+            if (!OtaConfig.isConfigured(selectedOtaChannel)) {
                 new android.app.AlertDialog.Builder(this)
-                    .setTitle("OTA ainda não configurado")
-                    .setMessage("A distribuição OTA precisa de um endpoint HTTPS e de uma chave pública confiável. Nenhum download será realizado.")
-                    .setPositiveButton("Entendi", null).show();
+                    .setTitle("OTA assinada ainda não configurada")
+                    .setMessage("O canal " + (selectedOtaChannel.equals("beta") ? "Beta" : "Estável")
+                        + " ainda precisa de um manifesto assinado e de uma chave pública confiável. "
+                        + "Você pode consultar as versões oficiais no GitHub; nenhum APK será baixado automaticamente.")
+                    .setPositiveButton("Ver Releases", (dialog, which) -> {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/nego001/ReaDroid-Native/releases")));
+                        } catch (android.content.ActivityNotFoundException error) {
+                            new android.app.AlertDialog.Builder(this)
+                                .setMessage("Nenhum navegador disponível para abrir o GitHub.")
+                                .setPositiveButton("OK", null).show();
+                        }
+                    })
+                    .setNegativeButton("Fechar", null).show();
                 return;
             }
             otaCheck.setEnabled(false);
@@ -383,7 +396,7 @@ public class MainActivity extends Activity {
                 try {
                     String channel = getPreferences(MODE_PRIVATE).getString("ota_channel", "stable");
                     OtaRelease release = OtaUpdatePipeline.check(this,
-                        OtaConfig.RELEASE_ENDPOINT, OtaConfig.TRUSTED_RELEASE_PUBLIC_KEY, channel);
+                        OtaConfig.endpointFor(channel), OtaConfig.TRUSTED_RELEASE_PUBLIC_KEY, channel);
                     runOnUiThread(() -> {
                         otaCheck.setEnabled(true);
                         refreshOta.run();
@@ -395,10 +408,10 @@ public class MainActivity extends Activity {
                         } else {
                             new android.app.AlertDialog.Builder(this)
                                 .setTitle("Nova versão: " + release.versionName)
-                                .setMessage("Versão " + release.versionCode + "\\nCanal: "
-                                    + release.channel + "\\nTamanho: " + release.sizeBytes
-                                    + " bytes\\n\\n" + release.notes
-                                    + "\\n\\nO download pode ser verificado. A instalação ainda não está disponível.")
+                                .setMessage("Versão " + release.versionCode + "\nCanal: "
+                                    + release.channel + "\nTamanho: " + release.sizeBytes
+                                    + " bytes\n\n" + release.notes
+                                    + "\n\nO download pode ser verificado. A instalação ainda não está disponível.")
                                 .setPositiveButton("Baixar e verificar", (dialog, which) ->
                                     confirmOtaDownload(release))
                                 .setNegativeButton("Cancelar", null).show();
