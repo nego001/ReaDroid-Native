@@ -140,6 +140,54 @@ public class MainActivity extends Activity {
             .setNegativeButton("Cancelar", null).show());
         refreshOta.run();
 
+        Button otaCheck = NegrescoTheme.action(this, "Verificar atualizações", true);
+        homeSection.addView(otaCheck);
+        otaCheck.setOnClickListener(v -> {
+            if (!OtaConfig.isConfigured()) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("OTA ainda não configurado")
+                    .setMessage("A distribuição OTA precisa de um endpoint HTTPS e de uma chave pública confiável. Nenhum download será realizado.")
+                    .setPositiveButton("Entendi", null).show();
+                return;
+            }
+            otaCheck.setEnabled(false);
+            otaStatus.setText("Verificando atualizações assinadas...");
+            executor.execute(() -> {
+                try {
+                    String channel = getPreferences(MODE_PRIVATE).getString("ota_channel", "stable");
+                    OtaRelease release = OtaUpdatePipeline.check(this,
+                        OtaConfig.RELEASE_ENDPOINT, OtaConfig.TRUSTED_RELEASE_PUBLIC_KEY, channel);
+                    runOnUiThread(() -> {
+                        otaCheck.setEnabled(true);
+                        refreshOta.run();
+                        if (release == null) {
+                            new android.app.AlertDialog.Builder(this)
+                                .setTitle("Nenhuma atualização")
+                                .setMessage("Não há uma versão mais recente no canal selecionado.")
+                                .setPositiveButton("OK", null).show();
+                        } else {
+                            new android.app.AlertDialog.Builder(this)
+                                .setTitle("Nova versão: " + release.versionName)
+                                .setMessage("Versão " + release.versionCode + "\\nCanal: "
+                                    + release.channel + "\\nTamanho: " + release.sizeBytes
+                                    + " bytes\\n\\n" + release.notes
+                                    + "\\n\\nO download e a instalação ainda não estão liberados nesta interface.")
+                                .setPositiveButton("OK", null).show();
+                        }
+                    });
+                } catch (Exception error) {
+                    String message = error.getMessage();
+                    runOnUiThread(() -> {
+                        otaCheck.setEnabled(true);
+                        refreshOta.run();
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Falha na verificação OTA")
+                            .setMessage(message == null ? "Erro desconhecido" : message)
+                            .setPositiveButton("OK", null).show();
+                    });
+                }
+            });
+        });
         Button choose = NegrescoTheme.action(this, "ABRIR APK", true);
         choose.setText("Selecionar APK");
         homeSection.addView(choose);
