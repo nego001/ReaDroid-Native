@@ -11,9 +11,11 @@
 - [x] Alternância de rótulos da navegação e prioridade do atalho favorito na tela inicial.
 - [ ] Organização avançada e reordenação de todos os atalhos.
 - [x] Nome e subtítulo personalizados no cabeçalho (não altera identidade instalada).
-- [ ] Prévia visual e personalização de logotipo, quando viável.
+- [x] Prévia não destrutiva do tema e cabeçalho atuais.
+- [ ] Personalização de logotipo, quando viável.
 - [ ] Exportação e importação de configurações com validação e sem segredos.
-- [ ] Testes Android reais, testes de regressão e auditoria de contraste.
+- [x] Workflows de compilação e inspeção de código habilitados na branch V3.
+- [ ] Confirmar resultados dos workflows, testes Android reais, regressão e auditoria de contraste.
 - [ ] Preparar changelog, versão e artefato V3 único.
 
 ## Restrições
