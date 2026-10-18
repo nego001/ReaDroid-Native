@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     private Button share;
     private Button ai;
     private Button project;
+    private Button editExport;
     private JSONObject report;
     private File currentApk;
     private ExplorerView explorerView;
@@ -77,6 +78,21 @@ public class MainActivity extends Activity {
         project.setEnabled(false);
         root.addView(project);
         project.setOnClickListener(v -> ProjectBrief.create(this, report));
+
+        editExport = new Button(this);
+        editExport.setText("Compartilhar plano de alterações");
+        root.addView(editExport);
+        editExport.setOnClickListener(v -> {
+            try {
+                String content = explorerView.getEditPlan().toJson().toString(2);
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(Intent.EXTRA_TEXT, content);
+                startActivity(Intent.createChooser(send, "Compartilhar plano"));
+            } catch (Exception error) {
+                output.setText("Erro ao preparar plano: " + error.getMessage());
+            }
+        });
 
         share = new Button(this);
         share.setText("Compartilhar relatório JSON");
