@@ -2,10 +2,10 @@ package com.readroid.app;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.TreeMap;
+import java.util.TreeMap;
 import java.util.Map;
-import java.util.Set;
+
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.Enumeration;
@@ -40,7 +40,7 @@ public final class ApkDiff {
 
     private static Map<String, String> entries(File apk) throws IOException {
         if (apk == null || !apk.isFile()) throw new IOException("APK indisponível");
-        Map<String, String> result = new HashMap<>();
+        Map<String, String> result = new TreeMap<>();
         try (ZipFile zip = new ZipFile(apk)) {
             Enumeration<? extends ZipEntry> it = zip.entries();
             int count = 0;
@@ -50,7 +50,7 @@ public final class ApkDiff {
                 String name = entry.getName();
                 if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
                     throw new IOException("Caminho ZIP inseguro");
-                if (result.put(name, entry.getCrc() + ":" + entry.getSize()) != null)
+                if (result.put(name, (entry.isDirectory() ? "DIR:" : "FILE:") + entry.getCrc() + ":" + entry.getSize()) != null)
                     throw new IOException("Entrada ZIP duplicada");
             }
         }
