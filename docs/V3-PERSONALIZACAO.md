@@ -7,6 +7,7 @@
 - [x] Quatro cores de destaque e restauração das preferências visuais.
 - [ ] Aplicar cores corretamente a todas as telas, ícones, gráficos e estados de seleção.
 - [x] Ajustes iniciais de densidade e escala de texto nos componentes reutilizáveis.
+- [x] Correção de texto de busca no tema claro, alvos de toque mínimos de 48 dp e descrições da navegação sem rótulos.
 - [ ] Cobertura de escala tipográfica em todas as telas, leitores e diálogos; auditoria de acessibilidade.
 - [x] Alternância de rótulos da navegação e prioridade do atalho favorito na tela inicial.
 - [ ] Organização avançada e reordenação de todos os atalhos.
