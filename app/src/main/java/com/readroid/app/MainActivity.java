@@ -321,7 +321,10 @@ public class MainActivity extends Activity {
                     .setTitle("Descartar todas as alterações?")
                     .setMessage("O APK original não será modificado.")
                     .setNegativeButton("Cancelar", null)
-                    .setPositiveButton("Descartar", (d, w) -> explorerView.getEditPlan().clear())
+                    .setPositiveButton("Descartar", (d, w) -> {
+                        explorerView.getEditPlan().clear();
+                        explorerView.refresh();
+                    })
                     .show())
             .show();
     }
@@ -344,6 +347,7 @@ public class MainActivity extends Activity {
             .setPositiveButton("Manter", null)
             .setNegativeButton("Remover alteração", (dialog, which) -> {
                 explorerView.getEditPlan().remove(path);
+                explorerView.refresh();
                 reviewEditPlan();
             }).show();
     }
