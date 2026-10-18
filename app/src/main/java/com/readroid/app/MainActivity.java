@@ -383,6 +383,7 @@ public class MainActivity extends Activity {
         rebuild.setEnabled(false);
         signatureInfo.setEnabled(false);
         explorerView.getEditPlan().clear();
+        explorerView.setFiles(null, null);
         executor.execute(() -> {
             try {
                 JSONObject resultJson = analyze(uri);
@@ -395,8 +396,8 @@ public class MainActivity extends Activity {
                         + "\n\n" + resultJson.optInt("entries") + " arquivos  •  "
                         + (resultJson.optLong("sizeBytes") / 1024) + " KB"
                         + "\n\nSHA-256\n" + resultJson.optString("sha256"));
-                    projectMetrics.setText("DEX  " + resultJson.optJSONArray("dexFiles").length()
-                        + "     •     BIBLIOTECAS  " + resultJson.optJSONArray("nativeLibraries").length()
+                    projectMetrics.setText("DEX  " + (resultJson.optJSONArray("dexFiles") == null ? 0 : resultJson.optJSONArray("dexFiles").length())
+                        + "     •     BIBLIOTECAS  " + (resultJson.optJSONArray("nativeLibraries") == null ? 0 : resultJson.optJSONArray("nativeLibraries").length())
                         + "     •     ASSETS  " + resultJson.optInt("assets"));
                     JSONObject tree = resultJson.optJSONObject("explorer");
                     explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
