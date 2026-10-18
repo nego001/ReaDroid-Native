@@ -11,11 +11,11 @@ public final class OtaUpdateChecker {
 
     public static OtaRelease check(String endpoint, String trustedKey, int installedCode,
                                    String channel) throws Exception {
-        if (endpoint == null || !endpoint.startsWith("https://"))
+        if (endpoint == null || !endpoint.startsWith("https://") || endpoint.length() > 2048)
             throw new SecurityException("Endpoint OTA deve usar HTTPS");
         URL url = new URL(endpoint);
         if (!"https".equalsIgnoreCase(url.getProtocol()) || url.getUserInfo() != null
-            || url.getRef() != null) throw new SecurityException("Endpoint OTA inválido");
+            || url.getRef() != null || url.getHost().isEmpty()) throw new SecurityException("Endpoint OTA inválido");
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(10000);
         connection.setReadTimeout(10000);
