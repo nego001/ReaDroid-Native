@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
     private Button rebuild;
     private Button signatureInfo;
     private Button signingGuide;
+    private Button localIdentity;
     private static final int REQUEST_EXPORT_APK = 2;
     private JSONObject report;
     private File currentApk;
@@ -121,6 +122,35 @@ public class MainActivity extends Activity {
             .setTitle("Assinatura de APK modificado")
             .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO ReaDroid ainda NÃO assina APKs modificados.")
             .setPositiveButton("Entendi", null).show());
+
+        localIdentity = new Button(this);
+        localIdentity.setText("Minha chave de assinatura local");
+        root.addView(localIdentity);
+        localIdentity.setOnClickListener(v -> executor.execute(() -> {
+            String status;
+            try { status = LocalSigningIdentity.describe(); }
+            catch (Exception error) { status = "Erro: " + error.getMessage(); }
+            final String result = status;
+            runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Identidade local")
+                .setMessage(result + "\n\nA chave pode ser perdida ao desinstalar o ReaDroid ou limpar seus dados. Faça isso somente se compreender que atualizações assinadas por outra chave não são compatíveis.")
+                .setNegativeButton("Fechar", null)
+                .setPositiveButton("Criar se necessário", (dialog, which) ->
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Criar identidade?")
+                        .setMessage("A chave privada ficará no Android Keystore. Ela não será enviada nem exportada. Criar?")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Criar", (d, w) -> executor.execute(() -> {
+                            String detail;
+                            try { detail = LocalSigningIdentity.create(); }
+                            catch (Exception error) { detail = "Falha: " + error.getMessage(); }
+                            final String message = detail;
+                            runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                                .setTitle("Identidade de assinatura")
+                                .setMessage(message).setPositiveButton("OK", null).show());
+                        })).show())
+                .show());
+        }));
 
         rebuild = new Button(this);
         rebuild.setText("Exportar APK modificado (sem assinatura)");
