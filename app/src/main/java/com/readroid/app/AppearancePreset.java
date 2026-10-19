@@ -30,6 +30,24 @@ public final class AppearancePreset {
         if (data == null || data.length() > 8192) throw new IllegalArgumentException("Arquivo de preferências muito grande");
         JSONObject o = new JSONObject(data);
         if (o.getInt("schema") != 1) throw new IllegalArgumentException("Formato de preferências incompatível");
+        // JSON getters can coerce strings such as "130" into a number.
+        // Accept only the documented types; invalid imports must not touch prefs.
+        for (String key : new String[]{"theme", "accent", "display_name", "display_subtitle"}) {
+            if (!(o.opt(key) instanceof String))
+                throw new IllegalArgumentException("Campo textual inválido: " + key);
+        }
+        for (String key : new String[]{"font_percent", "favorite_tab"}) {
+            Object number = o.opt(key);
+            if (!(number instanceof Number)
+                || ((Number) number).doubleValue() % 1.0 != 0.0)
+                throw new IllegalArgumentException("Campo numérico inválido: " + key);
+        }
+        for (String key : new String[]{"compact", "nav_labels"}) {
+            if (!(o.opt(key) instanceof Boolean))
+                throw new IllegalArgumentException("Campo lógico inválido: " + key);
+        }
+        if (o.has("custom_accent") && !(o.opt("custom_accent") instanceof String))
+            throw new IllegalArgumentException("Cor HEX inválida");
         String theme = o.getString("theme");
         String accent = o.getString("accent");
         String customAccent = o.optString("custom_accent", "#1688FF");
@@ -50,7 +68,8 @@ public final class AppearancePreset {
             || !customAccent.matches("#[0-9a-fA-F]{6}")
             || !(radius == 12 || radius == 18 || radius == 26)
             || font < 85 || font > 135 || favorite < 1 || favorite > 4
-            || name.trim().isEmpty() || name.length() > 30 || subtitle.length() > 48)
+            || name.trim().isEmpty() || name.length() > 30 || subtitle.length() > 48
+            || containsControlCharacter(name) || containsControlCharacter(subtitle))
             throw new IllegalArgumentException("Preferências inválidas");
         context.getSharedPreferences("v3_personalizacao", Context.MODE_PRIVATE).edit()
             .putString("theme", theme).putString("accent", accent)
@@ -59,6 +78,13 @@ public final class AppearancePreset {
             .putInt("font_percent", font).putInt("favorite_tab", favorite)
             .putBoolean("compact", compact).putBoolean("nav_labels", labels)
             .putString("display_name", name).putString("display_subtitle", subtitle).apply();
+    }
+
+    private static boolean containsControlCharacter(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isISOControl(value.charAt(index))) return true;
+        }
+        return false;
     }
 
     private static boolean allowed(String value, String... choices) {
