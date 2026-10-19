@@ -672,6 +672,8 @@ public class MainActivity extends Activity {
         homeSection.addView(output);
 
         explorerView = new ExplorerView(this, filesSection);
+        StudioDashboard.featureHeader(this, filesSection, 1, "Arquivos",
+            "Explore pastas, pesquise recursos e compare versões do APK.");
         Button compare = NegrescoTheme.action(this, "Comparar com outro APK", false);
         filesSection.addView(compare);
         compare.setOnClickListener(v -> {
