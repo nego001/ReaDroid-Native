@@ -20,6 +20,8 @@ public final class NegrescoTheme {
     public static int ON_ACCENT = 0xffffffff;
     public static float FONT_SCALE = 1f;
     public static boolean COMPACT = false;
+    public static boolean STUDIO_GLOW = true;
+    public static int CARD_RADIUS = 18;
     private NegrescoTheme() {}
 
     public static void apply(Context context) {
@@ -41,7 +43,18 @@ public final class NegrescoTheme {
         ACCENT = "purple".equals(accent) ? 0xff9b6dff
             : "green".equals(accent) ? 0xff27c99a
             : "orange".equals(accent) ? 0xffffa24a : 0xff1688ff;
-        ON_ACCENT = "green".equals(accent) || "orange".equals(accent) ? 0xff101820 : 0xffffffff;
+        if ("custom".equals(accent)) {
+            String custom = prefs.getString("custom_accent", "#1688FF");
+            if (custom != null && custom.matches("#[0-9a-fA-F]{6}"))
+                ACCENT = Color.parseColor(custom);
+        }
+        // Choose contrasting text for any preset or custom accent.
+        double luminance = (0.2126 * Color.red(ACCENT)
+            + 0.7152 * Color.green(ACCENT) + 0.0722 * Color.blue(ACCENT)) / 255.0;
+        ON_ACCENT = luminance >= 0.60 ? 0xff101820 : 0xffffffff;
+        STUDIO_GLOW = prefs.getBoolean("studio_glow", true);
+        int radius = prefs.getInt("card_radius", 18);
+        CARD_RADIUS = radius == 12 || radius == 18 || radius == 26 ? radius : 18;
     }
 
     public static int dp(Context context, int value) {
@@ -62,13 +75,13 @@ public final class NegrescoTheme {
      * inexpensive on older Android devices.
      */
     public static GradientDrawable studioCard(Context context, boolean highlighted) {
-        int start = mix(SURFACE, ACCENT, highlighted ? 0.13f : 0.055f);
+        int start = mix(SURFACE, ACCENT, STUDIO_GLOW ? (highlighted ? 0.13f : 0.055f) : 0.025f);
         int end = mix(SURFACE, BACKGROUND, 0.23f);
         GradientDrawable gradient = new GradientDrawable(
             GradientDrawable.Orientation.TL_BR, new int[]{start, end});
-        gradient.setCornerRadius(dp(context, COMPACT ? 13 : 18));
+        gradient.setCornerRadius(dp(context, CARD_RADIUS));
         gradient.setStroke(dp(context, 1),
-            highlighted ? mix(ACCENT, BORDER, 0.32f) : BORDER);
+            highlighted && STUDIO_GLOW ? mix(ACCENT, BORDER, 0.32f) : BORDER);
         return gradient;
     }
 
