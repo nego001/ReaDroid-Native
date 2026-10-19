@@ -20,6 +20,12 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Exportação/importação do novo conjunto de preferências, com validação e compatibilidade com presets antigos de esquema 1.
 - [x] Cartões de ações e cabeçalhos explicativos nas abas Construir, Segurança e IA.
 - [x] Lista de arquivos com cartões e tipografia de metadados mais legível.
+- [x] Paginação do explorador corrigida para realmente renderizar itens além dos 120 primeiros.
+- [x] Regressão de paginação com 145 entradas em View Android real.
+- [x] Testes Android de exportação/importação visual, com round-trip de 11 preferências e compatibilidade com presets antigos.
+- [x] Importador com tipos JSON estritos, sem coerção silenciosa nem caracteres de controle na identidade.
+- [x] Testes Android de reconstrução sem assinatura: alteração textual, preservação do original, remoção de assinaturas antigas, rejeição de caminhos inseguros e edições inexistentes.
+- [x] Dez testes instrumentados executados com sucesso no Android API 29.
 - [x] OTA mantém avisos verdadeiros sobre configuração incompleta e sem instalação automática.
 - [x] Navegação inferior com seleção visual em cartões e descrições acessíveis.
 - [x] Ajuste de contraste WCAG nos botões, aviso para cor HEX pouco legível.
@@ -40,6 +46,12 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - Nenhuma versão final V3 deve ser publicada automaticamente.
 - A arte referência tem brilhos e detalhes decorativos que foram reinterpretados com
   gradientes e desenho vetorial, para evitar consumo excessivo de GPU/CPU.
+
+## Nova fase de regressões
+- 10/10 testes instrumentados aprovados no workflow da revisão `abb61da5`: https://github.com/nego001/ReaDroid-Native/actions/runs/39188439031
+- A simulação visual de 320dp e fonte do sistema em 130% exige que o APK seja reinstalado após os testes instrumentados. O fluxo foi ajustado e aguarda confirmação final.
+- Os testes de reconstrução validam apenas um **ZIP APK sem assinatura**. Não demonstram que o resultado instala no Android.
+- O recurso de exportação/importação JSON foi exercitado diretamente no Android. O fluxo completo de escolha de arquivos pelo sistema ainda requer um teste manual de UX.
 
 ## Validação
 - [x] Builds Android intermediários concluídos com sucesso na branch.
