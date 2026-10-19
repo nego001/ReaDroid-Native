@@ -41,17 +41,20 @@ def clickable_matching(nodes, names):
 
 def picker_downloads():
     nodes = inspect("SAF picker")
-    # If the browser already shows the exported file, keep the current location.
-    if match_node(nodes, text=EXPORTED_FILE, partial=True):
+    # DocumentsUI often starts in Downloads. Its filename text field exists
+    # even before a file is saved, so detect the folder header instead.
+    if match_node(nodes, text="FILES ON DOWNLOADS") is not None:
+        return
+    if match_node(nodes, text="FILES IN DOWNLOADS") is not None:
         return
     drawer = clickable_matching(nodes,
         ["Show roots", "Show navigation drawer", "Navigate up",
          "Mostrar raízes", "Mostrar navegação", "Navegar para cima"])
-    if drawer:
+    if drawer is not None:
         tap(drawer)
         nodes = inspect("SAF root drawer")
     downloads = clickable_matching(nodes, ["Downloads", "Download", "Transferências"])
-    if downloads:
+    if downloads is not None:
         tap(downloads)
         inspect("SAF Downloads")
         return
@@ -59,7 +62,7 @@ def picker_downloads():
     adb("shell", "input", "tap", "40", "110")
     nodes = inspect("SAF alternate drawer")
     downloads = clickable_matching(nodes, ["Downloads", "Download", "Transferências"])
-    if not downloads:
+    if downloads is None:
         raise AssertionError("Downloads location missing in Android DocumentsUI")
     tap(downloads)
     inspect("SAF Downloads")
@@ -68,13 +71,13 @@ def picker_downloads():
 def tap_save():
     nodes = inspect("SAF Save document")
     save = clickable_matching(nodes, ["SAVE", "Save", "Salvar"])
-    if not save:
+    if save is None:
         raise AssertionError("SAF save button is not visible")
     tap(save)
     nodes = inspect("SAF export completed")
     # System picker may require an additional overwrite confirmation.
     overwrite = clickable_matching(nodes, ["REPLACE", "Replace", "Substituir"])
-    if overwrite:
+    if overwrite is not None:
         tap(overwrite)
     click_named(text="OK", timeout=12)
 
