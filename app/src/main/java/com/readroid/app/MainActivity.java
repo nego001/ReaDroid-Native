@@ -49,6 +49,7 @@ public class MainActivity extends Activity {
     private NavGlyph[] navigationIcons;
     private LinearLayout[] navigationContainers;
     private int selectedSection = 0;
+    private Uri selectedApkUri;
     private TextView apkSummary;
     private TextView projectMetrics;
     private ScrollView contentScroll;
@@ -830,7 +831,11 @@ public class MainActivity extends Activity {
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
-        restoreWorkspace();
+        boolean retained = restoreWorkspace();
+        if (state != null) {
+            selectedApkUri = state.getParcelable("selected_apk_uri");
+            if (!retained && selectedApkUri != null) analyzeSelectedApk(selectedApkUri);
+        }
     }
 
     /** The same report renderer is used for fresh APKs and retained workspaces. */
@@ -869,11 +874,11 @@ public class MainActivity extends Activity {
             explorerView.getEditPlan().snapshot(), selectedSection);
     }
 
-    private void restoreWorkspace() {
+    private boolean restoreWorkspace() {
         Object previous = getLastNonConfigurationInstance();
-        if (!(previous instanceof WorkspaceState)) return;
+        if (!(previous instanceof WorkspaceState)) return false;
         WorkspaceState workspace = (WorkspaceState) previous;
-        if (!workspace.apk.isFile()) return;
+        if (!workspace.apk.isFile()) return false;
         currentApk = workspace.apk;
         displayAnalyzedReport(workspace.report);
         for (Map.Entry<String, String> edit : workspace.changes.entrySet()) {
@@ -885,6 +890,7 @@ public class MainActivity extends Activity {
         }
         explorerView.refresh();
         showSection(workspace.activeSection);
+        return true;
     }
 
     private void reviewEditPlan() {
@@ -1020,7 +1026,11 @@ public class MainActivity extends Activity {
         if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
         if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
         if (request != 1) return;
-        Uri uri = data.getData();
+        analyzeSelectedApk(data.getData());
+    }
+
+    private void analyzeSelectedApk(Uri uri) {
+        selectedApkUri = uri;
         report = null;
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
         output.setText("Analisando...");
@@ -1036,11 +1046,13 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 JSONObject resultJson = analyze(uri);
+                if (Thread.currentThread().isInterrupted()) return;
                 runOnUiThread(() -> {
-                    displayAnalyzedReport(resultJson);
+                    if (!isFinishing() && !isDestroyed()) displayAnalyzedReport(resultJson);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     output.setText("Erro: " + error.getMessage());
                     apkSummary.setText("FALHA AO ABRIR PROJETO");
                     projectMetrics.setText("ESTRUTURA   •   Indisponível");
@@ -1205,6 +1217,8 @@ public class MainActivity extends Activity {
             json.put("hasManifest", manifest);
             try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
+            if (Thread.currentThread().isInterrupted())
+                throw new java.io.InterruptedIOException("Análise interrompida");
             currentApk = file;
             return json;
         } catch (Exception error) {
@@ -1235,6 +1249,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putInt("active_studio_section", selectedSection);
+        if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
         super.onSaveInstanceState(outState);
     }
 
