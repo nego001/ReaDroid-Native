@@ -98,8 +98,18 @@ public final class KeyboardAndRotationInstrumentedTest {
                 assertFalse("DPAD input must have exited touch mode", files.isInTouchMode());
                 assertTrue("Keyboard must focus Arquivos", files.requestFocus());
             });
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
-                KeyEvent.KEYCODE_ENTER);
+            // A global instrumentation key may be swallowed by a transient
+            // emulator system window. Dispatch actual down/up KeyEvents to the
+            // focused production View so this test checks Android's View
+            // keyboard activation rather than launcher window timing.
+            scenario.onActivity(activity -> {
+                View files = requiredTab(activity.getWindow().getDecorView(), "Arquivos");
+                assertTrue("Focused view must still receive ENTER", files.hasFocus());
+                assertTrue("ENTER down was not handled", files.dispatchKeyEvent(
+                    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)));
+                assertTrue("ENTER up was not handled", files.dispatchKeyEvent(
+                    new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)));
+            });
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 View files = requiredTab(root, "Arquivos");
