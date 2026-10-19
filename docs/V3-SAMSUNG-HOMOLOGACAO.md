@@ -32,6 +32,7 @@ passos, **não** certifica que eles já ocorreram.
 | TEMA-09 | Alternar OLED, Claro e Grafite e repetir navegação | Texto, foco e botões permanecem legíveis; projeto não é perdido |
 | OTA-10 | Selecionar Estável e Beta e tocar em verificar atualizações | Exibe bloqueio de OTA não configurada; nenhuma instalação ou download inicia |
 | SEGURANCA-11 | Conferir arquivo original de teste após ações de análise | Arquivo original não foi alterado ou assinado pelo app |
+| EXPLORADOR-12 | Abrir pasta com muitos arquivos, carregar mais, filtrar/pesquisar e girar o aparelho | Pasta, filtro, consulta, página carregada e projeto continuam acessíveis sem alterar o APK original |
 
 Se ocorrer falha, registre **reprodução, resultado esperado, resultado observado,
 versão do sistema e foto/captura sem dados pessoais**. Marque cada caso

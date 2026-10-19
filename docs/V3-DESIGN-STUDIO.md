@@ -171,3 +171,14 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Ao restaurar, a pasta só é aceita se ainda corresponder a arquivos do mesmo projeto, e filtros e valores de paginação são validados antes de renderizar. Ao carregar um APK diferente, a navegação continua sendo reiniciada.
 - Teste instrumentado adicional usa um ZIP sintético, seleciona Arquivos, aplica pasta/filtro/busca e exige preservação após recriação da tela; o arquivo original permanece intacto.
 - **Limite:** não há persistência após morte do processo, desinstalação, limpeza de cache ou perda de permissões. O comportamento em Samsung físico continua pendente.
+
+## Explorador: restauração de pasta, pesquisa, filtro e paginação (19/10/2026)
+- `479de2d6`: o `WorkspaceState` passa a carregar `ExplorerView.BrowseState` (pasta, filtro, busca, limite de página), em memória, junto do APK, relatório e edições.
+- A restauração exige uma pasta ainda presente no projeto e categoria conhecida, além de limitar a busca e a paginação. Abrir outro APK continua zerando a navegação do explorador.
+- `e11a01d9`: novos testes instrumentados incluem busca e filtro restaurados, além de uma pasta com 145 entradas reais em ZIP sintético, carregamento da página dois e comparação dos bytes originais após recriação da Activity.
+- Uma execução anterior revelou instabilidade intermitente no teste de foco por teclado: `#39271760568` falhou antes do DPAD sair do modo toque; a execução `#39272076781` aprovou o mesmo cenário, confirmando natureza intermitente. Não era falha detectada na restauração do explorador.
+- `afe426c4`: o teste de teclado agora aguarda a UI e repete até cinco eventos de DPAD, exigindo que a aba realmente saia do modo de toque, em vez de ignorar a validação.
+- **Android 10 API 29: 28/28 testes instrumentados aprovados**, sem ignorados, com UI 320dp/fonte 130% e OTA bloqueada: https://github.com/nego001/ReaDroid-Native/actions/runs/39272579774.
+- **Android 15 API 35: 28/28 testes instrumentados aprovados**, sem ignorados, com smoke de navegação e UI 320dp/fonte 130%: https://github.com/nego001/ReaDroid-Native/actions/runs/39272579450.
+- `Source checks` e `Android APK` também aprovados no commit `afe426c4`.
+- Escopo: regressão de recriação da Activity em emuladores. **Não** demonstra sobrevivência após término do processo Android, nem uso de TalkBack, navegação por gestos ou teclado USB/BT em Samsung físico. OTA e release V3 definitivo permanecem desabilitados.
