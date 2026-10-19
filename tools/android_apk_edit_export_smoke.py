@@ -139,13 +139,21 @@ def review_and_export():
     if match_node(nodes, text=OUTPUT_APK, partial=True) is None:
         raise AssertionError("Default unsigned filename was not supplied")
     click_text("SAVE")
-    node = wait_for_node("APK não assinado exportado", timeout=45)
+    wait_for_node("Exportação verificada", timeout=45)
     nodes = hierarchy()
-    if not any("conferido por SHA-256" in n.attrib.get("text", "") for n in nodes):
+    if not any("verificado por SHA-256" in n.attrib.get("text", "") for n in nodes):
         inspect("No export SHA verification")
         raise AssertionError("App did not confirm checksum verified SAF export")
+    if not any("NÃO está assinado" in n.attrib.get("text", "") for n in nodes):
+        raise AssertionError("Missing unsigned APK warning")
     snapshot("v3-edit-03-export-verified.png")
-    click_text("ENTENDI")
+    click_text("DETALHES TÉCNICOS")
+    nodes = inspect("Technical export report")
+    if not any("Pré-verificação estrutural aprovada" in n.attrib.get("text", "")
+               for n in nodes):
+        raise AssertionError("Technical verification report is missing")
+    snapshot("v3-edit-04-export-details.png")
+    click_text("FECHAR")
 
 
 def check_export(source_sha):
