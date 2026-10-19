@@ -429,7 +429,9 @@ public class MainActivity extends Activity {
         togglePersonalization.setOnClickListener(v -> {
             boolean expand = personalizationGroup.getVisibility() != View.VISIBLE;
             personalizationGroup.setVisibility(expand ? View.VISIBLE : View.GONE);
-            togglePersonalization.setText(expand ? "Personalização  ▴" : "Personalização  ▾");
+            getPreferences(MODE_PRIVATE).edit().putBoolean("studio_settings_expanded", expand).apply();
+            togglePersonalization.setText(
+                expand ? "Opções de aparência  ▴" : "Opções de aparência  ▾");
         });
 
         TextView otaTitle = new TextView(this);
