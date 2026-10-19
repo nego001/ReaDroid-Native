@@ -44,6 +44,8 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:connectedDebugAndroidTest
+            # Android instrumentation may uninstall the target APK during cleanup.
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell wm size 320x640
             adb shell wm density 160
             adb shell settings put system font_scale 1.3
@@ -57,4 +59,7 @@ jobs:
           path: |
             v3-studio-narrow-*.png
             v3-studio-android-hierarchy.xml
+            v3-studio-narrow-runtime.txt
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
           if-no-files-found: warn
