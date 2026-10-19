@@ -27,7 +27,10 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Troca de tema/rotação retêm APK, relatório e plano textual na mesma sessão.
 - [x] Recuperação do arquivo selecionado quando a análise é interrompida pela recriação da Activity.
 - [x] Estado aberto/fechado do painel de personalização persistido separadamente.
-- [x] Teste no emulador Android (API 29): APK instalado, Início → Arquivos → Segurança → Início, captura de tela gerada.\n- [x] Correção da automação: shell POSIX e detecção de crashes tratada pelo script Python.\n- [x] Tema Android e cores da barra de status/navegação alinhados à preferência visual.\n- [x] Botão Voltar nas outras abas retorna para Início.
+- [x] Teste no emulador Android (API 29): APK instalado, Início → Arquivos → Segurança → Início, captura de tela gerada.
+- [x] Correção da automação: shell POSIX e detecção de crashes tratada pelo script Python.
+- [x] Tema Android e cores da barra de status/navegação alinhados à preferência visual.
+- [x] Botão Voltar nas outras abas retorna para Início.
 
 ## Restrições
 - **Não** criar funcionalidades de assinatura APK que o programa ainda não suporta.
@@ -39,13 +42,25 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
   gradientes e desenho vetorial, para evitar consumo excessivo de GPU/CPU.
 
 ## Validação
-- [x] Builds Android intermediários concluídos com sucesso na branch.\n- [x] Confirmada compilação Android e verificação de código após `2ebf8208`.
-- [x] Examinar a captura real do emulador da primeira execução que abriu e navegou corretamente.\n- [x] Workflow de smoke aprovado no commit `2ebf8208` (Android API 29): instalação, abertura, navegação, screenshot e ausência de erros AndroidRuntime.\n- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
-- [ ] Testar seleção real de APK, exploração de arquivos, relatório e exportação.
-- [ ] Conferir tema claro, fonte a 130%, modo compacto e largura de 320–360 dp.
+- [x] Builds Android intermediários concluídos com sucesso na branch.
+- [x] Confirmada compilação Android e verificação de código após `2ebf8208`.
+- [x] Examinar a captura real do emulador da primeira execução que abriu e navegou corretamente.
+- [x] Workflow de smoke aprovado no commit `2ebf8208` (Android API 29): instalação, abertura, navegação, screenshot e ausência de erros AndroidRuntime.
+- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
+- [x] Seleção SAF de APK real pelo DocumentsUI, análise e exploração de pastas/arquivos em emulador API 29.
+- [x] Troca OLED → Claro com um projeto aberto, sem perder os dados do APK.
+- [ ] Testar exportação, importação de presets e o fluxo de edição de arquivos com APK real.
+- [x] Capturas reais dos temas OLED e Claro, com contraste e navegação visivelmente corretos em emulador.
+- [ ] Confirmar resultado do novo teste automatizado com fonte a 130% e modo compacto.
+- [ ] Testar largura de 320–360 dp e telas físicas de diferentes fabricantes.
 - [ ] Testar importação de presets anteriores e do novo conjunto.
 - [ ] Confirmar que o código OTA permanece bloqueado quando não configurado.
 - [ ] Revisar acessibilidade com leitor de tela e teclado físico.
+
+## Evidências verificáveis
+- Primeiro teste de APK e tema aprovado: https://github.com/nego001/ReaDroid-Native/actions/runs/39183969729
+- Builds Android e verificações de código aprovados até `e7830d7c`.
+- Teste estendido (130% + compacto) solicitado no workflow `V3 APK and theme smoke`, resultado ainda pendente na revisão do documento.
 
 Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 `v3.0.0-preview.1` e de futuras versões definitivas.
