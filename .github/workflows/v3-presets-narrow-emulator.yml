@@ -4,6 +4,9 @@ on:
     branches: [feature/v3-design-studio]
     paths:
       - 'app/src/androidTest/**'
+      - 'gradle.properties'
+      - 'app/src/main/java/com/readroid/app/AppearancePreset.java'
+      - 'app/src/main/java/com/readroid/app/ApkRebuilder.java'
       - '.github/workflows/v3-presets-narrow-emulator.yml'
       - 'tools/android_narrow_smoke.py'
   workflow_dispatch:
