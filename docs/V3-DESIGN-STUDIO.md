@@ -250,3 +250,17 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - [Issue #4](https://github.com/nego001/ReaDroid-Native/issues/4): sincronizar **projetos que o usuário decidir adicionar ao workspace NegrescoDroid**, com modo offline por padrão e, futuramente, E2EE e histórico de revisões. Arquivos de origem enormes exigirão escolha explícita para upload.
 - [Issue #3](https://github.com/nego001/ReaDroid-Native/issues/3): compatibilidade de projetos com Windows/Linux e ferramentas EXE/ELF + REA, **após** Android.
 - Apenas documentação/roadmap: **nenhum serviço de nuvem está configurado, nenhum arquivo foi enviado, não há sincronização automática e o explorador multi-GB ainda não está pronto**.
+
+## CTA — Controle de Análise, IA coordenadora multiplataforma (19/10/2026)
+- Requisito registrado em [issue #5](https://github.com/nego001/ReaDroid-Native/issues/5):
+  o CTA será a **única IA compartilhada entre Android, Windows e Linux**,
+  distribuindo trabalho para agentes IA **exclusivos de cada plataforma**.
+- A liberação de operações será **adaptativa por aparelho, provedor, formato,
+  tamanho, espaço, RAM, motores homologados e consentimento**. Para arquivos
+  de 1 a 500 GB ou mais: separar inspeção de metadados, streaming, indexação
+  com seek e edição/reconstrução; 500 GB não é promessa de suporte no Android.
+- Primeira política determinística e testes em
+  `AnalysisCapacityPolicy` não habilitam análise real de 500 GB nem
+  implementam o CTA; limites atuais permanecem intactos.
+- Especificação completa no documento
+  [MULTI_GB_EXPLORER_AND_SYNC.md](MULTI_GB_EXPLORER_AND_SYNC.md).

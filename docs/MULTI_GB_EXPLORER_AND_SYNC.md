@@ -117,3 +117,36 @@
 - Redesenho visual dos diálogos do editor separado na [issue #1](https://github.com/nego001/ReaDroid-Native/issues/1).
 - Nenhum backend, conta, credencial, chave, sincronização ou leitura multi-GB
   ilimitada foi criado com este documento.
+
+## 6. CTA e limites adaptativos por operação (19/10/2026)
+
+- **CTA — Controle de Análise** será a **IA coordenadora única e multiplataforma**.
+  Agentes IA especializados serão **exclusivos de cada sistema operacional**:
+  Android (APK/SAF/Keystore), Windows (PE/EXE/.NET/REA) e Linux (ELF/PE/REA).
+  Comunicação por contrato de capacidades versionado, sem compartilhar segredos
+  ou executar automaticamente binários importados.
+- O CTA não altera limites de segurança sozinho: solicita ao motor local sua
+  lista comprovada de capacidades e aplica uma política determinística,
+  antes de recomendar tarefas e obter autorização.
+- Arquivos **1 GB, 5 GB e até 500 GB** são **alvos de teste de capacidade**,
+  não garantia de que todo hardware abra/edite esse volume. O CTA precisa
+  distinguir **metadados**, **hash streaming**, **indexação por acesso
+  aleatório** e **cópia/edição/exportação**, pois cada uma tem exigências
+  completamente diferentes.
+- Em arquivo de 500 GB num Samsung sem 500 GB livres, por exemplo, poderá
+  propor streaming se existir provedor legível, engine homologado, tempo,
+  bateria e autorização; não poderá propor copiar/reconstruir localmente.
+  Para ZIP64, índice paginado exige seek/range real. Sem suporte: explicar
+  limites e não avançar indevidamente.
+- Contrato experimental em `AnalysisCapacityPolicy.java`, com testes
+  sintéticos de 1 GiB, 5 GiB, 500 GB, tamanho desconhecido, motor ausente,
+  acesso sem seek, falta de espaço e autorização. **Não integra ainda o
+  importador nem controla um modelo de IA**; evita fingir suporte que
+  `ApkImportPreflight` e `ApkExplorer` ainda não possuem.
+- Não usar o CTA para contornar permissão SAF, assinatura, DRM, proteção do
+  Android, limites de RAM, rede, isolamento das IAs locais ou consentimento.
+- A execução/seleção inteligente do CTA e o motor de streaming/ranged
+  dependerão de benchmark e segurança na [issue #5](https://github.com/nego001/ReaDroid-Native/issues/5);
+  infraestrutura na [issue #2](https://github.com/nego001/ReaDroid-Native/issues/2),
+  desktop na [issue #3](https://github.com/nego001/ReaDroid-Native/issues/3)
+  e sincronização E2EE na [issue #4](https://github.com/nego001/ReaDroid-Native/issues/4).
