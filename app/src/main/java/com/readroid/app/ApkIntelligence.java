@@ -4,10 +4,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * Read-only, offline APK structural advisor. It detects file-name indicators,
@@ -19,31 +17,27 @@ public final class ApkIntelligence {
 
     public static JSONObject inspect(JSONObject analysis) throws Exception {
         if (analysis == null) throw new IllegalArgumentException("Relatório ausente");
-        Set<String> paths = new LinkedHashSet<>();
+        // Scan the existing report once using fixed-size flags. In particular,
+        // never allocate another 150k-path set while loading a large APK.
+        boolean[] signals = new boolean[4]; // Unity, Unreal, Flutter, React Native
         JSONObject explorer = analysis.optJSONObject("explorer");
         JSONArray files = explorer == null ? null : explorer.optJSONArray("files");
         if (files != null) {
             for (int i = 0; i < files.length(); i++) {
                 JSONObject file = files.optJSONObject(i);
-                if (file != null) paths.add(file.optString("path", "").toLowerCase(Locale.ROOT));
+                if (file != null) mark(file.optString("path", ""), signals);
             }
         }
-        // Some callers only provide the older partial analysis fields.
         JSONArray libs = analysis.optJSONArray("nativeLibraries");
         if (libs != null) for (int i = 0; i < libs.length(); i++)
-            paths.add(libs.optString(i, "").toLowerCase(Locale.ROOT));
+            mark(libs.optString(i, ""), signals);
 
         List<String> engines = new ArrayList<>();
         JSONArray evidence = new JSONArray();
-        boolean unity = matchSuffix(paths, "/libunity.so") || matchSuffix(paths, "/libil2cpp.so")
-            || matchPrefix(paths, "assets/bin/data/");
-        boolean unreal = matchSuffix(paths, "/libue4.so") || matchSuffix(paths, "/libunreal.so")
-            || matchPrefix(paths, "assets/ue4game/");
-        boolean flutter = matchSuffix(paths, "/libflutter.so")
-            || matchPrefix(paths, "assets/flutter_assets/");
-        boolean react = paths.contains("assets/index.android.bundle")
-            || paths.contains("assets/index.android.hermes")
-            || matchSuffix(paths, "/libreactnativejni.so");
+        boolean unity = signals[0];
+        boolean unreal = signals[1];
+        boolean flutter = signals[2];
+        boolean react = signals[3];
 
         if (unity) {
             engines.add("Unity");
@@ -88,14 +82,17 @@ public final class ApkIntelligence {
         return profile;
     }
 
-    private static boolean matchSuffix(Set<String> paths, String suffix) {
-        for (String path : paths) if (path.endsWith(suffix)) return true;
-        return false;
-    }
-
-    private static boolean matchPrefix(Set<String> paths, String prefix) {
-        for (String path : paths) if (path.startsWith(prefix)) return true;
-        return false;
+    private static void mark(String value, boolean[] flags) {
+        String path = value.toLowerCase(Locale.ROOT);
+        if (path.endsWith("/libunity.so") || path.endsWith("/libil2cpp.so")
+                || path.startsWith("assets/bin/data/")) flags[0] = true;
+        if (path.endsWith("/libue4.so") || path.endsWith("/libunreal.so")
+                || path.startsWith("assets/ue4game/")) flags[1] = true;
+        if (path.endsWith("/libflutter.so") || path.startsWith("assets/flutter_assets/"))
+            flags[2] = true;
+        if (path.equals("assets/index.android.bundle")
+                || path.equals("assets/index.android.hermes")
+                || path.endsWith("/libreactnativejni.so")) flags[3] = true;
     }
 
     public static String describe(JSONObject profile) {
