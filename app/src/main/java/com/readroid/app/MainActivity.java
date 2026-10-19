@@ -1192,24 +1192,32 @@ public class MainActivity extends Activity {
                 ApkRebuilder.rebuild(source, temp, changes);
                 final String verification = RebuildVerifier.verify(temp, changes);
                 final String preflight = SigningPreflight.inspect(temp);
-                try (InputStream in = new FileInputStream(temp);
-                     OutputStream out = getContentResolver().openOutputStream(destination, "w")) {
-                    if (out == null) throw new IOException("Destino inacessível");
-                    byte[] buffer = new byte[65536];
-                    int n;
-                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
-                }
-                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
-                    .setTitle("APK não assinado exportado")
-                    .setMessage(verification + "\\n\\n" + preflight + "\\n\\nO arquivo original foi preservado.")
-                    .setPositiveButton("OK", null).show());
+                final long exportedBytes = SafExportVerifier.copyAndVerify(
+                    getContentResolver(), temp, destination);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("APK não assinado exportado")
+                        .setMessage("Arquivo gravado e conferido por SHA-256 (" + exportedBytes
+                            + " bytes).\n\n" + verification + "\n\n" + preflight
+                            + "\n\nO APK original foi preservado. NÃO instale este ZIP como APK final.")
+                        .setPositiveButton("Entendi", null).show();
+                });
             } catch (Exception error) {
-                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
-                    .setTitle("Falha na reconstrução").setMessage(error.getMessage())
-                    .setPositiveButton("OK", null).show());
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Falha ao exportar")
+                        .setMessage(error.getMessage()
+                            + "\n\nA exportação não foi confirmada. Se um arquivo parcial aparecer"
+                            + " em Downloads, descarte-o. O APK original permanece intacto.")
+                        .setPositiveButton("OK", null).show();
+                });
             } finally {
                 if (temp != null) temp.delete();
-                runOnUiThread(() -> rebuild.setEnabled(true));
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) rebuild.setEnabled(true);
+                });
             }
         });
     }
