@@ -47,6 +47,8 @@ public class MainActivity extends Activity {
     private LinearLayout aiSection;
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
+    private LinearLayout[] navigationContainers;
+    private int selectedSection = 0;
     private TextView apkSummary;
     private TextView projectMetrics;
     private ScrollView contentScroll;
@@ -112,12 +114,19 @@ public class MainActivity extends Activity {
             .getBoolean("nav_labels", true);
         navigationItems = new TextView[tabs.length];
         navigationIcons = new NavGlyph[tabs.length];
+        navigationContainers = new LinearLayout[tabs.length];
         for (int index = 0; index < tabs.length; index++) {
             final int target = index;
             LinearLayout tabContainer = new LinearLayout(this);
             tabContainer.setOrientation(LinearLayout.VERTICAL);
             tabContainer.setGravity(android.view.Gravity.CENTER);
-            nav.addView(tabContainer, new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 62), 1f));
+            tabContainer.setMinimumHeight(NegrescoTheme.dp(this, 56));
+            tabContainer.setFocusable(true);
+            navigationContainers[index] = tabContainer;
+            LinearLayout.LayoutParams navParams =
+                new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 64), 1f);
+            navParams.setMargins(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
+            nav.addView(tabContainer, navParams);
             NavGlyph glyph = new NavGlyph(this, index);
             tabContainer.addView(glyph, new LinearLayout.LayoutParams(NegrescoTheme.dp(this, 27), NegrescoTheme.dp(this, 27)));
             navigationIcons[index] = glyph;
@@ -856,11 +865,20 @@ public class MainActivity extends Activity {
 
     private void showSection(int index) {
         LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
+        if (index < 0 || index >= sections.length) return;
+        selectedSection = index;
         for (int i = 0; i < sections.length; i++) {
-            sections[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
-            navigationItems[i].setTextColor(i == index ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
-            navigationIcons[i].setSelectedState(i == index);
-            navigationItems[i].setTypeface(null, i == index ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            boolean selected = i == index;
+            sections[i].setVisibility(selected ? View.VISIBLE : View.GONE);
+            navigationItems[i].setTextColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
+            navigationIcons[i].setSelectedState(selected);
+            navigationContainers[i].setBackground(NegrescoTheme.navigationSurface(this, selected));
+            navigationContainers[i].setSelected(selected);
+            navigationContainers[i].setContentDescription(
+                "Seção " + navigationItems[i].getText()
+                    + (selected ? ", selecionada" : ""));
+            navigationItems[i].setTypeface(null,
+                selected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         }
         contentScroll.scrollTo(0, 0);
     }
