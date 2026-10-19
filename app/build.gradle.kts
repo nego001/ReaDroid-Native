@@ -6,8 +6,8 @@ android {
         applicationId = "com.readroid.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "3.0.0-preview.2"
+        versionCode = 3
+        versionName = "3.0.0-preview.3-dev"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
