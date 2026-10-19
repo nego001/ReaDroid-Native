@@ -749,16 +749,141 @@ public class MainActivity extends Activity {
         editExport.setText("Compartilhar plano de alterações");
         buildSection.addView(editExport);
         editExport.setOnClickListener(v -> {
-            try {
-                String content = explorerView.getEditPlan().toJson().toString(2);
-                Intent send = new Intent(Intent.ACTION_SEND);
-                send.setType("text/plain");
-                send.putExtra(Intent.EXTRA_TEXT, content);
-                startActivity(Intent.createChooser(send, "Compartilhar plano"));
-            } catch (Exception error) {
-                output.setText("Erro ao preparar plano: " + error.getMessage());
+            if (explorerView.getEditPlan().size() == 0) {
+                new android.app.AlertDialog.Builder(this)
+                    .setMessage("Não há alterações para compartilhar.")
+                    .setPositiveButton("OK", null).show();
+                return;
             }
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Compartilhar alterações sem criptografia?")
+                .setMessage("Este compartilhamento pode incluir textos internos do APK e "
+                    + "enviará o conteúdo ao aplicativo escolhido. "
+                    + "Para guardar uma cópia privada neste aparelho, prefira "
+                    + "a recuperação criptografada.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Compartilhar", (dialog, which) -> {
+                    try {
+                        String content = explorerView.getEditPlan().toJson().toString(2);
+                        Intent send = new Intent(Intent.ACTION_SEND);
+                        send.setType("text/plain");
+                        send.putExtra(Intent.EXTRA_TEXT, content);
+                        startActivity(Intent.createChooser(send, "Compartilhar plano"));
+                    } catch (Exception error) {
+                        output.setText("Erro ao preparar plano: " + error.getMessage());
+                    }
+                }).show();
         });
+
+        Button saveRecovery = NegrescoTheme.action(this,
+            "Salvar cópia de recuperação criptografada", false);
+        buildSection.addView(saveRecovery);
+        saveRecovery.setOnClickListener(v -> {
+            if (currentApk == null || !currentApk.isFile() || report == null
+                || explorerView.getEditPlan().size() == 0) {
+                new android.app.AlertDialog.Builder(this)
+                    .setMessage("Abra um APK e registre pelo menos uma alteração antes "
+                        + "de criar a cópia de recuperação.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Salvar plano neste aparelho?")
+                .setMessage("O plano será criptografado com Android Keystore e guardado "
+                    + "apenas no armazenamento privado. Substitui a cópia anterior; "
+                    + "não inclui o APK original, não usa nuvem e não é salvamento automático. "
+                    + "Para recuperar, será necessário abrir novamente o mesmo APK.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Criptografar e salvar", (dialog, which) -> {
+                    final File source = currentApk;
+                    final Map<String, String> changes = explorerView.getEditPlan().snapshot();
+                    executor.execute(() -> {
+                        try {
+                            new RecoveryVault(this).save(source, changes);
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) return;
+                                new android.app.AlertDialog.Builder(this)
+                                    .setTitle("Cópia protegida")
+                                    .setMessage("Plano salvo localmente com criptografia. "
+                                        + "Novas edições não entram na cópia até salvar outra vez.")
+                                    .setPositiveButton("OK", null).show();
+                            });
+                        } catch (Exception error) {
+                            showRecoveryError("Falha ao salvar cópia", error);
+                        }
+                    });
+                }).show();
+        });
+
+        Button restoreRecovery = NegrescoTheme.action(this,
+            "Recuperar plano salvo neste aparelho", false);
+        buildSection.addView(restoreRecovery);
+        restoreRecovery.setOnClickListener(v -> {
+            if (!new RecoveryVault(this).hasCheckpoint()) {
+                new android.app.AlertDialog.Builder(this)
+                    .setMessage("Nenhuma cópia de recuperação foi encontrada.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
+            if (currentApk == null || !currentApk.isFile() || report == null) {
+                new android.app.AlertDialog.Builder(this)
+                    .setMessage("Abra novamente o APK original para verificar sua "
+                        + "identidade antes de recuperar as alterações.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
+            final File source = currentApk;
+            executor.execute(() -> {
+                try {
+                    final Map<String, String> changes =
+                        new RecoveryVault(this).loadForSource(source);
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed() || source != currentApk) return;
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Recuperar " + changes.size() + " alterações?")
+                            .setMessage("A cópia foi autenticada e pertence a este APK "
+                                + "(SHA-256 conferido). Recuperar substituirá todas "
+                                + "as alterações atualmente pendentes; o APK original "
+                                + "não será modificado.")
+                            .setNegativeButton("Cancelar", null)
+                            .setPositiveButton("Substituir plano", (dialog, which) -> {
+                                if (source != currentApk) return;
+                                EditPlan plan = explorerView.getEditPlan();
+                                plan.clear();
+                                for (Map.Entry<String, String> edit : changes.entrySet())
+                                    plan.addTextReplacement(edit.getKey(), edit.getValue());
+                                explorerView.refresh();
+                                new android.app.AlertDialog.Builder(this)
+                                    .setMessage("Plano recuperado. Revise as alterações antes "
+                                        + "de exportar um APK modificado.")
+                                    .setPositiveButton("OK", null).show();
+                            }).show();
+                    });
+                } catch (Exception error) {
+                    showRecoveryError("Recuperação bloqueada", error);
+                }
+            });
+        });
+
+        Button removeRecovery = NegrescoTheme.action(this,
+            "Excluir cópia de recuperação local", false);
+        buildSection.addView(removeRecovery);
+        removeRecovery.setOnClickListener(v ->
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Excluir a cópia protegida?")
+                .setMessage("Esta ação não altera o APK nem as edições abertas, "
+                    + "mas remove o ponto de recuperação salvo no aparelho.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Excluir cópia", (dialog, which) -> {
+                    try {
+                        new RecoveryVault(this).clear();
+                        new android.app.AlertDialog.Builder(this)
+                            .setMessage("Cópia de recuperação removida.")
+                            .setPositiveButton("OK", null).show();
+                    } catch (Exception error) {
+                        showRecoveryError("Não foi possível excluir", error);
+                    }
+                }).show());
 
         signatureInfo = NegrescoTheme.action(this, "", false);
         signatureInfo.setText("Ver certificado de assinatura");
@@ -958,6 +1083,19 @@ public class MainActivity extends Activity {
         explorerView.restoreBrowseState(workspace.browse);
         showSection(workspace.activeSection);
         return true;
+    }
+
+    private void showRecoveryError(String title, Exception error) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            String message = error.getMessage();
+            new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message == null || message.isEmpty()
+                    ? "Verificação criptográfica ou armazenamento indisponível."
+                    : message)
+                .setPositiveButton("OK", null).show();
+        });
     }
 
     private void reviewEditPlan() {
