@@ -96,6 +96,25 @@ public final class AppearancePresetInstrumentedTest {
         }
     }
 
+    @Test public void rejectsFractionalRadiusAndStringSchemaWithoutChangingPreferences()
+            throws Exception {
+        assertTrue(prefs.edit().putString("theme", "graphite").commit());
+        JSONObject fraction = validPreset().put("card_radius", 18.9);
+        try {
+            AppearancePreset.importSettings(context, fraction.toString());
+            fail("Fractional card radius must not be truncated");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("graphite", prefs.getString("theme", ""));
+        }
+        JSONObject stringSchema = validPreset().put("schema", "1");
+        try {
+            AppearancePreset.importSettings(context, stringSchema.toString());
+            fail("String schema must not be coerced");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("graphite", prefs.getString("theme", ""));
+        }
+    }
+
     @Test public void protectsOtherPreferencesAndRejectsUnsupportedSchemas() throws Exception {
         SharedPreferences security = context.getSharedPreferences("security_state", Context.MODE_PRIVATE);
         assertTrue(security.edit().putString("private_test_setting", "preserve").commit());
