@@ -85,6 +85,13 @@ public final class NegrescoTheme {
             android.content.res.ColorStateList.valueOf(mix(ACCENT, SURFACE, 0.60f)),
             shape, null);
     }
+    /** WCAG contrast ratio for user-selected themes and custom accent previews. */
+    public static double contrastRatio(int first, int second) {
+        double a = relativeLuminance(first);
+        double b = relativeLuminance(second);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    }
+
 
     private static int mix(int first, int second, float weight) {
         float inv = 1f - weight;
