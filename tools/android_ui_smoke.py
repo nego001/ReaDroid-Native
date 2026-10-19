@@ -22,6 +22,8 @@ def hierarchy():
         try:
             adb("shell", "uiautomator", "dump", "/sdcard/window.xml")
             raw = adb("exec-out", "cat", "/sdcard/window.xml")
+            with open("v3-studio-android-hierarchy.xml", "w", encoding="utf-8") as out:
+                out.write(raw)
             root = ET.fromstring(raw)
             return list(root.iter("node"))
         except (subprocess.SubprocessError, ET.ParseError):
@@ -81,11 +83,23 @@ def main():
     ensure_foreground()
     if "selecionada" not in find_tab(hierarchy(), "Início").attrib.get("content-desc", ""):
         raise AssertionError("Failed to return Home")
-    with open("v3-studio-android-emulator.png", "wb") as stream:
-        stream.write(subprocess.check_output(
-            ["adb", "exec-out", "screencap", "-p"], timeout=45))
-    print("PASS: home -> files -> security -> home; screenshot created")
+    print("PASS: home -> files -> security -> home")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        # Keep the screenshot and crash log even if a navigation assertion fails.
+        try:
+            with open("v3-studio-android-emulator.png", "wb") as image:
+                image.write(subprocess.check_output(
+                    ["adb", "exec-out", "screencap", "-p"], timeout=45))
+        except subprocess.SubprocessError as error:
+            print("Screenshot capture failed:", error)
+        try:
+            runtime = adb("logcat", "-d", "-s", "AndroidRuntime:E")
+            with open("v3-studio-android-runtime.txt", "w", encoding="utf-8") as log:
+                log.write(runtime)
+        except subprocess.SubprocessError as error:
+            print("Runtime log capture failed:", error)
