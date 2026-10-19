@@ -15,7 +15,9 @@ public final class NavGlyph extends View {
     public NavGlyph(Context context, int kind) {
         super(context);
         this.kind = kind;
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        // These Canvas glyphs are decorative. Their parent announces the
+        // button name once to TalkBack rather than repeating icon and label.
+        setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
     public void setSelectedState(boolean value) {
