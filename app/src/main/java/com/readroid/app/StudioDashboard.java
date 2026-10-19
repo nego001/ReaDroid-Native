@@ -162,7 +162,8 @@ public final class StudioDashboard {
         TextView hint = label(a, description, 13, NegrescoTheme.MUTED, false);
         header.addView(hint);
         section.addView(header, 0);
-        gap(a, section, 10);
+        View spacer = new View(a);
+        section.addView(spacer, 1, new LinearLayout.LayoutParams(1, dp(a, 10)));
     }
 
     public static void styleFeatureButton(Activity a, Button button, String symbol,
