@@ -1,5 +1,9 @@
 name: V3 Android UI smoke
 on:
+  push:
+    branches: [feature/v3-design-studio]
+    paths:
+      - '.github/workflows/v3-ui-emulator-smoke.yml'
   workflow_dispatch:
 permissions:
   contents: read
