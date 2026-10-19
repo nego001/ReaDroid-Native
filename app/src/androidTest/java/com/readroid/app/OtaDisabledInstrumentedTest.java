@@ -31,6 +31,22 @@ public final class OtaDisabledInstrumentedTest {
         return OtaRelease.parse(value.toString());
     }
 
+    @Test public void parsedJsonCannotPretendToBeASignedRelease() throws Exception {
+        for (String channel : new String[]{"stable", "beta"}) {
+            OtaRelease parsed = untrustedRelease(channel);
+            assertFalse("Parsing JSON must never authenticate OTA metadata",
+                parsed.hasVerifiedSignature());
+            try {
+                OtaManifestVerifier.verify(
+                    "{\\"payload\\":\\"{}\\",\\"signature\\":\\"AQID\\"}",
+                    "");
+                fail("Missing trusted signing key must be rejected");
+            } catch (SecurityException expected) {
+                assertTrue(expected.getMessage().contains("Chave pública"));
+            }
+        }
+    }
+
     @Test public void stableAndBetaAreUnconfiguredAndCannotCheck() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         for (String channel : new String[]{"stable", "beta"}) {
