@@ -26,7 +26,8 @@ public final class AppearancePreset {
         return o.toString(2);
     }
 
-    public static void importSettings(Context context, String data) throws Exception {
+    /** Shared validator for preview and import; never mutates preferences. */
+    private static JSONObject validatedData(String data) throws Exception {
         if (data == null || data.length() > 8192) throw new IllegalArgumentException("Arquivo de preferências muito grande");
         JSONObject o = new JSONObject(data);
         // JSON getters coerce "1" or 18.5 into integers on some Android versions.
@@ -72,6 +73,43 @@ public final class AppearancePreset {
             || name.trim().isEmpty() || name.length() > 30 || subtitle.length() > 48
             || containsControlCharacter(name) || containsControlCharacter(subtitle))
             throw new IllegalArgumentException("Preferências inválidas");
+        return o;
+    }
+
+    /** Safe summary of a preset, shown before a user approves the import. */
+    public static String describeSettings(String data) throws Exception {
+        JSONObject o = validatedData(data);
+        String theme = o.getString("theme");
+        String accent = o.getString("accent");
+        String themeLabel = "light".equals(theme) ? "Claro"
+            : "graphite".equals(theme) ? "Grafite" : "OLED preto";
+        String accentLabel = "purple".equals(accent) ? "Roxo"
+            : "green".equals(accent) ? "Verde"
+            : "orange".equals(accent) ? "Laranja"
+            : "custom".equals(accent) ? o.getString("custom_accent") : "Azul";
+        return "Tema: " + themeLabel
+            + "\\nCor: " + accentLabel
+            + "\\nTexto: " + o.getInt("font_percent") + "%"
+            + "\\nEspaçamento: " + (o.getBoolean("compact") ? "Compacto" : "Confortável")
+            + "\\nNeon: " + (o.optBoolean("studio_glow", true) ? "Ativo" : "Desativado")
+            + "\\nCantos: " + o.optInt("card_radius", 18) + " dp"
+            + "\\nAtalho favorito: " + o.getInt("favorite_tab")
+            + "\\nNome: " + o.getString("display_name");
+    }
+
+    public static void importSettings(Context context, String data) throws Exception {
+        JSONObject o = validatedData(data);
+        String theme = o.getString("theme");
+        String accent = o.getString("accent");
+        String customAccent = o.optString("custom_accent", "#1688FF");
+        boolean glow = o.optBoolean("studio_glow", true);
+        int radius = o.optInt("card_radius", 18);
+        int font = o.getInt("font_percent");
+        int favorite = o.getInt("favorite_tab");
+        boolean compact = o.getBoolean("compact");
+        boolean labels = o.getBoolean("nav_labels");
+        String name = o.getString("display_name");
+        String subtitle = o.getString("display_subtitle");
         context.getSharedPreferences("v3_personalizacao", Context.MODE_PRIVATE).edit()
             .putString("theme", theme).putString("accent", accent)
             .putString("custom_accent", customAccent)
