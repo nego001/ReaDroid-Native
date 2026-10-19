@@ -775,6 +775,12 @@ public class MainActivity extends Activity {
             "Compartilhe o relatório com o ChatGPT", true);
         StudioDashboard.styleFeatureButton(this, share, "▤",
             "Exporte o relatório técnico em JSON", false);
+        StudioDashboard.featureHeader(this, buildSection, 2, "Construir",
+            "Revise suas alterações e exporte o APK sem assinatura.");
+        StudioDashboard.featureHeader(this, securitySection, 3, "Segurança",
+            "Inspecione certificados, assinaturas e sua identidade local.");
+        StudioDashboard.featureHeader(this, aiSection, 4, "Assistente IA",
+            "Compartilhe um relatório técnico para análise no ChatGPT.");
         StudioDashboard.compose(this, homeSection, apkSummary, projectMetrics, choose,
             shortcutsTitle, shortcutHint, quickGrid,
             customizationTitle, customizationHint, togglePersonalization, personalizationGroup,
