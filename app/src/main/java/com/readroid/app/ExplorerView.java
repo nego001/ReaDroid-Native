@@ -31,6 +31,57 @@ public final class ExplorerView {
     private String folder = "";
     private java.io.File apkFile;
     private final EditPlan editPlan = new EditPlan();
+    private static final String[] CATEGORIES = {
+        "Todos", "Código DEX", "Bibliotecas", "Recursos", "Assets",
+        "Assinaturas/metadados", "Manifesto", "Outros", "Editáveis", "Alterados"
+    };
+
+    /** Session-only UI state. Never persisted to disk or reused across APKs. */
+    static final class BrowseState {
+        final String folder;
+        final String category;
+        final String query;
+        final int pageLimit;
+
+        BrowseState(String folder, String category, String query, int pageLimit) {
+            this.folder = folder;
+            this.category = category;
+            this.query = query;
+            this.pageLimit = pageLimit;
+        }
+    }
+
+    BrowseState snapshotBrowseState() {
+        return new BrowseState(folder, activeCategory, search.getText().toString(), pageLimit);
+    }
+
+    void restoreBrowseState(BrowseState state) {
+        if (state == null) return;
+        // Do not trust a retained folder unless it still belongs to this APK.
+        boolean validFolder = state.folder != null && (state.folder.isEmpty()
+            || (state.folder.endsWith("/") && !state.folder.startsWith("/")
+                && !state.folder.contains("..") && !state.folder.contains("\\")
+                && hasFileBelow(state.folder)));
+        folder = validFolder ? state.folder : "";
+        activeCategory = java.util.Arrays.asList(CATEGORIES).contains(state.category)
+            ? state.category : "Todos";
+        filterButton.setText("Filtro: " + activeCategory + "  ▾");
+        // setText invokes the TextWatcher (which resets pagination): set the
+        // retained limit afterwards and render the final, validated state.
+        String safeQuery = state.query == null ? "" : state.query;
+        if (safeQuery.length() > 512) safeQuery = safeQuery.substring(0, 512);
+        search.setText(safeQuery);
+        pageLimit = Math.max(120, Math.min(state.pageLimit,
+            Math.max(120, files.size() + 120)));
+        render();
+    }
+
+    private boolean hasFileBelow(String prefix) {
+        for (JSONObject file : files) {
+            if (file.optString("path").startsWith(prefix)) return true;
+        }
+        return false;
+    }
 
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
@@ -56,13 +107,11 @@ public final class ExplorerView {
         filterButton = NegrescoTheme.action(activity, "Filtro: Todos  ▾", false);
         parent.addView(filterButton);
         filterButton.setOnClickListener(v -> {
-            String[] categories = {"Todos", "Código DEX", "Bibliotecas", "Recursos", "Assets",
-                "Assinaturas/metadados", "Manifesto", "Outros", "Editáveis", "Alterados"};
             new android.app.AlertDialog.Builder(activity)
                 .setTitle("Filtrar arquivos")
-                .setSingleChoiceItems(categories, java.util.Arrays.asList(categories).indexOf(activeCategory),
+                .setSingleChoiceItems(CATEGORIES, java.util.Arrays.asList(CATEGORIES).indexOf(activeCategory),
                     (dialog, which) -> {
-                        activeCategory = categories[which];
+                        activeCategory = CATEGORIES[which];
                         pageLimit = 120;
                         filterButton.setText("Filtro: " + activeCategory + "  ▾");
                         render();

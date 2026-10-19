@@ -165,3 +165,9 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - O editor de texto e a confirmação de edição mostram que **o plano é mantido apenas em memória**. A recriação da Activity retém o plano, mas morte do processo Android, encerramento da sessão ou perda do cache **podem descartar alterações pendentes**.
 - O aplicativo aconselha exportar o resultado da edição quando necessário, sem sugerir que o ZIP unsigned exportado pode ser instalado no Android.
 - Nenhum salvamento automático, banco de dados, migração de dados, chave privada ou acesso OTA foi criado nesta etapa.
+
+## Recuperação do estado do explorador (19/10/2026)
+- O estado de navegação do explorador (pasta, filtro, texto da busca e limite de paginação) passa a integrar a retenção **temporária em memória** da Activity junto do APK, relatório e plano de edição.
+- Ao restaurar, a pasta só é aceita se ainda corresponder a arquivos do mesmo projeto, e filtros e valores de paginação são validados antes de renderizar. Ao carregar um APK diferente, a navegação continua sendo reiniciada.
+- Teste instrumentado adicional usa um ZIP sintético, seleciona Arquivos, aplica pasta/filtro/busca e exige preservação após recriação da tela; o arquivo original permanece intacto.
+- **Limite:** não há persistência após morte do processo, desinstalação, limpeza de cache ou perda de permissões. O comportamento em Samsung físico continua pendente.

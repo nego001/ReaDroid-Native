@@ -31,9 +31,13 @@ public final class ProjectRecreationInstrumentedTest {
     private static final String CHANGE = "alteração pendente após rotação ✓";
 
     private static Object field(MainActivity activity, String name) throws Exception {
-        Field f = MainActivity.class.getDeclaredField(name);
+        return field((Object) activity, name);
+    }
+
+    private static Object field(Object object, String name) throws Exception {
+        Field f = object.getClass().getDeclaredField(name);
         f.setAccessible(true);
-        return f.get(activity);
+        return f.get(object);
     }
 
     private static void setField(MainActivity activity, String name, Object value)
@@ -99,6 +103,49 @@ public final class ProjectRecreationInstrumentedTest {
         assertNotNull(selected);
         assertTrue("Selected tab should survive recreation", selected.isSelected());
         assertTrue(selected.getContentDescription().toString().contains("selecionada"));
+    }
+
+    @Test public void explorerFolderSearchAndFilterSurviveRecreation() throws Exception {
+        File apk = File.createTempFile("v3_browse_fixture_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        ExplorerView explorer = (ExplorerView) field(activity, "explorerView");
+                        explorer.restoreBrowseState(new ExplorerView.BrowseState(
+                            "assets/", "Editáveis", "v3_test", 240));
+                        ExplorerView.BrowseState snapshot = explorer.snapshotBrowseState();
+                        assertEquals("assets/", snapshot.folder);
+                        assertEquals("Editáveis", snapshot.category);
+                        assertEquals("v3_test", snapshot.query);
+                        assertEquals(121, snapshot.pageLimit); // one-file fixture bounds pagination
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                scenario.recreate();
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, apk);
+                        ExplorerView explorer = (ExplorerView) field(activity, "explorerView");
+                        ExplorerView.BrowseState snapshot = explorer.snapshotBrowseState();
+                        assertEquals("assets/", snapshot.folder);
+                        assertEquals("Editáveis", snapshot.category);
+                        assertEquals("v3_test", snapshot.query);
+                        assertEquals("Filtro: Editáveis  ▾",
+                            ((android.widget.Button) field(explorer, "filterButton")).getText().toString());
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+            }
+        } finally {
+            apk.delete();
+        }
     }
 
     @Test public void projectAndPendingEditSurviveRecreationWithoutMutatingSource()

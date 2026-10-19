@@ -71,11 +71,14 @@ public class MainActivity extends Activity {
         final JSONObject report;
         final Map<String, String> changes;
         final int activeSection;
-        WorkspaceState(File apk, JSONObject report, Map<String, String> changes, int section) {
+        final ExplorerView.BrowseState browse;
+        WorkspaceState(File apk, JSONObject report, Map<String, String> changes,
+                int section, ExplorerView.BrowseState browse) {
             this.apk = apk;
             this.report = report;
             this.changes = changes;
             this.activeSection = section;
+            this.browse = browse;
         }
     }
 
@@ -934,7 +937,8 @@ public class MainActivity extends Activity {
         if (currentApk == null || !currentApk.isFile() || report == null
             || explorerView == null) return null;
         return new WorkspaceState(currentApk, report,
-            explorerView.getEditPlan().snapshot(), selectedSection);
+            explorerView.getEditPlan().snapshot(), selectedSection,
+            explorerView.snapshotBrowseState());
     }
 
     private boolean restoreWorkspace() {
@@ -951,7 +955,7 @@ public class MainActivity extends Activity {
                 // Invalid or outdated edits are never reapplied without validation.
             }
         }
-        explorerView.refresh();
+        explorerView.restoreBrowseState(workspace.browse);
         showSection(workspace.activeSection);
         return true;
     }
