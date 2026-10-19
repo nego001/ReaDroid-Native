@@ -45,7 +45,9 @@ public final class ExplorerView {
         parent.addView(heading);
         search = new EditText(activity);
         search.setSingleLine(true);
-        search.setHint("Buscar arquivo pelo nome ou caminho");
+        boolean narrow = activity.getResources().getConfiguration().screenWidthDp <= 360;
+        search.setHint(narrow ? "Buscar no APK..." : "Buscar arquivo pelo nome ou caminho");
+        search.setTextSize((narrow ? 13 : 14) * NegrescoTheme.FONT_SCALE);
         search.setTextColor(NegrescoTheme.TEXT);
         search.setHintTextColor(NegrescoTheme.MUTED);
         search.setBackground(NegrescoTheme.panel(activity));
