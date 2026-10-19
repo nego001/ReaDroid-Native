@@ -63,7 +63,11 @@ public final class NegrescoTheme {
         window.setNavigationBarColor(BACKGROUND);
         boolean lightBackground = contrastRatio(BACKGROUND, Color.BLACK) > 7.0;
         if (android.os.Build.VERSION.SDK_INT >= 30) {
-            android.view.WindowInsetsController controller = window.getInsetsController();
+            // Window.getInsetsController() can dereference an uninitialized
+            // decor view on Android 15 during Activity creation.
+            android.view.View decor = window.getDecorView();
+            android.view.WindowInsetsController controller =
+                decor == null ? null : decor.getWindowInsetsController();
             if (controller != null) {
                 int appearance = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
                     | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;

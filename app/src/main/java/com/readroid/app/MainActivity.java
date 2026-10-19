@@ -87,7 +87,8 @@ public class MainActivity extends Activity {
             ? android.R.style.Theme_Material_Light_NoActionBar
             : android.R.style.Theme_Material_NoActionBar);
         super.onCreate(state);
-        NegrescoTheme.applySystemBars(this);
+        // Window insets are not available until after the content view is attached.
+        // Calling Window.getInsetsController here crashes on Android 15.
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 18 : 34), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 24));
@@ -104,7 +105,20 @@ public class MainActivity extends Activity {
         nav.setPadding(NegrescoTheme.dp(this, 6), NegrescoTheme.dp(this, 7), NegrescoTheme.dp(this, 6), NegrescoTheme.dp(this, 8));
         nav.setBackground(NegrescoTheme.studioCard(this, false));
         shell.addView(nav);
+        if (android.os.Build.VERSION.SDK_INT >= 35) {
+            // Android 15 enforces edge-to-edge for targetSdk 35. Reserve the
+            // actual system-bar and cutout insets so the header and tabs are
+            // not obscured, regardless of gesture or three-button navigation.
+            shell.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+                android.graphics.Insets safe = windowInsets.getInsets(
+                    android.view.WindowInsets.Type.systemBars()
+                        | android.view.WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+                return windowInsets;
+            });
+        }
         setContentView(shell);
+        shell.post(() -> NegrescoTheme.applySystemBars(this));
 
         android.content.SharedPreferences appearance =
             getSharedPreferences("v3_personalizacao", MODE_PRIVATE);

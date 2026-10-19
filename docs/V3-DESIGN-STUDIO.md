@@ -105,3 +105,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Testes Android dedicados cobrem falsificação de JSON, portas proibidas e a chamada direta ao downloader sem assinatura.
 - Mudanças em qualquer `Ota*.java` agora acionam a suíte de emulador V3 na branch de desenvolvimento.
 - Permanece pendente o teste manual de TalkBack e de teclado físico em Samsung; nenhuma OTA é ativada ou instalada automaticamente.
+
+## Android 15: falha real de inicialização e compatibilidade edge-to-edge (19/10/2026)
+- A primeira rodada API 35 falhou ao iniciar `MainActivity` com `NullPointerException` no acesso antecipado a `Window.getInsetsController()`. Evidência: https://github.com/nego001/ReaDroid-Native/actions/runs/39196400145.
+- Correção: aplicar a aparência das barras somente após anexar a interface, lendo o controlador diretamente do decor view de forma anulável.
+- No Android 15 (targetSdk 35), reservar os insets de status, navegação e recortes da tela no contêiner raiz, incluindo navegação por gestos ou três botões.
+- Portão obrigatório: reexecutar a suíte de instrumentação e o smoke de navegação no emulador API 35, verificando que a interface permanece visível e não ocorre crash.
+- **Não considerar homologado até que a nova execução de CI seja aprovada.** Testes de TalkBack em Samsung físico ainda pendentes.
