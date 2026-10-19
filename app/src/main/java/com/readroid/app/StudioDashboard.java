@@ -258,8 +258,10 @@ public final class StudioDashboard {
         customizationHint.setText("Sua interface. Suas regras. Temas, cores e muito mais.");
         customizationHint.setPadding(0, 0, 0, dp(a, 8));
         settingsPanel.addView(customizationHint);
+        // Keep Home focused on the project and its four main tools.
+        // The user can expand the complete customization panel on demand.
         boolean expanded = a.getPreferences(Activity.MODE_PRIVATE)
-            .getBoolean("studio_settings_expanded", true);
+            .getBoolean("studio_settings_expanded", false);
         togglePersonalization.setText(
             expanded ? "Opções de aparência  ▴" : "Opções de aparência  ▾");
         settingsPanel.addView(togglePersonalization);
