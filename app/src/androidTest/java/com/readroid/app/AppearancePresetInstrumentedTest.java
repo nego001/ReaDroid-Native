@@ -123,7 +123,7 @@ public final class AppearancePresetInstrumentedTest {
             assertFalse(prefs.contains("theme"));
         }
         try {
-            AppearancePreset.importSettings(context, " ".repeat(8193));
+            AppearancePreset.importSettings(context, new String(new char[8193]).replace('\0', ' '));
             fail("Oversized preset was accepted");
         } catch (IllegalArgumentException expected) {
             assertFalse(prefs.contains("theme"));
