@@ -88,13 +88,13 @@ public final class AppearancePreset {
             : "orange".equals(accent) ? "Laranja"
             : "custom".equals(accent) ? o.getString("custom_accent") : "Azul";
         return "Tema: " + themeLabel
-            + "\\nCor: " + accentLabel
-            + "\\nTexto: " + o.getInt("font_percent") + "%"
-            + "\\nEspaçamento: " + (o.getBoolean("compact") ? "Compacto" : "Confortável")
-            + "\\nNeon: " + (o.optBoolean("studio_glow", true) ? "Ativo" : "Desativado")
-            + "\\nCantos: " + o.optInt("card_radius", 18) + " dp"
-            + "\\nAtalho favorito: " + o.getInt("favorite_tab")
-            + "\\nNome: " + o.getString("display_name");
+            + "\nCor: " + accentLabel
+            + "\nTexto: " + o.getInt("font_percent") + "%"
+            + "\nEspaçamento: " + (o.getBoolean("compact") ? "Compacto" : "Confortável")
+            + "\nNeon: " + (o.optBoolean("studio_glow", true) ? "Ativo" : "Desativado")
+            + "\nCantos: " + o.optInt("card_radius", 18) + " dp"
+            + "\nAtalho favorito: " + o.getInt("favorite_tab")
+            + "\nNome: " + o.getString("display_name");
     }
 
     public static void importSettings(Context context, String data) throws Exception {
