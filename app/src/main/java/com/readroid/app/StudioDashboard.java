@@ -1,0 +1,275 @@
+package com.readroid.app;
+
+import android.app.Activity;
+import android.content.res.Configuration;
+import android.graphics.Typeface;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+/**
+ * Native, accessible V3 studio dashboard. The views supplied here are the same
+ * functional controls created by MainActivity: actions and OTA policy stay intact.
+ * No external images, network requests or permissions are used by this layout.
+ */
+public final class StudioDashboard {
+    private StudioDashboard() {}
+
+    private static int dp(Activity activity, int value) {
+        return NegrescoTheme.dp(activity, value);
+    }
+
+    private static TextView label(Activity a, String value, int sp, int color, boolean bold) {
+        TextView text = new TextView(a);
+        text.setText(value);
+        text.setTextColor(color);
+        text.setTextSize(sp * NegrescoTheme.FONT_SCALE);
+        if (bold) text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return text;
+    }
+
+    private static LinearLayout column(Activity a) {
+        LinearLayout col = new LinearLayout(a);
+        col.setOrientation(LinearLayout.VERTICAL);
+        return col;
+    }
+
+    private static void detach(View item) {
+        ViewGroup parent = (ViewGroup) item.getParent();
+        if (parent != null) parent.removeView(item);
+    }
+
+    private static void gap(Activity a, LinearLayout parent, int height) {
+        View space = new View(a);
+        parent.addView(space, new LinearLayout.LayoutParams(1, dp(a, height)));
+    }
+
+    private static LinearLayout card(Activity a, boolean highlight) {
+        LinearLayout content = column(a);
+        content.setPadding(dp(a, 16), dp(a, 16), dp(a, 16), dp(a, 16));
+        content.setBackground(NegrescoTheme.studioCard(a, highlight));
+        content.setElevation(dp(a, highlight ? 3 : 1));
+        content.setClipChildren(false);
+        return content;
+    }
+
+    public static LinearLayout quickTile(Activity activity, String name, String description,
+                                          int iconKind, boolean favorite, View.OnClickListener listener) {
+        LinearLayout tile = card(activity, favorite);
+        tile.setPadding(dp(activity, 14), dp(activity, 12), dp(activity, 12), dp(activity, 12));
+        LinearLayout iconRow = new LinearLayout(activity);
+        iconRow.setGravity(Gravity.CENTER_VERTICAL);
+        NavGlyph icon = new NavGlyph(activity, iconKind);
+        icon.setSelectedState(true);
+        iconRow.addView(icon, new LinearLayout.LayoutParams(dp(activity, 30), dp(activity, 30)));
+        if (favorite) {
+            TextView badge = label(activity, "  ★", 12, NegrescoTheme.ACCENT, true);
+            iconRow.addView(badge);
+        }
+        tile.addView(iconRow);
+        gap(activity, tile, 8);
+        TextView title = label(activity, name, 15, NegrescoTheme.TEXT, true);
+        title.setMaxLines(2);
+        tile.addView(title);
+        TextView body = label(activity, description, 11, NegrescoTheme.MUTED, false);
+        body.setMaxLines(3);
+        tile.addView(body);
+        tile.setContentDescription("Abrir " + name + (favorite ? ", atalho favorito" : ""));
+        tile.setClickable(true);
+        tile.setFocusable(true);
+        tile.setOnClickListener(listener);
+        return tile;
+    }
+
+    private static LinearLayout option(Activity a, Button action, String glyph, String detail) {
+        LinearLayout wrapper = card(a, false);
+        wrapper.setPadding(dp(a, 10), dp(a, 12), dp(a, 10), dp(a, 12));
+        LinearLayout header = new LinearLayout(a);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView icon = label(a, glyph, 23, NegrescoTheme.ACCENT, true);
+        header.addView(icon);
+        TextView arrow = label(a, "  ›", 21, NegrescoTheme.MUTED, false);
+        header.addView(arrow);
+        wrapper.addView(header);
+        gap(a, wrapper, 7);
+        TextView name = label(a, action.getText().toString(), 12, NegrescoTheme.TEXT, true);
+        name.setMaxLines(2);
+        wrapper.addView(name);
+        TextView description = label(a, detail, 10, NegrescoTheme.MUTED, false);
+        description.setMaxLines(2);
+        wrapper.addView(description);
+        wrapper.setClickable(true);
+        wrapper.setFocusable(true);
+        wrapper.setContentDescription(action.getText().toString() + ". " + detail);
+        wrapper.setOnClickListener(v -> action.performClick());
+        return wrapper;
+    }
+
+    private static void buildOptions(Activity a, LinearLayout destination, Button[] actions) {
+        String[] glyphs = {"◉", "◆", "Aa", "▦", "▤", "☆", "⌂", "◈", "↥", "↧", "↺"};
+        String[] details = {
+            "OLED, grafite ou claro", "Destaque em sua cor",
+            "Escala de fonte", "Compacto ou confortável",
+            "Ícones e rótulos", "Acesso rápido favorito",
+            "Nome e subtítulo", "Prévia antes de aplicar",
+            "Salvar arquivo JSON", "Restaurar um arquivo JSON",
+            "Voltar ao padrão"
+        };
+        destination.removeAllViews();
+        for (int index = 0; index < actions.length; index += 2) {
+            LinearLayout row = new LinearLayout(a);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            destination.addView(row);
+            for (int col = 0; col < 2; col++) {
+                int i = index + col;
+                if (i >= actions.length) break;
+                Button action = actions[i];
+                detach(action);
+                LinearLayout tile = option(a, action, glyphs[i], details[i]);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, dp(a, NegrescoTheme.COMPACT ? 104 : 118), 1f);
+                lp.setMargins(col == 0 ? 0 : dp(a, 4), 0,
+                    col == 0 ? dp(a, 4) : 0, dp(a, 8));
+                row.addView(tile, lp);
+            }
+        }
+    }
+
+    public static void styleFeatureButton(Activity a, Button button, String symbol,
+                                           String description, boolean important) {
+        String title = button.getText().toString();
+        String full = symbol + "   " + title + "\n" + description;
+        SpannableString rich = new SpannableString(full);
+        int line = full.indexOf('\n');
+        rich.setSpan(new RelativeSizeSpan(0.8f), line + 1, full.length(),
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        rich.setSpan(new ForegroundColorSpan(important ? NegrescoTheme.ON_ACCENT : NegrescoTheme.MUTED),
+            line + 1, full.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        button.setText(rich);
+        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        button.setTextSize(13 * NegrescoTheme.FONT_SCALE);
+        button.setMinHeight(dp(a, 72));
+        button.setSingleLine(false);
+        button.setMaxLines(3);
+        button.setPadding(dp(a, 17), dp(a, 9), dp(a, 12), dp(a, 9));
+        button.setBackground(NegrescoTheme.studioCard(a, important));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(a, NegrescoTheme.COMPACT ? 72 : 88));
+        lp.bottomMargin = dp(a, 10);
+        button.setLayoutParams(lp);
+        button.setContentDescription(title + ". " + description);
+    }
+
+    public static void compose(Activity a, LinearLayout home,
+                               TextView apkSummary, TextView projectMetrics, Button choose,
+                               TextView shortcutsTitle, TextView shortcutHint, LinearLayout quickGrid,
+                               TextView customizationTitle, TextView customizationHint,
+                               Button togglePersonalization, LinearLayout personalizationGroup,
+                               Button[] controls, TextView otaTitle, TextView otaStatus,
+                               Button otaChannel, Button otaCheck,
+                               TextView detailsTitle, TextView output, Button project) {
+        home.removeAllViews();
+        home.setClipChildren(false);
+        home.setClipToPadding(false);
+
+        // Main project area with the live report-bound text views and real picker.
+        LinearLayout hero = card(a, true);
+        TextView heroLabel = label(a, "◈  PROJETO ATUAL", 12, NegrescoTheme.ACCENT, true);
+        heroLabel.setLetterSpacing(0.05f);
+        hero.addView(heroLabel);
+        gap(a, hero, 8);
+        apkSummary.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        apkSummary.setTextSize(16 * NegrescoTheme.FONT_SCALE);
+        apkSummary.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        apkSummary.setPadding(0, dp(a, 4), 0, dp(a, 8));
+        hero.addView(apkSummary);
+        projectMetrics.setPadding(0, 0, 0, dp(a, 8));
+        projectMetrics.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        hero.addView(projectMetrics);
+        choose.setText("▱  Selecionar APK   ›");
+        choose.setContentDescription("Selecionar arquivo APK para analisar");
+        choose.setMinHeight(dp(a, 52));
+        hero.addView(choose);
+        home.addView(hero);
+        gap(a, home, 14);
+
+        // Quick actions, native icons, two-column layout on phones.
+        shortcutsTitle.setText("ACESSO RÁPIDO");
+        shortcutsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        shortcutsTitle.setLetterSpacing(0.05f);
+        shortcutsTitle.setPadding(0, dp(a, 2), 0, dp(a, 2));
+        home.addView(shortcutsTitle);
+        shortcutHint.setText("FERRAMENTAS PRINCIPAIS");
+        shortcutHint.setPadding(0, 0, 0, dp(a, 10));
+        home.addView(shortcutHint);
+        home.addView(quickGrid);
+        gap(a, home, 8);
+
+        // Personalization panel: 11 real controls rendered as compact two-column
+        // options. Their original click handlers remain authoritative.
+        LinearLayout settingsPanel = card(a, true);
+        customizationTitle.setText("◉  PERSONALIZAÇÃO");
+        customizationTitle.setTextColor(NegrescoTheme.TEXT);
+        customizationTitle.setTextSize(17 * NegrescoTheme.FONT_SCALE);
+        customizationTitle.setPadding(0, 0, 0, dp(a, 4));
+        settingsPanel.addView(customizationTitle);
+        customizationHint.setText("Sua interface. Suas regras. Temas, cores e muito mais.");
+        customizationHint.setPadding(0, 0, 0, dp(a, 8));
+        settingsPanel.addView(customizationHint);
+        togglePersonalization.setText("Opções de aparência  ▴");
+        settingsPanel.addView(togglePersonalization);
+        buildOptions(a, personalizationGroup, controls);
+        personalizationGroup.setVisibility(View.VISIBLE);
+        settingsPanel.addView(personalizationGroup);
+        home.addView(settingsPanel);
+        gap(a, home, 14);
+
+        // Actual OTA status is retained: no false claims about availability.
+        LinearLayout updates = card(a, false);
+        otaTitle.setText("↻  ATUALIZAÇÕES");
+        otaTitle.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        otaTitle.setPadding(0, 0, 0, dp(a, 8));
+        updates.addView(otaTitle);
+        otaStatus.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        otaStatus.setPadding(dp(a, 12), dp(a, 12), dp(a, 12), dp(a, 12));
+        updates.addView(otaStatus);
+        gap(a, updates, 8);
+        updates.addView(otaChannel);
+        updates.addView(otaCheck);
+
+        // The technical report remains selectable, with its existing buttons.
+        LinearLayout technical = card(a, false);
+        detailsTitle.setText("▥  RELATÓRIO TÉCNICO");
+        detailsTitle.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        detailsTitle.setPadding(0, 0, 0, dp(a, 8));
+        technical.addView(detailsTitle);
+        output.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        technical.addView(output);
+        technical.addView(project);
+
+        // Keep content readable on compact portrait screens.
+        int screenWidth = a.getResources().getConfiguration().screenWidthDp;
+        if (screenWidth >= 480) {
+            LinearLayout bottom = new LinearLayout(a);
+            bottom.setOrientation(LinearLayout.HORIZONTAL);
+            home.addView(bottom);
+            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1f);
+            left.rightMargin = dp(a, 6);
+            bottom.addView(updates, left);
+            LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, -2, 1f);
+            right.leftMargin = dp(a, 6);
+            bottom.addView(technical, right);
+        } else {
+            home.addView(updates);
+            gap(a, home, 12);
+            home.addView(technical);
+        }
+        gap(a, home, 18);
+    }
+}
