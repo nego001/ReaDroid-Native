@@ -137,3 +137,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Capturas `v3-studio-narrow-home.png`, `v3-studio-narrow-files.png`, `v3-studio-narrow-return.png` e `v3-studio-narrow-final.png` estão no artefato de CI `NegrescoDroid-V3-Android15-Validation` (ID `12190841052`). A captura inicial de 320dp foi inspecionada: rodapé e navegação do sistema não se sobrepõem visualmente.
 - Log `v3-studio-narrow-runtime.txt` vazio no período. Builds Android e verificações de código do commit do teste aprovados; a suíte Android 10 `#39260457912` também passou.
 - **Escopo:** teste automatizado apenas em emuladores; homologação física Samsung, TalkBack e teclado físico seguem pendentes. O app não instala atualizações OTA nem possui release V3 definitivo.
+
+## Teclado físico, foco e recriação da Activity (19/10/2026)
+- Cada uma das cinco abas recebe um ID único; DPAD esquerda/direita percorre as abas vizinhas sem forçar a seleção. TAB e Shift+TAB permanecem sob navegação padrão para não prender o usuário no rodapé.
+- O foco de teclado passa a ter contorno de 2 dp, independentemente da seção ativa. O estado `selecionada` continua anunciado separadamente.
+- Novos testes instrumentados validam ordem do DPAD, ativação com ENTER (incluindo papel e estado acessível) e manutenção da seção selecionada após recriação da Activity.
+- Os testes rodam em emuladores API 29 e API 35. O teste manual com teclado Bluetooth/USB e TalkBack no Samsung **continua pendente**; nenhuma homologação física foi inferida.
+- OTA assinada continua sem endpoint/chave de produção, sem instalação automática e sem publicação da V3 definitiva.

@@ -169,6 +169,8 @@ public class MainActivity extends Activity {
             tabContainer.setMinimumHeight(NegrescoTheme.dp(this, 56));
             tabContainer.setFocusable(true);
             tabContainer.setClickable(true);
+            // Stable IDs allow real DPAD left/right navigation between tabs.
+            tabContainer.setId(View.generateViewId());
             tabContainer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
             tabContainer.setAccessibilityDelegate(new View.AccessibilityDelegate() {
                 @Override public void onInitializeAccessibilityNodeInfo(
@@ -202,6 +204,18 @@ public class MainActivity extends Activity {
             navigationItems[index] = label;
             tabContainer.setContentDescription("Abrir seção " + tabs[index]);
             tabContainer.setOnClickListener(v -> showSection(target));
+            tabContainer.setOnFocusChangeListener((v, focused) ->
+                tabContainer.setBackground(NegrescoTheme.navigationSurface(
+                    this, tabContainer.isSelected(), focused)));
+        }
+        // Explicit horizontal DPAD traversal; do not trap TAB/Shift+TAB
+        // navigation, which must remain free to reach the screen's actions.
+        for (int index = 0; index < navigationContainers.length; index++) {
+            if (index > 0) navigationContainers[index].setNextFocusLeftId(
+                navigationContainers[index - 1].getId());
+            if (index + 1 < navigationContainers.length)
+                navigationContainers[index].setNextFocusRightId(
+                    navigationContainers[index + 1].getId());
         }
         homeSection = section(root);
         filesSection = section(root);
@@ -1012,7 +1026,8 @@ public class MainActivity extends Activity {
             sections[i].setVisibility(selected ? View.VISIBLE : View.GONE);
             navigationItems[i].setTextColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
             navigationIcons[i].setSelectedState(selected);
-            navigationContainers[i].setBackground(NegrescoTheme.navigationSurface(this, selected));
+            navigationContainers[i].setBackground(NegrescoTheme.navigationSurface(
+                this, selected, navigationContainers[i].hasFocus()));
             navigationContainers[i].setSelected(selected);
             navigationContainers[i].setActivated(selected);
             navigationContainers[i].setContentDescription(

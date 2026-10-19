@@ -100,13 +100,22 @@ public final class NegrescoTheme {
 
     /** Neutral, accessible touch surface for the selected bottom tab. */
     public static android.graphics.drawable.Drawable navigationSurface(Context context, boolean selected) {
+        return navigationSurface(context, selected, false);
+    }
+
+    /** A solid ring distinguishes keyboard focus from the currently selected tab. */
+    public static android.graphics.drawable.Drawable navigationSurface(
+            Context context, boolean selected, boolean focused) {
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(context, 14));
-        if (selected) {
-            shape.setColor(mix(SURFACE, ACCENT, STUDIO_GLOW ? 0.24f : 0.12f));
+        shape.setColor(selected
+            ? mix(SURFACE, ACCENT, STUDIO_GLOW ? 0.24f : 0.12f)
+            : (focused ? SURFACE : Color.TRANSPARENT));
+        if (focused) {
+            // Visible even if the focused tab is not the selected section.
+            shape.setStroke(dp(context, 2), ACCENT);
+        } else if (selected) {
             shape.setStroke(dp(context, 1), mix(ACCENT, BORDER, 0.52f));
-        } else {
-            shape.setColor(Color.TRANSPARENT);
         }
         return new android.graphics.drawable.RippleDrawable(
             android.content.res.ColorStateList.valueOf(mix(ACCENT, SURFACE, 0.60f)),
