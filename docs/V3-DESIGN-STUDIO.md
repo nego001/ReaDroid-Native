@@ -160,3 +160,8 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - O teste confirma que o arquivo em cache, o relatório, a edição pendente e a aba ativa sobrevivem à recriação; os bytes do APK original de teste permanecem idênticos.
 - Também foram aprovados os smoke tests de navegação em 320dp com fonte 130%; os canais de OTA Estável/Beta permanecem bloqueados no emulador API 29.
 - **Limite explícito:** recriação de Activity não representa morte do processo nem recuperação de dados após desinstalação. Projetos e alterações continuam sujeitos às limitações do armazenamento temporário; testar dados reais exige backup seguro e homologação física.
+
+## Clareza sobre alterações não persistidas (19/10/2026)
+- O editor de texto e a confirmação de edição mostram que **o plano é mantido apenas em memória**. A recriação da Activity retém o plano, mas morte do processo Android, encerramento da sessão ou perda do cache **podem descartar alterações pendentes**.
+- O aplicativo aconselha exportar o resultado da edição quando necessário, sem sugerir que o ZIP unsigned exportado pode ser instalado no Android.
+- Nenhum salvamento automático, banco de dados, migração de dados, chave privada ou acesso OTA foi criado nesta etapa.

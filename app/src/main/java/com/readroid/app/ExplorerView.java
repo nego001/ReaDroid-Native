@@ -247,7 +247,10 @@ public final class ExplorerView {
                 editor.setTextSize(13);
                 new android.app.AlertDialog.Builder(activity)
                     .setTitle("Planejar alteração: " + path)
-                    .setMessage("A edição será registrada no plano. O APK original não será alterado.")
+                    .setMessage("Esta edição será mantida apenas na sessão atual. "
+                        + "O APK original não será alterado. "
+                        + "Se o Android encerrar o aplicativo, alterações ainda não exportadas "
+                        + "podem ser perdidas.")
                     .setView(editor)
                     .setNegativeButton("Cancelar", null)
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
@@ -256,7 +259,12 @@ public final class ExplorerView {
                             if (replacement.equals(original)) editPlan.remove(path);
                             else editPlan.addTextReplacement(path, replacement);
                             render();
-                            new android.app.AlertDialog.Builder(activity).setMessage("Alteração registrada. Itens no plano: " + editPlan.size()).setPositiveButton("OK", null).show();
+                            new android.app.AlertDialog.Builder(activity)
+                                .setTitle("Alteração registrada")
+                                .setMessage("Itens no plano: " + editPlan.size()
+                                    + "\n\nO plano fica apenas na memória da sessão. "
+                                    + "Para manter o resultado, exporte o APK modificado.")
+                                .setPositiveButton("OK", null).show();
                         } catch (Exception error) {
                             new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show();
                         }
