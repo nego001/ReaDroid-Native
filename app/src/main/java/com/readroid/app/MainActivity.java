@@ -874,16 +874,22 @@ public class MainActivity extends Activity {
                 .setMessage("Esta ação não altera o APK nem as edições abertas, "
                     + "mas remove o ponto de recuperação salvo no aparelho.")
                 .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Excluir cópia", (dialog, which) -> {
-                    try {
-                        new RecoveryVault(this).clear();
-                        new android.app.AlertDialog.Builder(this)
-                            .setMessage("Cópia de recuperação removida.")
-                            .setPositiveButton("OK", null).show();
-                    } catch (Exception error) {
-                        showRecoveryError("Não foi possível excluir", error);
-                    }
-                }).show());
+                .setPositiveButton("Excluir cópia", (dialog, which) ->
+                    // Same single-thread executor as Save/Restore: a deletion
+                    // cannot be undone by a previously queued background save.
+                    executor.execute(() -> {
+                        try {
+                            new RecoveryVault(this).clear();
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) return;
+                                new android.app.AlertDialog.Builder(this)
+                                    .setMessage("Cópia de recuperação removida.")
+                                    .setPositiveButton("OK", null).show();
+                            });
+                        } catch (Exception error) {
+                            showRecoveryError("Não foi possível excluir", error);
+                        }
+                    })).show());
 
         signatureInfo = NegrescoTheme.action(this, "", false);
         signatureInfo.setText("Ver certificado de assinatura");
