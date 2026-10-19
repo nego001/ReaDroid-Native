@@ -48,6 +48,30 @@ public final class NegrescoTheme {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    private static int mix(int first, int second, float weight) {
+        float inv = 1f - weight;
+        return Color.rgb(
+            Math.round(Color.red(first) * inv + Color.red(second) * weight),
+            Math.round(Color.green(first) * inv + Color.green(second) * weight),
+            Math.round(Color.blue(first) * inv + Color.blue(second) * weight));
+    }
+
+    /**
+     * Theme-aware studio surface with a subtle diagonal tint and thin luminous
+     * accent stroke. Does not use bitmap assets or runtime blur, so it remains
+     * inexpensive on older Android devices.
+     */
+    public static GradientDrawable studioCard(Context context, boolean highlighted) {
+        int start = mix(SURFACE, ACCENT, highlighted ? 0.13f : 0.055f);
+        int end = mix(SURFACE, BACKGROUND, 0.23f);
+        GradientDrawable gradient = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR, new int[]{start, end});
+        gradient.setCornerRadius(dp(context, COMPACT ? 13 : 18));
+        gradient.setStroke(dp(context, 1),
+            highlighted ? mix(ACCENT, BORDER, 0.32f) : BORDER);
+        return gradient;
+    }
+
     public static GradientDrawable panel(Context context) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(SURFACE);
@@ -76,9 +100,14 @@ public final class NegrescoTheme {
         button.setContentDescription(label);
         button.setTextSize(14 * FONT_SCALE);
         GradientDrawable d = new GradientDrawable();
-        d.setColor(primary ? ACCENT : SURFACE);
-        d.setCornerRadius(dp(context, COMPACT ? 8 : 13));
-        if (!primary) d.setStroke(dp(context, 1), BORDER);
+        if (primary) {
+            d.setOrientation(GradientDrawable.Orientation.TL_BR);
+            d.setColors(new int[]{ACCENT, mix(ACCENT, BACKGROUND, 0.23f)});
+        } else {
+            d.setColor(SURFACE);
+            d.setStroke(dp(context, 1), BORDER);
+        }
+        d.setCornerRadius(dp(context, COMPACT ? 10 : 14));
         button.setBackground(d);
         button.setPadding(dp(context, 16), dp(context, 9), dp(context, 16), dp(context, 9));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(context, COMPACT ? 48 : 56));
