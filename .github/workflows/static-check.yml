@@ -1,7 +1,7 @@
 name: Source checks
 on:
   push:
-    branches: [main, feature/v3-personalizacao, feature/ota-seguro]
+    branches: [main, feature/v3-personalizacao, feature/ota-seguro, feature/v3-design-studio]
   pull_request:
   workflow_dispatch:
 permissions:
