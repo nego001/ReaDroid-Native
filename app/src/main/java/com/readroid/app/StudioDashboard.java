@@ -144,6 +144,27 @@ public final class StudioDashboard {
         }
     }
 
+    /** Add an informative, consistent header to the five main application tabs. */
+    public static void featureHeader(Activity a, LinearLayout section, int glyph,
+                                     String title, String description) {
+        LinearLayout header = card(a, true);
+        LinearLayout top = new LinearLayout(a);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        NavGlyph mark = new NavGlyph(a, glyph);
+        mark.setSelectedState(true);
+        top.addView(mark, new LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)));
+        TextView heading = label(a, title, 21, NegrescoTheme.TEXT, true);
+        LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(-2, -2);
+        headingParams.leftMargin = dp(a, 12);
+        top.addView(heading, headingParams);
+        header.addView(top);
+        gap(a, header, 8);
+        TextView hint = label(a, description, 13, NegrescoTheme.MUTED, false);
+        header.addView(hint);
+        section.addView(header, 0);
+        gap(a, section, 10);
+    }
+
     public static void styleFeatureButton(Activity a, Button button, String symbol,
                                            String description, boolean important) {
         String title = button.getText().toString();
