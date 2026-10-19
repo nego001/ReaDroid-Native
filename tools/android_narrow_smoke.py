@@ -45,7 +45,9 @@ def main():
     print("Narrow device:", dims, density, flush=True)
     if "320x640" not in dims:
         raise AssertionError("Emulator did not switch to 320x640 resolution")
-    adb("shell", "am", "start", "-W", "-n", "com.readroid.app/.MainActivity")
+    launched = adb("shell", "am", "start", "-W", "-n", "com.readroid.app/.MainActivity")
+    if "Error" in launched:
+        raise AssertionError("Android activity launch failed: " + launched)
     time.sleep(3)
     ensure_foreground()
     assert_navigation()
@@ -72,3 +74,9 @@ if __name__ == "__main__":
             capture("v3-studio-narrow-final.png")
         except subprocess.SubprocessError as error:
             print("Could not capture final screenshot:", error)
+        try:
+            runtime = adb("logcat", "-d", "-s", "AndroidRuntime:E")
+            with open("v3-studio-narrow-runtime.txt", "w", encoding="utf-8") as log:
+                log.write(runtime)
+        except subprocess.SubprocessError as error:
+            print("Could not capture AndroidRuntime:", error)
