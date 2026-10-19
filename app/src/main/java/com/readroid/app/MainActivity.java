@@ -50,6 +50,17 @@ public class MainActivity extends Activity {
     private LinearLayout[] navigationContainers;
     private int selectedSection = 0;
     private Uri selectedApkUri;
+    private int analysisSequence = 0;
+
+    /** Keep worker output separate from the Activity's current project. */
+    private static final class AnalyzedApk {
+        final JSONObject report;
+        final File file;
+        AnalyzedApk(JSONObject report, File file) {
+            this.report = report;
+            this.file = file;
+        }
+    }
     private TextView apkSummary;
     private TextView projectMetrics;
     private ScrollView contentScroll;
@@ -1042,6 +1053,7 @@ public class MainActivity extends Activity {
     }
 
     private void analyzeSelectedApk(Uri uri) {
+        final int sequence = ++analysisSequence;
         selectedApkUri = uri;
         report = null;
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
@@ -1057,14 +1069,18 @@ public class MainActivity extends Activity {
         explorerView.setFiles(null, null);
         executor.execute(() -> {
             try {
-                JSONObject resultJson = analyze(uri);
-                if (Thread.currentThread().isInterrupted()) return;
+                AnalyzedApk result = analyze(uri);
                 runOnUiThread(() -> {
-                    if (!isFinishing() && !isDestroyed()) displayAnalyzedReport(resultJson);
+                    if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
+                        result.file.delete();
+                        return;
+                    }
+                    currentApk = result.file;
+                    displayAnalyzedReport(result.report);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
+                    if (sequence != analysisSequence || isFinishing() || isDestroyed()) return;
                     output.setText("Erro: " + error.getMessage());
                     apkSummary.setText("FALHA AO ABRIR PROJETO");
                     projectMetrics.setText("ESTRUTURA   •   Indisponível");
@@ -1182,7 +1198,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private JSONObject analyze(Uri uri) throws Exception {
+    private AnalyzedApk analyze(Uri uri) throws Exception {
         File file = File.createTempFile("readroid_", ".apk", getCacheDir());
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -1193,6 +1209,8 @@ public class MainActivity extends Activity {
                 byte[] buffer = new byte[65536];
                 int count;
                 while ((count = in.read(buffer)) != -1) {
+                    if (Thread.currentThread().isInterrupted())
+                        throw new java.io.InterruptedIOException("Análise interrompida");
                     size += count;
                     if (size > 1073741824L) throw new IOException("Limite de 1 GB excedido");
                     digest.update(buffer, 0, count);
@@ -1208,6 +1226,8 @@ public class MainActivity extends Activity {
             try (ZipFile zip = new ZipFile(file)) {
                 Enumeration<? extends ZipEntry> items = zip.entries();
                 while (items.hasMoreElements()) {
+                    if (Thread.currentThread().isInterrupted())
+                        throw new java.io.InterruptedIOException("Análise interrompida");
                     ZipEntry entry = items.nextElement();
                     String name = entry.getName();
                     if (++entries > 150000) throw new IOException("Entradas demais");
@@ -1231,8 +1251,7 @@ public class MainActivity extends Activity {
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Análise interrompida");
-            currentApk = file;
-            return json;
+            return new AnalyzedApk(json, file);
         } catch (Exception error) {
             file.delete();
             throw error;
@@ -1274,6 +1293,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        analysisSequence++;
         executor.shutdownNow();
         // The new Activity owns this cache file after a configuration change.
         if (currentApk != null && !isChangingConfigurations()) currentApk.delete();
