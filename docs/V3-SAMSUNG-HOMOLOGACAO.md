@@ -62,8 +62,12 @@ procedimento não desinstala, instala nem altera arquivos do aplicativo.
 - [x] Nova suíte de teclado/rotação aprovada em API 29 e API 35, 25/25 testes cada (commit `66b7df21`; [Android 10](https://github.com/nego001/ReaDroid-Native/actions/runs/39265428220) e [Android 15](https://github.com/nego001/ReaDroid-Native/actions/runs/39265428681)).
 - [ ] Samsung real testado com toque, TalkBack, teclado e rotação.
 - [ ] Registro de resultados, modelo, One UI e modo de navegação do Samsung.
-- [ ] Avaliação específica de regressão nos arquivos APK usados exclusivamente
-  como amostras de teste.
+- [x] Regressão automatizada com APK sintético, projeto aberto e alteração pendente
+  após recriação da Activity: 26/26 no Android 10 e 26/26 no Android 15
+  (commit `cafbc97c`). O APK original de teste permaneceu intacto.
+- [ ] Verificação manual com um APK de amostra no Samsung físico, sem dados reais.
+- [ ] Recuperação de edição após morte do processo Android (não coberta pelo
+  mecanismo atual de retenção em memória; não presumir persistência).
 
 **Fora de escopo:** liberar OTA, publicar V3 definitiva, ativar assinatura ou
 instalação automática, migrar dados locais sem backup.

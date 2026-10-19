@@ -152,3 +152,11 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Regressão de UI: cinco abas em `320x640` e fonte 130% aprovadas nos dois emuladores. Os avisos de OTA Estável/Beta permanecem bloqueados nos testes API 29.
 - `Android APK` e `Source checks` também aprovados para `66b7df21`. Testes de foco **não** substituem TalkBack em aparelho físico; ainda não há aprovação de Samsung, teclado Bluetooth, navegação por gestos em diferentes modelos ou instalação OTA.
 - Procedimento seguro de testes físicos documentado em [V3-SAMSUNG-HOMOLOGACAO.md](V3-SAMSUNG-HOMOLOGACAO.md).
+
+## Preservação de projeto com edição pendente: testes aprovados (19/10/2026)
+- Commit `cafbc97c`: `ProjectRecreationInstrumentedTest` exercita a recriação da `MainActivity` com um **APK ZIP sintético sem assinatura**, relatório carregado, seção Arquivos ativa e edição textual pendente.
+- **Android 10 API 29: 26/26 testes**, nenhum ignorado ou falho. [Execução #39266803432](https://github.com/nego001/ReaDroid-Native/actions/runs/39266803432).
+- **Android 15 API 35: 26/26 testes**, nenhum ignorado ou falho. [Execução #39266803823](https://github.com/nego001/ReaDroid-Native/actions/runs/39266803823).
+- O teste confirma que o arquivo em cache, o relatório, a edição pendente e a aba ativa sobrevivem à recriação; os bytes do APK original de teste permanecem idênticos.
+- Também foram aprovados os smoke tests de navegação em 320dp com fonte 130%; os canais de OTA Estável/Beta permanecem bloqueados no emulador API 29.
+- **Limite explícito:** recriação de Activity não representa morte do processo nem recuperação de dados após desinstalação. Projetos e alterações continuam sujeitos às limitações do armazenamento temporário; testar dados reais exige backup seguro e homologação física.
