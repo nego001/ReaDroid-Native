@@ -82,6 +82,10 @@ public final class StudioDashboard {
         body.setMaxLines(3);
         tile.addView(body);
         tile.setContentDescription("Abrir " + name + (favorite ? ", atalho favorito" : ""));
+        tile.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        iconRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        title.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        body.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         tile.setClickable(true);
         tile.setFocusable(true);
         tile.setOnClickListener(listener);
@@ -108,6 +112,10 @@ public final class StudioDashboard {
         wrapper.setClickable(true);
         wrapper.setFocusable(true);
         wrapper.setContentDescription(action.getText().toString() + ". " + detail);
+        wrapper.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        header.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        name.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        description.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         wrapper.setOnClickListener(v -> action.performClick());
         return wrapper;
     }
@@ -182,12 +190,14 @@ public final class StudioDashboard {
         button.setTextColor(NegrescoTheme.TEXT);
         button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         button.setTextSize(13 * NegrescoTheme.FONT_SCALE);
-        button.setMinHeight(dp(a, 72));
+        button.setMinHeight(dp(a, NegrescoTheme.COMPACT ? 72 : 88));
         button.setSingleLine(false);
-        button.setMaxLines(3);
-        button.setPadding(dp(a, 17), dp(a, 9), dp(a, 12), dp(a, 9));
+        button.setMaxLines(Integer.MAX_VALUE);
+        button.setPadding(dp(a, 17), dp(a, 11), dp(a, 12), dp(a, 11));
         button.setBackground(NegrescoTheme.studioCard(a, important));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(a, NegrescoTheme.COMPACT ? 72 : 88));
+        // Allow Android's larger-font settings to grow the card instead of
+        // clipping security instructions or long action descriptions.
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(a, 10);
         button.setLayoutParams(lp);
         button.setContentDescription(title + ". " + description);
