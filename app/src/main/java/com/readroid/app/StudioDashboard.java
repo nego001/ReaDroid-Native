@@ -173,9 +173,12 @@ public final class StudioDashboard {
         int line = full.indexOf('\n');
         rich.setSpan(new RelativeSizeSpan(0.8f), line + 1, full.length(),
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        rich.setSpan(new ForegroundColorSpan(important ? NegrescoTheme.ON_ACCENT : NegrescoTheme.MUTED),
+        // Feature cards have dark surfaces even when the original action was primary.
+        // Never reuse ON_ACCENT here: it can be black for bright custom accents.
+        rich.setSpan(new ForegroundColorSpan(NegrescoTheme.MUTED),
             line + 1, full.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         button.setText(rich);
+        button.setTextColor(NegrescoTheme.TEXT);
         button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         button.setTextSize(13 * NegrescoTheme.FONT_SCALE);
         button.setMinHeight(dp(a, 72));
