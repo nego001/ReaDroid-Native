@@ -113,3 +113,12 @@ e não apague cópias sem decisão explícita.
   continua cobrindo o app debug principal.
 - Nenhum processo altera dados do aplicativo já instalado, publica OTA
   ou solicita permissão adicional.
+
+## Evidência de ensaio físico Samsung (19/10/2026, capturas particulares fornecidas na conversa)
+- **PASSOU, observação da interface:** Projeto A sintético foi carregado; usuário inseriu a linha `TESTE NEGRESCODROID V3 12345` em `assets/teste_recuperacao.txt`, e a interface confirmou `Itens no plano: 1`.
+- **PASSOU, observação da interface:** após salvamento explícito, o aplicativo mostrou `Cópia protegida` e informou criptografia local. Isto **não** constitui inspeção independente do material armazenado.
+- **PASSOU, observação da interface:** ao reabrir o Projeto A e pedir recuperação, a interface informou que a cópia foi autenticada e correspondia ao APK pelo SHA-256; após confirmar, a revisão mostrou `Alterações pendentes (1)`, `assets/teste_recuperacao.txt`, 110 caracteres.
+- **PASSOU, recusa esperada:** com Projeto B, o aplicativo exibiu `Recuperação bloqueada`: `Esta cópia pertence a outro APK`. Não foi oferecida substituição do plano.
+- **PENDENTE:** confirmar por evidência que o Projeto A ainda é recuperável após a tentativa bloqueada com B; visualizar o texto exato da alteração restaurada; registrar a execução explícita de `Forçar parada` antes de reabrir e verificar hash do APK original.
+- **PENDENTE:** TalkBack, teclado físico, mudança de rotação, gestos e navegação alternativa no aparelho físico. Não há release final, assinatura de produção nem OTA habilitada.
+- Capturas não anexadas ao GitHub. Nenhum dado do usuário além dos resultados técnicos foi copiado.
