@@ -155,12 +155,19 @@ def main():
     # Verify the real UI wrote the expected preferences without backdoors in the app.
     preferences = adb("shell", "run-as", PACKAGE,
         "cat", "shared_prefs/v3_personalizacao.xml")
-    if 'name="font_percent" value="130"' not in preferences:
-        raise AssertionError("Font setting was not persisted")
-    if 'name="compact" value="true"' not in preferences:
-        raise AssertionError("Compact mode was not persisted")
-    if 'name="theme" value="light"' not in preferences:
-        raise AssertionError("Light theme was not persisted")
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(preferences)
+    saved = {}
+    for node in root:
+        name = node.attrib.get("name")
+        if name:
+            saved[name] = node.attrib.get("value", node.text or "")
+    if saved.get("font_percent") != "130":
+        raise AssertionError("Font setting was not persisted: " + repr(saved.get("font_percent")))
+    if saved.get("compact") != "true":
+        raise AssertionError("Compact mode was not persisted: " + repr(saved.get("compact")))
+    if saved.get("theme") != "light":
+        raise AssertionError("Light theme was not persisted: " + repr(saved.get("theme")))
     ensure_foreground()
     print("PASS: real APK analysis, file exploration, light theme, 130% fonts and compact mode; project retained")
 
