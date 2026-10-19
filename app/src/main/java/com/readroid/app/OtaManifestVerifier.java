@@ -30,6 +30,8 @@ public final class OtaManifestVerifier {
         verifier.update(payload.getBytes(StandardCharsets.UTF_8));
         if (!verifier.verify(Base64.decode(signatureText, Base64.NO_WRAP)))
             throw new SecurityException("Assinatura do manifesto OTA inválida");
-        return OtaRelease.parse(payload);
+        OtaRelease trusted = OtaRelease.parse(payload);
+        trusted.markSignatureVerified();
+        return trusted;
     }
 }
