@@ -49,7 +49,9 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 
 ## Nova fase de regressões
 - 10/10 testes instrumentados aprovados no workflow da revisão `abb61da5`: https://github.com/nego001/ReaDroid-Native/actions/runs/39188439031
-- A simulação visual de 320dp e fonte do sistema em 130% exige que o APK seja reinstalado após os testes instrumentados. O fluxo foi ajustado e aguarda confirmação final.
+- Emulador com 320×640 dp e fonte Android a 130%: navegação pelas cinco abas aprovada após reinstalação do APK no workflow https://github.com/nego001/ReaDroid-Native/actions/runs/39188709664
+- Capturas mostraram dica de pesquisa truncada no explorador; o texto da dica e a tipografia foram adaptados para telas estreitas em `fe3b877c`.
+- A simulação visual de 320dp reinstala o APK após testes instrumentados. O fluxo agora está comprovadamente aprovado.
 - Os testes de reconstrução validam apenas um **ZIP APK sem assinatura**. Não demonstram que o resultado instala no Android.
 - O recurso de exportação/importação JSON foi exercitado diretamente no Android. O fluxo completo de escolha de arquivos pelo sistema ainda requer um teste manual de UX.
 
@@ -64,7 +66,9 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [ ] Testar exportação, importação de presets e o fluxo de edição de arquivos com APK real.
 - [x] Capturas reais dos temas OLED e Claro, com contraste e navegação visivelmente corretos em emulador.
 - [x] Teste automatizado com tema Claro, fonte a 130%, modo compacto e retenção do APK aprovado no emulador.
-- [ ] Testar largura de 320–360 dp e telas físicas de diferentes fabricantes.
+- [x] Testar 320dp com fonte do sistema a 130%: todas as cinco abas visíveis, navegáveis e com alvos de toque adequados.
+- [x] Capturas reais do painel inicial e Arquivos em largura de 320dp.
+- [ ] Validar telas físicas de diferentes fabricantes.
 - [ ] Testar importação de presets anteriores e do novo conjunto.
 - [ ] Confirmar que o código OTA permanece bloqueado quando não configurado.
 - [ ] Revisar acessibilidade com leitor de tela e teclado físico.
