@@ -255,10 +255,13 @@ public final class StudioDashboard {
         customizationHint.setText("Sua interface. Suas regras. Temas, cores e muito mais.");
         customizationHint.setPadding(0, 0, 0, dp(a, 8));
         settingsPanel.addView(customizationHint);
-        togglePersonalization.setText("Opções de aparência  ▴");
+        boolean expanded = a.getPreferences(Activity.MODE_PRIVATE)
+            .getBoolean("studio_settings_expanded", true);
+        togglePersonalization.setText(
+            expanded ? "Opções de aparência  ▴" : "Opções de aparência  ▾");
         settingsPanel.addView(togglePersonalization);
         buildOptions(a, personalizationGroup, controls);
-        personalizationGroup.setVisibility(View.VISIBLE);
+        personalizationGroup.setVisibility(expanded ? View.VISIBLE : View.GONE);
         settingsPanel.addView(personalizationGroup);
         home.addView(settingsPanel);
         gap(a, home, 14);
