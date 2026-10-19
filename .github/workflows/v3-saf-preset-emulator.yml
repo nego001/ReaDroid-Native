@@ -1,0 +1,55 @@
+name: V3 SAF appearance roundtrip
+on:
+  push:
+    branches: [feature/v3-design-studio]
+    paths:
+      - 'tools/android_saf_preset_smoke.py'
+      - '.github/workflows/v3-saf-preset-emulator.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  saf-roundtrip:
+    if: github.ref == 'refs/heads/feature/v3-design-studio'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Allow KVM access
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Real Android DocumentsUI export and import
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 2048M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            set -eu
+            gradle --no-daemon :app:assembleDebug
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            python3 tools/android_saf_preset_smoke.py
+      - name: Capture screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NegrescoDroid-V3-SAF-Export-Import
+          path: |
+            v3-saf-*.png
+            v3-saf-runtime.txt
+            v3-studio-android-hierarchy.xml
+          if-no-files-found: warn
