@@ -42,6 +42,36 @@ def find_tab(nodes, name):
     raise AssertionError(f"Tab {name!r} not found")
 
 
+def visible_app_hierarchy():
+    """Dismiss only a known *launcher* ANR overlay in emulator UI tests.
+
+    Android 15's Pixel Launcher sometimes ANRs after instrumentation. It can
+    cover a fully running NegrescoDroid and hide every app node from uiautomator.
+    Do not dismiss our own ANRs, unrelated dialogs or arbitrary permission UI.
+    """
+    nodes = hierarchy()
+    if any(n.attrib.get("text") == "NegrescoDroid isn't responding" for n in nodes):
+        raise AssertionError("NegrescoDroid ANR: refusing automated dismissal")
+    launcher_anr = any(
+        n.attrib.get("text") == "Pixel Launcher isn't responding"
+        and n.attrib.get("package") == "android"
+        for n in nodes)
+    if not launcher_anr:
+        return nodes
+    close = [n for n in nodes
+             if n.attrib.get("package") == "android"
+             and n.attrib.get("resource-id") == "android:id/aerr_close"]
+    if len(close) != 1:
+        raise AssertionError("Pixel Launcher ANR lacks an unambiguous Close app button")
+    print("EMULATOR_RECOVERY: dismissing Pixel Launcher ANR, not a NegrescoDroid error",
+          flush=True)
+    tap(close[0])
+    nodes = hierarchy()
+    if any("isn't responding" in n.attrib.get("text", "") for n in nodes):
+        raise AssertionError("ANR dialog remains after one bounded launcher recovery")
+    return nodes
+
+
 def tap(node):
     bounds = node.attrib.get("bounds", "")
     found = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
@@ -67,21 +97,21 @@ def main():
     adb("shell", "am", "start", "-W", "-n", ACTIVITY)
     time.sleep(4)
     ensure_foreground()
-    nodes = hierarchy()
+    nodes = visible_app_hierarchy()
     if "selecionada" not in find_tab(nodes, "Início").attrib.get("content-desc", ""):
         raise AssertionError("Home is not the active tab")
     tap(find_tab(nodes, "Arquivos"))
     ensure_foreground()
-    nodes = hierarchy()
+    nodes = visible_app_hierarchy()
     if "selecionada" not in find_tab(nodes, "Arquivos").attrib.get("content-desc", ""):
         raise AssertionError("Files navigation did not select the Files tab")
     tap(find_tab(nodes, "Segurança"))
-    nodes = hierarchy()
+    nodes = visible_app_hierarchy()
     if "selecionada" not in find_tab(nodes, "Segurança").attrib.get("content-desc", ""):
         raise AssertionError("Security navigation did not select the Security tab")
     tap(find_tab(nodes, "Início"))
     ensure_foreground()
-    if "selecionada" not in find_tab(hierarchy(), "Início").attrib.get("content-desc", ""):
+    if "selecionada" not in find_tab(visible_app_hierarchy(), "Início").attrib.get("content-desc", ""):
         raise AssertionError("Failed to return Home")
     runtime = adb("logcat", "-d", "-s", "AndroidRuntime:E")
     if "FATAL EXCEPTION" in runtime and PKG in runtime:

@@ -112,3 +112,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - No Android 15 (targetSdk 35), reservar os insets de status, navegação e recortes da tela no contêiner raiz, incluindo navegação por gestos ou três botões.
 - Portão obrigatório: reexecutar a suíte de instrumentação e o smoke de navegação no emulador API 35, verificando que a interface permanece visível e não ocorre crash.
 - **Não considerar homologado até que a nova execução de CI seja aprovada.** Testes de TalkBack em Samsung físico ainda pendentes.
+
+## Android 15: regressão real e falso negativo por Launcher (19/10/2026)
+- A execução https://github.com/nego001/ReaDroid-Native/actions/runs/39196927845 passou **22/22 testes instrumentados**, incluindo segurança OTA, acessibilidade e reconstrução; o crash inicial de `WindowInsetsController` não se repetiu.
+- A automação visual falhou porque o **Pixel Launcher do emulador** exibiu `Pixel Launcher isn't responding` por cima do NegrescoDroid. Evidência: `v3-studio-android-hierarchy.xml` e captura de tela do artifact `12162009636`. O relatório `v3-studio-android-runtime.txt` estava vazio.
+- O smoke agora reconhece **apenas** o alerta com título exato e pacote `android`, clica uma única vez em `android:id/aerr_close`, relê a hierarquia e exige a seleção correta da aba. Alertas do NegrescoDroid ou outras janelas **não** são dispensados silenciosamente.
+- Testes Python isolados verificam o caso de recuperação, a ausência de intervenção em alertas distintos e a rejeição de um ANR do próprio app.
+- A aprovação do gate API 35 depende de **nova execução completa**, não apenas dos 22 testes anteriores. Teste físico Samsung/TalkBack segue pendente.

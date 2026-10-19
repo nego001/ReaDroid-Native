@@ -28,6 +28,8 @@ jobs:
       - name: Enable KVM acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Test strict emulator-only ANR handling
+        run: python3 -m unittest discover -s tests -p 'test_android_ui_recovery.py' -v
       - name: Instrumentation and real UI on Android 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
