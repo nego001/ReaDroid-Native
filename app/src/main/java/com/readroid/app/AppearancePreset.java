@@ -29,17 +29,18 @@ public final class AppearancePreset {
     public static void importSettings(Context context, String data) throws Exception {
         if (data == null || data.length() > 8192) throw new IllegalArgumentException("Arquivo de preferências muito grande");
         JSONObject o = new JSONObject(data);
-        if (o.getInt("schema") != 1) throw new IllegalArgumentException("Formato de preferências incompatível");
-        // JSON getters can coerce strings such as "130" into a number.
-        // Accept only the documented types; invalid imports must not touch prefs.
+        // JSON getters coerce "1" or 18.5 into integers on some Android versions.
+        // Preserve strict schema/types and reject truncated fractional values.
+        if (!isInteger(o.opt("schema")) || o.getInt("schema") != 1)
+            throw new IllegalArgumentException("Formato de preferências incompatível");
+        // Invalid imports must not touch any existing preference.
         for (String key : new String[]{"theme", "accent", "display_name", "display_subtitle"}) {
             if (!(o.opt(key) instanceof String))
                 throw new IllegalArgumentException("Campo textual inválido: " + key);
         }
         for (String key : new String[]{"font_percent", "favorite_tab"}) {
             Object number = o.opt(key);
-            if (!(number instanceof Number)
-                || ((Number) number).doubleValue() % 1.0 != 0.0)
+            if (!isInteger(number))
                 throw new IllegalArgumentException("Campo numérico inválido: " + key);
         }
         for (String key : new String[]{"compact", "nav_labels"}) {
@@ -55,7 +56,7 @@ public final class AppearancePreset {
         int radius = o.optInt("card_radius", 18);
         if (o.has("studio_glow") && !(o.opt("studio_glow") instanceof Boolean))
             throw new IllegalArgumentException("Tipo de efeito neon inválido");
-        if (o.has("card_radius") && !(o.opt("card_radius") instanceof Number))
+        if (o.has("card_radius") && !isInteger(o.opt("card_radius")))
             throw new IllegalArgumentException("Tipo de raio inválido");
         int font = o.getInt("font_percent");
         int favorite = o.getInt("favorite_tab");
@@ -78,6 +79,14 @@ public final class AppearancePreset {
             .putInt("font_percent", font).putInt("favorite_tab", favorite)
             .putBoolean("compact", compact).putBoolean("nav_labels", labels)
             .putString("display_name", name).putString("display_subtitle", subtitle).apply();
+    }
+
+    private static boolean isInteger(Object value) {
+        if (!(value instanceof Number)) return false;
+        double number = ((Number) value).doubleValue();
+        return !Double.isInfinite(number) && !Double.isNaN(number)
+            && Math.rint(number) == number
+            && number >= Integer.MIN_VALUE && number <= Integer.MAX_VALUE;
     }
 
     private static boolean containsControlCharacter(String value) {
