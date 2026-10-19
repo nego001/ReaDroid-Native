@@ -91,3 +91,25 @@ e não apague cópias sem decisão explícita.
 - [x] Cofre criptografado testado em emulador: SHA-256 do APK, AES-GCM contra adulteração, diretório/alias isolado, exclusão e limites de tamanho.
 - [ ] Recuperação ponta a ponta após interrupção do processo, usando interface do aplicativo e APK fictício no Samsung físico.
 - [ ] TalkBack, teclado físico, rotação real e navegação por gestos no Samsung físico.
+
+## APK QA isolado para Samsung (etapa de testes da base, 19/10/2026)
+
+- O pipeline `Android APK` da branch `feature/v3-design-studio` produz um
+  **segundo artefato experimental**, `NegrescoDroid-V3-QA-isolated`.
+  Ele tem ID Android `com.readroid.app.qa` e rótulo
+  **NegrescoDroid V3 Teste**; a versão principal mantém `com.readroid.app`.
+- O objetivo é instalar **lado a lado** com o aplicativo atual, sem
+  sobrescrever uma versão já instalada com certificado debug diferente e
+  sem tocar no sandbox de dados da versão anterior.
+- **É um APK de depuração, não uma versão publicada ou de produção.**
+  Verifique o nome e o pacote antes de instalar. Use somente APKs fictícios
+  para analisar; não abra arquivos pessoais na build QA.
+- A assinatura debug de cada execução CI **pode mudar**. Portanto também
+  **não é garantida a atualização da própria variante QA** entre execuções.
+  Jamais desinstale ou limpe dados para contornar erro de assinatura sem
+  antes encerrar os testes, preservar cópias relevantes e escolher fazê-lo.
+- O CI confere assinatura, alinhamento, SHA-256 e `applicationId`/rótulo
+  do QA, mas **não substitui homologação Samsung**. A instrumentação
+  continua cobrindo o app debug principal.
+- Nenhum processo altera dados do aplicativo já instalado, publica OTA
+  ou solicita permissão adicional.

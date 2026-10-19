@@ -10,6 +10,16 @@ android {
         versionCode = 3
         versionName = "3.0.0-preview.3-dev"
     }
+    // Isolated, manually installed QA app. Different Android UID/sandbox
+    // prevents a CI debug-signature mismatch from endangering existing data.
+    buildTypes {
+        create("qa") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            isDebuggable = true
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

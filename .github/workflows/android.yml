@@ -47,6 +47,34 @@ jobs:
           "$TOOLS/apksigner" verify --verbose --print-certs "$APK"
           "$TOOLS/zipalign" -c -p 4 "$APK"
           sha256sum "$APK" | tee apk-sha256.txt
+      - name: Build separate QA APK
+        if: github.ref == 'refs/heads/feature/v3-design-studio'
+        run: gradle --stacktrace --no-daemon :app:assembleQa
+      - name: Verify QA identity and signing
+        if: github.ref == 'refs/heads/feature/v3-design-studio'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          TOOLS="$SDK_ROOT/build-tools/35.0.0"
+          APK="app/build/outputs/apk/qa/app-qa.apk"
+          test -s "$APK"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          "$TOOLS/zipalign" -c -p 4 "$APK"
+          "$TOOLS/aapt" dump badging "$APK" | tee qa-badging.txt
+          grep -q "package: name='com.readroid.app.qa'" qa-badging.txt
+          grep -q "application-label:'NegrescoDroid V3 Teste'" qa-badging.txt
+          sha256sum "$APK" | tee qa-apk-sha256.txt
+      - name: Upload separate QA APK
+        if: github.ref == 'refs/heads/feature/v3-design-studio'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NegrescoDroid-V3-QA-isolated
+          path: |
+            app/build/outputs/apk/qa/app-qa.apk
+            qa-apk-sha256.txt
+            qa-badging.txt
+          if-no-files-found: error
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4

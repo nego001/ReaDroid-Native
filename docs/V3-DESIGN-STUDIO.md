@@ -208,3 +208,15 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Planejado para **depois da base**, no issue [#1](https://github.com/nego001/ReaDroid-Native/issues/1); esta alteração não redesenha telas.
 - Correção independente da base: o editor distingue `ADDED`, `UPDATED`, `REMOVED` e `UNCHANGED`, sem declarar sucesso quando o texto permaneceu igual ao original e o plano está vazio. A base funcional e os testes têm prioridade.
 - O APK que já estiver instalado no Samsung não incorpora a correção até a instalação de um build novo e compatível, sem desinstalar/apagar dados.
+
+## Base de testes: variante instalável lado a lado (19/10/2026)
+- Criado build type `qa` com `applicationId` `com.readroid.app.qa`,
+  isolado do aplicativo principal `com.readroid.app`.
+- O manifesto específico `src/qa` identifica a variante como
+  **NegrescoDroid V3 Teste**, sem modificar o rótulo da versão principal.
+- GitHub Actions compila e verifica o APK QA separadamente, incluindo
+  assinatura debug, ZIP alignment, SHA-256, pacote e rótulo; publica artefato
+  com nome inequívoco.
+- Limites de teste: o certificado debug pode mudar entre execuções, logo
+  atualizar a própria variante QA não é garantido. Isso **não** libera OTA,
+  não instala software e não torna a variante uma release definitiva.
