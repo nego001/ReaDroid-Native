@@ -192,3 +192,13 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - `Compartilhar plano de alterações` agora exige aviso explícito, pois esse fluxo envia **JSON legível** ao aplicativo escolhido. Não é o mesmo que a cópia criptografada.
 - Limites: salvar não é automático. Alterações realizadas depois do último salvamento não entram na cópia até uma nova confirmação; sem a chave Android local, os dados não são recuperáveis. Desinstalar, limpar dados, trocar dispositivo ou invalidar a Keystore pode impedir recuperação. O APK de origem deve estar disponível para seleção novamente.
 - **Pendente**: homologação real do fluxo no Samsung e validação de retomada manual após encerramento forçado do processo. CI em emulador não equivale à homologação física. A OTA permanece bloqueada e a V3 não foi publicada.
+
+## Cópia criptografada: regressão automatizada APROVADA (19/10/2026)
+- Commit de código final `5344f58c`: **Android 10 API 29, 33/33 testes instrumentados aprovados**, nenhum ignorado ou falho: https://github.com/nego001/ReaDroid-Native/actions/runs/39293953655.
+- O mesmo commit: **Android 15 API 35, 33/33 testes instrumentados aprovados**, nenhum ignorado ou falho: https://github.com/nego001/ReaDroid-Native/actions/runs/39293953630.
+- Android 10: navegação das cinco abas com 320 dp e 130% de texto aprovada; botões OTA Estável/Beta permanecem bloqueados na ausência de configuração.
+- Android 15: smoke de navegação e tela estreita aprovados sem crash do aplicativo detectado.
+- Os cinco novos testes `RecoveryVaultInstrumentedTest` verificaram restauração por nova instância, rejeição de APK diferente, alteração de ciphertext detectada pela autenticação GCM, rejeição de planos inválidos/grandes preservando a cópia anterior e exclusão da cópia; diretório e alias da Keystore de teste são isolados do usuário.
+- O teste de teclado original apresentou falha intermitente de entrega global do ENTER ao emulador em uma execução anterior. `5344f58c` passou a encaminhar eventos `KeyEvent` ao componente nativo em foco para verificar sua ativação de modo determinístico; **a rota de hardware/teclado Bluetooth real permanece pendente**.
+- Build Android e `Source checks` do commit `5344f58c` aprovados. O armazenamento de recuperação depende do consentimento explícito; **não foi implementado salvamento automático**, compartilhamento em nuvem, instalação por OTA nem publicação final.
+- Limites de homologação: o teste de nova instância não equivale a matar o processo com um projeto real e restaurar pelo fluxo completo da interface. Confirmar manualmente no Samsung usando apenas APK sintético, sem dados privados, antes de considerar a V3 pronta para uso real.

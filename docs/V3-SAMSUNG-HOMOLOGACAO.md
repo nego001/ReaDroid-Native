@@ -84,3 +84,10 @@ apaga o armazenamento privado e pode invalidar sua chave Keystore. Um plano
 salvo não substitui o backup do projeto nem garante preservação de edições
 feitas após o último salvamento. Na falha criptográfica, interrompa o teste
 e não apague cópias sem decisão explícita.
+
+### Verificações automatizadas concluídas
+- [x] Android 10: 33/33 testes, commit `5344f58c` ([CI](https://github.com/nego001/ReaDroid-Native/actions/runs/39293953655)).
+- [x] Android 15: 33/33 testes, commit `5344f58c` ([CI](https://github.com/nego001/ReaDroid-Native/actions/runs/39293953630)).
+- [x] Cofre criptografado testado em emulador: SHA-256 do APK, AES-GCM contra adulteração, diretório/alias isolado, exclusão e limites de tamanho.
+- [ ] Recuperação ponta a ponta após interrupção do processo, usando interface do aplicativo e APK fictício no Samsung físico.
+- [ ] TalkBack, teclado físico, rotação real e navegação por gestos no Samsung físico.
