@@ -41,8 +41,11 @@ public final class OtaUpdatePipeline {
         // A forged/stale OtaRelease must never start a request with absent pins.
         if (!OtaConfig.isConfigured(channel))
             throw new SecurityException("OTA assinada não configurada: download bloqueado");
+        // A valid-looking JSON release is NOT evidence of a trusted signature.
+        // Only OtaManifestVerifier can mark metadata authenticated.
+        if (!release.hasVerifiedSignature())
+            throw new SecurityException("Manifesto OTA sem assinatura verificada");
         // The release still requires digest, package and signer verification.
-        // The configured trusted origin is authoritative, not request arguments.
         if (!release.channel.equals(channel))
             throw new SecurityException("Canal OTA diferente da preferência do usuário");
         File downloaded = OtaApkDownloader.download(release, context.getCacheDir());
