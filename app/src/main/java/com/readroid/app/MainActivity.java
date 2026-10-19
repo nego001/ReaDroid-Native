@@ -553,7 +553,7 @@ public class MainActivity extends Activity {
         output.setPadding(NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12), NegrescoTheme.dp(this, 16));
         output.setBackground(NegrescoTheme.panel(this));
         apkSummary = new TextView(this);
-        apkSummary.setText("NENHUM PROJETO ABERTO\n\nSelecione um APK para visualizar seus detalhes.");
+        apkSummary.setText("Nenhum APK selecionado\nSelecione um arquivo para começar.");
         apkSummary.setTextColor(NegrescoTheme.TEXT);
         apkSummary.setTextSize(15);
         apkSummary.setPadding(NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24), NegrescoTheme.dp(this, 20), NegrescoTheme.dp(this, 24));
@@ -815,7 +815,7 @@ public class MainActivity extends Activity {
                 exportAppearance, importAppearance, glowPicker, cornersPicker, resetAppearance},
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
-        showSection(0);
+        showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
         restoreWorkspace();
     }
 
@@ -825,10 +825,17 @@ public class MainActivity extends Activity {
         output.setText(formatReport(resultJson));
         JSONObject info = resultJson.optJSONObject("manifestAnalysis");
         String packageName = info == null ? "Desconhecido" : info.optString("packageName", "Desconhecido");
-        apkSummary.setText("PROJETO CARREGADO\n\n" + packageName
-            + "\n\n" + resultJson.optInt("entries") + " arquivos  •  "
-            + (resultJson.optLong("sizeBytes") / 1024) + " KB"
-            + "\n\nSHA-256\n" + resultJson.optString("sha256"));
+        String headline = packageName == null || packageName.isEmpty()
+            ? "Pacote desconhecido" : packageName;
+        String details = resultJson.optInt("entries") + " arquivos  •  "
+            + (resultJson.optLong("sizeBytes") / 1024) + " KB";
+        String combined = headline + "\n" + details;
+        android.text.SpannableString styled = new android.text.SpannableString(combined);
+        styled.setSpan(new android.text.style.RelativeSizeSpan(0.79f),
+            headline.length() + 1, combined.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        styled.setSpan(new android.text.style.ForegroundColorSpan(NegrescoTheme.MUTED),
+            headline.length() + 1, combined.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        apkSummary.setText(styled);
         projectMetrics.setText("DEX  " + (resultJson.optJSONArray("dexFiles") == null ? 0 : resultJson.optJSONArray("dexFiles").length())
             + "     •     BIBLIOTECAS  " + (resultJson.optJSONArray("nativeLibraries") == null ? 0 : resultJson.optJSONArray("nativeLibraries").length())
             + "     •     ASSETS  " + resultJson.optInt("assets"));
@@ -1210,6 +1217,11 @@ public class MainActivity extends Activity {
         out.append("\\nNavegue pelas pastas e pesquise os arquivos abaixo.\\n");
         out.append("\\nRelatório completo disponível em Compartilhar JSON.");
         return out.toString();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle outState) {
+        outState.putInt("active_studio_section", selectedSection);
+        super.onSaveInstanceState(outState);
     }
 
     @Override protected void onDestroy() {
