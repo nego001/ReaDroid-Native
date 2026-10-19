@@ -37,11 +37,7 @@ jobs:
             gradle --no-daemon :app:assembleDebug
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
-            adb shell am start -W -n com.readroid.app/.MainActivity
-            sleep 8
-            adb shell pidof com.readroid.app | tr -d '\r' | grep -E '^[0-9]+$'
-            adb shell dumpsys activity activities | grep -F com.readroid.app/.MainActivity
-            adb exec-out screencap -p > v3-studio-android-emulator.png
+            python3 tools/android_ui_smoke.py
             test -s v3-studio-android-emulator.png
             if adb logcat -d -s AndroidRuntime:E | grep -A8 'FATAL EXCEPTION' | grep -Fq 'com.readroid.app'; then
               echo 'NegrescoDroid AndroidRuntime crash detected' >&2
