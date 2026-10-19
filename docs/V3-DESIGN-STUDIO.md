@@ -21,6 +21,13 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Cartões de ações e cabeçalhos explicativos nas abas Construir, Segurança e IA.
 - [x] Lista de arquivos com cartões e tipografia de metadados mais legível.
 - [x] OTA mantém avisos verdadeiros sobre configuração incompleta e sem instalação automática.
+- [x] Navegação inferior com seleção visual em cartões e descrições acessíveis.
+- [x] Ajuste de contraste WCAG nos botões, aviso para cor HEX pouco legível.
+- [x] Resumo do projeto reduzido; dados técnicos completos permanecem no relatório.
+- [x] Troca de tema/rotação retêm APK, relatório e plano textual na mesma sessão.
+- [x] Recuperação do arquivo selecionado quando a análise é interrompida pela recriação da Activity.
+- [x] Estado aberto/fechado do painel de personalização persistido separadamente.
+- [x] Teste manual de emulador preparado: abertura, troca de abas e captura da tela.
 
 ## Restrições
 - **Não** criar funcionalidades de assinatura APK que o programa ainda não suporta.
@@ -32,8 +39,8 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
   gradientes e desenho vetorial, para evitar consumo excessivo de GPU/CPU.
 
 ## Validação
-- [ ] Confirmar compilação Android da revisão final desta branch.
-- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
+- [x] Builds Android intermediários concluídos com sucesso na branch.\n- [ ] Confirmar compilação Android após o último commit.
+- [ ] Executar o workflow manual `V3 Android UI smoke` na branch `feature/v3-design-studio`, verificar a captura e eventuais erros de execução.\n- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
 - [ ] Testar seleção real de APK, exploração de arquivos, relatório e exportação.
 - [ ] Conferir tema claro, fonte a 130%, modo compacto e largura de 320–360 dp.
 - [ ] Testar importação de presets anteriores e do novo conjunto.
