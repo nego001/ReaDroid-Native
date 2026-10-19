@@ -1457,6 +1457,9 @@ public class MainActivity extends Activity {
     }
 
     private AnalyzedApk analyze(Uri uri) throws Exception {
+        // Reserve private storage before copying the untrusted document.
+        // The provider may lie about its size: streaming checks remain required.
+        ApkImportPreflight.beforeCopy(this, uri);
         File file = File.createTempFile("readroid_", ".apk", getCacheDir());
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -1466,13 +1469,20 @@ public class MainActivity extends Activity {
                 if (in == null) throw new IOException("Arquivo inacessível");
                 byte[] buffer = new byte[65536];
                 int count;
+                long lastStorageCheck = 0;
                 while ((count = in.read(buffer)) != -1) {
                     if (Thread.currentThread().isInterrupted())
                         throw new java.io.InterruptedIOException("Análise interrompida");
                     size += count;
-                    if (size > 1073741824L) throw new IOException("Limite de 1 GB excedido");
+                    if (size > ApkImportPreflight.MAX_APK_BYTES)
+                        throw new IOException("Limite seguro atual de 1 GiB excedido.");
                     digest.update(buffer, 0, count);
                     out.write(buffer, 0, count);
+                    if (ApkImportPreflight.shouldRecheck(size, lastStorageCheck)) {
+                        ApkImportPreflight.checkProgress(size,
+                            ApkImportPreflight.availableBytes(this));
+                        lastStorageCheck = size;
+                    }
                 }
             }
             StringBuilder hash = new StringBuilder();

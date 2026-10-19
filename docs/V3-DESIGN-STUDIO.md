@@ -227,3 +227,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - A lista separa claramente ferramentas já utilizáveis (metadados, manifesto, busca, SHA-256, comparação, editor UTF-8 pequeno e exportação unsigned) daquelas que ainda não existem (DEX, assets binários Unity/Unreal, splits/APKS/XAPK, rebuild instalável).
 - Casos sintéticos de teste: cada perfil, ambiguidade, indícios incompletos e limitação explícita. A interface de editor antiga **não foi alterada**.
 - Limite atual de importação continua 1 GiB; abertura multi-GB, indexação escalável e edição de formatos especializados dependem das próximas etapas de infraestrutura, memória/armazenamento e ensaios físicos.
+
+## Importação de arquivos maiores: pré-inspeção segura (19/10/2026)
+- `ApkImportPreflight` confere o tamanho declarado pelo provedor SAF (quando existente) e o espaço realmente disponível no cache privado, reservando 64 MiB antes da cópia.
+- O importador contabiliza bytes **de fato lidos** (não confia apenas em `OpenableColumns.SIZE`) e reavalia espaço livre a cada 32 MiB, encerrando com limpeza do temporário se exceder 1 GiB ou faltar armazenamento.
+- Fluxo sem novo privilégio Android, sem upload, sem execução de código e sem alterar o APK de origem.
+- APK acima de 1 GiB **permanece bloqueado** explicitamente até existir infraestrutura sob demanda para ZIP64/metadados paginados, mais testes físicos de RAM, armazenamento e integridade.
+- Quatro testes instrumentados emulam tamanho declarado acima do limite, reserva insuficiente, tamanho desconhecido e checagem periódica de disco.
