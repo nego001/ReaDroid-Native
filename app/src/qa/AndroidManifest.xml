@@ -1,6 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-    <!-- Distinguishable from the primary installation on a physical Samsung. -->
-    <application android:label="NegrescoDroid V3 Teste"
-        tools:replace="android:label" />
-</manifest>
