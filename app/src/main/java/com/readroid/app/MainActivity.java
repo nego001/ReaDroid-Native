@@ -53,6 +53,20 @@ public class MainActivity extends Activity {
     private TextView projectMetrics;
     private ScrollView contentScroll;
 
+    /** Holds a project in memory across theme changes and rotation only. */
+    private static final class WorkspaceState {
+        final File apk;
+        final JSONObject report;
+        final Map<String, String> changes;
+        final int activeSection;
+        WorkspaceState(File apk, JSONObject report, Map<String, String> changes, int section) {
+            this.apk = apk;
+            this.report = report;
+            this.changes = changes;
+            this.activeSection = section;
+        }
+    }
+
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         NegrescoTheme.apply(this);
@@ -800,6 +814,54 @@ public class MainActivity extends Activity {
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
         showSection(0);
+        restoreWorkspace();
+    }
+
+    /** The same report renderer is used for fresh APKs and retained workspaces. */
+    private void displayAnalyzedReport(JSONObject resultJson) {
+        report = resultJson;
+        output.setText(formatReport(resultJson));
+        JSONObject info = resultJson.optJSONObject("manifestAnalysis");
+        String packageName = info == null ? "Desconhecido" : info.optString("packageName", "Desconhecido");
+        apkSummary.setText("PROJETO CARREGADO\n\n" + packageName
+            + "\n\n" + resultJson.optInt("entries") + " arquivos  •  "
+            + (resultJson.optLong("sizeBytes") / 1024) + " KB"
+            + "\n\nSHA-256\n" + resultJson.optString("sha256"));
+        projectMetrics.setText("DEX  " + (resultJson.optJSONArray("dexFiles") == null ? 0 : resultJson.optJSONArray("dexFiles").length())
+            + "     •     BIBLIOTECAS  " + (resultJson.optJSONArray("nativeLibraries") == null ? 0 : resultJson.optJSONArray("nativeLibraries").length())
+            + "     •     ASSETS  " + resultJson.optInt("assets"));
+        JSONObject tree = resultJson.optJSONObject("explorer");
+        explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
+        share.setEnabled(true);
+        ai.setEnabled(true);
+        project.setEnabled(true);
+        rebuild.setEnabled(true);
+        signatureInfo.setEnabled(true);
+    }
+
+    @Override public Object onRetainNonConfigurationInstance() {
+        if (currentApk == null || !currentApk.isFile() || report == null
+            || explorerView == null) return null;
+        return new WorkspaceState(currentApk, report,
+            explorerView.getEditPlan().snapshot(), selectedSection);
+    }
+
+    private void restoreWorkspace() {
+        Object previous = getLastNonConfigurationInstance();
+        if (!(previous instanceof WorkspaceState)) return;
+        WorkspaceState workspace = (WorkspaceState) previous;
+        if (!workspace.apk.isFile()) return;
+        currentApk = workspace.apk;
+        displayAnalyzedReport(workspace.report);
+        for (Map.Entry<String, String> edit : workspace.changes.entrySet()) {
+            try {
+                explorerView.getEditPlan().addTextReplacement(edit.getKey(), edit.getValue());
+            } catch (IllegalArgumentException ignored) {
+                // Invalid or outdated edits are never reapplied without validation.
+            }
+        }
+        explorerView.refresh();
+        showSection(workspace.activeSection);
     }
 
     private void reviewEditPlan() {
@@ -952,24 +1014,7 @@ public class MainActivity extends Activity {
             try {
                 JSONObject resultJson = analyze(uri);
                 runOnUiThread(() -> {
-                    report = resultJson;
-                    output.setText(formatReport(resultJson));
-                    JSONObject info = resultJson.optJSONObject("manifestAnalysis");
-                    String packageName = info == null ? "Desconhecido" : info.optString("packageName", "Desconhecido");
-                    apkSummary.setText("PROJETO CARREGADO\n\n" + packageName
-                        + "\n\n" + resultJson.optInt("entries") + " arquivos  •  "
-                        + (resultJson.optLong("sizeBytes") / 1024) + " KB"
-                        + "\n\nSHA-256\n" + resultJson.optString("sha256"));
-                    projectMetrics.setText("DEX  " + (resultJson.optJSONArray("dexFiles") == null ? 0 : resultJson.optJSONArray("dexFiles").length())
-                        + "     •     BIBLIOTECAS  " + (resultJson.optJSONArray("nativeLibraries") == null ? 0 : resultJson.optJSONArray("nativeLibraries").length())
-                        + "     •     ASSETS  " + resultJson.optInt("assets"));
-                    JSONObject tree = resultJson.optJSONObject("explorer");
-                    explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
-                    share.setEnabled(true);
-                    ai.setEnabled(true);
-                    project.setEnabled(true);
-                    rebuild.setEnabled(true);
-                    signatureInfo.setEnabled(true);
+                    displayAnalyzedReport(resultJson);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
@@ -1167,7 +1212,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         executor.shutdownNow();
-        if (currentApk != null) currentApk.delete();
+        // The new Activity owns this cache file after a configuration change.
+        if (currentApk != null && !isChangingConfigurations()) currentApk.delete();
         super.onDestroy();
     }
 }
