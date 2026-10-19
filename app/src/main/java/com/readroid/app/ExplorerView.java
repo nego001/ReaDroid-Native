@@ -148,13 +148,15 @@ public final class ExplorerView {
             + " arquivos  •  " + editPlan.size() + " alterações pendentes");
         int shown = 0;
         for (String child : folders) {
-            if (shown++ >= pageLimit) break;
+            if (shown >= pageLimit) break;
+            shown++;
             TextView line = item("▸  " + child + "\nPASTA");
             list.addView(line);
             line.setOnClickListener(v -> { folder += child; pageLimit = 120; render(); });
         }
         for (JSONObject file : visible) {
-            if (shown++ >= 120) break;
+            if (shown >= pageLimit) break;
+            shown++;
             String path = file.optString("path");
             String name = query.isEmpty() ? path.substring(folder.length()) : path;
             boolean editable = EditPlan.isEditable(path);
@@ -172,9 +174,9 @@ public final class ExplorerView {
                 .setNegativeButton("Detalhes técnicos", (dialog, which) -> inspectEntry(path)).show());
         }
         if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
-        if (folders.size() + visible.size() > pageLimit) {
+        if (shown < folders.size() + visible.size()) {
             Button more = NegrescoTheme.action(activity,
-                "Carregar mais (" + Math.min(120, folders.size() + visible.size() - pageLimit) + ")", false);
+                "Carregar mais (" + Math.min(120, folders.size() + visible.size() - shown) + ")", false);
             list.addView(more);
             more.setOnClickListener(v -> {
                 pageLimit += 120;
