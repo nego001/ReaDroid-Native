@@ -27,7 +27,7 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Troca de tema/rotação retêm APK, relatório e plano textual na mesma sessão.
 - [x] Recuperação do arquivo selecionado quando a análise é interrompida pela recriação da Activity.
 - [x] Estado aberto/fechado do painel de personalização persistido separadamente.
-- [x] Teste manual de emulador preparado: abertura, troca de abas e captura da tela.
+- [x] Teste no emulador Android (API 29): APK instalado, Início → Arquivos → Segurança → Início, captura de tela gerada.\n- [x] Correção da automação: shell POSIX e detecção de crashes tratada pelo script Python.\n- [x] Tema Android e cores da barra de status/navegação alinhados à preferência visual.\n- [x] Botão Voltar nas outras abas retorna para Início.
 
 ## Restrições
 - **Não** criar funcionalidades de assinatura APK que o programa ainda não suporta.
@@ -39,8 +39,8 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
   gradientes e desenho vetorial, para evitar consumo excessivo de GPU/CPU.
 
 ## Validação
-- [x] Builds Android intermediários concluídos com sucesso na branch.\n- [ ] Confirmar compilação Android após o último commit.
-- [ ] Executar o workflow manual `V3 Android UI smoke` na branch `feature/v3-design-studio`, verificar a captura e eventuais erros de execução.\n- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
+- [x] Builds Android intermediários concluídos com sucesso na branch.\n- [x] Confirmada compilação Android e verificação de código após `2ebf8208`.
+- [x] Examinar a captura real do emulador da primeira execução que abriu e navegou corretamente.\n- [ ] Confirmar resultado do workflow de smoke após a correção final da checagem de erros.\n- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
 - [ ] Testar seleção real de APK, exploração de arquivos, relatório e exportação.
 - [ ] Conferir tema claro, fonte a 130%, modo compacto e largura de 320–360 dp.
 - [ ] Testar importação de presets anteriores e do novo conjunto.
