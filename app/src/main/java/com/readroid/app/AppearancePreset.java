@@ -14,6 +14,9 @@ public final class AppearancePreset {
         o.put("schema", 1);
         o.put("theme", p.getString("theme", "oled"));
         o.put("accent", p.getString("accent", "blue"));
+        o.put("custom_accent", p.getString("custom_accent", "#1688FF"));
+        o.put("studio_glow", p.getBoolean("studio_glow", true));
+        o.put("card_radius", p.getInt("card_radius", 18));
         o.put("font_percent", p.getInt("font_percent", 100));
         o.put("compact", p.getBoolean("compact", false));
         o.put("nav_labels", p.getBoolean("nav_labels", true));
@@ -29,6 +32,13 @@ public final class AppearancePreset {
         if (o.getInt("schema") != 1) throw new IllegalArgumentException("Formato de preferências incompatível");
         String theme = o.getString("theme");
         String accent = o.getString("accent");
+        String customAccent = o.optString("custom_accent", "#1688FF");
+        boolean glow = o.optBoolean("studio_glow", true);
+        int radius = o.optInt("card_radius", 18);
+        if (o.has("studio_glow") && !(o.opt("studio_glow") instanceof Boolean))
+            throw new IllegalArgumentException("Tipo de efeito neon inválido");
+        if (o.has("card_radius") && !(o.opt("card_radius") instanceof Number))
+            throw new IllegalArgumentException("Tipo de raio inválido");
         int font = o.getInt("font_percent");
         int favorite = o.getInt("favorite_tab");
         boolean compact = o.getBoolean("compact");
@@ -36,12 +46,16 @@ public final class AppearancePreset {
         String name = o.getString("display_name");
         String subtitle = o.getString("display_subtitle");
         if (!allowed(theme, "oled", "graphite", "light")
-            || !allowed(accent, "blue", "purple", "green", "orange")
+            || !allowed(accent, "blue", "purple", "green", "orange", "custom")
+            || !customAccent.matches("#[0-9a-fA-F]{6}")
+            || !(radius == 12 || radius == 18 || radius == 26)
             || font < 85 || font > 135 || favorite < 1 || favorite > 4
             || name.trim().isEmpty() || name.length() > 30 || subtitle.length() > 48)
             throw new IllegalArgumentException("Preferências inválidas");
         context.getSharedPreferences("v3_personalizacao", Context.MODE_PRIVATE).edit()
             .putString("theme", theme).putString("accent", accent)
+            .putString("custom_accent", customAccent)
+            .putBoolean("studio_glow", glow).putInt("card_radius", radius)
             .putInt("font_percent", font).putInt("favorite_tab", favorite)
             .putBoolean("compact", compact).putBoolean("nav_labels", labels)
             .putString("display_name", name).putString("display_subtitle", subtitle).apply();
