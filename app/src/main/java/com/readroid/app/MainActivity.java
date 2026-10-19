@@ -591,8 +591,9 @@ public class MainActivity extends Activity {
                 LinearLayout tile = StudioDashboard.quickTile(this, quickLabels[index],
                     quickSubtitles[index], target, target == favorite,
                     v -> showSection(target));
+                tile.setMinimumHeight(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 122 : 142));
                 LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
-                    0, NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 122 : 142), 1f);
+                    0, -2, 1f);
                 tileParams.setMargins(column == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
                     column == 0 ? NegrescoTheme.dp(this, 5) : 0, NegrescoTheme.dp(this, 10));
                 shortcutRow.addView(tile, tileParams);
