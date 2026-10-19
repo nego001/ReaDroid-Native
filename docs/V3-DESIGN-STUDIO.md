@@ -50,7 +50,7 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 ## Nova fase de regressões
 - 14/14 testes instrumentados aprovados, incluindo verificador de exportação, em https://github.com/nego001/ReaDroid-Native/actions/runs/39192931103
 - Edição e exportação ponta a ponta aprovadas: escolher APK de teste, editar `assets/negresco_smoke.txt`, revisar plano, exportar, conferir SHA-256, DEX original e remoção de metadados de assinatura. https://github.com/nego001/ReaDroid-Native/actions/runs/39192735133
-- Captura real revelou que o relatório pós-exportação era longo demais; o diálogo foi reduzido, mantendo `Detalhes técnicos` para acesso ao preflight completo. A validação desse refinamento está em andamento.
+- Diálogo compacto e 'Detalhes técnicos' aprovados na execução real: https://github.com/nego001/ReaDroid-Native/actions/runs/39193244238. O APK editado foi validado por SHA-256, e o original permaneceu intacto.
 - 10/10 testes instrumentados aprovados no workflow da revisão `abb61da5`: https://github.com/nego001/ReaDroid-Native/actions/runs/39188439031
 - 12 testes instrumentados, incluindo validação de prévia de importação, aprovados: https://github.com/nego001/ReaDroid-Native/actions/runs/39190762727
 - Exportação/importação ponta a ponta com seletor de arquivos, prévia de alterações e preservação do APK: https://github.com/nego001/ReaDroid-Native/actions/runs/39190807463
@@ -70,7 +70,7 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Troca OLED → Claro com um projeto aberto, sem perder os dados do APK.
 - [x] Testar exportação e importação pelo seletor de arquivos do Android com um APK real aberto (emulador).
 - [x] Edição de texto em APK real de teste, revisão do plano e exportação unsigned pelo DocumentsUI, SHA-256 verificado na gravação, DEX e original preservados.
-- [ ] Confirmar o refinamento visual do diálogo compacto de exportação no novo teste de emulador.
+- [x] Confirmar o novo diálogo compacto de exportação em emulador, incluindo botão 'Detalhes técnicos', verificações SHA-256 e avisos de assinatura.
 - [x] Capturas reais dos temas OLED e Claro, com contraste e navegação visivelmente corretos em emulador.
 - [x] Teste automatizado com tema Claro, fonte a 130%, modo compacto e retenção do APK aprovado no emulador.
 - [x] Testar 320dp com fonte do sistema a 130%: todas as cinco abas visíveis, navegáveis e com alvos de toque adequados.
