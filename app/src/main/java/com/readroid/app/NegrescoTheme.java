@@ -48,10 +48,8 @@ public final class NegrescoTheme {
             if (custom != null && custom.matches("#[0-9a-fA-F]{6}"))
                 ACCENT = Color.parseColor(custom);
         }
-        // Choose contrasting text for any preset or custom accent.
-        double luminance = (0.2126 * Color.red(ACCENT)
-            + 0.7152 * Color.green(ACCENT) + 0.0722 * Color.blue(ACCENT)) / 255.0;
-        ON_ACCENT = luminance >= 0.60 ? 0xff101820 : 0xffffffff;
+        // WCAG relative luminance. Prefer the foreground with greater contrast.
+        ON_ACCENT = relativeLuminance(ACCENT) > 0.179 ? Color.BLACK : Color.WHITE;
         STUDIO_GLOW = prefs.getBoolean("studio_glow", true);
         int radius = prefs.getInt("card_radius", 18);
         CARD_RADIUS = radius == 12 || radius == 18 || radius == 26 ? radius : 18;
@@ -59,6 +57,33 @@ public final class NegrescoTheme {
 
     public static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
+
+    private static double linearChannel(int value) {
+        double channel = value / 255.0;
+        return channel <= 0.04045 ? channel / 12.92
+            : Math.pow((channel + 0.055) / 1.055, 2.4);
+    }
+
+    private static double relativeLuminance(int color) {
+        return 0.2126 * linearChannel(Color.red(color))
+            + 0.7152 * linearChannel(Color.green(color))
+            + 0.0722 * linearChannel(Color.blue(color));
+    }
+
+    /** Neutral, accessible touch surface for the selected bottom tab. */
+    public static android.graphics.drawable.Drawable navigationSurface(Context context, boolean selected) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(context, 14));
+        if (selected) {
+            shape.setColor(mix(SURFACE, ACCENT, STUDIO_GLOW ? 0.24f : 0.12f));
+            shape.setStroke(dp(context, 1), mix(ACCENT, BORDER, 0.52f));
+        } else {
+            shape.setColor(Color.TRANSPARENT);
+        }
+        return new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(mix(ACCENT, SURFACE, 0.60f)),
+            shape, null);
     }
 
     private static int mix(int first, int second, float weight) {
