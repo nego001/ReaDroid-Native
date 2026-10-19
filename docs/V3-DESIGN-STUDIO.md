@@ -202,3 +202,9 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - O teste de teclado original apresentou falha intermitente de entrega global do ENTER ao emulador em uma execução anterior. `5344f58c` passou a encaminhar eventos `KeyEvent` ao componente nativo em foco para verificar sua ativação de modo determinístico; **a rota de hardware/teclado Bluetooth real permanece pendente**.
 - Build Android e `Source checks` do commit `5344f58c` aprovados. O armazenamento de recuperação depende do consentimento explícito; **não foi implementado salvamento automático**, compartilhamento em nuvem, instalação por OTA nem publicação final.
 - Limites de homologação: o teste de nova instância não equivale a matar o processo com um projeto real e restaurar pelo fluxo completo da interface. Confirmar manualmente no Samsung usando apenas APK sintético, sem dados privados, antes de considerar a V3 pronta para uso real.
+
+## Fase futura de UX registrada, sem execução (19/10/2026)
+- Solicitação observada no Samsung: melhorar os dois diálogos cinza de **Planejar alteração** e **Alteração registrada / Itens no plano**.
+- Planejado para **depois da base**, no issue [#1](https://github.com/nego001/ReaDroid-Native/issues/1); esta alteração não redesenha telas.
+- Correção independente da base: o editor distingue `ADDED`, `UPDATED`, `REMOVED` e `UNCHANGED`, sem declarar sucesso quando o texto permaneceu igual ao original e o plano está vazio. A base funcional e os testes têm prioridade.
+- O APK que já estiver instalado no Samsung não incorpora a correção até a instalação de um build novo e compatível, sem desinstalar/apagar dados.

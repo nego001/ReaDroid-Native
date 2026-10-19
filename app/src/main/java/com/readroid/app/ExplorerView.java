@@ -305,14 +305,32 @@ public final class ExplorerView {
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
                         try {
                             String replacement = editor.getText().toString();
-                            if (replacement.equals(original)) editPlan.remove(path);
-                            else editPlan.addTextReplacement(path, replacement);
+                            EditPlan.EditResult result =
+                                editPlan.applyTextEdit(path, original, replacement);
                             render();
+                            String title;
+                            String description;
+                            switch (result) {
+                                case ADDED:
+                                case UPDATED:
+                                    title = "Alteração registrada";
+                                    description = "A edição está no plano temporário.";
+                                    break;
+                                case REMOVED:
+                                    title = "Alteração desfeita";
+                                    description = "O texto voltou ao original e a edição "
+                                        + "deste arquivo foi retirada do plano.";
+                                    break;
+                                default:
+                                    title = "Nenhuma alteração";
+                                    description = "O texto é igual ao original ou à edição "
+                                        + "que já estava no plano.";
+                                    break;
+                            }
                             new android.app.AlertDialog.Builder(activity)
-                                .setTitle("Alteração registrada")
-                                .setMessage("Itens no plano: " + editPlan.size()
-                                    + "\n\nO plano fica apenas na memória da sessão. "
-                                    + "Para manter o resultado, exporte o APK modificado.")
+                                .setTitle(title)
+                                .setMessage(description + "\n\nItens no plano: " + editPlan.size()
+                                    + "\nO plano fica apenas na memória da sessão.")
                                 .setPositiveButton("OK", null).show();
                         } catch (Exception error) {
                             new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show();
