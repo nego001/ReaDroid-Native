@@ -47,6 +47,12 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - A arte referência tem brilhos e detalhes decorativos que foram reinterpretados com
   gradientes e desenho vetorial, para evitar consumo excessivo de GPU/CPU.
 
+## OTA e acessibilidade (V3)
+- As funções internas OTA exigem configuração compilada, endpoint/chave pública fixados e comprovante da assinatura RSA antes de permitir download.
+- No workflow [V3 preferences and narrow screens](https://github.com/nego001/ReaDroid-Native/actions/runs/39195325314), **18/18 testes** passaram e a interface de ambas as opções Estável/Beta exibiu "OTA assinada ainda não configurada" sem oferecer download.
+- Os ícones Canvas decorativos foram removidos da navegação assistiva; abas expõem papel de botão e estado selecionado.
+- O Android continua sem instalação OTA automática. A ativação, quando autorizada, requer nova auditoria criptográfica, testes de assinatura e consentimento explícito.
+
 ## Nova fase de regressões
 - 14/14 testes instrumentados aprovados, incluindo verificador de exportação, em https://github.com/nego001/ReaDroid-Native/actions/runs/39192931103
 - Edição e exportação ponta a ponta aprovadas: escolher APK de teste, editar `assets/negresco_smoke.txt`, revisar plano, exportar, conferir SHA-256, DEX original e remoção de metadados de assinatura. https://github.com/nego001/ReaDroid-Native/actions/runs/39192735133
@@ -78,8 +84,10 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [ ] Validar telas físicas de diferentes fabricantes.
 - [x] Testar importação de presets anteriores e do novo conjunto por instrumentação Android.
 - [x] Testar prévia validada, aprovação explícita e aplicação do backup via DocumentsUI com APK aberto.
-- [ ] Confirmar novamente em teste automatizado que o código OTA permanece bloqueado quando não configurado.
-- [ ] Revisar acessibilidade com leitor de tela e teclado físico.
+- [x] Confirmar no emulador que a OTA Estável e Beta está bloqueada sem chave pública/endpoint confiáveis, sem download oferecido.
+- [x] Testar o bloqueio interno: sem configuração OTA, verificação e download direto falham antes de usar a rede/cache.
+- [x] Testar navegação acessível com botões nomeados, aba selecionada e ícones decorativos sem anúncios duplicados.
+- [ ] Concluir validação manual de TalkBack e teclado físico em dispositivo real; testes automatizados de semântica de navegação aprovados.
 
 ## Evidências verificáveis
 - Primeiro teste de APK e tema aprovado: https://github.com/nego001/ReaDroid-Native/actions/runs/39183969729
