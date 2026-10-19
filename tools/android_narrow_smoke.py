@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Real narrow-screen navigation check with Android font scale set to 130%.
 
-The workflow uses a disposable API 29 emulator resized to 320x640dp.
+Uses disposable API 29 and API 35 emulators resized to 320x640dp.
 """
 import re
 import subprocess
 import time
 
-from android_ui_smoke import adb, ensure_foreground, find_tab, hierarchy, tap
+from android_ui_smoke import (
+    adb, ensure_foreground, find_tab, tap,
+    visible_app_hierarchy as hierarchy,
+)
 
 TABS = ("Início", "Arquivos", "Construir", "Segurança", "IA")
 
