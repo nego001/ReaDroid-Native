@@ -57,12 +57,14 @@ def pick_fixture():
     adb("shell", "am", "broadcast", "-a",
         "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
         "-d", "file://" + FIXTURE)
+    adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
+    time.sleep(2)
     ensure_foreground()
     click_named(desc="Selecionar arquivo APK para analisar")
     time.sleep(3)
     nodes = inspect("Document picker initial")
-    if match_node(nodes, text="NegrescoDroid-Smoke.apk") is not None:
-        click_named(text="NegrescoDroid-Smoke.apk")
+    if match_node(nodes, text="NegrescoDroid-Smoke", partial=True) is not None:
+        click_named(text="NegrescoDroid-Smoke", partial=True)
         return
     # DocumentsUI may begin in Recents. Open the drawer and enter Downloads.
     drawer = (match_node(nodes, desc="Show roots")
@@ -82,9 +84,9 @@ def pick_fixture():
         raise AssertionError("Downloads entry not found in DocumentsUI picker")
     tap(downloads)
     nodes = inspect("Document picker downloads")
-    if match_node(nodes, text="NegrescoDroid-Smoke.apk") is None:
+    if match_node(nodes, text="NegrescoDroid-Smoke", partial=True) is None:
         raise AssertionError("Smoke APK is absent from DocumentsUI Downloads")
-    click_named(text="NegrescoDroid-Smoke.apk")
+    click_named(text="NegrescoDroid-Smoke", partial=True)
 
 
 def wait_project():
@@ -104,10 +106,14 @@ def wait_project():
 
 def find_and_tap_setting(prefix):
     # Scroll only inside the actual Home section; never interact with unseen cards.
-    adb("shell", "input", "keyevent", "4") if False else None
     click_named(desc="Seção Início", partial=True)
     for _ in range(9):
         nodes = hierarchy()
+        # Settings are collapsed on first install to keep Home uncluttered.
+        toggle = match_node(nodes, text="Opções de aparência", partial=True)
+        if toggle is not None and "▾" in toggle.attrib.get("text", ""):
+            tap(toggle)
+            nodes = hierarchy()
         item = match_node(nodes, desc=prefix, partial=True)
         if item is not None:
             bounds = item.attrib.get("bounds", "")
