@@ -154,6 +154,15 @@ public class MainActivity extends Activity {
             tabContainer.setGravity(android.view.Gravity.CENTER);
             tabContainer.setMinimumHeight(NegrescoTheme.dp(this, 56));
             tabContainer.setFocusable(true);
+            tabContainer.setClickable(true);
+            tabContainer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            tabContainer.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+                @Override public void onInitializeAccessibilityNodeInfo(
+                        View host, android.view.accessibility.AccessibilityNodeInfo info) {
+                    super.onInitializeAccessibilityNodeInfo(host, info);
+                    info.setClassName(Button.class.getName());
+                }
+            });
             navigationContainers[index] = tabContainer;
             LinearLayout.LayoutParams navParams =
                 new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 64), 1f);
@@ -172,6 +181,7 @@ public class MainActivity extends Activity {
             label.setIncludeFontPadding(false);
             label.setPadding(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
             label.setVisibility(showNavLabels ? View.VISIBLE : View.GONE);
+            label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             label.setTextColor(NegrescoTheme.MUTED);
             tabContainer.addView(label, new LinearLayout.LayoutParams(
                 -1, -2));
@@ -990,6 +1000,7 @@ public class MainActivity extends Activity {
             navigationIcons[i].setSelectedState(selected);
             navigationContainers[i].setBackground(NegrescoTheme.navigationSurface(this, selected));
             navigationContainers[i].setSelected(selected);
+            navigationContainers[i].setActivated(selected);
             navigationContainers[i].setContentDescription(
                 "Seção " + navigationItems[i].getText()
                     + (selected ? ", selecionada" : ""));
