@@ -52,5 +52,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NegrescoDroid-V3-Android-Emulator-Screenshot
-          path: v3-studio-android-emulator.png
+          path: |
+            v3-studio-android-emulator.png
+            v3-studio-android-hierarchy.xml
+            v3-studio-android-runtime.txt
           if-no-files-found: warn
