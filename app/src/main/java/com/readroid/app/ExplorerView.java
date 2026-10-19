@@ -35,10 +35,13 @@ public final class ExplorerView {
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
         TextView heading = new TextView(activity);
-        heading.setText("EXPLORADOR  /  ARQUIVOS DO APK");
-        heading.setTextColor(NegrescoTheme.TEXT);
-        heading.setTextSize(19 * NegrescoTheme.FONT_SCALE);
-        heading.setPadding(0, 24, 0, 10);
+        heading.setText("CONTEÚDO DO PACOTE");
+        heading.setTextColor(NegrescoTheme.ACCENT);
+        heading.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        heading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        heading.setLetterSpacing(0.08f);
+        heading.setPadding(0, NegrescoTheme.dp(activity, 4),
+            0, NegrescoTheme.dp(activity, 12));
         parent.addView(heading);
         search = new EditText(activity);
         search.setSingleLine(true);
