@@ -69,8 +69,14 @@ public class MainActivity extends Activity {
     }
 
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
         NegrescoTheme.apply(this);
+        String activeTheme = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+            .getString("theme", "oled");
+        setTheme("light".equals(activeTheme)
+            ? android.R.style.Theme_Material_Light_NoActionBar
+            : android.R.style.Theme_Material_NoActionBar);
+        super.onCreate(state);
+        NegrescoTheme.applySystemBars(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 18 : 34), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 24));
