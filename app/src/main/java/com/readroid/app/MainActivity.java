@@ -230,10 +230,24 @@ public class MainActivity extends Activity {
                                     .setPositiveButton("OK", null).show();
                                 return;
                             }
-                            getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                                .putString("accent", "custom").putString("custom_accent", color)
-                                .apply();
-                            recreate();
+                            Runnable applyCustomColor = () -> {
+                                getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                                    .putString("accent", "custom").putString("custom_accent", color)
+                                    .apply();
+                                recreate();
+                            };
+                            double contrast = NegrescoTheme.contrastRatio(
+                                Color.parseColor(color), NegrescoTheme.BACKGROUND);
+                            if (contrast < 3.0) {
+                                new android.app.AlertDialog.Builder(this)
+                                    .setTitle("Cor com pouco contraste")
+                                    .setMessage("Essa cor pode deixar ícones e indicadores difíceis de ver neste tema. Deseja usá-la mesmo assim?")
+                                    .setPositiveButton("Usar mesmo assim", (confirm, choice) ->
+                                        applyCustomColor.run())
+                                    .setNegativeButton("Cancelar", null).show();
+                            } else {
+                                applyCustomColor.run();
+                            }
                         }).setNegativeButton("Cancelar", null).show();
                 }).setNegativeButton("Cancelar", null).show();
         });
