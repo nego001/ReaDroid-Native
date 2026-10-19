@@ -12,6 +12,8 @@ on:
       - 'tools/android_ota_disabled_smoke.py'
       - 'app/src/main/java/com/readroid/app/Ota*.java'
       - 'app/src/main/java/com/readroid/app/MainActivity.java'
+      - 'app/src/main/java/com/readroid/app/ExplorerView.java'
+      - 'app/src/main/java/com/readroid/app/NegrescoTheme.java'
       - 'app/src/main/java/com/readroid/app/NavGlyph.java'
       - 'app/src/main/java/com/readroid/app/StudioDashboard.java'
   workflow_dispatch:
