@@ -1027,11 +1027,25 @@ public class MainActivity extends Activity {
                         }
                     }
                     String json = bytes.toString("UTF-8");
-                    new android.app.AlertDialog.Builder(this).setTitle("Importar personalização?")
-                        .setMessage("Substituir apenas as preferências visuais atuais? Projetos e configurações de segurança serão preservados.")
-                        .setPositiveButton("Importar", (dialog, which) -> {
+                    String preview;
+                    try {
+                        preview = AppearancePreset.describeSettings(json);
+                    } catch (Exception invalid) {
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Arquivo de personalização inválido")
+                            .setMessage(invalid.getMessage())
+                            .setPositiveButton("OK", null).show();
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Prévia da personalização")
+                        .setMessage(preview + "\n\nAplicar somente as preferências visuais? O projeto aberto e as configurações de segurança serão preservados.")
+                        .setPositiveButton("Aplicar visual", (dialog, which) -> {
                             try {
                                 AppearancePreset.importSettings(this, json);
+                                android.widget.Toast.makeText(this,
+                                    "Personalização importada com sucesso",
+                                    android.widget.Toast.LENGTH_LONG).show();
                                 recreate();
                             } catch (Exception error) {
                                 new android.app.AlertDialog.Builder(this)
