@@ -174,16 +174,44 @@ public class MainActivity extends Activity {
         Button accentPicker = NegrescoTheme.action(this, "Cor de destaque", false);
         personalizationGroup.addView(accentPicker);
         accentPicker.setOnClickListener(v -> {
-            String[] options = {"Azul", "Roxo", "Verde", "Laranja"};
-            String[] values = {"blue", "purple", "green", "orange"};
+            String[] options = {"Azul", "Roxo", "Verde", "Laranja", "Minha cor (HEX)"};
+            String[] values = {"blue", "purple", "green", "orange", "custom"};
             String current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getString("accent", "blue");
             int selected = java.util.Arrays.asList(values).indexOf(current);
             new android.app.AlertDialog.Builder(this).setTitle("Cor de destaque")
                 .setSingleChoiceItems(options, Math.max(0, selected), (dialog, which) -> {
-                    getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                        .putString("accent", values[which]).apply();
                     dialog.dismiss();
-                    recreate();
+                    if (which != 4) {
+                        getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                            .putString("accent", values[which]).apply();
+                        recreate();
+                        return;
+                    }
+                    android.widget.EditText colorInput = new android.widget.EditText(this);
+                    colorInput.setSingleLine(true);
+                    colorInput.setHint("#1688FF");
+                    colorInput.setText(getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                        .getString("custom_accent", "#1688FF"));
+                    colorInput.setFilters(new android.text.InputFilter[]{
+                        new android.text.InputFilter.LengthFilter(7)});
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Cor personalizada")
+                        .setMessage("Digite um código hexadecimal com seis dígitos, por exemplo #1688FF.")
+                        .setView(colorInput)
+                        .setPositiveButton("Aplicar", (d, w) -> {
+                            String color = colorInput.getText().toString().trim();
+                            if (!color.matches("#[0-9a-fA-F]{6}")) {
+                                new android.app.AlertDialog.Builder(this)
+                                    .setTitle("Cor inválida")
+                                    .setMessage("Use o formato #RRGGBB com seis dígitos.")
+                                    .setPositiveButton("OK", null).show();
+                                return;
+                            }
+                            getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                                .putString("accent", "custom").putString("custom_accent", color)
+                                .apply();
+                            recreate();
+                        }).setNegativeButton("Cancelar", null).show();
                 }).setNegativeButton("Cancelar", null).show();
         });
         Button textScale = NegrescoTheme.action(this, "Tamanho do texto", false);
@@ -329,6 +357,36 @@ public class MainActivity extends Activity {
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("application/json");
             startActivityForResult(intent, REQUEST_IMPORT_APPEARANCE);
+        });
+        Button glowPicker = NegrescoTheme.action(this, "Efeito neon dos cartões", false);
+        personalizationGroup.addView(glowPicker);
+        glowPicker.setOnClickListener(v -> {
+            boolean active = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                .getBoolean("studio_glow", true);
+            new android.app.AlertDialog.Builder(this).setTitle("Efeito neon dos cartões")
+                .setSingleChoiceItems(new String[]{"Neon suave", "Minimalista sem brilho"},
+                    active ? 0 : 1, (dialog, which) -> {
+                        getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                            .putBoolean("studio_glow", which == 0).apply();
+                        dialog.dismiss();
+                        recreate();
+                    }).setNegativeButton("Cancelar", null).show();
+        });
+        Button cornersPicker = NegrescoTheme.action(this, "Cantos dos cartões", false);
+        personalizationGroup.addView(cornersPicker);
+        cornersPicker.setOnClickListener(v -> {
+            int[] values = {12, 18, 26};
+            int current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
+                .getInt("card_radius", 18);
+            int selected = current == 12 ? 0 : current == 26 ? 2 : 1;
+            new android.app.AlertDialog.Builder(this).setTitle("Cantos dos cartões")
+                .setSingleChoiceItems(new String[]{"Discretos", "Equilibrados", "Arredondados"},
+                    selected, (dialog, which) -> {
+                        getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
+                            .putInt("card_radius", values[which]).apply();
+                        dialog.dismiss();
+                        recreate();
+                    }).setNegativeButton("Cancelar", null).show();
         });
         Button resetAppearance = NegrescoTheme.action(this, "Restaurar aparência", false);
         personalizationGroup.addView(resetAppearance);
@@ -708,7 +766,7 @@ public class MainActivity extends Activity {
             customizationTitle, customizationHint, togglePersonalization, personalizationGroup,
             new Button[]{themePicker, accentPicker, textScale, densityPicker, navLabels,
                 favoriteShortcut, identityPicker, appearancePreview,
-                exportAppearance, importAppearance, resetAppearance},
+                exportAppearance, importAppearance, glowPicker, cornersPicker, resetAppearance},
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
         showSection(0);
