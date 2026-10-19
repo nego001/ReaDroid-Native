@@ -59,6 +59,30 @@ public final class AppearancePresetInstrumentedTest {
         assertEquals("Estúdio de APK", prefs.getString("display_subtitle", ""));
     }
 
+    @Test public void validImportPreviewIsReadableAndDoesNotModifyPreferences()
+            throws Exception {
+        assertTrue(prefs.edit().putString("theme", "oled").commit());
+        JSONObject example = validPreset()
+            .put("theme", "light")
+            .put("accent", "purple")
+            .put("font_percent", 115)
+            .put("studio_glow", false);
+        String summary = AppearancePreset.describeSettings(example.toString());
+        assertTrue(summary.contains("Tema: Claro"));
+        assertTrue(summary.contains("Cor: Roxo"));
+        assertTrue(summary.contains("Texto: 115%"));
+        assertTrue(summary.contains("Neon: Desativado"));
+        assertEquals("oled", prefs.getString("theme", ""));
+
+        example.put("card_radius", 17.5);
+        try {
+            AppearancePreset.describeSettings(example.toString());
+            fail("Preview must reject malformed presets before confirmation");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("oled", prefs.getString("theme", ""));
+        }
+    }
+
     @Test public void legacyV3PresetsImportWithNewSafeDefaults() throws Exception {
         JSONObject old = validPreset();
         old.remove("custom_accent");
