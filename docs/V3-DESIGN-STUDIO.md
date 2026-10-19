@@ -234,3 +234,9 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Fluxo sem novo privilégio Android, sem upload, sem execução de código e sem alterar o APK de origem.
 - APK acima de 1 GiB **permanece bloqueado** explicitamente até existir infraestrutura sob demanda para ZIP64/metadados paginados, mais testes físicos de RAM, armazenamento e integridade.
 - Quatro testes instrumentados emulam tamanho declarado acima do limite, reserva insuficiente, tamanho desconhecido e checagem periódica de disco.
+
+## Roadmap pós-Android: Windows e Linux (19/10/2026)
+- Pedido do usuário registrado na [issue #3](https://github.com/nego001/ReaDroid-Native/issues/3): **após concluir e homologar a versão Android**, criar NegrescoDroid também para **Windows e Linux**.
+- A arquitetura futura deve priorizar um núcleo de análise/edição/validação testável e reaproveitável, com adaptadores de arquivos, criptografia e interface específicos de cada sistema. Não pressupor que APIs Android (`AndroidKeyStore`, `PackageManager`, SAF) possam ser usadas no desktop.
+- O plano prevê APKs grandes, análise estrutural, explorador, operações reversíveis e verificação de integridade. Escolha de framework desktop e formatos de distribuição ficará para a fase de protótipo.
+- **Nenhuma versão Windows/Linux está implementada nesta etapa.** A base Android, os testes físicos e a infraestrutura de APKs grandes (issue #2) mantêm prioridade. Redesenho das duas janelas (issue #1) permanece adiado até completar a base.
