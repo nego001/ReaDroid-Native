@@ -41,12 +41,24 @@ public final class KeyboardAndRotationInstrumentedTest {
         return found;
     }
 
+    /**
+     * A touchscreen emulator starts in touch mode: regular buttons correctly
+     * refuse requestFocus() until an actual non-touch keyboard event arrives.
+     * Inject a DPAD event, just as a paired physical keyboard would.
+     */
+    private static void beginKeyboardNavigation() {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
+            KeyEvent.KEYCODE_DPAD_DOWN);
+    }
+
     @Test public void horizontalDpadFollowsOrderWithoutChangingSelection() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
+            beginKeyboardNavigation();
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 View build = requiredTab(root, "Construir");
+                assertFalse("DPAD input must have exited touch mode", build.isInTouchMode());
                 View files = requiredTab(root, "Arquivos");
                 View security = requiredTab(root, "Segurança");
                 assertTrue("Keyboard must be able to focus Construir", build.requestFocus());
@@ -66,8 +78,10 @@ public final class KeyboardAndRotationInstrumentedTest {
     @Test public void enterActivatesFocusedTabAndAnnouncesItsSelection() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
+            beginKeyboardNavigation();
             scenario.onActivity(activity -> {
                 View files = requiredTab(activity.getWindow().getDecorView(), "Arquivos");
+                assertFalse("DPAD input must have exited touch mode", files.isInTouchMode());
                 assertTrue("Keyboard must focus Arquivos", files.requestFocus());
             });
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
