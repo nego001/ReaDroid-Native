@@ -20,6 +20,12 @@ public final class OtaUpdatePipeline {
 
     public static OtaRelease check(Context context, String endpoint, String trustedPublicKey,
                                    String channel) throws Exception {
+        // Never trust arbitrary endpoints or keys passed by a caller. Pin the
+        // release trust root at build time, and fail before any network request.
+        if (context == null || !OtaConfig.isConfigured(channel)
+            || !OtaConfig.endpointFor(channel).equals(endpoint)
+            || !OtaConfig.TRUSTED_RELEASE_PUBLIC_KEY.equals(trustedPublicKey))
+            throw new SecurityException("OTA não configurada ou origem não confiável");
         PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         long code = Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
         if (code > Integer.MAX_VALUE)
@@ -31,8 +37,12 @@ public final class OtaUpdatePipeline {
         if (context == null || release == null) throw new IllegalArgumentException("Atualização inválida");
         String channel = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE)
             .getString("ota_channel", "stable");
-        // The caller must provide a release obtained through OtaUpdatePipeline.check.
-        // This stage additionally enforces the user-selected channel.
+        // Check again at the download boundary, not only in the UI.
+        // A forged/stale OtaRelease must never start a request with absent pins.
+        if (!OtaConfig.isConfigured(channel))
+            throw new SecurityException("OTA assinada não configurada: download bloqueado");
+        // The release still requires digest, package and signer verification.
+        // The configured trusted origin is authoritative, not request arguments.
         if (!release.channel.equals(channel))
             throw new SecurityException("Canal OTA diferente da preferência do usuário");
         File downloaded = OtaApkDownloader.download(release, context.getCacheDir());
