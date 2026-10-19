@@ -190,7 +190,17 @@ public final class StudioDashboard {
         apkSummary.setTextSize(16 * NegrescoTheme.FONT_SCALE);
         apkSummary.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         apkSummary.setPadding(0, dp(a, 4), 0, dp(a, 8));
-        hero.addView(apkSummary);
+        LinearLayout projectRow = new LinearLayout(a);
+        projectRow.setGravity(Gravity.CENTER_VERTICAL);
+        hero.addView(projectRow);
+        projectRow.addView(apkSummary, new LinearLayout.LayoutParams(0, -2, 1f));
+        if (a.getResources().getConfiguration().screenWidthDp >= 360) {
+            NeonCubeView cube = new NeonCubeView(a);
+            LinearLayout.LayoutParams cubeParams = new LinearLayout.LayoutParams(
+                dp(a, 92), dp(a, 108));
+            cubeParams.leftMargin = dp(a, 4);
+            projectRow.addView(cube, cubeParams);
+        }
         projectMetrics.setPadding(0, 0, 0, dp(a, 8));
         projectMetrics.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         hero.addView(projectMetrics);
