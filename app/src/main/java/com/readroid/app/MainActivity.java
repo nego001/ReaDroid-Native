@@ -1179,6 +1179,33 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Short result first; the technical verification is available on demand. */
+    private void showExportSuccess(long bytes, String verification, String preflight) {
+        final String details = verification + "\n\n" + preflight
+            + "\n\nOriginal preservado. Exportação comparada por SHA-256.";
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Exportação verificada")
+            .setMessage("✓ Arquivo gravado e verificado por SHA-256 (" + bytes + " bytes)."
+                + "\n\nO APK original não foi modificado."
+                + "\n\nEste arquivo NÃO está assinado e NÃO deve ser instalado como APK final.")
+            .setNeutralButton("Detalhes técnicos", (dialog, which) -> {
+                ScrollView scroll = new ScrollView(this);
+                TextView view = new TextView(this);
+                view.setText(details);
+                view.setTextColor(NegrescoTheme.TEXT);
+                view.setTextSize(13 * NegrescoTheme.FONT_SCALE);
+                view.setTextIsSelectable(true);
+                view.setPadding(NegrescoTheme.dp(this, 18), NegrescoTheme.dp(this, 16),
+                    NegrescoTheme.dp(this, 18), NegrescoTheme.dp(this, 16));
+                scroll.addView(view);
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Verificação técnica do APK")
+                    .setView(scroll)
+                    .setPositiveButton("Fechar", null).show();
+            })
+            .setPositiveButton("Concluir", null).show();
+    }
+
     private void exportRebuilt(Uri destination) {
         if (currentApk == null) return;
         final File source = currentApk;
@@ -1195,13 +1222,8 @@ public class MainActivity extends Activity {
                 final long exportedBytes = SafExportVerifier.copyAndVerify(
                     getContentResolver(), temp, destination);
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
-                    new android.app.AlertDialog.Builder(this)
-                        .setTitle("APK não assinado exportado")
-                        .setMessage("Arquivo gravado e conferido por SHA-256 (" + exportedBytes
-                            + " bytes).\n\n" + verification + "\n\n" + preflight
-                            + "\n\nO APK original foi preservado. NÃO instale este ZIP como APK final.")
-                        .setPositiveButton("Entendi", null).show();
+                    if (!isFinishing() && !isDestroyed())
+                        showExportSuccess(exportedBytes, verification, preflight);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
