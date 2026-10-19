@@ -9,7 +9,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
-import java.util.Arrays;
 
 import static org.junit.Assert.*;
 
@@ -38,8 +37,8 @@ public final class OtaDisabledInstrumentedTest {
                 parsed.hasVerifiedSignature());
             try {
                 OtaManifestVerifier.verify(
-                    "{\\"payload\\":\\"{}\\",\\"signature\\":\\"AQID\\"}",
-                    "");
+                    new JSONObject().put("payload", "{}")
+                        .put("signature", "AQID").toString(), "");
                 fail("Missing trusted signing key must be rejected");
             } catch (SecurityException expected) {
                 assertTrue(expected.getMessage().contains("Chave pública"));
