@@ -33,6 +33,10 @@ passos, **não** certifica que eles já ocorreram.
 | OTA-10 | Selecionar Estável e Beta e tocar em verificar atualizações | Exibe bloqueio de OTA não configurada; nenhuma instalação ou download inicia |
 | SEGURANCA-11 | Conferir arquivo original de teste após ações de análise | Arquivo original não foi alterado ou assinado pelo app |
 | EXPLORADOR-12 | Abrir pasta com muitos arquivos, carregar mais, filtrar/pesquisar e girar o aparelho | Pasta, filtro, consulta, página carregada e projeto continuam acessíveis sem alterar o APK original |
+| RECUPERACAO-13 | Num APK sintético, salvar cópia criptografada com edição; sair, reabrir o mesmo APK e recuperar após confirmar | Edição volta só após autorização e SHA-256 igual; original intacto |
+| RECUPERACAO-14 | Tentar recuperar com outro APK sintético | Bloqueio claro e nenhuma edição do projeto atual substituída |
+| RECUPERACAO-15 | Excluir a cópia privada e repetir recuperação | Nenhuma cópia disponível; edições atuais continuam intactas |
+| PRIVACIDADE-16 | Abrir Compartilhar plano de alterações e cancelar no aviso | Nenhum aplicativo de compartilhamento é aberto sem consentimento |
 
 Se ocorrer falha, registre **reprodução, resultado esperado, resultado observado,
 versão do sistema e foto/captura sem dados pessoais**. Marque cada caso
@@ -72,3 +76,11 @@ procedimento não desinstala, instala nem altera arquivos do aplicativo.
 
 **Fora de escopo:** liberar OTA, publicar V3 definitiva, ativar assinatura ou
 instalação automática, migrar dados locais sem backup.
+
+### Recuperação: limites antes do ensaio
+O salvamento é **manual e opt-in**. Use apenas APKs inventados para o teste,
+sem conteúdo privado. Não remova o aplicativo para forçar restauração: isso
+apaga o armazenamento privado e pode invalidar sua chave Keystore. Um plano
+salvo não substitui o backup do projeto nem garante preservação de edições
+feitas após o último salvamento. Na falha criptográfica, interrompa o teste
+e não apague cópias sem decisão explícita.
