@@ -113,14 +113,14 @@ public final class StudioDashboard {
     }
 
     private static void buildOptions(Activity a, LinearLayout destination, Button[] actions) {
-        String[] glyphs = {"◉", "◆", "Aa", "▦", "▤", "☆", "⌂", "◈", "↥", "↧", "↺"};
+        String[] glyphs = {"◉", "◆", "Aa", "▦", "▤", "☆", "⌂", "◈", "↥", "↧", "✧", "▢", "↺"};
         String[] details = {
-            "OLED, grafite ou claro", "Destaque em sua cor",
+            "OLED, grafite ou claro", "Cores prontas ou HEX",
             "Escala de fonte", "Compacto ou confortável",
             "Ícones e rótulos", "Acesso rápido favorito",
             "Nome e subtítulo", "Prévia antes de aplicar",
             "Salvar arquivo JSON", "Restaurar um arquivo JSON",
-            "Voltar ao padrão"
+            "Neon ou minimalista", "Bordas do seu jeito", "Voltar ao padrão"
         };
         destination.removeAllViews();
         for (int index = 0; index < actions.length; index += 2) {
@@ -133,10 +133,12 @@ public final class StudioDashboard {
                 Button action = actions[i];
                 detach(action);
                 LinearLayout tile = option(a, action, glyphs[i], details[i]);
+                boolean lastAlone = (i == actions.length - 1 && col == 0);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    0, dp(a, NegrescoTheme.COMPACT ? 104 : 118), 1f);
+                    lastAlone ? -1 : 0, dp(a, NegrescoTheme.COMPACT ? 106 : 120),
+                    lastAlone ? 0f : 1f);
                 lp.setMargins(col == 0 ? 0 : dp(a, 4), 0,
-                    col == 0 ? dp(a, 4) : 0, dp(a, 8));
+                    col == 0 ? (lastAlone ? 0 : dp(a, 4)) : 0, dp(a, 8));
                 row.addView(tile, lp);
             }
         }
