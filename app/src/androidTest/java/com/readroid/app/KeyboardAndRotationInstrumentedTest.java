@@ -46,15 +46,29 @@ public final class KeyboardAndRotationInstrumentedTest {
      * refuse requestFocus() until an actual non-touch keyboard event arrives.
      * Inject a DPAD event, just as a paired physical keyboard would.
      */
-    private static void beginKeyboardNavigation() {
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
-            KeyEvent.KEYCODE_DPAD_DOWN);
+    private static void beginKeyboardNavigation(ActivityScenario<MainActivity> scenario) {
+        // ActivityScenario RESUMED does not guarantee the window has already
+        // received focus on every emulator image. Send a bounded series of
+        // actual DPAD input events and verify the app, not the launcher,
+        // leaves touch mode before making keyboard assertions.
+        for (int attempt = 0; attempt < 5; attempt++) {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
+                KeyEvent.KEYCODE_DPAD_DOWN);
+            final boolean[] keyboardMode = {false};
+            scenario.onActivity(activity -> {
+                View files = requiredTab(activity.getWindow().getDecorView(), "Arquivos");
+                keyboardMode[0] = !files.isInTouchMode();
+            });
+            if (keyboardMode[0]) return;
+        }
+        fail("DPAD events never left touch mode after five verified attempts");
     }
 
     @Test public void horizontalDpadFollowsOrderWithoutChangingSelection() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
-            beginKeyboardNavigation();
+            beginKeyboardNavigation(scenario);
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 View build = requiredTab(root, "Construir");
@@ -78,7 +92,7 @@ public final class KeyboardAndRotationInstrumentedTest {
     @Test public void enterActivatesFocusedTabAndAnnouncesItsSelection() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
-            beginKeyboardNavigation();
+            beginKeyboardNavigation(scenario);
             scenario.onActivity(activity -> {
                 View files = requiredTab(activity.getWindow().getDecorView(), "Arquivos");
                 assertFalse("DPAD input must have exited touch mode", files.isInTouchMode());
