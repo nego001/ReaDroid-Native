@@ -83,7 +83,10 @@ def main():
     ensure_foreground()
     if "selecionada" not in find_tab(hierarchy(), "Início").attrib.get("content-desc", ""):
         raise AssertionError("Failed to return Home")
-    print("PASS: home -> files -> security -> home")
+    runtime = adb("logcat", "-d", "-s", "AndroidRuntime:E")
+    if "FATAL EXCEPTION" in runtime and PKG in runtime:
+        raise AssertionError("AndroidRuntime crash detected for NegrescoDroid")
+    print("PASS: home -> files -> security -> home; no detected app crash")
 
 
 if __name__ == "__main__":
