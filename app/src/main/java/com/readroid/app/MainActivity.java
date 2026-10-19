@@ -99,13 +99,13 @@ public class MainActivity extends Activity {
         title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         title.setMaxLines(2);
         brandText.addView(title);
-        TextView subtitle = new TextView(this);
-        subtitle.setText(displaySubtitle);
-        subtitle.setTextColor(NegrescoTheme.MUTED);
-        subtitle.setTextSize(9.5f * NegrescoTheme.FONT_SCALE);
-        subtitle.setLetterSpacing(0.13f);
-        subtitle.setMaxLines(2);
-        brandText.addView(subtitle);
+        TextView brandSubtitleView = new TextView(this);
+        brandSubtitleView.setText(displaySubtitle);
+        brandSubtitleView.setTextColor(NegrescoTheme.MUTED);
+        brandSubtitleView.setTextSize(9.5f * NegrescoTheme.FONT_SCALE);
+        brandSubtitleView.setLetterSpacing(0.13f);
+        brandSubtitleView.setMaxLines(2);
+        brandText.addView(brandSubtitleView);
         root.addView(brandRow);
         String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
         boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
