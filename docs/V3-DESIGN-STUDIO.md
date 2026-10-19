@@ -119,3 +119,13 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - O smoke agora reconhece **apenas** o alerta com título exato e pacote `android`, clica uma única vez em `android:id/aerr_close`, relê a hierarquia e exige a seleção correta da aba. Alertas do NegrescoDroid ou outras janelas **não** são dispensados silenciosamente.
 - Testes Python isolados verificam o caso de recuperação, a ausência de intervenção em alertas distintos e a rejeição de um ANR do próprio app.
 - A aprovação do gate API 35 depende de **nova execução completa**, não apenas dos 22 testes anteriores. Teste físico Samsung/TalkBack segue pendente.
+
+## Resultado da homologação automatizada Android 15 (19/10/2026)
+- **Aprovado:** workflow [V3 Android 15 compatibility #39259425407](https://github.com/nego001/ReaDroid-Native/actions/runs/39259425407), commit `4ac4d1f4`.
+- **22/22 testes instrumentados Android 15** aprovados, sem testes ignorados.
+- **6/6 testes Python** da recuperação restrita do Pixel Launcher aprovados.
+- **Smoke real no emulador:** Início → Arquivos → Segurança → Início, sem crash detectado do NegrescoDroid.
+- Artefato de prova: `NegrescoDroid-V3-Android15-Validation` (`12189138331`). Hierarquia final contém as cinco abas, sem alerta do launcher; captura final foi inspecionada e mostra navegação e barras do Android sem sobreposição.
+- `v3-studio-android-runtime.txt` vazio (sem erros AndroidRuntime registrados no intervalo testado). A compilação Android e a checagem de código do mesmo commit também passaram.
+- Limites: teste visual somente com o emulador Google APIs API 35, perfil Pixel 3a, usando a navegação configurada pelo sistema. **Não equivale a homologação física em Samsung**, nem a ensaio de TalkBack, teclado, gestos/3 botões em modelos variados ou OTA real.
+- OTA continua desativada; V3 definitiva **não publicada**.
