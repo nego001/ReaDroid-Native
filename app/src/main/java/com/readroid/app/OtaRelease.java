@@ -13,6 +13,12 @@ public final class OtaRelease {
     public final String sha256;
     public final long sizeBytes;
     public final String notes;
+    // Never infer authenticity from successfully parsing attacker-controlled JSON.
+    private boolean signatureVerified;
+
+    boolean hasVerifiedSignature() { return signatureVerified; }
+
+    void markSignatureVerified() { signatureVerified = true; }
 
     private OtaRelease(int code, String name, String track, String url,
                        String hash, long size, String changelog) {
