@@ -68,23 +68,45 @@ public class MainActivity extends Activity {
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setPadding(NegrescoTheme.dp(this, 6), NegrescoTheme.dp(this, 7), NegrescoTheme.dp(this, 6), NegrescoTheme.dp(this, 8));
-        nav.setBackgroundColor(NegrescoTheme.SURFACE);
+        nav.setBackground(NegrescoTheme.studioCard(this, false));
         shell.addView(nav);
         setContentView(shell);
 
-        TextView title = new TextView(this);
         android.content.SharedPreferences appearance =
             getSharedPreferences("v3_personalizacao", MODE_PRIVATE);
         String displayName = appearance.getString("display_name", "NEGRESCODROID");
         String displaySubtitle = appearance.getString("display_subtitle", "APK ENGINEERING STUDIO");
-        title.setText(displayName + "\n" + displaySubtitle);
-        title.setTextSize(23 * NegrescoTheme.FONT_SCALE);
-        title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-        title.setLetterSpacing(0.025f);
-        title.setPadding(0, 0, 0, NegrescoTheme.dp(this, 18));
+        LinearLayout brandRow = new LinearLayout(this);
+        brandRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        brandRow.setPadding(0, NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 14));
+        NavGlyph brandMark = new NavGlyph(this, 2);
+        brandMark.setSelectedState(true);
+        brandRow.addView(brandMark, new LinearLayout.LayoutParams(
+            NegrescoTheme.dp(this, 38), NegrescoTheme.dp(this, 38)));
+        LinearLayout brandText = new LinearLayout(this);
+        brandText.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        brandParams.leftMargin = NegrescoTheme.dp(this, 10);
+        brandRow.addView(brandText, brandParams);
+        TextView title = new TextView(this);
+        android.text.SpannableString brandName = new android.text.SpannableString(displayName);
+        int droid = displayName.toLowerCase(java.util.Locale.ROOT).lastIndexOf("droid");
+        if (droid >= 0) brandName.setSpan(new android.text.style.ForegroundColorSpan(NegrescoTheme.ACCENT),
+            droid, droid + 5, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        title.setText(brandName);
         title.setTextColor(NegrescoTheme.TEXT);
-        root.addView(title);
-
+        title.setTextSize(21 * NegrescoTheme.FONT_SCALE);
+        title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        title.setMaxLines(2);
+        brandText.addView(title);
+        TextView subtitle = new TextView(this);
+        subtitle.setText(displaySubtitle);
+        subtitle.setTextColor(NegrescoTheme.MUTED);
+        subtitle.setTextSize(9.5f * NegrescoTheme.FONT_SCALE);
+        subtitle.setLetterSpacing(0.13f);
+        subtitle.setMaxLines(2);
+        brandText.addView(subtitle);
+        root.addView(brandRow);
         String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
         boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
             .getBoolean("nav_labels", true);
@@ -474,57 +496,34 @@ public class MainActivity extends Activity {
         shortcutsTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
         homeSection.addView(shortcutsTitle);
         homeSection.addView(shortcutHint);
-        String[] quickLabels = {"Explorar APK", "Construir", "Segurança", "Assistente IA"};
-        String[] quickIcons = {"▱", "⬡", "◇", "✧"};
+        LinearLayout quickGrid = new LinearLayout(this);
+        quickGrid.setOrientation(LinearLayout.VERTICAL);
+        homeSection.addView(quickGrid);
+        String[] quickLabels = {"Arquivos", "Construir", "Segurança", "IA"};
+        String[] quickSubtitles = {
+            "Explore e organize arquivos APK",
+            "Revise e exporte alterações",
+            "Verifique certificados e riscos",
+            "Compartilhe análises com IA"
+        };
         int[] quickTargets = {1, 2, 3, 4};
         int favorite = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("favorite_tab", 1);
         if (favorite < 1 || favorite > 4) favorite = 1;
-        int preferredIndex = favorite - 1;
-        String preferredLabel = quickLabels[preferredIndex];
-        String preferredIcon = quickIcons[preferredIndex];
-        int preferredTarget = quickTargets[preferredIndex];
-        for (int i = preferredIndex; i > 0; i--) {
-            quickLabels[i] = quickLabels[i - 1];
-            quickIcons[i] = quickIcons[i - 1];
-            quickTargets[i] = quickTargets[i - 1];
-        }
-        quickLabels[0] = preferredLabel;
-        quickIcons[0] = preferredIcon;
-        quickTargets[0] = preferredTarget;
         for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
             LinearLayout shortcutRow = new LinearLayout(this);
             shortcutRow.setOrientation(LinearLayout.HORIZONTAL);
-            homeSection.addView(shortcutRow);
+            quickGrid.addView(shortcutRow);
             for (int column = 0; column < 2; column++) {
-                int item = rowIndex * 2 + column;
-                final int target = quickTargets[item];
-                LinearLayout tile = new LinearLayout(this);
-                tile.setOrientation(LinearLayout.VERTICAL);
-                tile.setGravity(android.view.Gravity.CENTER_VERTICAL);
-                tile.setPadding(NegrescoTheme.dp(this, 16), NegrescoTheme.dp(this, 12),
-                    NegrescoTheme.dp(this, 10), NegrescoTheme.dp(this, 12));
-                tile.setBackground(NegrescoTheme.panel(this));
+                int index = rowIndex * 2 + column;
+                final int target = quickTargets[index];
+                LinearLayout tile = StudioDashboard.quickTile(this, quickLabels[index],
+                    quickSubtitles[index], target, target == favorite,
+                    v -> showSection(target));
                 LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
-                    0, NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 94 : 112), 1f);
+                    0, NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 122 : 142), 1f);
                 tileParams.setMargins(column == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
                     column == 0 ? NegrescoTheme.dp(this, 5) : 0, NegrescoTheme.dp(this, 10));
                 shortcutRow.addView(tile, tileParams);
-                TextView symbol = new TextView(this);
-                symbol.setText(quickIcons[item]);
-                symbol.setTextColor(NegrescoTheme.ACCENT);
-                symbol.setTextSize(25 * NegrescoTheme.FONT_SCALE);
-                tile.addView(symbol);
-                TextView label = new TextView(this);
-                label.setText(quickLabels[item] + (item == 0 ? "  ★" : ""));
-                label.setTextColor(NegrescoTheme.TEXT);
-                label.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-                label.setTextSize(13 * NegrescoTheme.FONT_SCALE);
-                label.setMaxLines(2);
-                tile.addView(label);
-                tile.setContentDescription("Abrir " + quickLabels[item]);
-                tile.setClickable(true);
-                tile.setFocusable(true);
-                tile.setOnClickListener(v -> showSection(target));
             }
         }
 
@@ -686,6 +685,32 @@ public class MainActivity extends Activity {
             intent.putExtra(Intent.EXTRA_TEXT, report.toString());
             startActivity(Intent.createChooser(intent, "Compartilhar relatório"));
         });
+        StudioDashboard.styleFeatureButton(this, reviewChanges, "▤",
+            "Confira o plano de modificações antes de exportar", true);
+        StudioDashboard.styleFeatureButton(this, editExport, "↗",
+            "Envie o plano de alterações em JSON", false);
+        StudioDashboard.styleFeatureButton(this, rebuild, "⬡",
+            "Gere o APK sem assinatura de instalação", false);
+        StudioDashboard.styleFeatureButton(this, signatureInfo, "▣",
+            "Veja o certificado de assinatura do arquivo", false);
+        StudioDashboard.styleFeatureButton(this, signingGuide, "◈",
+            "Entenda a assinatura e os cuidados necessários", false);
+        StudioDashboard.styleFeatureButton(this, localIdentity, "⚿",
+            "Consulte a identidade do Android Keystore", false);
+        StudioDashboard.styleFeatureButton(this, signingTest, "◇",
+            "Execute o teste criptográfico da chave", false);
+        StudioDashboard.styleFeatureButton(this, ai, "✧",
+            "Compartilhe o relatório com o ChatGPT", true);
+        StudioDashboard.styleFeatureButton(this, share, "▤",
+            "Exporte o relatório técnico em JSON", false);
+        StudioDashboard.compose(this, homeSection, apkSummary, projectMetrics, choose,
+            shortcutsTitle, shortcutHint, quickGrid,
+            customizationTitle, customizationHint, togglePersonalization, personalizationGroup,
+            new Button[]{themePicker, accentPicker, textScale, densityPicker, navLabels,
+                favoriteShortcut, identityPicker, appearancePreview,
+                exportAppearance, importAppearance, resetAppearance},
+            otaTitle, otaStatus, otaChannel, otaCheck,
+            detailsTitle, output, project);
         showSection(0);
     }
 
