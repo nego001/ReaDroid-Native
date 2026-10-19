@@ -76,6 +76,10 @@ public final class OtaApkDownloader {
     public static File download(OtaRelease release, File cacheDir) throws Exception {
         if (release == null || cacheDir == null || !cacheDir.isDirectory())
             throw new IllegalArgumentException("Atualização ou cache inválido");
+        // This class is public: do not rely on callers going through the OTA
+        // pipeline to authenticate release metadata before any disk/network I/O.
+        if (!release.hasVerifiedSignature())
+            throw new SecurityException("Manifesto OTA sem assinatura verificada");
         URL url = new URL(release.downloadUrl);
         validateHttps(url);
         File temporary = File.createTempFile("negresco_ota_", ".apk", cacheDir);

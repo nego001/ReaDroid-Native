@@ -97,3 +97,11 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 
 Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 `v3.0.0-preview.1` e de futuras versões definitivas.
+
+## Endurecimento do parser e download OTA direto (19/10/2026)
+- O parser não aceita versões fracionárias, números como strings nem campos textuais convertidos implicitamente pelo `org.json`.
+- URLs de APK em HTTPS com portas não padrão são rejeitadas, mantendo a mesma política do downloader.
+- O downloader recusa diretamente metadados sem assinatura verificada antes de criar arquivo temporário ou iniciar rede, mesmo se invocado sem o pipeline.
+- Testes Android dedicados cobrem falsificação de JSON, portas proibidas e a chamada direta ao downloader sem assinatura.
+- Mudanças em qualquer `Ota*.java` agora acionam a suíte de emulador V3 na branch de desenvolvimento.
+- Permanece pendente o teste manual de TalkBack e de teclado físico em Samsung; nenhuma OTA é ativada ou instalada automaticamente.
