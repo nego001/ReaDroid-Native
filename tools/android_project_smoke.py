@@ -144,7 +144,25 @@ def main():
     click_named(text="Claro")
     wait_project()
     snapshot("v3-smoke-theme-light.png")
-    print("PASS: picked and analyzed APK using SAF, explored files, changed theme retaining project")
+    find_and_tap_setting("Tamanho do texto.")
+    click_named(text="Muito grande (130%)")
+    wait_project()
+    snapshot("v3-smoke-font-130.png")
+    find_and_tap_setting("Espaçamento da interface.")
+    click_named(text="Compacto")
+    wait_project()
+    snapshot("v3-smoke-compact.png")
+    # Verify the real UI wrote the expected preferences without backdoors in the app.
+    preferences = adb("shell", "run-as", PACKAGE,
+        "cat", "shared_prefs/v3_personalizacao.xml")
+    if 'name="font_percent" value="130"' not in preferences:
+        raise AssertionError("Font setting was not persisted")
+    if 'name="compact" value="true"' not in preferences:
+        raise AssertionError("Compact mode was not persisted")
+    if 'name="theme" value="light"' not in preferences:
+        raise AssertionError("Light theme was not persisted")
+    ensure_foreground()
+    print("PASS: real APK analysis, file exploration, light theme, 130% fonts and compact mode; project retained")
 
 
 if __name__ == "__main__":
