@@ -129,3 +129,11 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - `v3-studio-android-runtime.txt` vazio (sem erros AndroidRuntime registrados no intervalo testado). A compilação Android e a checagem de código do mesmo commit também passaram.
 - Limites: teste visual somente com o emulador Google APIs API 35, perfil Pixel 3a, usando a navegação configurada pelo sistema. **Não equivale a homologação física em Samsung**, nem a ensaio de TalkBack, teclado, gestos/3 botões em modelos variados ou OTA real.
 - OTA continua desativada; V3 definitiva **não publicada**.
+
+## Regressão de tela estreita no Android 15: APROVADA (19/10/2026)
+- Commit do teste `ca559c8f`; execução [#39260458089](https://github.com/nego001/ReaDroid-Native/actions/runs/39260458089) **aprovada**.
+- O Android 15 API 35 passou a suíte instrumentada (22 testes), os seis testes Python do recuperador de Launcher e o smoke normal sem crash detectado.
+- Em `wm size 320x640`, `wm density 160`, `font_scale 1.3`, as cinco abas ficaram visíveis e funcionais. Smoke confirmou retorno ao Início.
+- Capturas `v3-studio-narrow-home.png`, `v3-studio-narrow-files.png`, `v3-studio-narrow-return.png` e `v3-studio-narrow-final.png` estão no artefato de CI `NegrescoDroid-V3-Android15-Validation` (ID `12190841052`). A captura inicial de 320dp foi inspecionada: rodapé e navegação do sistema não se sobrepõem visualmente.
+- Log `v3-studio-narrow-runtime.txt` vazio no período. Builds Android e verificações de código do commit do teste aprovados; a suíte Android 10 `#39260457912` também passou.
+- **Escopo:** teste automatizado apenas em emuladores; homologação física Samsung, TalkBack e teclado físico seguem pendentes. O app não instala atualizações OTA nem possui release V3 definitivo.
