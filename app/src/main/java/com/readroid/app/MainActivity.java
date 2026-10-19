@@ -154,10 +154,16 @@ public class MainActivity extends Activity {
             TextView label = new TextView(this);
             label.setText(tabs[index]);
             label.setGravity(android.view.Gravity.CENTER);
-            label.setTextSize(10 * NegrescoTheme.FONT_SCALE);
+            boolean narrow = getResources().getConfiguration().screenWidthDp < 360;
+            label.setTextSize((narrow ? 9 : 10) * NegrescoTheme.FONT_SCALE);
+            label.setMaxLines(2);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            label.setIncludeFontPadding(false);
+            label.setPadding(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
             label.setVisibility(showNavLabels ? View.VISIBLE : View.GONE);
             label.setTextColor(NegrescoTheme.MUTED);
-            tabContainer.addView(label);
+            tabContainer.addView(label, new LinearLayout.LayoutParams(
+                -1, -2));
             navigationItems[index] = label;
             tabContainer.setContentDescription("Abrir seção " + tabs[index]);
             tabContainer.setOnClickListener(v -> showSection(target));
