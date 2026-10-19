@@ -243,3 +243,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - REA está sob licença MIT para o código próprio, enquanto Ghidra/Hopper/IDA e outras dependências têm condições independentes; não embutir/redistribuir componentes sem verificação de licenças, nem baixar/executar binários não confiáveis automaticamente. Dinâmica somente mediante consentimento e isolamento.
 - Escolha de UI/empacotamento desktop dependerá de prova de conceito Windows + Linux, com fixtures PE e ELF, medição de memória/desempenho, integração local e modelo de confiança.
 - **Estado: somente planejamento pós-Android**, sem versão Windows/Linux ou integração REA produzida. A base Android, APKs grandes (issue #2) e homologação física continuam prioritários; redesenho Android separado (issue #1).
+
+## Explorador multi-GB e projetos sincronizados entre plataformas (19/10/2026)
+- Requisitos de produto, segurança, offline-first e benchmarks organizados no documento [MULTI_GB_EXPLORER_AND_SYNC.md](MULTI_GB_EXPLORER_AND_SYNC.md).
+- [Issue #2](https://github.com/nego001/ReaDroid-Native/issues/2): explorador de arquivos/pastas semelhante a um gerenciador completo, indexação paginada e processamento multi-GB por streaming; o limite atual de APK 1 GiB **não foi removido**.
+- [Issue #4](https://github.com/nego001/ReaDroid-Native/issues/4): sincronizar **projetos que o usuário decidir adicionar ao workspace NegrescoDroid**, com modo offline por padrão e, futuramente, E2EE e histórico de revisões. Arquivos de origem enormes exigirão escolha explícita para upload.
+- [Issue #3](https://github.com/nego001/ReaDroid-Native/issues/3): compatibilidade de projetos com Windows/Linux e ferramentas EXE/ELF + REA, **após** Android.
+- Apenas documentação/roadmap: **nenhum serviço de nuvem está configurado, nenhum arquivo foi enviado, não há sincronização automática e o explorador multi-GB ainda não está pronto**.
