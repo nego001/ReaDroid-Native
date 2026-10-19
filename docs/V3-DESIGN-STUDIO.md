@@ -25,7 +25,7 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Testes Android de exportação/importação visual, com round-trip de 11 preferências e compatibilidade com presets antigos.
 - [x] Importador com tipos JSON estritos, sem coerção silenciosa nem caracteres de controle na identidade.
 - [x] Testes Android de reconstrução sem assinatura: alteração textual, preservação do original, remoção de assinaturas antigas, rejeição de caminhos inseguros e edições inexistentes.
-- [x] Dez testes instrumentados executados com sucesso no Android API 29.
+- [x] Doze testes instrumentados executados com sucesso no Android API 29, incluindo a prévia de importação sem efeitos colaterais.
 - [x] OTA mantém avisos verdadeiros sobre configuração incompleta e sem instalação automática.
 - [x] Navegação inferior com seleção visual em cartões e descrições acessíveis.
 - [x] Ajuste de contraste WCAG nos botões, aviso para cor HEX pouco legível.
@@ -49,11 +49,13 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 
 ## Nova fase de regressões
 - 10/10 testes instrumentados aprovados no workflow da revisão `abb61da5`: https://github.com/nego001/ReaDroid-Native/actions/runs/39188439031
+- 12 testes instrumentados, incluindo validação de prévia de importação, aprovados: https://github.com/nego001/ReaDroid-Native/actions/runs/39190762727
+- Exportação/importação ponta a ponta com seletor de arquivos, prévia de alterações e preservação do APK: https://github.com/nego001/ReaDroid-Native/actions/runs/39190807463
 - Emulador com 320×640 dp e fonte Android a 130%: navegação pelas cinco abas aprovada após reinstalação do APK no workflow https://github.com/nego001/ReaDroid-Native/actions/runs/39188709664
 - Capturas mostraram dica de pesquisa truncada no explorador; o texto da dica e a tipografia foram adaptados para telas estreitas em `fe3b877c`.
 - A simulação visual de 320dp reinstala o APK após testes instrumentados. O fluxo agora está comprovadamente aprovado.
 - Os testes de reconstrução validam apenas um **ZIP APK sem assinatura**. Não demonstram que o resultado instala no Android.
-- O recurso de exportação/importação JSON foi exercitado diretamente no Android. O fluxo completo de escolha de arquivos pelo sistema ainda requer um teste manual de UX.
+- O fluxo **completo** de exportação/importação JSON passou pelo DocumentsUI do Android: gerar arquivo em Downloads, conferir JSON, alterar preferências, mostrar prévia validada e restaurar tema/cor mantendo o APK aberto. Ver https://github.com/nego001/ReaDroid-Native/actions/runs/39190807463.
 
 ## Validação
 - [x] Builds Android intermediários concluídos com sucesso na branch.
@@ -63,14 +65,14 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
 - [x] Seleção SAF de APK real pelo DocumentsUI, análise e exploração de pastas/arquivos em emulador API 29.
 - [x] Troca OLED → Claro com um projeto aberto, sem perder os dados do APK.
-- [ ] Testar exportação, importação de presets e o fluxo de edição de arquivos com APK real.
+- [x] Testar exportação e importação pelo seletor de arquivos do Android com um APK real aberto (emulador).\n- [ ] Testar a edição real de arquivo do APK e exportação pelo seletor de documentos, além dos testes instrumentados da reconstrução.
 - [x] Capturas reais dos temas OLED e Claro, com contraste e navegação visivelmente corretos em emulador.
 - [x] Teste automatizado com tema Claro, fonte a 130%, modo compacto e retenção do APK aprovado no emulador.
 - [x] Testar 320dp com fonte do sistema a 130%: todas as cinco abas visíveis, navegáveis e com alvos de toque adequados.
 - [x] Capturas reais do painel inicial e Arquivos em largura de 320dp.
 - [ ] Validar telas físicas de diferentes fabricantes.
-- [ ] Testar importação de presets anteriores e do novo conjunto.
-- [ ] Confirmar que o código OTA permanece bloqueado quando não configurado.
+- [x] Testar importação de presets anteriores e do novo conjunto por instrumentação Android.\n- [x] Testar prévia validada, aprovação explícita e aplicação do backup via DocumentsUI com APK aberto.
+- [ ] Confirmar novamente em teste automatizado que o código OTA permanece bloqueado quando não configurado.
 - [ ] Revisar acessibilidade com leitor de tela e teclado físico.
 
 ## Evidências verificáveis
