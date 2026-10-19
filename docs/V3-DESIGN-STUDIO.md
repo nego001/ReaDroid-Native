@@ -40,7 +40,7 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 
 ## Validação
 - [x] Builds Android intermediários concluídos com sucesso na branch.\n- [x] Confirmada compilação Android e verificação de código após `2ebf8208`.
-- [x] Examinar a captura real do emulador da primeira execução que abriu e navegou corretamente.\n- [ ] Confirmar resultado do workflow de smoke após a correção final da checagem de erros.\n- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
+- [x] Examinar a captura real do emulador da primeira execução que abriu e navegou corretamente.\n- [x] Workflow de smoke aprovado no commit `2ebf8208` (Android API 29): instalação, abertura, navegação, screenshot e ausência de erros AndroidRuntime.\n- [ ] Abrir em celular físico, tocar em todas as opções e conferir rolagem/áreas de toque.
 - [ ] Testar seleção real de APK, exploração de arquivos, relatório e exportação.
 - [ ] Conferir tema claro, fonte a 130%, modo compacto e largura de 320–360 dp.
 - [ ] Testar importação de presets anteriores e do novo conjunto.
