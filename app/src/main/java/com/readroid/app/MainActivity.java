@@ -33,6 +33,7 @@ public class MainActivity extends Activity {
     private Button signingGuide;
     private Button localIdentity;
     private Button signingTest;
+    private Button apkAdvisor;
     private static final int REQUEST_EXPORT_APK = 2;
     private static final int REQUEST_COMPARE_APK = 3;
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
@@ -623,6 +624,25 @@ public class MainActivity extends Activity {
             intent.setType("*/*");
             startActivityForResult(intent, 1);
         });
+        apkAdvisor = NegrescoTheme.action(this, "Ferramentas recomendadas para este APK", false);
+        apkAdvisor.setEnabled(false);
+        homeSection.addView(apkAdvisor);
+        apkAdvisor.setOnClickListener(v -> {
+            if (report == null) return;
+            String details = ApkIntelligence.describe(report.optJSONObject("intelligence"));
+            ScrollView scroll = new ScrollView(this);
+            TextView text = new TextView(this);
+            text.setText(details);
+            text.setTextColor(NegrescoTheme.TEXT);
+            text.setTextSize(14 * NegrescoTheme.FONT_SCALE);
+            text.setPadding(NegrescoTheme.dp(this, 18), NegrescoTheme.dp(this, 16),
+                NegrescoTheme.dp(this, 18), NegrescoTheme.dp(this, 16));
+            scroll.addView(text);
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Diagnóstico inteligente (offline)")
+                .setView(scroll)
+                .setPositiveButton("Fechar", null).show();
+        });
 
         output = new TextView(this);
         output.setText("Selecione um APK para começar.");
@@ -1052,13 +1072,16 @@ public class MainActivity extends Activity {
         styled.setSpan(new android.text.style.ForegroundColorSpan(NegrescoTheme.MUTED),
             headline.length() + 1, combined.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         apkSummary.setText(styled);
+        JSONObject profile = resultJson.optJSONObject("intelligence");
         projectMetrics.setText("DEX  " + (resultJson.optJSONArray("dexFiles") == null ? 0 : resultJson.optJSONArray("dexFiles").length())
             + "     •     BIBLIOTECAS  " + (resultJson.optJSONArray("nativeLibraries") == null ? 0 : resultJson.optJSONArray("nativeLibraries").length())
-            + "     •     ASSETS  " + resultJson.optInt("assets"));
+            + "     •     ASSETS  " + resultJson.optInt("assets")
+            + (profile == null ? "" : "\nPERFIL  " + profile.optString("platformHint", "Android/ZIP")));
         JSONObject tree = resultJson.optJSONObject("explorer");
         explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
         share.setEnabled(true);
         ai.setEnabled(true);
+        apkAdvisor.setEnabled(profile != null);
         project.setEnabled(true);
         rebuild.setEnabled(true);
         signatureInfo.setEnabled(true);
@@ -1266,6 +1289,7 @@ public class MainActivity extends Activity {
         projectMetrics.setText("ESTRUTURA   •   Analisando...");
         share.setEnabled(false);
         ai.setEnabled(false);
+        apkAdvisor.setEnabled(false);
         project.setEnabled(false);
         rebuild.setEnabled(false);
         signatureInfo.setEnabled(false);
@@ -1482,6 +1506,7 @@ public class MainActivity extends Activity {
             json.put("assets", assets);
             json.put("hasManifest", manifest);
             try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
+            json.put("intelligence", ApkIntelligence.inspect(json));
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Análise interrompida");

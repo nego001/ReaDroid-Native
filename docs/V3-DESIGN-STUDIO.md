@@ -220,3 +220,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Limites de teste: o certificado debug pode mudar entre execuções, logo
   atualizar a própria variante QA não é garantido. Isso **não** libera OTA,
   não instala software e não torna a variante uma release definitiva.
+
+## Diagnóstico estrutural offline por tipo de APK (19/10/2026)
+- Primeira entrega da issue [#2](https://github.com/nego001/ReaDroid-Native/issues/2): após selecionar e analisar um APK, o resumo inclui **PERFIL** e aparece o botão **Ferramentas recomendadas para este APK** na tela Início.
+- `ApkIntelligence` inspeciona apenas nomes de arquivos já indexados, sem rede nem execução do APK. Reconhece indícios de Unity, Unreal Engine, Flutter, React Native, Android/ZIP ou **sinais mistos**; exibe o porquê da detecção e nunca afirma compatibilidade garantida.
+- A lista separa claramente ferramentas já utilizáveis (metadados, manifesto, busca, SHA-256, comparação, editor UTF-8 pequeno e exportação unsigned) daquelas que ainda não existem (DEX, assets binários Unity/Unreal, splits/APKS/XAPK, rebuild instalável).
+- Casos sintéticos de teste: cada perfil, ambiguidade, indícios incompletos e limitação explícita. A interface de editor antiga **não foi alterada**.
+- Limite atual de importação continua 1 GiB; abertura multi-GB, indexação escalável e edição de formatos especializados dependem das próximas etapas de infraestrutura, memória/armazenamento e ensaios físicos.
