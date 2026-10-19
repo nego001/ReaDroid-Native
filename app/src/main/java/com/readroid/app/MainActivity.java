@@ -567,6 +567,20 @@ public class MainActivity extends Activity {
         int[] quickTargets = {1, 2, 3, 4};
         int favorite = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("favorite_tab", 1);
         if (favorite < 1 || favorite > 4) favorite = 1;
+        // The chosen favorite always occupies the first tile, preserving the
+        // previous V3 behavior while leaving all four destinations available.
+        int chosen = favorite - 1;
+        String chosenLabel = quickLabels[chosen];
+        String chosenSubtitle = quickSubtitles[chosen];
+        int chosenTarget = quickTargets[chosen];
+        for (int i = chosen; i > 0; i--) {
+            quickLabels[i] = quickLabels[i - 1];
+            quickSubtitles[i] = quickSubtitles[i - 1];
+            quickTargets[i] = quickTargets[i - 1];
+        }
+        quickLabels[0] = chosenLabel;
+        quickSubtitles[0] = chosenSubtitle;
+        quickTargets[0] = chosenTarget;
         for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
             LinearLayout shortcutRow = new LinearLayout(this);
             shortcutRow.setOrientation(LinearLayout.HORIZONTAL);
