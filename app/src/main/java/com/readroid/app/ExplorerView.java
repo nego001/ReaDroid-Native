@@ -287,13 +287,28 @@ public final class ExplorerView {
 
     private TextView item(String value) {
         TextView view = new TextView(activity);
-        view.setText(value);
+        android.text.SpannableString formatted = new android.text.SpannableString(value);
+        int separator = value.indexOf('\n');
+        if (separator >= 0) {
+            formatted.setSpan(new android.text.style.ForegroundColorSpan(NegrescoTheme.MUTED),
+                separator + 1, value.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            formatted.setSpan(new android.text.style.RelativeSizeSpan(0.82f),
+                separator + 1, value.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (value.startsWith("▸")) {
+            formatted.setSpan(new android.text.style.ForegroundColorSpan(NegrescoTheme.ACCENT),
+                0, Math.min(1, value.length()), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        view.setText(formatted);
         view.setTextColor(NegrescoTheme.TEXT);
-        view.setTextSize(14);
-        view.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 14));
-        view.setBackground(NegrescoTheme.panel(activity));
+        view.setTextSize(14 * NegrescoTheme.FONT_SCALE);
+        view.setLineSpacing(NegrescoTheme.dp(activity, 3), 1f);
+        view.setMinHeight(NegrescoTheme.dp(activity, 56));
+        view.setPadding(NegrescoTheme.dp(activity, 16), NegrescoTheme.dp(activity, 12),
+            NegrescoTheme.dp(activity, 16), NegrescoTheme.dp(activity, 12));
+        view.setBackground(NegrescoTheme.studioCard(activity, false));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.bottomMargin = 5;
+        params.bottomMargin = NegrescoTheme.dp(activity, 7);
         view.setLayoutParams(params);
         return view;
     }
