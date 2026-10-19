@@ -51,7 +51,7 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 - [x] Troca OLED → Claro com um projeto aberto, sem perder os dados do APK.
 - [ ] Testar exportação, importação de presets e o fluxo de edição de arquivos com APK real.
 - [x] Capturas reais dos temas OLED e Claro, com contraste e navegação visivelmente corretos em emulador.
-- [ ] Confirmar resultado do novo teste automatizado com fonte a 130% e modo compacto.
+- [x] Teste automatizado com tema Claro, fonte a 130%, modo compacto e retenção do APK aprovado no emulador.
 - [ ] Testar largura de 320–360 dp e telas físicas de diferentes fabricantes.
 - [ ] Testar importação de presets anteriores e do novo conjunto.
 - [ ] Confirmar que o código OTA permanece bloqueado quando não configurado.
@@ -60,7 +60,8 @@ reais dos celulares. Não é uma captura de tela usada como plano de fundo.
 ## Evidências verificáveis
 - Primeiro teste de APK e tema aprovado: https://github.com/nego001/ReaDroid-Native/actions/runs/39183969729
 - Builds Android e verificações de código aprovados até `e7830d7c`.
-- Teste estendido (130% + compacto) solicitado no workflow `V3 APK and theme smoke`, resultado ainda pendente na revisão do documento.
+- Teste estendido de APK, OLED → Claro, fontes a 130% e modo compacto aprovado: https://github.com/nego001/ReaDroid-Native/actions/runs/39184741134
+- Build Android e Source checks aprovados no commit `bfdc8717`.
 
 Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 `v3.0.0-preview.1` e de futuras versões definitivas.
