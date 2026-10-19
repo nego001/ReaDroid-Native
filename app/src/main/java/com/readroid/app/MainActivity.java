@@ -1253,6 +1253,14 @@ public class MainActivity extends Activity {
         return out.toString();
     }
 
+    @Override public void onBackPressed() {
+        if (selectedSection != 0) {
+            showSection(0);
+        } else {
+            super.onBackPressed();
+        }
+    }
+
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putInt("active_studio_section", selectedSection);
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
