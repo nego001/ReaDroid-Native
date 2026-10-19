@@ -144,3 +144,11 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Novos testes instrumentados validam ordem do DPAD, ativação com ENTER (incluindo papel e estado acessível) e manutenção da seção selecionada após recriação da Activity.
 - Os testes rodam em emuladores API 29 e API 35. O teste manual com teclado Bluetooth/USB e TalkBack no Samsung **continua pendente**; nenhuma homologação física foi inferida.
 - OTA assinada continua sem endpoint/chave de produção, sem instalação automática e sem publicação da V3 definitiva.
+
+## Resultado da regressão de teclado/rotação (19/10/2026)
+- O commit `66b7df21` passou **25/25 testes instrumentados no Android 10 (API 29)**: https://github.com/nego001/ReaDroid-Native/actions/runs/39265428220.
+- O mesmo commit passou **25/25 testes instrumentados no Android 15 (API 35)**: https://github.com/nego001/ReaDroid-Native/actions/runs/39265428681.
+- Novo teste `KeyboardAndRotationInstrumentedTest`: foco horizontal DPAD, ENTER selecionando corretamente e recriação preservando a aba ativa. O teste agora envia evento de teclado antes de pedir foco; o modo touch do emulador rejeitava foco de botão, como previsto pela API Android.
+- Regressão de UI: cinco abas em `320x640` e fonte 130% aprovadas nos dois emuladores. Os avisos de OTA Estável/Beta permanecem bloqueados nos testes API 29.
+- `Android APK` e `Source checks` também aprovados para `66b7df21`. Testes de foco **não** substituem TalkBack em aparelho físico; ainda não há aprovação de Samsung, teclado Bluetooth, navegação por gestos em diferentes modelos ou instalação OTA.
+- Procedimento seguro de testes físicos documentado em [V3-SAMSUNG-HOMOLOGACAO.md](V3-SAMSUNG-HOMOLOGACAO.md).

@@ -59,7 +59,7 @@ procedimento não desinstala, instala nem altera arquivos do aplicativo.
 
 - [x] Android 10 API 29 e Android 15 API 35: testes automatizados de interface,
   navegação em 320dp e 130% de fonte aprovados nos commits anteriores.
-- [ ] Nova suíte de teclado/rotação aprovada em API 29 e API 35.
+- [x] Nova suíte de teclado/rotação aprovada em API 29 e API 35, 25/25 testes cada (commit `66b7df21`; [Android 10](https://github.com/nego001/ReaDroid-Native/actions/runs/39265428220) e [Android 15](https://github.com/nego001/ReaDroid-Native/actions/runs/39265428681)).
 - [ ] Samsung real testado com toque, TalkBack, teclado e rotação.
 - [ ] Registro de resultados, modelo, One UI e modo de navegação do Samsung.
 - [ ] Avaliação específica de regressão nos arquivos APK usados exclusivamente
