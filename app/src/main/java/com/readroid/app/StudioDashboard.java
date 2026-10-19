@@ -134,9 +134,9 @@ public final class StudioDashboard {
                 detach(action);
                 LinearLayout tile = option(a, action, glyphs[i], details[i]);
                 boolean lastAlone = (i == actions.length - 1 && col == 0);
+                tile.setMinimumHeight(dp(a, NegrescoTheme.COMPACT ? 106 : 120));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    lastAlone ? -1 : 0, dp(a, NegrescoTheme.COMPACT ? 106 : 120),
-                    lastAlone ? 0f : 1f);
+                    lastAlone ? -1 : 0, -2, lastAlone ? 0f : 1f);
                 lp.setMargins(col == 0 ? 0 : dp(a, 4), 0,
                     col == 0 ? (lastAlone ? 0 : dp(a, 4)) : 0, dp(a, 8));
                 row.addView(tile, lp);
