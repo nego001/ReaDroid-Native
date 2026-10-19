@@ -55,6 +55,29 @@ public final class NegrescoTheme {
         CARD_RADIUS = radius == 12 || radius == 18 || radius == 26 ? radius : 18;
     }
 
+    /** Android system chrome follows the selected light/dark application palette. */
+    public static void applySystemBars(android.app.Activity activity) {
+        android.view.Window window = activity.getWindow();
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(BACKGROUND);
+        window.setNavigationBarColor(BACKGROUND);
+        boolean lightBackground = contrastRatio(BACKGROUND, Color.BLACK) > 7.0;
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.view.WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                int appearance = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(lightBackground ? appearance : 0, appearance);
+            }
+        } else {
+            int lightIcons = android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            android.view.View decor = window.getDecorView();
+            decor.setSystemUiVisibility((decor.getSystemUiVisibility() & ~lightIcons)
+                | (lightBackground ? lightIcons : 0));
+        }
+    }
+
     public static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
