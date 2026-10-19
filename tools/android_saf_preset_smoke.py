@@ -107,9 +107,14 @@ def import_saved():
     picker_downloads()
     click_named(text="negrescodroid-v3-visual", partial=True)
     nodes = inspect("SAF import consent")
-    if match_node(nodes, text="Importar personalização?", partial=True) is None:
-        raise AssertionError("Import confirmation not displayed")
-    click_named(text="Importar")
+    if match_node(nodes, text="Prévia da personalização", partial=True) is None:
+        raise AssertionError("Validated appearance preview was not shown")
+    if match_node(nodes, text="Tema: Claro", partial=True) is None:
+        raise AssertionError("Imported appearance preview lacks the saved theme")
+    apply_button = clickable_matching(nodes, ["APLICAR VISUAL", "Aplicar visual"])
+    if apply_button is None:
+        raise AssertionError("Explicit import approval button not found")
+    tap(apply_button)
     wait_project()
     current = prefs()
     if current.get("theme") != "light" or current.get("accent") != "purple":
