@@ -216,7 +216,7 @@ public final class P7HomeOverview extends LinearLayout {
                 11, NegrescoTheme.MUTED, false));
         }
         values[0].setText(String.valueOf(total));
-        boolean canViewAll = total > 3;
+        boolean canViewAll = !recent.isEmpty();
         seeAll.setVisibility(canViewAll ? View.VISIBLE : View.GONE);
         seeAll.setClickable(canViewAll);
     }
