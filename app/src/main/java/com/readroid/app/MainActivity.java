@@ -1050,7 +1050,18 @@ public class MainActivity extends Activity {
         StudioDashboard.featureHeader(this, aiSection, 4, "Assistente IA",
             "Compartilhe um relatório técnico para análise no ChatGPT.");
         homeOverview = new P7HomeOverview(this, v -> showSection(1));
-        StudioDashboard.compose(this, homeSection, apkSummary, projectMetrics, choose,
+        // Home-only branding and a separate, functional Design page.
+        // Remove the global header so Explorer and Design do not show a
+        // second title above their own headers.
+        root.removeView(brandRow);
+        new P7DesignStudio(this, designSection, new Button[]{
+            themePicker, accentPicker, textScale, densityPicker, navLabels,
+            favoriteShortcut, identityPicker, appearancePreview,
+            exportAppearance, importAppearance, glowPicker, cornersPicker,
+            resetAppearance
+        });
+        StudioDashboard.compose(this, homeSection, designSection,
+            apkSummary, projectMetrics, choose,
             homeOverview, shortcutsTitle, shortcutHint, quickGrid,
             customizationTitle, customizationHint, togglePersonalization, personalizationGroup,
             new Button[]{themePicker, accentPicker, textScale, densityPicker, navLabels,
@@ -1058,14 +1069,8 @@ public class MainActivity extends Activity {
                 exportAppearance, importAppearance, glowPicker, cornersPicker, resetAppearance},
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
-        // The illustrated P7 navigation now has a real, separate Design tab.
-        // Legacy AI controls remain accessible inside Design Studio.
-        new P7DesignStudio(this, designSection, new Button[]{
-            themePicker, accentPicker, textScale, densityPicker, navLabels,
-            favoriteShortcut, identityPicker, appearancePreview,
-            exportAppearance, importAppearance, glowPicker, cornersPicker,
-            resetAppearance
-        });
+        homeSection.addView(brandRow, 0);
+        // Legacy AI controls remain accessible in Design without losing them.
         ((android.view.ViewGroup) aiSection.getParent()).removeView(aiSection);
         designSection.addView(aiSection);
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
