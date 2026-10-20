@@ -112,14 +112,12 @@ public final class NegrescoTheme {
             Context context, boolean selected, boolean focused) {
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(context, 14));
-        shape.setColor(selected
-            ? mix(SURFACE, ACCENT, STUDIO_GLOW ? 0.24f : 0.12f)
-            : (focused ? SURFACE : Color.TRANSPARENT));
+        // The approved bottom bar is OLED black with a thin neon marker.
+        // An active tab must not be wrapped in a large filled blue pill.
+        shape.setColor(focused ? SURFACE : Color.TRANSPARENT);
         if (focused) {
-            // Visible even if the focused tab is not the selected section.
+            // Keyboard/DPAD users still get a visible 2dp focus outline.
             shape.setStroke(dp(context, 2), ACCENT);
-        } else if (selected) {
-            shape.setStroke(dp(context, 1), mix(ACCENT, BORDER, 0.52f));
         }
         return new android.graphics.drawable.RippleDrawable(
             android.content.res.ColorStateList.valueOf(mix(ACCENT, SURFACE, 0.60f)),
