@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -79,22 +80,22 @@ public final class P7DesignStudio {
         LinearLayout titles=column();
         LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,-2);
         tp.leftMargin=dp(10);header.addView(titles,tp);
-        titles.addView(label("Design Studio",22,NegrescoTheme.TEXT,true));
+        titles.addView(label("Design Studio",18,NegrescoTheme.TEXT,true));
         titles.addView(label("Personalize a aparência do seu app",12,NegrescoTheme.MUTED,false));
         HorizontalScrollView scroll=new HorizontalScrollView(a);
         scroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(56));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(43));
         sp.topMargin=dp(12);root.addView(scroll,sp);
         LinearLayout tabs=new LinearLayout(a);tabs.setOrientation(LinearLayout.HORIZONTAL);
         scroll.addView(tabs);
         String[] names={"Temas","Layout","Ícones","Logotipo"};
         for(int i=0;i<names.length;i++) {
             final int index=i;
-            TextView tab=label(names[i],12,NegrescoTheme.TEXT,false);
+            TextView tab=label(names[i],11,NegrescoTheme.TEXT,false);
             tab.setGravity(Gravity.CENTER);
-            tab.setMinWidth(dp(82));tab.setMinHeight(dp(44));
+            tab.setMinWidth(dp(79));tab.setMinHeight(dp(36));
             tab.setPadding(dp(10),0,dp(10),0);
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(44));
+            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(36));
             p.rightMargin=dp(5);tabs.addView(tab,p);
             tabViews[i]=tab;
             tab.setOnClickListener(v->{activeTab=index;render();});
@@ -104,26 +105,110 @@ public final class P7DesignStudio {
         render();
     }
     private void heading(String title) {
-        TextView t=label(title,16,NegrescoTheme.TEXT,true);
-        t.setPadding(0,dp(14),0,dp(8));body.addView(t);
+        sectionHeader(title, null);
     }
-    private void tile(String name,String subtitle,int accent,boolean selected,
-                      Runnable click) {
-        LinearLayout card=column();
-        card.setPadding(dp(8),dp(8),dp(8),dp(9));
-        card.setMinimumWidth(dp(98));card.setBackground(background(selected));
-        P7ThemePreviewView preview=new P7ThemePreviewView(a,accent);
-        card.addView(preview,new LinearLayout.LayoutParams(-1,dp(84)));
-        TextView title=label(name,12,NegrescoTheme.TEXT,true);card.addView(title);
-        TextView detail=label(subtitle,10,NegrescoTheme.MUTED,false);card.addView(detail);
-        card.setClickable(true);card.setFocusable(true);
+
+    /** Compact section heading replaces the old full-width apply buttons. */
+    private void sectionHeader(String title, Runnable onViewAll) {
+        LinearLayout row = new LinearLayout(a);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, dp(37));
+        rp.topMargin = dp(6);
+        body.addView(row, rp);
+        TextView label = label(title, 15, NegrescoTheme.TEXT, true);
+        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
+        if (onViewAll != null) {
+            TextView viewAll = label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
+            viewAll.setGravity(Gravity.CENTER);
+            viewAll.setMinHeight(dp(37));
+            viewAll.setPadding(dp(8), 0, dp(3), 0);
+            viewAll.setClickable(true);
+            viewAll.setFocusable(true);
+            viewAll.setContentDescription("Ver todos: " + title);
+            viewAll.setOnClickListener(v -> onViewAll.run());
+            row.addView(viewAll);
+        }
+    }
+
+    /** All preview families have a real chooser and explicit apply confirmation. */
+    private void showCatalogDialog(int type) {
+        final String[] names = type == 0 ? THEME_NAMES :
+            type == 1 ? P7VisualCatalog.LAYOUT_NAMES : P7VisualCatalog.PRESET_NAMES;
+        int selected = type == 0 ? selectedTheme :
+            type == 1 ? selectedLayout : selectedPreset;
+        String title = type == 0 ? "Temas disponíveis" :
+            type == 1 ? "Layouts disponíveis" : "Presets disponíveis";
+        new android.app.AlertDialog.Builder(a)
+            .setTitle(title)
+            .setSingleChoiceItems(names, selected, (dialog, which) -> {
+                if (type == 0) selectedTheme = which;
+                else if (type == 1) selectedLayout = which;
+                else selectedPreset = which;
+                dialog.dismiss();
+                render();
+                if (type == 0) applySelectedTheme();
+                else if (type == 1) confirmLayout();
+                else confirmPreset();
+            })
+            .setNegativeButton("Fechar", null).show();
+    }
+
+    /** Native tiles use separate proportions for themes, layouts and presets. */
+    private void tile(String name, String subtitle, int accent, boolean selected,
+                      int kind, Runnable click) {
+        final int width = kind == 2 ? 71 : (kind == 1 ? 100 : 100);
+        final int previewHeight = kind == 2 ? 56 : (kind == 1 ? 69 : 88);
+        LinearLayout card = column();
+        card.setPadding(dp(5), dp(6), dp(5), dp(7));
+        card.setMinimumWidth(dp(width));
+        card.setBackground(background(selected));
+
+        FrameLayout previewFrame = new FrameLayout(a);
+        card.addView(previewFrame, new LinearLayout.LayoutParams(-1, dp(previewHeight)));
+        P7ThemePreviewView miniature = new P7ThemePreviewView(a, accent, kind);
+        previewFrame.addView(miniature,
+            new FrameLayout.LayoutParams(-1, -1));
+        if (selected) {
+            TextView check = label("✓", 11, android.graphics.Color.WHITE, true);
+            check.setGravity(Gravity.CENTER);
+            GradientDrawable bubble = new GradientDrawable();
+            bubble.setColor(0xff1688ff);
+            bubble.setCornerRadius(dp(20));
+            bubble.setStroke(dp(1), 0xff061524);
+            check.setBackground(bubble);
+            FrameLayout.LayoutParams tick = new FrameLayout.LayoutParams(
+                dp(20), dp(20), Gravity.RIGHT | Gravity.BOTTOM);
+            tick.setMargins(0, 0, dp(1), dp(1));
+            previewFrame.addView(check, tick);
+            check.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        TextView title = label(name, kind == 2 ? 9 : 11,
+            NegrescoTheme.TEXT, selected);
+        title.setMaxLines(1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2);
+        tp.topMargin = dp(5);
+        card.addView(title, tp);
+        if (kind == 0 && !subtitle.isEmpty()) {
+            TextView detail = label(subtitle, 9, NegrescoTheme.MUTED, false);
+            detail.setMaxLines(1);
+            detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            detail.setGravity(Gravity.CENTER_HORIZONTAL);
+            card.addView(detail);
+        }
+        card.setClickable(true);
+        card.setFocusable(true);
         card.setSelected(selected);
-        card.setContentDescription(name + (selected ? ", prévia selecionada" : ", selecionar prévia"));
-        card.setOnClickListener(v->click.run());
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(102),-2);
-        p.rightMargin=dp(8);
-        cards.addView(card,p);
+        card.setContentDescription(name +
+            (selected ? ", prévia selecionada" : ", selecionar prévia"));
+        card.setOnClickListener(v -> click.run());
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(width), -2);
+        p.rightMargin = dp(kind == 2 ? 6 : 8);
+        cards.addView(card, p);
     }
+
     private LinearLayout cards;
     private void startCards() {
         HorizontalScrollView scroll=new HorizontalScrollView(a);
