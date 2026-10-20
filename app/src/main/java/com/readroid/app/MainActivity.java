@@ -727,7 +727,13 @@ public class MainActivity extends Activity {
         // remain in the Build/Security sections and are not falsely enabled.
         String[] actionNames = {"Abrir APK", "Analisar", "Build APK",
             "Decompilar", "Editar Smali", "Assinar APK"};
-        int[] actionGlyphs = {1, 3, 2, 4, 1, 3};
+        // Faithful six-action symbols: folder, search, wrench, code,
+        // editable document and verified shield instead of nav placeholders.
+        int[] actionGlyphs = {
+            R.drawable.ic_p7_folder, R.drawable.ic_p7_search,
+            R.drawable.ic_p7_wrench, R.drawable.ic_p7_code,
+            R.drawable.ic_p7_file, R.drawable.ic_p7_shield
+        };
         View.OnClickListener[] actionHandlers = new View.OnClickListener[]{
             v -> {
                 Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
