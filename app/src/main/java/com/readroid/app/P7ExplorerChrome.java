@@ -100,7 +100,9 @@ public final class P7ExplorerChrome extends LinearLayout {
     }
 
     public void setEditCount(int count) {
-        editCounter.setText(Math.max(0, count) + " alterações pendentes");
+        int safeCount = Math.max(0, count);
+        editCounter.setText(safeCount == 1 ? "1 alteração pendente"
+            : safeCount + " alterações pendentes");
     }
 
     public void updateBreadcrumb(String folder, boolean searching) {
