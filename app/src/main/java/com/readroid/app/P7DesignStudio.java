@@ -77,10 +77,8 @@ public final class P7DesignStudio {
         LinearLayout card=column();
         card.setPadding(dp(12),dp(10),dp(12),dp(10));
         card.setMinimumWidth(dp(111));card.setBackground(background(selected));
-        TextView preview=label("▣  ▬\n▰  ▤",24,accent,true);
-        preview.setGravity(Gravity.CENTER);
-        preview.setBackgroundColor(0xff030910);
-        card.addView(preview,new LinearLayout.LayoutParams(-1,dp(79)));
+        P7ThemePreviewView preview=new P7ThemePreviewView(a,accent);
+        card.addView(preview,new LinearLayout.LayoutParams(-1,dp(95)));
         TextView title=label(name,12,NegrescoTheme.TEXT,true);card.addView(title);
         TextView detail=label(subtitle,10,NegrescoTheme.MUTED,false);card.addView(detail);
         card.setClickable(true);card.setFocusable(true);card.setContentDescription(name);
