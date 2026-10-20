@@ -33,7 +33,7 @@ public final class P7HomeOverviewInstrumentedTest {
                         v -> { });
                     activity.setContentView(panel);
                     assertTrue(contains(panel, "Nenhum projeto aberto"));
-                    assertTrue(contains(panel, "Pendente"));
+                    assertTrue(contains(panel, "—"));
                     assertTrue(contains(panel,
                         "O histórico persistente ainda está em desenvolvimento."));
                     JSONObject current = new JSONObject();
@@ -43,8 +43,10 @@ public final class P7HomeOverviewInstrumentedTest {
                     panel.update(current, 3);
                     assertTrue(contains(panel, "com.example.fixture"));
                     assertTrue(contains(panel, "301"));
-                    assertTrue(contains(panel, "3"));
-                    assertTrue(contains(panel, "Consultar"));
+                    assertTrue(contains(panel, "APKs Builds"));
+                    assertTrue(contains(panel, "Ameaças"));
+                    assertTrue("Unavailable counters must stay unknown",
+                        contains(panel, "—"));
                     assertFalse(contains(panel, "Nenhum projeto aberto"));
                     panel.update(null, 0);
                     assertTrue(contains(panel, "Nenhum projeto aberto"));
