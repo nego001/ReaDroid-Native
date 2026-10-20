@@ -26,6 +26,21 @@ public final class P7NavigationInstrumentedTest {
         }
         return null;
     }
+    /** Informative views carry TalkBack descriptions without being buttons. */
+    private static View describedView(View view, String label) {
+        CharSequence description = view.getContentDescription();
+        if (description != null && label.equals(description.toString()))
+            return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = describedView(group.getChildAt(i), label);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     private static boolean hasText(View view,String value) {
         if(view instanceof TextView && value.equals(((TextView)view).getText().toString())
             && view.isShown()) return true;
@@ -96,7 +111,8 @@ public final class P7NavigationInstrumentedTest {
                 assertTrue(hasText(window, "Logo Studio"));
                 assertTrue("The user-saved brand must be shown in its preview",
                     hasText(window, saved));
-                assertNotNull(byDescription(window, "Prévia da identidade visual atual"));
+                assertNotNull("A prévia precisa ser acessível ao TalkBack",
+                    describedView(window, "Prévia da identidade visual atual"));
             });
         }
     }
