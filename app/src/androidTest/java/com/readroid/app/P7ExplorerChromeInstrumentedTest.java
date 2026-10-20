@@ -92,11 +92,17 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertTrue(rootCrumb.performClick());
                     assertEquals("", explorer.snapshotBrowseState().folder);
                     assertNotNull(findPrefix(root, "▸  res/"));
-                    explorer.getEditPlan().addTextReplacement("res/config.xml", "edited");
+                    // The XML filter may show compiled Android XML, which is
+                    // not a supported text edit. Use a known editable TXT instead.
+                    TextView all = find(root, "Todos");
+                    assertNotNull(all);
+                    assertTrue(all.performClick());
+                    assertNotNull(findPrefix(root, "▸  assets/"));
+                    explorer.getEditPlan().addTextReplacement("assets/a.txt", "edited");
                     explorer.refresh();
                     assertNotNull(find(root, "1 alteração pendente"));
-                    assertTrue(findPrefix(root, "▸  res/").performClick());
-                    assertNotNull(findPrefix(root, "●  config.xml"));
+                    assertTrue(findPrefix(root, "▸  assets/").performClick());
+                    assertNotNull(findPrefix(root, "●  a.txt"));
                 } catch (Exception failure) {
                     throw new AssertionError(failure);
                 }
