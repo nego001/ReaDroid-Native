@@ -46,6 +46,10 @@ public final class P7NavigationInstrumentedTest {
                     assertNotNull("Missing bottom tab "+name,tab);
                     assertTrue(tab.performClick());
                     assertTrue(tab.isSelected());
+                    assertTrue("Reference nav must expose a thin active marker",
+                        tab instanceof ViewGroup);
+                    assertEquals("Selected tab needs visible blue dash",
+                        View.VISIBLE, ((ViewGroup) tab).getChildAt(0).getVisibility());
                 }
                 assertTrue(hasText(root,"Design Studio"));
                 assertTrue(hasText(root,"Previews de Temas"));
