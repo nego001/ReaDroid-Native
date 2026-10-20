@@ -799,6 +799,12 @@ public class MainActivity extends Activity {
         homeSection.addView(output);
 
         explorerView = new ExplorerView(this, filesSection);
+        explorerView.setNavigationActions(() -> showSection(0), () -> {
+            Intent chooser = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            chooser.addCategory(Intent.CATEGORY_OPENABLE);
+            chooser.setType("*/*");
+            startActivityForResult(chooser, 1);
+        });
         Button compare = NegrescoTheme.action(this, "Comparar com outro APK", false);
         filesSection.addView(compare);
         compare.setOnClickListener(v -> {
