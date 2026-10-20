@@ -202,7 +202,8 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 64), 1f);
             navParams.setMargins(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
             nav.addView(tabContainer, navParams);
-            NavGlyph glyph = new NavGlyph(this, index);
+            int[] tabIcons = {0, 1, 3, 2, 4};
+            NavGlyph glyph = new NavGlyph(this, tabIcons[index]);
             tabContainer.addView(glyph, new LinearLayout.LayoutParams(NegrescoTheme.dp(this, 27), NegrescoTheme.dp(this, 27)));
             navigationIcons[index] = glyph;
             TextView label = new TextView(this);
