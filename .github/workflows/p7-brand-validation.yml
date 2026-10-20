@@ -47,7 +47,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest
             gradle --no-daemon :app:assembleQa
             SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
             SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
