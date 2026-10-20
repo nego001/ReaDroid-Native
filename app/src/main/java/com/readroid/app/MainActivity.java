@@ -103,7 +103,7 @@ public class MainActivity extends Activity {
         // Calling Window.getInsetsController here crashes on Android 15.
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 18 : 34), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 24));
+        root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 15), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 8 : 12), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 15), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 10 : 14));
         root.setBackgroundColor(NegrescoTheme.BACKGROUND);
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
@@ -143,12 +143,12 @@ public class MainActivity extends Activity {
         String displaySubtitle = appearance.getString("display_subtitle", "APK ENGINEERING STUDIO");
         LinearLayout brandRow = new LinearLayout(this);
         brandRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        brandRow.setPadding(0, NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 14));
+        brandRow.setPadding(0, NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 9));
         android.widget.ImageView brandMark = new android.widget.ImageView(this);
         brandMark.setImageResource(R.drawable.ic_negrecodroid_foreground);
         brandMark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         brandRow.addView(brandMark, new LinearLayout.LayoutParams(
-            NegrescoTheme.dp(this, 46), NegrescoTheme.dp(this, 46)));
+            NegrescoTheme.dp(this, 34), NegrescoTheme.dp(this, 34)));
         LinearLayout brandText = new LinearLayout(this);
         brandText.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -161,14 +161,14 @@ public class MainActivity extends Activity {
             droid, droid + 5, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         title.setText(brandName);
         title.setTextColor(NegrescoTheme.TEXT);
-        title.setTextSize(21 * NegrescoTheme.FONT_SCALE);
+        title.setTextSize(22 * NegrescoTheme.FONT_SCALE);
         title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         title.setMaxLines(2);
         brandText.addView(title);
         TextView brandSubtitleView = new TextView(this);
-        brandSubtitleView.setText(displaySubtitle);
+        brandSubtitleView.setText("ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS");
         brandSubtitleView.setTextColor(NegrescoTheme.MUTED);
-        brandSubtitleView.setTextSize(9.5f * NegrescoTheme.FONT_SCALE);
+        brandSubtitleView.setTextSize(8.5f * NegrescoTheme.FONT_SCALE);
         brandSubtitleView.setLetterSpacing(0.13f);
         brandSubtitleView.setMaxLines(2);
         brandText.addView(brandSubtitleView);
