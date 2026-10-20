@@ -56,6 +56,7 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n com.readroid.app/.MainActivity
             sleep 2
+            python3 -c 'from tools.android_ui_smoke import visible_app_hierarchy, ensure_foreground; nodes = visible_app_hierarchy(); ensure_foreground(); assert any(n.attrib.get("text") == "Olá, Desenvolvedor" for n in nodes), "Home not visible before screenshot"'
             adb exec-out screencap -p > p7-brand-android-${{ matrix.api }}.png
             test -s p7-brand-android-${{ matrix.api }}.png
             python3 tools/p7_explorer_smoke.py
