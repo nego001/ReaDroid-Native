@@ -46,12 +46,13 @@ def visible_app_hierarchy():
     """Dismiss only a known *launcher* ANR overlay in emulator UI tests.
 
     Android 15's Pixel Launcher sometimes ANRs after instrumentation. It can
-    cover a fully running NegrescoDroid and hide every app node from uiautomator.
+    cover a fully running NegrecoDroid and hide every app node from uiautomator.
     Do not dismiss our own ANRs, unrelated dialogs or arbitrary permission UI.
     """
     nodes = hierarchy()
-    if any(n.attrib.get("text") == "NegrescoDroid isn't responding" for n in nodes):
-        raise AssertionError("NegrescoDroid ANR: refusing automated dismissal")
+    if any(n.attrib.get("text") in ("NegrecoDroid isn't responding",
+                                  "NegrecoDroid isn't responding") for n in nodes):
+        raise AssertionError("NegrecoDroid ANR: refusing automated dismissal")
     launcher_anr = any(
         n.attrib.get("text") == "Pixel Launcher isn't responding"
         and n.attrib.get("package") == "android"
@@ -63,7 +64,7 @@ def visible_app_hierarchy():
              and n.attrib.get("resource-id") == "android:id/aerr_close"]
     if len(close) != 1:
         raise AssertionError("Pixel Launcher ANR lacks an unambiguous Close app button")
-    print("EMULATOR_RECOVERY: dismissing Pixel Launcher ANR, not a NegrescoDroid error",
+    print("EMULATOR_RECOVERY: dismissing Pixel Launcher ANR, not a NegrecoDroid error",
           flush=True)
     tap(close[0])
     nodes = hierarchy()
@@ -87,10 +88,10 @@ def tap(node):
 def ensure_foreground():
     pid = adb("shell", "pidof", PKG)
     if not pid or not all(item.isdigit() for item in pid.split()):
-        raise AssertionError("NegrescoDroid process not running")
+        raise AssertionError("NegrecoDroid process not running")
     activities = adb("shell", "dumpsys", "activity", "activities")
     if ACTIVITY not in activities:
-        raise AssertionError("NegrescoDroid activity not visible in dumpsys")
+        raise AssertionError("NegrecoDroid activity not visible in dumpsys")
 
 
 def main():
@@ -115,7 +116,7 @@ def main():
         raise AssertionError("Failed to return Home")
     runtime = adb("logcat", "-d", "-s", "AndroidRuntime:E")
     if "FATAL EXCEPTION" in runtime and PKG in runtime:
-        raise AssertionError("AndroidRuntime crash detected for NegrescoDroid")
+        raise AssertionError("AndroidRuntime crash detected for NegrecoDroid")
     print("PASS: home -> files -> security -> home; no detected app crash")
 
 
