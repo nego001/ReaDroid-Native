@@ -7,8 +7,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 3
-        versionName = "3.0.0-preview.3-dev"
+        versionCode = 4
+        versionName = "3.0.0-preview.4-p7"
     }
     // Isolated, manually installed QA app. Different Android UID/sandbox
     // prevents a CI debug-signature mismatch from endangering existing data.
