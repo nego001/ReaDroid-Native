@@ -272,7 +272,8 @@ public class MainActivity extends Activity {
             new android.app.AlertDialog.Builder(this).setTitle("Tema visual")
                 .setSingleChoiceItems(options, Math.max(0, selected), (dialog, which) -> {
                     getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                        .putString("theme", values[which]).apply();
+                        .putString("theme", values[which])
+                        .remove("p7_active_preset").apply();
                     dialog.dismiss();
                     recreate();
                 }).setNegativeButton("Cancelar", null).show();
@@ -289,7 +290,8 @@ public class MainActivity extends Activity {
                     dialog.dismiss();
                     if (which != 4) {
                         getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                            .putString("accent", values[which]).apply();
+                            .putString("accent", values[which])
+                            .remove("p7_active_preset").apply();
                         recreate();
                         return;
                     }
@@ -316,7 +318,7 @@ public class MainActivity extends Activity {
                             Runnable applyCustomColor = () -> {
                                 getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
                                     .putString("accent", "custom").putString("custom_accent", color)
-                                    .apply();
+                                    .remove("p7_active_preset").apply();
                                 recreate();
                             };
                             double contrast = NegrescoTheme.contrastRatio(
@@ -358,7 +360,9 @@ public class MainActivity extends Activity {
                 .setSingleChoiceItems(new String[]{"Confortável", "Compacto"}, compact ? 1 : 0,
                     (dialog, which) -> {
                         getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                            .putBoolean("compact", which == 1).apply();
+                            .putBoolean("compact", which == 1)
+                            .putInt("layout_variant", which == 1 ? 1 : 0)
+                            .remove("p7_active_preset").apply();
                         dialog.dismiss();
                         recreate();
                     }).setNegativeButton("Cancelar", null).show();
