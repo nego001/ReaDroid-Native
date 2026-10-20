@@ -558,6 +558,20 @@ public final class ExplorerView {
                 0, Math.min(1, value.length()), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         view.setText(formatted);
+        // Native scalable glyphs approximate the approved blue folder/file list.
+        // Keep the original text prefixes and click listeners for accessibility
+        // and for the proven SQLite/legacy navigation test contracts.
+        int glyph = value.startsWith("▸  ") ? R.drawable.ic_p7_folder
+            : (value.contains("\\n") ? R.drawable.ic_p7_file : 0);
+        if (glyph != 0) {
+            android.graphics.drawable.Drawable icon = activity.getDrawable(glyph);
+            if (icon != null) {
+                int extent = NegrescoTheme.dp(activity, 24);
+                icon.setBounds(0, 0, extent, extent);
+                view.setCompoundDrawables(icon, null, null, null);
+                view.setCompoundDrawablePadding(NegrescoTheme.dp(activity, 12));
+            }
+        }
         view.setTextColor(NegrescoTheme.TEXT);
         view.setTextSize(14 * NegrescoTheme.FONT_SCALE);
         view.setLineSpacing(NegrescoTheme.dp(activity, 3), 1f);
