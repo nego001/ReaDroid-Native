@@ -5,6 +5,10 @@ import android.graphics.Canvas;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.RectF;
+import android.graphics.LinearGradient;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.Shader;
 import android.util.Base64;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -55,14 +59,32 @@ public final class P7MascotView extends View {
             pen.setFilterBitmap(true);
             RectF destination = new RectF(getWidth() - width,
                 getHeight() - height, getWidth(), getHeight());
-            c.save();
-            // The original promotional crop includes a settings glyph.
-            // The Home now has a real interactive settings button, so mask
-            // ONLY that duplicate top-right corner. Preserve the character.
+            // Render only the approved mascot; the original promotional crop
+            // has square edges that look like a pasted screenshot on OLED.
+            // Two DST_IN masks blend its edges into the real Android surface.
+            int layer = c.saveLayer(destination, null);
+            int maskedCorner = c.save();
+            // Hide the duplicate settings glyph inside the promotional crop.
+            // The actual settings gear is a functional native toolbar action.
             c.clipOutRect(destination.left + width * 0.79f, destination.top,
                 destination.right, destination.top + height * 0.22f);
             c.drawBitmap(approvedArtwork, null, destination, pen);
-            c.restore();
+            c.restoreToCount(maskedCorner);
+
+            Paint fade = new Paint(Paint.ANTI_ALIAS_FLAG);
+            fade.setStyle(Paint.Style.FILL);
+            fade.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
+            fade.setShader(new LinearGradient(destination.left, 0,
+                destination.right, 0,
+                new int[]{0x00ffffff, 0xffffffff, 0xffffffff, 0x00ffffff},
+                new float[]{0f, 0.18f, 0.90f, 1f}, Shader.TileMode.CLAMP));
+            c.drawRect(destination, fade);
+            fade.setShader(new LinearGradient(0, destination.top,
+                0, destination.bottom,
+                new int[]{0x00ffffff, 0xffffffff, 0xffffffff, 0x00ffffff},
+                new float[]{0f, 0.09f, 0.81f, 1f}, Shader.TileMode.CLAMP));
+            c.drawRect(destination, fade);
+            c.restoreToCount(layer);
             return;
         }
         // The vector remains a safe fallback for a corrupt/missing resource.
