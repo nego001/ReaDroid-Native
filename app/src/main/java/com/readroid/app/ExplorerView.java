@@ -24,7 +24,7 @@ public final class ExplorerView {
     private final P7ExplorerChrome chrome;
     private final LinearLayout quickFilters;
     private static final String[] QUICK_CATEGORIES = {
-        "Todos", "Código DEX", "Recursos", "Assets", "Alterados"
+        "Todos", "Smali", "Recursos", "Imagens", "XML"
     };
     private final TextView breadcrumb;
     private final TextView countLabel;
@@ -40,8 +40,9 @@ public final class ExplorerView {
     private int indexPageOffset = 0;
     private final EditPlan editPlan = new EditPlan();
     private static final String[] CATEGORIES = {
-        "Todos", "Código DEX", "Bibliotecas", "Recursos", "Assets",
-        "Assinaturas/metadados", "Manifesto", "Outros", "Editáveis", "Alterados"
+        "Todos", "Smali", "Recursos", "Imagens", "XML",
+        "Código DEX", "Bibliotecas", "Assets", "Assinaturas/metadados",
+        "Manifesto", "Outros", "Editáveis", "Alterados"
     };
 
     /** Session-only UI state. Never persisted to disk or reused across APKs. */
@@ -267,12 +268,28 @@ public final class ExplorerView {
         }
     }
 
+    /** Filters must reflect the real archive, including XML and images in any folder. */
+    private boolean matchesCategory(String path, String type) {
+        if ("Todos".equals(activeCategory)) return true;
+        if ("Editáveis".equals(activeCategory)) return EditPlan.isEditable(path);
+        if ("Alterados".equals(activeCategory)) return editPlan.contains(path);
+        String lower = path.toLowerCase(Locale.ROOT);
+        if ("Smali".equals(activeCategory)) return lower.endsWith(".smali");
+        if ("XML".equals(activeCategory)) return lower.endsWith(".xml");
+        if ("Imagens".equals(activeCategory))
+            return lower.endsWith(".png") || lower.endsWith(".webp")
+                || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif") || lower.endsWith(".bmp");
+        return activeCategory.equals(type);
+    }
+
     private void render() {
         String queryText = search.getText().toString().trim();
         chrome.updateBreadcrumb(folder, !queryText.isEmpty());
         chrome.setEditCount(editPlan.size());
         refreshQuickFilters();
-        if (indexFile != null && "Todos".equals(activeCategory)) {
+        if (indexFile != null && !"Editáveis".equals(activeCategory)
+                && !"Alterados".equals(activeCategory)) {
             if (renderIndexPage()) return;
             indexFile = null; // Fall back on a stale or unavailable index.
         }
@@ -294,10 +311,7 @@ public final class ExplorerView {
         ArrayList<JSONObject> visible = new ArrayList<>();
         for (JSONObject item : files) {
             String path = item.optString("path");
-            if (!activeCategory.equals("Todos")
-                && !(activeCategory.equals("Editáveis") && EditPlan.isEditable(path))
-                && !(activeCategory.equals("Alterados") && editPlan.contains(path))
-                && !activeCategory.equals(item.optString("category"))) continue;
+            if (!matchesCategory(path, item.optString("category"))) continue;
             if (!query.isEmpty()) {
                 if (path.toLowerCase(Locale.ROOT).contains(query)) visible.add(item);
             } else if (path.startsWith(folder)) {
@@ -358,11 +372,11 @@ public final class ExplorerView {
         String query = search.getText().toString().trim();
         try {
             ApkDiskIndex.Page page = ApkDiskIndex.page(apkFile, indexFile, folder,
-                query, "Todos", indexPageOffset, 120);
+                query, activeCategory, indexPageOffset, 120);
             if (indexPageOffset > 0 && page.items.isEmpty()) {
                 indexPageOffset = 0;
                 page = ApkDiskIndex.page(apkFile, indexFile, folder,
-                    query, "Todos", indexPageOffset, 120);
+                    query, activeCategory, indexPageOffset, 120);
             }
             list.removeAllViews();
             breadcrumb.setText(query.isEmpty() ? "APK / " + folder
