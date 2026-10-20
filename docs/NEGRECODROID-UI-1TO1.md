@@ -138,3 +138,20 @@ A referência artística mostra elementos aspiracionais. Na implementação, cad
 - [ ] Construir as três telas completas e funcionais. A navegação existente ainda não foi redesenhada.
 
 A P7.1-A é **apenas fundação de identidade visual**. Não altera importação, recuperação, edit plan, SQLite ou exportação e não representa o fechamento de P7.1–P7.7.
+
+
+## 9. Entrega P7.2-A — Home funcional (20/10/2026)
+
+**Implementado em branch de trabalho, aguardando homologação CI e revisão visual:**
+
+- [x] `P7MascotView`: mascote escuro com olhos ciano desenhado por Canvas nativo, sem bitmap nem efeitos pesados (aproximação, **ainda não validada 1:1** contra a arte original).
+- [x] `StudioDashboard.compose`: saudação "Olá, Desenvolvedor", texto de introdução, mascote e cartão do projeto; preserva o botão real de seleção SAF.
+- [x] `P7HomeOverview`: quatro cartões em grade 2×2 e seção "Projetos recentes" baseada **no APK aberto na sessão**, com aviso honesto quando não há histórico persistente. Nunca inventar 12 projetos, builds ou zero ameaças.
+- [x] Seis atalhos: quatro abas reais anteriores (favorito preservado), "Abrir APK" via seletor do Android e "Plano de edição" ligado à revisão existente. Grade responsiva de duas colunas para preservar acessibilidade.
+- [x] Atualização dos contadores ao concluir análise, iniciar novo APK, retornar à Home e restaurar rotação/tema; projeto e plano de edição preservados pela arquitetura existente.
+- [x] `P7HomeOverviewInstrumentedTest` de estados vazio/ativo/retorno; adicionado ao workflow P7 API 29 e 35.
+- [x] Corrigido workflow CI P7 que falhava por variável `SDK_ROOT` definida em etapa anterior, não dentro do script do emulador. Falha anterior era do próprio script `aapt`, não evidência de APK quebrado.
+- [ ] Aguardar execução de CI **no commit final** e registrar evidência de builds e tests, sem presumir sucesso.
+- [ ] Fazer comparação lado a lado com mockup da Home e homologação Samsung física. Projeto P7.2 não concluído até obter a semelhança visual aprovada.
+
+**Escopo explicitamente parcial:** P7.2-A é uma primeira implementação nativa da Home; a fidelidade 1:1 integral depende dos PNGs versionados, assets mais refinados, navegação final e testes visuais. Não modificar licença, assinatura, OTA, índice SQLite, recuperação ou exportação nesta entrega.
