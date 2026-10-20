@@ -5,6 +5,11 @@ on:
     paths:
       - 'tools/android_apk_edit_export_smoke.py'
       - '.github/workflows/v3-apk-edit-export-smoke.yml'
+      - 'app/src/main/java/com/readroid/app/MainActivity.java'
+      - 'app/src/main/java/com/readroid/app/ApkRebuilder.java'
+      - 'app/src/main/java/com/readroid/app/ApkIntegrity.java'
+      - 'app/src/main/java/com/readroid/app/RebuildVerifier.java'
+      - 'app/src/main/java/com/readroid/app/SafExportVerifier.java'
   workflow_dispatch:
 permissions:
   contents: read

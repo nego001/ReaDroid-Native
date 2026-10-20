@@ -129,3 +129,8 @@ e não apague cópias sem decisão explícita.
 - Antes, durante e após exportação, o SHA-256 da cópia de origem é comparado ao hash calculado na importação; o arquivo SAF exportado continua sendo relido integralmente e verificado por SHA-256. O diálogo de detalhes técnicos passa a apresentar hashes completos de entrada e saída.
 - Testes sintéticos adicionais cobrem corrupção de entrada não editada, arquivo inesperado e alteração da origem durante o fluxo. **CI não constitui evidência da exportação física Samsung; permanece pendente a captura da exportação, revisão do texto final e verificação independente do arquivo original.**
 - Exportação permanece **sem assinatura/sem garantia de instalação**, sem auto-instalação, sem OTA e sem modificação do APK selecionado.
+
+## Regressão ponta a ponta da exportação no emulador (19/10/2026)
+- O cenário `tools/android_apk_edit_export_smoke.py` agora confere se o relatório técnico do aplicativo apresenta o SHA-256 da origem e o hash da saída, compara o hash da saída com o arquivo efetivamente recuperado via ADB e exige correspondência SHA-256 de **todas** as entradas não editadas, além de preservar o original e eliminar metadados antigos de assinatura.
+- O workflow `v3-apk-edit-export-smoke.yml` passa a iniciar também quando os arquivos centrais do fluxo de reconstrução/exportação forem alterados. Executa somente em emulador descartável com APK de amostra, não acessa arquivos pessoais ou apps existentes no Samsung.
+- Ainda é necessária a validação física do fluxo com Projeto A no Samsung, sem limpar dados ou forçar reinstalação de APK QA assinado com chave diferente.

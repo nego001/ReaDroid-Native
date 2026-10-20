@@ -122,7 +122,7 @@ def edit_asset():
     snapshot("v3-edit-02-plan.png")
 
 
-def review_and_export():
+def review_and_export(source_sha):
     click_named(desc="Seção Construir", partial=True)
     click_text("Revisar alterações pendentes")
     nodes = inspect("Review edit plan")
@@ -152,39 +152,67 @@ def review_and_export():
     if not any("Pré-verificação estrutural aprovada" in n.attrib.get("text", "")
                for n in nodes):
         raise AssertionError("Technical verification report is missing")
+    technical_text = "\n".join(n.attrib.get("text", "") for n in nodes)
+    assert "SHA-256 da origem (antes e depois)" in technical_text, (
+        "The original input checksum was not disclosed in export details"
+    )
+    assert source_sha in technical_text, (
+        "Export's original SHA-256 differs from the known test fixture"
+    )
+    match = re.search(
+        r"SHA-256 do APK reconstruído e exportado:\s*([0-9a-f]{64})",
+        technical_text,
+    )
+    assert match, "Rebuilt APK SHA-256 missing from technical evidence"
+    assert "arquivo(s) não editado(s) conferido(s)" in technical_text, (
+        "Full unchanged-entry verification missing from export details"
+    )
     snapshot("v3-edit-04-export-details.png")
     click_text("FECHAR")
+    return match.group(1)
 
 
-def check_export(source_sha):
+def check_export(source_sha, output_sha):
     # SAF's Downloads provider on API29 stores the created file in shared Downloads.
     subprocess.check_call(["adb", "pull", DEVICE_EXPORT, str(LOCAL_EXPORT)], timeout=60)
     assert LOCAL_EXPORT.stat().st_size > 0, "Empty exported APK"
+    assert sha256(LOCAL_EXPORT.read_bytes()) == output_sha, (
+        "Exported APK bytes do not match the checksum shown to the user"
+    )
     with zipfile.ZipFile(LOCAL_FIXTURE) as original, zipfile.ZipFile(LOCAL_EXPORT) as changed:
         assert original.read(ASSET).decode("utf-8") == ORIGINAL
         assert changed.read(ASSET).decode("utf-8") == ORIGINAL + SUFFIX
-        assert original.read("classes.dex") == changed.read("classes.dex")
         originals = set(original.namelist())
         rebuilt = set(changed.namelist())
+        expected = set()
         for name in originals:
             upper = name.upper()
             if upper.startswith("META-INF/") and (upper.endswith((".RSA", ".DSA", ".EC", ".SF"))
                     or upper == "META-INF/MANIFEST.MF"):
                 assert name not in rebuilt, "Old signature metadata remained: " + name
             else:
-                assert name in rebuilt, "Missing unchanged entry: " + name
+                expected.add(name)
+                assert name in rebuilt, "Missing entry: " + name
+                if name != ASSET:
+                    assert sha256(original.read(name)) == sha256(changed.read(name)), (
+                        "Untouched entry changed without approval: " + name
+                    )
+        assert rebuilt == expected, (
+            "Rebuilt ZIP has entries outside the original minus removed signatures"
+        )
     assert sha256(LOCAL_FIXTURE.read_bytes()) == source_sha, "Original fixture changed"
     device = adb("shell", "sha256sum", DEVICE_FIXTURE).split()[0]
     assert device == source_sha, "Original APK on Android was modified"
-    print("PASS: SAF edit and SHA-verified export, exact replacement, unchanged original and DEX, old signatures removed")
+    print("PASS: SAF edit and SHA-verified export, exact replacement, "
+          "all untouched entries, source integrity and signature metadata removal")
 
 
 def main():
     old_hash = build_fixture()
     open_fixture()
     edit_asset()
-    review_and_export()
-    check_export(old_hash)
+    output_hash = review_and_export(old_hash)
+    check_export(old_hash, output_hash)
 
 
 if __name__ == "__main__":
