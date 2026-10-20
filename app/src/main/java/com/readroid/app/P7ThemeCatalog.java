@@ -18,6 +18,7 @@ public final class P7ThemeCatalog {
         boolean saved = preferences.edit()
             .putString("theme", THEMES[selected])
             .putString("accent", ACCENTS[selected])
+            .remove("p7_active_preset")
             .commit();
         if (!saved) throw new IllegalStateException("Não foi possível salvar o tema");
         activity.recreate();
