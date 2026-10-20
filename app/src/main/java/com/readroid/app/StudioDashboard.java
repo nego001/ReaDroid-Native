@@ -92,6 +92,33 @@ public final class StudioDashboard {
         return tile;
     }
 
+    /** Compact three-column action card matching the approved Home composition. */
+    public static LinearLayout referenceAction(Activity a, String title, int glyph,
+            View.OnClickListener action) {
+        LinearLayout tile = new LinearLayout(a);
+        tile.setOrientation(LinearLayout.HORIZONTAL);
+        tile.setGravity(Gravity.CENTER_VERTICAL);
+        tile.setPadding(dp(a, 8), dp(a, 8), dp(a, 6), dp(a, 8));
+        tile.setMinimumHeight(dp(a, 57));
+        tile.setBackground(NegrescoTheme.studioCard(a, false));
+        NavGlyph symbol = new NavGlyph(a, glyph);
+        symbol.setSelectedState(true);
+        tile.addView(symbol, new LinearLayout.LayoutParams(dp(a, 22), dp(a, 22)));
+        TextView label = label(a, title, 10, NegrescoTheme.TEXT, false);
+        label.setMaxLines(2);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+        lp.leftMargin = dp(a, 5);
+        tile.addView(label, lp);
+        tile.setContentDescription(title);
+        symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        tile.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        tile.setClickable(true);
+        tile.setFocusable(true);
+        tile.setOnClickListener(action);
+        return tile;
+    }
+
     private static LinearLayout option(Activity a, Button action, String glyph, String detail) {
         LinearLayout wrapper = card(a, false);
         wrapper.setPadding(dp(a, 10), dp(a, 12), dp(a, 10), dp(a, 12));
