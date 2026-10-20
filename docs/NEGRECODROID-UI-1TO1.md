@@ -1,6 +1,6 @@
 # P7 — NegrecoDroid: interface e identidade visual 1:1
 
-> **Aprovação visual:** 20/10/2026. **Situação: PLANEJADO, NÃO IMPLEMENTADO.**
+> **Aprovação visual:** 20/10/2026. **Situação: EM IMPLEMENTAÇÃO NA BRANCH P7; mockup completo ainda NÃO implementado.**
 > **Tarefa oficial:** [issue #11](https://github.com/nego001/ReaDroid-Native/issues/11).
 > **Nome oficial exibido ao usuário:** `NegrecoDroid` — grafia exata, sem "s".
 > **Referência obrigatória:** as duas artes aprovadas pelo proprietário nesta conversa.
@@ -122,3 +122,19 @@ A referência artística mostra elementos aspiracionais. Na implementação, cad
 - [ ] Aceite final 1:1 em Android.
 
 **Importante:** criação desta documentação **não implementa a interface**. Mudanças de código ocorrerão em PRs de entrega da P7, apenas quando iniciada a fase, para preservar a base estável.
+
+
+## 8. Entrega técnica P7.1-A (20/10/2026; branch isolada)
+
+- [x] Criar marca vetorial SVG editável em `design/brand/negrecodroid-mark-master.svg`; arte do **primeiro passe**, a refinar com comparação à prancha oficial.
+- [x] Criar vetores Android para ícone colorido e monocromático e recurso adaptive icon API 26+.
+- [x] Substituir rótulos de launcher `NegrescoDroid` por **`NegrecoDroid`** em app debug/QA, sem alterar applicationId, assinatura ou armazenamento.
+- [x] Substituir a marca genérica do cabeçalho por vetor de escudo/N nativo.
+- [x] Migrar apenas o nome de marca predefinido de instalações anteriores; nomes personalizados não são substituídos.
+- [x] Adicionar testes instrumentados de carregamento do recurso, nome e launcher icon.
+- [ ] Validar build, Android 10/15, QA e inspeção visual com evidências dos workflows da PR; não registrar PASS antecipadamente.
+- [ ] Incorporar os PNGs aprovados no GitHub; **a identificação via hash não substitui as imagens**.
+- [ ] Refinar desenho da logo e ícone 1:1, com validação visual lado a lado.
+- [ ] Construir as três telas completas e funcionais. A navegação existente ainda não foi redesenhada.
+
+A P7.1-A é **apenas fundação de identidade visual**. Não altera importação, recuperação, edit plan, SQLite ou exportação e não representa o fechamento de P7.1–P7.7.
