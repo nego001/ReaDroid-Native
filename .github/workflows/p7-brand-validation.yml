@@ -50,6 +50,7 @@ jobs:
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest
             gradle --no-daemon :app:assembleQa
             SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+            SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
             "$SDK_ROOT/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/qa/app-qa.apk | grep -F "application-label:'NegrecoDroid V3 Teste'"
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n com.readroid.app/.MainActivity
