@@ -281,7 +281,6 @@ public final class P7DesignStudio {
 
     /** The two creative cards occupy one row as in the approved reference. */
     private void creatorRow() {
-        heading("Ferramentas criativas");
         LinearLayout row = new LinearLayout(a);
         row.setOrientation(LinearLayout.HORIZONTAL);
         body.addView(row);
@@ -326,38 +325,36 @@ public final class P7DesignStudio {
         }
         body.removeAllViews();
         if(activeTab==0){
-            heading("Previews de Temas");startCards();
+            sectionHeader("Previews de Temas", () -> showCatalogDialog(0));
+            startCards();
             String[] themes={"Negreco Blue","Carbon Dark","Matrix Green","Sunset"};
             String[] subtitles={"Profissional","Minimalista","Hacker Style","Vibrante"};
             int[] colors={0xff29acff,0xffa8b3c0,0xff16d995,0xffff7080};
             for(int i=0;i<themes.length;i++){
                 final int index=i;
                 tile(themes[i],subtitles[i],colors[i],selectedTheme==i,
-                    ()->{selectedTheme=index;render();});
+                    0, ()->{selectedTheme=index;render();});
             }
-            note("Selecione e confirme um tema para aplicar ao aplicativo.");
-            actionCard("Aplicar tema selecionado", "Salvar e atualizar toda a interface", -1);
-            heading("Opções de Layout");startCards();
+            sectionHeader("Opções de Layout", () -> showCatalogDialog(1));
+            startCards();
             String[] layouts={"Padrão","Compacto","Moderno"};
             int[] layoutColors={0xff29acff,0xff8d9cb1,0xff7acfff};
             for(int i=0;i<layouts.length;i++){
                 final int index=i;
-                tile(layouts[i],"Prévia",layoutColors[i],selectedLayout==i,
-                    ()->{selectedLayout=index;render();});
+                tile(layouts[i],"",layoutColors[i],selectedLayout==i,
+                    1, ()->{selectedLayout=index;render();});
             }
-            actionCard("Aplicar layout selecionado",
-                "Atualiza cartões e densidade de toda a interface", -2);
             creatorRow();
-            heading("Presets de Aparência");startCards();
+            sectionHeader("Presets de Aparência", () -> showCatalogDialog(2));
+            startCards();
             String[] presets={"Dark OLED","Cyber Neon","Minimal","Glass","Retro"};
             int[] presetColors={0xff29acff,0xffde42ff,0xffcbd8f9,0xff56c9ff,0xffff518a};
             for(int i=0;i<presets.length;i++){
                 final int index=i;
-                tile(presets[i],"Prévia",presetColors[i],selectedPreset==i,
-                    ()->{selectedPreset=index;render();});
+                tile(presets[i],"",presetColors[i],selectedPreset==i,
+                    2, ()->{selectedPreset=index;render();});
             }
-            actionCard("Aplicar preset selecionado",
-                "Salva as cores, os efeitos e o layout", -3);
+            // The visible "Ver todos" control opens a real preset chooser.
         }else if(activeTab==1){
             heading("Opções de Layout");
             startCards();
@@ -365,7 +362,7 @@ public final class P7DesignStudio {
             for(int i=0;i<modes.length;i++){
                 final int choice=i;
                 tile(modes[i], "Aplicável", 0xff29acff,
-                    selectedLayout==i, ()->{selectedLayout=choice;render();});
+                    selectedLayout==i, 1, ()->{selectedLayout=choice;render();});
             }
             actionCard("Aplicar layout selecionado",
                 "Salvar a mudança da interface", -2);
