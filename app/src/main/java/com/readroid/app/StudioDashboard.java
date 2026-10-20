@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 /**
@@ -243,30 +244,43 @@ public final class StudioDashboard {
         home.setClipChildren(false);
         home.setClipToPadding(false);
 
-        // P7.2: high-contrast welcome hero and low-cost Canvas mascot.
+        // Reproduce the reference composition: a short welcome card, with
+        // the original mascot crossing up into the header. No extra tall
+        // illustration card pushing the statistics and recent files away.
+        boolean enlarged = NegrescoTheme.FONT_SCALE > 1.15f;
+        boolean narrow = a.getResources().getConfiguration().screenWidthDp < 360;
+        final int stageHeight = enlarged ? 133 : 101;
+        final int mascotWidth = narrow ? 103 : 124;
+        final int mascotHeight = enlarged ? 137 : 160;
+        final int topOverlap = enlarged ? 17 : 59;
+        FrameLayout welcomeStage = new FrameLayout(a);
+        welcomeStage.setClipChildren(false);
+        welcomeStage.setClipToPadding(false);
         LinearLayout welcome = card(a, false);
-        welcome.setPadding(dp(a, 12), dp(a, 7), dp(a, 12), dp(a, 7));
-        LinearLayout welcomeLine = new LinearLayout(a);
-        welcomeLine.setGravity(Gravity.CENTER_VERTICAL);
-        welcome.addView(welcomeLine);
+        welcome.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+        FrameLayout.LayoutParams welcomeParams = new FrameLayout.LayoutParams(
+            -1, dp(a, stageHeight));
+        welcomeStage.addView(welcome, welcomeParams);
         LinearLayout welcomeText = column(a);
-        welcomeLine.addView(welcomeText, new LinearLayout.LayoutParams(0, -2, 1f));
+        welcomeText.setGravity(Gravity.CENTER_VERTICAL);
+        welcomeText.setPadding(0, 0, dp(a, mascotWidth + 6), 0);
+        welcome.addView(welcomeText, new LinearLayout.LayoutParams(-1, -1));
         welcomeText.addView(label(a, "Olá, Desenvolvedor", 15,
             NegrescoTheme.TEXT, true));
-        gap(a, welcomeText, 5);
+        gap(a, welcomeText, 4);
         welcomeText.addView(label(a,
             "Analise, edite e reconstrua seus apps de forma simples e poderosa.",
             11, NegrescoTheme.MUTED, false));
-        // The approved mascot is a tall illustration, not a tiny glyph.
-        // Match its portrait silhouette without stretching the source artwork.
-        int artWidth = a.getResources().getConfiguration().screenWidthDp < 360 ? 104 : 126;
-        int artHeight = a.getResources().getConfiguration().screenWidthDp < 360 ? 126 : 151;
+
         P7MascotView mascot = new P7MascotView(a);
-        LinearLayout.LayoutParams art = new LinearLayout.LayoutParams(
-            dp(a, artWidth), dp(a, artHeight));
-        art.leftMargin = dp(a, 5);
-        welcomeLine.addView(mascot, art);
-        home.addView(welcome);
+        FrameLayout.LayoutParams art = new FrameLayout.LayoutParams(
+            dp(a, mascotWidth), dp(a, mascotHeight),
+            Gravity.TOP | Gravity.RIGHT);
+        art.topMargin = -dp(a, topOverlap);
+        art.rightMargin = dp(a, 2);
+        welcomeStage.addView(mascot, art);
+        home.addView(welcomeStage, new LinearLayout.LayoutParams(
+            -1, dp(a, stageHeight)));
         gap(a, home, 7);
 
         // Main project area with the live report-bound text views and real picker.
