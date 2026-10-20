@@ -334,9 +334,11 @@ public final class ExplorerView {
         for (String child : folders) {
             if (shown >= pageLimit) break;
             shown++;
-            TextView line = item("▸  " + child + "\nPASTA");
-            list.addView(line);
-            line.setOnClickListener(v -> { folder += child; pageLimit = 120; render(); });
+            final String nextFolder = folder + child;
+            list.addView(new P7ExplorerEntryRow(activity, child, "Pasta",
+                true, false,
+                v -> enterFolder(nextFolder),
+                v -> showFolderActions(child, nextFolder)));
         }
         for (JSONObject file : visible) {
             if (shown >= pageLimit) break;
@@ -344,18 +346,13 @@ public final class ExplorerView {
             String path = file.optString("path");
             String name = query.isEmpty() ? path.substring(folder.length()) : path;
             boolean editable = EditPlan.isEditable(path);
-            TextView line = item((editPlan.contains(path) ? "●  " : "") + name + "\n" + file.optString("category")
-                + "  •  " + formatBytes(file.optLong("sizeBytes", -1))
-                + (editPlan.contains(path) ? "  •  ALTERADO" : (editable ? "  •  EDITÁVEL" : "  •  LEITURA")));
-            list.addView(line);
-            line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
-                .setTitle(name)
-                .setMessage("Caminho: " + path + "\nTipo: " + file.optString("category") + "\nTamanho: " + file.optLong("sizeBytes", -1) + " bytes")
-                .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
-                .setNeutralButton(editable ? "Planejar edição" : "Somente leitura", (dialog, which) -> {
-                    if (editable) planEdit(path);
-                })
-                .setNegativeButton("Detalhes técnicos", (dialog, which) -> inspectEntry(path)).show());
+            final String category = file.optString("category");
+            final long sizeBytes = file.optLong("sizeBytes", -1);
+            list.addView(new P7ExplorerEntryRow(activity, name,
+                fileDetail(category, sizeBytes, path), false,
+                editPlan.contains(path),
+                v -> showFileActions(name, path, category, sizeBytes, editable),
+                v -> showFileActions(name, path, category, sizeBytes, editable)));
         }
         if (shown == 0) list.addView(item(apkFile == null
             ? "Abra um APK para explorar os arquivos."
@@ -402,30 +399,21 @@ public final class ExplorerView {
             for (ApkDiskIndex.Item file : page.items) {
                 final String path = file.path;
                 if (file.directory) {
-                    TextView line = item("▸  " + file.name + "\nPASTA");
-                    list.addView(line);
-                    line.setOnClickListener(v -> {
-                        folder = path; indexPageOffset = 0; render();
-                    });
+                    list.addView(new P7ExplorerEntryRow(activity, file.name,
+                        "Pasta", true, false,
+                        v -> enterFolder(path),
+                        v -> showFolderActions(file.name, path)));
                     continue;
                 }
                 String name = query.isEmpty() ? file.name : file.path;
                 boolean editable = EditPlan.isEditable(path);
-                TextView line = item((editPlan.contains(path) ? "●  " : "")
-                    + name + "\n" + file.category + "  •  "
-                    + formatBytes(file.sizeBytes)
-                    + (editPlan.contains(path) ? "  •  ALTERADO"
-                        : (editable ? "  •  EDITÁVEL" : "  •  LEITURA")));
-                list.addView(line);
-                line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
-                    .setTitle(name)
-                    .setMessage("Caminho: " + path + "\nTipo: " + file.category
-                        + "\nTamanho: " + file.sizeBytes + " bytes")
-                    .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
-                    .setNeutralButton(editable ? "Planejar edição" : "Somente leitura",
-                        (dialog, which) -> { if (editable) planEdit(path); })
-                    .setNegativeButton("Detalhes técnicos",
-                        (dialog, which) -> inspectEntry(path)).show());
+                list.addView(new P7ExplorerEntryRow(activity, name,
+                    fileDetail(file.category, file.sizeBytes, path), false,
+                    editPlan.contains(path),
+                    v -> showFileActions(name, path, file.category,
+                        file.sizeBytes, editable),
+                    v -> showFileActions(name, path, file.category,
+                        file.sizeBytes, editable)));
             }
             if (page.items.isEmpty()) list.addView(item("Nenhum arquivo nesta pasta."));
             if (indexPageOffset > 0) {
@@ -450,6 +438,59 @@ public final class ExplorerView {
             // The optional index cannot destroy the open editing workspace.
             return false;
         }
+    }
+
+    /** Never invent file timestamps or child counts missing from the APK index. */
+    private String fileDetail(String category, long sizeBytes, String path) {
+        String status = editPlan.contains(path) ? "ALTERADO"
+            : EditPlan.isEditable(path) ? "EDITÁVEL" : "LEITURA";
+        return category + "  •  " + formatBytes(sizeBytes) + "  •  " + status;
+    }
+
+    private void enterFolder(String path) {
+        folder = path;
+        pageLimit = 120;
+        indexPageOffset = 0;
+        render();
+    }
+
+    private void copyPath(String path) {
+        android.content.ClipboardManager clipboard =
+            (android.content.ClipboardManager) activity.getSystemService(
+                android.content.Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText("Caminho do arquivo APK", path));
+    }
+
+    private void showFolderActions(String label, String path) {
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle(label)
+            .setItems(new String[]{"Abrir pasta", "Copiar caminho"},
+                (dialog, selected) -> {
+                    if (selected == 0) enterFolder(path);
+                    else copyPath(path);
+                })
+            .setNegativeButton("Fechar", null)
+            .show();
+    }
+
+    private void showFileActions(String label, String path, String category,
+            long sizeBytes, boolean editable) {
+        String[] choices = editable
+            ? new String[]{"Ver texto", "Planejar edição", "Detalhes técnicos",
+                "Copiar caminho"}
+            : new String[]{"Ver texto", "Detalhes técnicos", "Copiar caminho"};
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle(label)
+            .setMessage("Tipo: " + category + "  •  " + formatBytes(sizeBytes))
+            .setItems(choices, (dialog, selected) -> {
+                String action = choices[selected];
+                if ("Ver texto".equals(action)) preview(path);
+                else if ("Planejar edição".equals(action)) planEdit(path);
+                else if ("Detalhes técnicos".equals(action)) inspectEntry(path);
+                else copyPath(path);
+            })
+            .setNegativeButton("Fechar", null).show();
     }
 
     private static String formatBytes(long bytes) {
