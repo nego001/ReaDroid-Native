@@ -59,9 +59,10 @@ public final class P7NavigationInstrumentedTest {
                 View matrix = byDescription(root,"Matrix Green, selecionar prévia");
                 assertNotNull(dark);
                 assertNotNull(matrix);
-                assertTrue(matrix.performClick());
-                assertNotNull(byDescription(root,"Matrix Green, prévia selecionada"));
-                assertNotNull(byDescription(root,"Negreco Blue, selecionar prévia"));
+                // Tapping a tile now opens a real confirmation Dialog. This
+                // navigation-only test must not leave it open on teardown;
+                // p7_design_smoke verifies apply and Android Back rollback.
+                assertTrue(matrix.isClickable());
                 assertNotNull(byDescription(root,"Abrir seção Início"));
             });
         }
