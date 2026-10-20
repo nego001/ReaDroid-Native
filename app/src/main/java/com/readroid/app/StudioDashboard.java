@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -102,8 +103,9 @@ public final class StudioDashboard {
         tile.setPadding(dp(a, 6), dp(a, 6), dp(a, 5), dp(a, 6));
         tile.setMinimumHeight(dp(a, 47));
         tile.setBackground(NegrescoTheme.studioCard(a, false));
-        NavGlyph symbol = new NavGlyph(a, glyph);
-        symbol.setSelectedState(true);
+        ImageView symbol = new ImageView(a);
+        symbol.setImageResource(glyph);
+        symbol.setScaleType(ImageView.ScaleType.FIT_CENTER);
         tile.addView(symbol, new LinearLayout.LayoutParams(dp(a, 20), dp(a, 20)));
         TextView label = label(a, title, 10, NegrescoTheme.TEXT, false);
         label.setMaxLines(2);
