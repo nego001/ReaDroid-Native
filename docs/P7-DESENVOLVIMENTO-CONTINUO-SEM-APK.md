@@ -61,3 +61,26 @@ Somente quando houver um conjunto significativo de melhorias funcionais/visuais 
 - [ ] Resultado de CI da revisão atual e inspeção de screenshots deverão ser adicionados após os testes, sem declarar antecipadamente que passaram.
 
 **Nenhum APK QA novo gerado, nenhuma atualização automática de versão.** A última versão instalável deliberada permanece a Preview 12; estas melhorias são código-fonte acumulado para um marco maior.
+
+
+## CHECKPOINT P7 — ideias futuras não substituem esta etapa (20/10/2026)
+
+**Solicitação do proprietário:** ele deseja apresentar novas ideias, mas **não quer que o desenvolvimento atual seja perdido, substituído ou considerado encerrado**. Este registro fixa a continuidade da P7 antes de organizar novas propostas.
+
+**Referências de continuidade:**
+- Branch ativa: `feature/p7-negrecodroid-visual-foundation`.
+- Último commit de implementação antes deste checkpoint: `e0ffe4b3c100ed631678296ac64a4d4e5ad023c4`.
+- Pull request de implementação [#13](https://github.com/nego001/ReaDroid-Native/pull/13), em rascunho.
+- Issue [#11](https://github.com/nego001/ReaDroid-Native/issues/11), com a referência visual 1:1 aprovada para **Home, Explorador e Design Studio**.
+- Último APK distribuído ao usuário: **P7 Preview 12**. A partir dele, código e testes seguem normalmente, mas **um novo APK só deve ser gerado numa atualização grande aprovada**, nunca a cada pequeno commit.
+
+**Já desenvolvido e que não deve regredir:** Home com mascote da referência, cartões e navegação; histórico seguro SAF de projetos reais e ícones extraídos dos APKs; Explorador com índice SQLite, chips, lista nativa com ações reais, segurança de planos de edição; Design Studio com galerias, seleção/aplicação de temas, layouts e presets, reversão ao cancelar; Logo Studio com prévia do nome/subtítulo salvos. Preservar também os recursos existentes P0/P1: importação SAF, segurança, edição controlada, exportação, verificações e recuperação.
+
+**Pendências explícitas (NÃO marcar como concluídas):**
+1. Comparação visual completa e aprovação **1:1** das três telas, incluindo miniaturas, proporções, ícones, acabamento e avaliação em Galaxy A55.
+2. Catálogo avançado e ferramentas de criação de ícones/logos que ainda são parciais.
+3. Continuação de testes integrados com APKs reais, regressões e validação do marco antes de qualquer nova distribuição instalável.
+4. Homologar o CI Android 10/15 da revisão atual, que deve ser verificado pelo resultado final do GitHub Actions.
+
+**Regra para novas ideias:** registrar as ideias novas em seção ou issue própria como `BACKLOG / NOVAS IDEIAS`, sem alterar critérios de aceite da P7 ou apagar os itens pendentes. Só reordenar prioridades quando o proprietário solicitar; não dar merge na `main` nem produzir APK por conta própria. Quando o usuário pedir para retomar, continuar a partir deste checkpoint e do HEAD atual da branch.
+
