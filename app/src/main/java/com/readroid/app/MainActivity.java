@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
     private LinearLayout[] navigationContainers;
     private int selectedSection = 0;
     private Uri selectedApkUri;
-    private int analysisSequence = 0;
+    private volatile int analysisSequence = 0;
 
     /** Keep worker output separate from the Activity's current project. */
     private static final class AnalyzedApk {
