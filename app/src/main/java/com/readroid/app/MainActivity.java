@@ -694,71 +694,43 @@ public class MainActivity extends Activity {
         LinearLayout quickGrid = new LinearLayout(this);
         quickGrid.setOrientation(LinearLayout.VERTICAL);
         homeSection.addView(quickGrid);
-        String[] quickLabels = {"Arquivos", "Construir", "Segurança", "IA"};
-        String[] quickSubtitles = {
-            "Explore e organize arquivos APK",
-            "Revise e exporte alterações",
-            "Verifique certificados e riscos",
-            "Compartilhe análises com IA"
+        // P7: match the approved two-row / three-column action composition.
+        // Every tile opens an actual existing workflow; unsupported operations
+        // remain in the Build/Security sections and are not falsely enabled.
+        String[] actionNames = {"Abrir APK", "Analisar", "Build APK",
+            "Decompilar", "Editar Smali", "Assinar APK"};
+        int[] actionGlyphs = {1, 3, 2, 4, 1, 3};
+        View.OnClickListener[] actionHandlers = new View.OnClickListener[]{
+            v -> {
+                Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                pick.addCategory(Intent.CATEGORY_OPENABLE);
+                pick.setType("*/*");
+                startActivityForResult(pick, 1);
+            },
+            v -> showSection(3),
+            v -> showSection(2),
+            v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Decompilação")
+                .setMessage("Decompilação Smali completa ainda não disponível.")
+                .setPositiveButton("Fechar", null).show(),
+            v -> showSection(1),
+            v -> showSection(3)
         };
-        int[] quickTargets = {1, 2, 3, 4};
-        int favorite = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("favorite_tab", 1);
-        if (favorite < 1 || favorite > 4) favorite = 1;
-        // The chosen favorite always occupies the first tile, preserving the
-        // previous V3 behavior while leaving all four destinations available.
-        int chosen = favorite - 1;
-        String chosenLabel = quickLabels[chosen];
-        String chosenSubtitle = quickSubtitles[chosen];
-        int chosenTarget = quickTargets[chosen];
-        for (int i = chosen; i > 0; i--) {
-            quickLabels[i] = quickLabels[i - 1];
-            quickSubtitles[i] = quickSubtitles[i - 1];
-            quickTargets[i] = quickTargets[i - 1];
-        }
-        quickLabels[0] = chosenLabel;
-        quickSubtitles[0] = chosenSubtitle;
-        quickTargets[0] = chosenTarget;
         for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
-            LinearLayout shortcutRow = new LinearLayout(this);
-            shortcutRow.setOrientation(LinearLayout.HORIZONTAL);
-            quickGrid.addView(shortcutRow);
-            for (int column = 0; column < 2; column++) {
-                int index = rowIndex * 2 + column;
-                final int target = quickTargets[index];
-                LinearLayout tile = StudioDashboard.quickTile(this, quickLabels[index],
-                    quickSubtitles[index], target, target == favorite,
-                    v -> showSection(target));
-                tile.setMinimumHeight(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 122 : 142));
-                LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
-                    0, -2, 1f);
-                tileParams.setMargins(column == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
-                    column == 0 ? NegrescoTheme.dp(this, 5) : 0, NegrescoTheme.dp(this, 10));
-                shortcutRow.addView(tile, tileParams);
+            LinearLayout actionRow = new LinearLayout(this);
+            actionRow.setOrientation(LinearLayout.HORIZONTAL);
+            quickGrid.addView(actionRow);
+            for (int col = 0; col < 3; col++) {
+                int index = rowIndex * 3 + col;
+                LinearLayout tile = StudioDashboard.referenceAction(this,
+                    actionNames[index], actionGlyphs[index], actionHandlers[index]);
+                LinearLayout.LayoutParams params =
+                    new LinearLayout.LayoutParams(0, -2, 1f);
+                params.setMargins(col == 0 ? 0 : NegrescoTheme.dp(this, 3), 0,
+                    col == 2 ? 0 : NegrescoTheme.dp(this, 3),
+                    NegrescoTheme.dp(this, 7));
+                actionRow.addView(tile, params);
             }
-        }
-
-        // Extra P7 shortcuts use actual existing commands, not simulated builds.
-        LinearLayout actionRow = new LinearLayout(this);
-        actionRow.setOrientation(LinearLayout.HORIZONTAL);
-        quickGrid.addView(actionRow);
-        LinearLayout openTile = StudioDashboard.quickTile(this, "Abrir APK",
-            "Selecionar arquivo no Android", 1, false, v -> {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
-                startActivityForResult(intent, 1);
-            });
-        LinearLayout planTile = StudioDashboard.quickTile(this, "Plano de edição",
-            "Revisar alterações pendentes", 2, false, v -> reviewEditPlan());
-        for (int col = 0; col < 2; col++) {
-            LinearLayout tile = col == 0 ? openTile : planTile;
-            tile.setMinimumHeight(NegrescoTheme.dp(this,
-                NegrescoTheme.COMPACT ? 122 : 142));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-            lp.setMargins(col == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
-                col == 0 ? NegrescoTheme.dp(this, 5) : 0,
-                NegrescoTheme.dp(this, 10));
-            actionRow.addView(tile, lp);
         }
 
         TextView detailsTitle = new TextView(this);
