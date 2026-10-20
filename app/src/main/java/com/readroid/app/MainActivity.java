@@ -40,6 +40,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_APPEARANCE = 42;
     private JSONObject report;
     private File currentApk;
+    private File currentIndex;
     private ExplorerView explorerView;
     private LinearLayout homeSection;
     private LinearLayout filesSection;
@@ -57,9 +58,11 @@ public class MainActivity extends Activity {
     private static final class AnalyzedApk {
         final JSONObject report;
         final File file;
-        AnalyzedApk(JSONObject report, File file) {
+        final File indexFile;
+        AnalyzedApk(JSONObject report, File file, File indexFile) {
             this.report = report;
             this.file = file;
+            this.indexFile = indexFile;
         }
     }
     private TextView apkSummary;
@@ -69,13 +72,16 @@ public class MainActivity extends Activity {
     /** Holds a project in memory across theme changes and rotation only. */
     private static final class WorkspaceState {
         final File apk;
+        final File indexFile;
         final JSONObject report;
         final Map<String, String> changes;
         final int activeSection;
         final ExplorerView.BrowseState browse;
-        WorkspaceState(File apk, JSONObject report, Map<String, String> changes,
-                int section, ExplorerView.BrowseState browse) {
+        WorkspaceState(File apk, File indexFile, JSONObject report,
+                Map<String, String> changes, int section,
+                ExplorerView.BrowseState browse) {
             this.apk = apk;
+            this.indexFile = indexFile;
             this.report = report;
             this.changes = changes;
             this.activeSection = section;
@@ -1078,7 +1084,10 @@ public class MainActivity extends Activity {
             + "     •     ASSETS  " + resultJson.optInt("assets")
             + (profile == null ? "" : "\nPERFIL  " + profile.optString("platformHint", "Android/ZIP")));
         JSONObject tree = resultJson.optJSONObject("explorer");
-        explorerView.setFiles(tree == null ? null : tree.optJSONArray("files"), currentApk);
+        JSONArray paths = tree == null ? null : tree.optJSONArray("files");
+        if (currentIndex != null && currentIndex.isFile())
+            explorerView.setIndexedFiles(paths, currentApk, currentIndex);
+        else explorerView.setFiles(paths, currentApk);
         share.setEnabled(true);
         ai.setEnabled(true);
         apkAdvisor.setEnabled(profile != null);
@@ -1090,7 +1099,7 @@ public class MainActivity extends Activity {
     @Override public Object onRetainNonConfigurationInstance() {
         if (currentApk == null || !currentApk.isFile() || report == null
             || explorerView == null) return null;
-        return new WorkspaceState(currentApk, report,
+        return new WorkspaceState(currentApk, currentIndex, report,
             explorerView.getEditPlan().snapshot(), selectedSection,
             explorerView.snapshotBrowseState());
     }
@@ -1101,6 +1110,7 @@ public class MainActivity extends Activity {
         WorkspaceState workspace = (WorkspaceState) previous;
         if (!workspace.apk.isFile()) return false;
         currentApk = workspace.apk;
+        currentIndex = workspace.indexFile;
         displayAnalyzedReport(workspace.report);
         for (Map.Entry<String, String> edit : workspace.changes.entrySet()) {
             try {
@@ -1284,6 +1294,10 @@ public class MainActivity extends Activity {
         selectedApkUri = uri;
         report = null;
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
+        if (currentIndex != null) {
+            android.database.sqlite.SQLiteDatabase.deleteDatabase(currentIndex);
+            currentIndex = null;
+        }
         output.setText("Analisando...");
         apkSummary.setText("ANÁLISE EM ANDAMENTO");
         projectMetrics.setText("ESTRUTURA   •   Analisando...");
@@ -1301,9 +1315,12 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
                         result.file.delete();
+                        if (result.indexFile != null)
+                            android.database.sqlite.SQLiteDatabase.deleteDatabase(result.indexFile);
                         return;
                     }
                     currentApk = result.file;
+                    currentIndex = result.indexFile;
                     displayAnalyzedReport(result.report);
                 });
             } catch (Exception error) {
@@ -1541,7 +1558,18 @@ public class MainActivity extends Activity {
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Análise interrompida");
-            return new AnalyzedApk(json, file);
+            // Experimental UI indexing only; legacy JSON analysis retained.
+            File diskIndex = null;
+            if (entries >= 200) {
+                File candidate = new File(file.getAbsolutePath() + ".idx.db");
+                try {
+                    ApkDiskIndex.build(file, candidate);
+                    diskIndex = candidate;
+                } catch (IOException optionalIndexError) {
+                    android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate);
+                }
+            }
+            return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
             file.delete();
             throw error;
@@ -1591,7 +1619,11 @@ public class MainActivity extends Activity {
         analysisSequence++;
         executor.shutdownNow();
         // The new Activity owns this cache file after a configuration change.
-        if (currentApk != null && !isChangingConfigurations()) currentApk.delete();
+        if (!isChangingConfigurations()) {
+            if (currentApk != null) currentApk.delete();
+            if (currentIndex != null)
+                android.database.sqlite.SQLiteDatabase.deleteDatabase(currentIndex);
+        }
         super.onDestroy();
     }
 }

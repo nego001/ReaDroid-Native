@@ -30,6 +30,8 @@ public final class ExplorerView {
     private final ArrayList<JSONObject> files = new ArrayList<>();
     private String folder = "";
     private java.io.File apkFile;
+    private java.io.File indexFile;
+    private int indexPageOffset = 0;
     private final EditPlan editPlan = new EditPlan();
     private static final String[] CATEGORIES = {
         "Todos", "Código DEX", "Bibliotecas", "Recursos", "Assets",
@@ -42,17 +44,21 @@ public final class ExplorerView {
         final String category;
         final String query;
         final int pageLimit;
+        final int indexPageOffset;
 
-        BrowseState(String folder, String category, String query, int pageLimit) {
+        BrowseState(String folder, String category, String query,
+                int pageLimit, int indexPageOffset) {
             this.folder = folder;
             this.category = category;
             this.query = query;
             this.pageLimit = pageLimit;
+            this.indexPageOffset = indexPageOffset;
         }
     }
 
     BrowseState snapshotBrowseState() {
-        return new BrowseState(folder, activeCategory, search.getText().toString(), pageLimit);
+        return new BrowseState(folder, activeCategory, search.getText().toString(),
+            pageLimit, indexPageOffset);
     }
 
     void restoreBrowseState(BrowseState state) {
@@ -73,6 +79,7 @@ public final class ExplorerView {
         search.setText(safeQuery);
         pageLimit = Math.max(120, Math.min(state.pageLimit,
             Math.max(120, files.size() + 120)));
+        indexPageOffset = Math.max(0, Math.min(state.indexPageOffset, 150000));
         render();
     }
 
@@ -113,6 +120,7 @@ public final class ExplorerView {
                     (dialog, which) -> {
                         activeCategory = CATEGORIES[which];
                         pageLimit = 120;
+                        indexPageOffset = 0;
                         filterButton.setText("Filtro: " + activeCategory + "  ▾");
                         render();
                         dialog.dismiss();
@@ -139,6 +147,7 @@ public final class ExplorerView {
             int slash = current.lastIndexOf('/');
             folder = slash < 0 ? "" : current.substring(0, slash + 1);
             pageLimit = 120;
+            indexPageOffset = 0;
             search.setText("");
             render();
         });
@@ -147,7 +156,9 @@ public final class ExplorerView {
         parent.addView(list);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) { pageLimit = 120; render(); }
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                pageLimit = 120; indexPageOffset = 0; render();
+            }
             public void afterTextChanged(Editable e) {}
         });
         render();
@@ -155,6 +166,8 @@ public final class ExplorerView {
 
     public void setFiles(JSONArray array, java.io.File apkFile) {
         this.apkFile = apkFile;
+        this.indexFile = null;
+        indexPageOffset = 0;
         files.clear();
         folder = "";
         activeCategory = "Todos";
@@ -168,7 +181,20 @@ public final class ExplorerView {
         render();
     }
 
+    /** Optional indexed mode. Existing JSON listing stays as a safe fallback. */
+    public void setIndexedFiles(JSONArray fallback, java.io.File source,
+            java.io.File index) {
+        setFiles(fallback, source);
+        if (source != null && source.isFile() && index != null && index.isFile())
+            indexFile = index;
+        render();
+    }
+
     private void render() {
+        if (indexFile != null && "Todos".equals(activeCategory)) {
+            if (renderIndexPage()) return;
+            indexFile = null; // Fall back on a stale or unavailable index.
+        }
         list.removeAllViews();
         String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
         breadcrumb.setText(query.isEmpty() ? "APK / " + folder : "Busca em todo o APK: " + query);
@@ -233,6 +259,84 @@ public final class ExplorerView {
                 pageLimit += 120;
                 render();
             });
+        }
+    }
+
+
+    /** Each visible page is bounded to 120 entries. SQLite is read-only. */
+    private boolean renderIndexPage() {
+        if (apkFile == null || !apkFile.isFile() || !indexFile.isFile())
+            return false;
+        String query = search.getText().toString().trim();
+        try {
+            ApkDiskIndex.Page page = ApkDiskIndex.page(apkFile, indexFile, folder,
+                query, "Todos", indexPageOffset, 120);
+            if (indexPageOffset > 0 && page.items.isEmpty()) {
+                indexPageOffset = 0;
+                page = ApkDiskIndex.page(apkFile, indexFile, folder,
+                    query, "Todos", indexPageOffset, 120);
+            }
+            list.removeAllViews();
+            breadcrumb.setText(query.isEmpty() ? "APK / " + folder
+                : "Busca em todo o APK: " + query);
+            upButton.setEnabled(!folder.isEmpty() || !query.isEmpty());
+            breadcrumb.setOnClickListener(v -> {
+                folder = ""; indexPageOffset = 0;
+                search.setText(""); render();
+            });
+            countLabel.setText(page.totalMatches + " itens no índice  •  página "
+                + (indexPageOffset / 120 + 1) + "  •  "
+                + editPlan.size() + " alterações pendentes");
+            for (ApkDiskIndex.Item file : page.items) {
+                final String path = file.path;
+                if (file.directory) {
+                    TextView line = item("▸  " + file.name + "\nPASTA");
+                    list.addView(line);
+                    line.setOnClickListener(v -> {
+                        folder = path; indexPageOffset = 0; render();
+                    });
+                    continue;
+                }
+                String name = query.isEmpty() ? file.name : file.path;
+                boolean editable = EditPlan.isEditable(path);
+                TextView line = item((editPlan.contains(path) ? "●  " : "")
+                    + name + "\n" + file.category + "  •  "
+                    + formatBytes(file.sizeBytes)
+                    + (editPlan.contains(path) ? "  •  ALTERADO"
+                        : (editable ? "  •  EDITÁVEL" : "  •  LEITURA")));
+                list.addView(line);
+                line.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
+                    .setTitle(name)
+                    .setMessage("Caminho: " + path + "\nTipo: " + file.category
+                        + "\nTamanho: " + file.sizeBytes + " bytes")
+                    .setPositiveButton("Ver texto", (dialog, which) -> preview(path))
+                    .setNeutralButton(editable ? "Planejar edição" : "Somente leitura",
+                        (dialog, which) -> { if (editable) planEdit(path); })
+                    .setNegativeButton("Detalhes técnicos",
+                        (dialog, which) -> inspectEntry(path)).show());
+            }
+            if (page.items.isEmpty()) list.addView(item("Nenhum arquivo nesta pasta."));
+            if (indexPageOffset > 0) {
+                Button back = NegrescoTheme.action(activity, "Página anterior", false);
+                list.addView(back);
+                back.setOnClickListener(v -> {
+                    indexPageOffset = Math.max(0, indexPageOffset - 120);
+                    render();
+                });
+            }
+            if (page.totalMatches - indexPageOffset > page.items.size()) {
+                Button next = NegrescoTheme.action(activity,
+                    "Próxima página (" + Math.min(120,
+                        page.totalMatches - indexPageOffset - page.items.size()) + ")", false);
+                list.addView(next);
+                next.setOnClickListener(v -> {
+                    indexPageOffset += 120; render();
+                });
+            }
+            return true;
+        } catch (Exception staleOrInvalid) {
+            // The optional index cannot destroy the open editing workspace.
+            return false;
         }
     }
 
