@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="360" viewBox="0 0 1080 360" role="img" aria-labelledby="title desc">
+  <title id="title">NegrecoDroid — logo vetorial preliminar P7</title>
+  <desc id="desc">Monograma N angular com escudo hexagonal e nós eletrônicos, prateado e azul elétrico sobre fundo transparente. Aprovado para desenvolvimento, sujeito a ajuste 1:1 pela prancha original.</desc>
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6AEAFF"/><stop offset="0.52" stop-color="#169FFF"/><stop offset="1" stop-color="#075ADB"/></linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#AABEDC"/></linearGradient>
+  </defs>
+  <g transform="translate(40 17) scale(3)">
+    <path d="M54 11 L91 30 L91 72 L54 99 L17 72 L17 30 Z" fill="#06172B" stroke="url(#blue)" stroke-width="4.5" stroke-linejoin="round"/>
+    <path d="M54 17 L85 34" fill="none" stroke="#DDF3FF" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M32 72 V35" stroke="url(#silver)" stroke-width="10" stroke-linecap="square"/>
+    <path d="M35 38 L72 72" fill="none" stroke="url(#blue)" stroke-width="11" stroke-linecap="square"/>
+    <path d="M76 72 V38" stroke="#56D6FF" stroke-width="10" stroke-linecap="square"/>
+    <path d="M50 40 V28 M63 53 V35 M49 75 V87" stroke="#56D6FF" fill="none" stroke-width="2.4"/>
+    <g fill="#08234F" stroke="#A0EFFF" stroke-width="2.8"><circle cx="50" cy="27" r="5"/><circle cx="63" cy="34" r="5"/><circle cx="49" cy="88" r="5"/></g>
+  </g>
+  <g font-family="sans-serif" font-weight="700" font-size="81" letter-spacing="-2.5">
+    <text x="348" y="175" fill="url(#silver)">Negreco</text>
+    <text x="695" y="175" fill="url(#blue)">Droid</text>
+  </g>
+  <text x="352" y="226" font-family="sans-serif" font-size="24" fill="#8EB8DC" letter-spacing="9">NATIVE STUDIO</text>
+</svg>
