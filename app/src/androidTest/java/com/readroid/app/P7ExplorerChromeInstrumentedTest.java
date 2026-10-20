@@ -64,6 +64,10 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull(find(root, "Explorador de Arquivos"));
                     assertNotNull(find(root, "com.example.synthetic"));
                     assertNotNull(find(root, "0 alterações pendentes"));
+                    TextView back = find(root, "← Pasta anterior");
+                    assertNotNull(back);
+                    assertEquals("Up button should not occupy root screen", View.GONE,
+                        back.getVisibility());
                     assertNotNull(findPrefix(root, "▸  lib/"));
                     TextView chip = find(root, "Assets");
                     assertNotNull("Quick filter chip is missing", chip);
@@ -73,6 +77,7 @@ public final class P7ExplorerChromeInstrumentedTest {
                     TextView folder = findPrefix(root, "▸  assets/");
                     assertNotNull(folder);
                     assertTrue(folder.performClick());
+                    assertEquals(View.VISIBLE, back.getVisibility());
                     assertNotNull(findPrefix(root, "a.txt"));
                     assertEquals("assets/", explorer.snapshotBrowseState().folder);
                     TextView rootCrumb = find(root, "APK");
