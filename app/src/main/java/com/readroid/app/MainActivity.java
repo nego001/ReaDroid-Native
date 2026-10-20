@@ -173,6 +173,9 @@ public class MainActivity extends Activity {
         brandSubtitleView.setLetterSpacing(0.13f);
         brandSubtitleView.setMaxLines(2);
         brandText.addView(brandSubtitleView);
+        P7HomeToolbar homeToolbar = new P7HomeToolbar(this,
+            v -> showHomeMenu(), v -> showSection(4));
+        root.addView(homeToolbar);
         root.addView(brandRow);
         String[] tabs = {"Início", "Arquivos", "Segurança", "Build", "Design"};
         boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
@@ -1084,6 +1087,7 @@ public class MainActivity extends Activity {
         // Home-only branding and a separate, functional Design page.
         // Remove the global header so Explorer and Design do not show a
         // second title above their own headers.
+        root.removeView(homeToolbar);
         root.removeView(brandRow);
         new P7DesignStudio(this, designSection, new Button[]{
             themePicker, accentPicker, textScale, densityPicker, navLabels,
@@ -1100,7 +1104,8 @@ public class MainActivity extends Activity {
                 exportAppearance, importAppearance, glowPicker, cornersPicker, resetAppearance},
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
-        homeSection.addView(brandRow, 0);
+        homeSection.addView(homeToolbar, 0);
+        homeSection.addView(brandRow, 1);
         // Legacy AI controls remain accessible in Design without losing them.
         ((android.view.ViewGroup) aiSection.getParent()).removeView(aiSection);
         designSection.addView(aiSection);
@@ -1253,6 +1258,26 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         parent.addView(content);
         return content;
+    }
+
+    /** Home menu from the approved reference, routing only to real workflows. */
+    private void showHomeMenu() {
+        String[] commands = {"Abrir APK", "Explorador de Arquivos",
+            "Segurança", "Build APK", "Design Studio"};
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("NegrecoDroid")
+            .setItems(commands, (dialog, choice) -> {
+                if (choice == 0) {
+                    Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("*/*");
+                    startActivityForResult(picker, 1);
+                } else if (choice == 1) showSection(1);
+                else if (choice == 2) showSection(2);
+                else if (choice == 3) showSection(3);
+                else if (choice == 4) showSection(4);
+            })
+            .setNegativeButton("Fechar", null).show();
     }
 
     private void showSection(int index) {
