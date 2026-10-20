@@ -98,12 +98,12 @@ public final class StudioDashboard {
         LinearLayout tile = new LinearLayout(a);
         tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
-        tile.setPadding(dp(a, 8), dp(a, 8), dp(a, 6), dp(a, 8));
-        tile.setMinimumHeight(dp(a, 57));
+        tile.setPadding(dp(a, 6), dp(a, 6), dp(a, 5), dp(a, 6));
+        tile.setMinimumHeight(dp(a, 47));
         tile.setBackground(NegrescoTheme.studioCard(a, false));
         NavGlyph symbol = new NavGlyph(a, glyph);
         symbol.setSelectedState(true);
-        tile.addView(symbol, new LinearLayout.LayoutParams(dp(a, 22), dp(a, 22)));
+        tile.addView(symbol, new LinearLayout.LayoutParams(dp(a, 20), dp(a, 20)));
         TextView label = label(a, title, 10, NegrescoTheme.TEXT, false);
         label.setMaxLines(2);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -244,26 +244,27 @@ public final class StudioDashboard {
         home.setClipToPadding(false);
 
         // P7.2: high-contrast welcome hero and low-cost Canvas mascot.
-        LinearLayout welcome = card(a, true);
+        LinearLayout welcome = card(a, false);
+        welcome.setPadding(dp(a, 12), dp(a, 7), dp(a, 12), dp(a, 7));
         LinearLayout welcomeLine = new LinearLayout(a);
         welcomeLine.setGravity(Gravity.CENTER_VERTICAL);
         welcome.addView(welcomeLine);
         LinearLayout welcomeText = column(a);
         welcomeLine.addView(welcomeText, new LinearLayout.LayoutParams(0, -2, 1f));
-        welcomeText.addView(label(a, "Olá, Desenvolvedor", 19,
+        welcomeText.addView(label(a, "Olá, Desenvolvedor", 15,
             NegrescoTheme.TEXT, true));
         gap(a, welcomeText, 5);
         welcomeText.addView(label(a,
-            "Analise, edite e organize seus APKs com controle e segurança.",
-            12, NegrescoTheme.MUTED, false));
-        int artWidth = a.getResources().getConfiguration().screenWidthDp < 360 ? 66 : 106;
+            "Analise, edite e reconstrua seus apps de forma simples e poderosa.",
+            11, NegrescoTheme.MUTED, false));
+        int artWidth = a.getResources().getConfiguration().screenWidthDp < 360 ? 70 : 83;
         P7MascotView mascot = new P7MascotView(a);
         LinearLayout.LayoutParams art = new LinearLayout.LayoutParams(
-            dp(a, artWidth), dp(a, 110));
+            dp(a, artWidth), dp(a, 88));
         art.leftMargin = dp(a, 5);
         welcomeLine.addView(mascot, art);
         home.addView(welcome);
-        gap(a, home, 12);
+        gap(a, home, 7);
 
         // Main project area with the live report-bound text views and real picker.
         LinearLayout hero = card(a, false);
@@ -298,7 +299,7 @@ public final class StudioDashboard {
         // the six compact actions so it doesn't consume the first viewport.
         // Session-only counters and a clickable current-project row.
         home.addView(overview);
-        gap(a, home, 14);
+        gap(a, home, 9);
 
         // Quick actions, native icons, two-column layout on phones.
         shortcutsTitle.setText("Ações rápidas");
@@ -306,8 +307,8 @@ public final class StudioDashboard {
         shortcutsTitle.setLetterSpacing(0.05f);
         shortcutsTitle.setPadding(0, dp(a, 2), 0, dp(a, 2));
         home.addView(shortcutsTitle);
-        shortcutHint.setText("Acesso às ferramentas disponíveis");
-        shortcutHint.setPadding(0, 0, 0, dp(a, 10));
+        shortcutHint.setText("");
+        shortcutHint.setPadding(0, 0, 0, dp(a, 4));
         home.addView(shortcutHint);
         home.addView(quickGrid);
         gap(a, home, 12);
