@@ -63,13 +63,13 @@ jobs:
           "$TOOLS/zipalign" -c -p 4 "$APK"
           "$TOOLS/aapt" dump badging "$APK" | tee qa-badging.txt
           grep -q "package: name='com.readroid.app.qa'" qa-badging.txt
-          grep -q "application-label:'NegrescoDroid V3 Teste'" qa-badging.txt
+          grep -q "application-label:'NegrecoDroid V3 Teste'" qa-badging.txt
           sha256sum "$APK" | tee qa-apk-sha256.txt
       - name: Upload separate QA APK
         if: github.ref == 'refs/heads/feature/v3-design-studio'
         uses: actions/upload-artifact@v4
         with:
-          name: NegrescoDroid-V3-QA-isolated
+          name: NegrecoDroid-V3-QA-isolated
           path: |
             app/build/outputs/apk/qa/app-qa.apk
             qa-apk-sha256.txt
