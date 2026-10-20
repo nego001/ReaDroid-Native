@@ -45,7 +45,7 @@ public final class P7HomeOverview extends LinearLayout {
         addView(title);
         View space = new View(a);
         addView(space, new LayoutParams(1, dp(8)));
-        String[] names = {"Projetos abertos", "Arquivos do APK",
+        String[] names = {"Projetos abertos", "Itens do APK",
             "Edições no plano", "Segurança"};
         String[] symbols = {"◇", "▤", "✎", "⬡"};
         for (int row = 0; row < 2; row++) {
@@ -90,8 +90,14 @@ public final class P7HomeOverview extends LinearLayout {
     public void update(JSONObject report, int editCount) {
         final boolean active = report != null;
         values[0].setText(active ? "1" : "0");
-        JSONObject files = active ? report.optJSONObject("explorer") : null;
-        values[1].setText(files != null ? String.valueOf(files.optInt("fileCount", 0)) : "—");
+        JSONObject explorer = active ? report.optJSONObject("explorer") : null;
+        // Reports vary by parser version: prefer the actual entry count.
+        int count = active ? report.optInt("entries", -1) : -1;
+        if (count < 0 && explorer != null)
+            count = explorer.optInt("fileCount", -1);
+        if (count < 0 && explorer != null && explorer.optJSONArray("files") != null)
+            count = explorer.optJSONArray("files").length();
+        values[1].setText(count >= 0 ? String.valueOf(count) : "—");
         values[2].setText(active ? String.valueOf(Math.max(0, editCount)) : "—");
         values[3].setText(active ? "Consultar" : "Pendente");
         values[3].setTextSize(14 * NegrescoTheme.FONT_SCALE);
