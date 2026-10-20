@@ -176,3 +176,13 @@ A P7.1-A é **apenas fundação de identidade visual**. Não altera importação
 - [ ] Incorporar os PNGs de referência no GitHub; construir o Design Studio, editor de logo/ícone e concluir 1:1 nos três layouts.
 
 **Restrições:** sem aumentar limite de importação, sem modificar APK original, sem operações de segurança/assinatura automáticas. P7.3-A não representa homologação completa da P7.3.
+
+
+## 11. P7.4-C — prévias selecionáveis sem aplicações falsas (20/10/2026)
+
+- [x] `P7DesignStudio`: prateleiras de temas, layouts e presets agora possuem seleção visual individual (em vez de todos os cards abrirem o mesmo seletor), borda azul e estado acessível.
+- [x] As prévias são explicitamente rotuladas como **prévia apenas**; selecionar um tema não escreve configurações nem reivindica que a mudança já foi aplicada. Os comandos reais de paleta, densidade e importação/exportação permanecem nos controles existentes.
+- [x] Adicionado teste de seleção (Matrix Green deve ficar selecionado e Negreco Blue desmarcado) em `P7NavigationInstrumentedTest` no CI Android.
+- [ ] Implementar aplicação real e persistida de cada tema/layout/preset, incluindo rollback seguro, antes de alegar catálogo funcional completo.
+- [ ] Comparar miniaturas e proporções com a imagem original fixada pelo proprietário. A implementação atual ainda não é equivalente a pixels 1:1.
+- [ ] Homologar CI no commit final, comparar screenshots reais e repetir QA no telefone físico.
