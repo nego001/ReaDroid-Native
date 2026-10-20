@@ -186,3 +186,14 @@ A P7.1-A é **apenas fundação de identidade visual**. Não altera importação
 - [ ] Implementar aplicação real e persistida de cada tema/layout/preset, incluindo rollback seguro, antes de alegar catálogo funcional completo.
 - [ ] Comparar miniaturas e proporções com a imagem original fixada pelo proprietário. A implementação atual ainda não é equivalente a pixels 1:1.
 - [ ] Homologar CI no commit final, comparar screenshots reais e repetir QA no telefone físico.
+
+
+## 12. P7.4-D — aplicar tema com confirmação e persistência (20/10/2026)
+
+- [x] `P7ThemeCatalog`: conecta quatro opções iniciais ao mecanismo existente de `theme` + `accent` em `v3_personalizacao`, com `commit()` validado e `Activity.recreate()` somente após sucesso da gravação.
+- [x] A galeria mostra seleção de prévia separada de aplicação. O botão "Aplicar tema selecionado" pede confirmação antes de atualizar o app; restaura a seleção conforme preferências quando a tela é recriada.
+- [x] Invalidar índices fora de 0–3 sem gravar alterações; nenhum dado de APK, recuperação ou plano de edições é escrito pelo catálogo.
+- [x] Novo `P7ThemeCatalogInstrumentedTest` cobre persistência/rejeição de opção inválida, incluído no workflow Android API 29/35.
+- [ ] Auditar fluxo de recuperação da `MainActivity` com APK aberto e verificar screenshot do tema aplicado.
+- [ ] Correspondência visual literal: **ainda não concluída**. Carbon, Matrix Green e Sunset usam combinações preexistentes de fundo/cor; o catálogo planejado de 24 temas e os layouts alternativos completos ainda não existem.
+- [ ] Homologação CI do commit final e testes físicos pendentes.
