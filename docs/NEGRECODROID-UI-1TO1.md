@@ -155,3 +155,24 @@ A P7.1-A é **apenas fundação de identidade visual**. Não altera importação
 - [ ] Fazer comparação lado a lado com mockup da Home e homologação Samsung física. Projeto P7.2 não concluído até obter a semelhança visual aprovada.
 
 **Escopo explicitamente parcial:** P7.2-A é uma primeira implementação nativa da Home; a fidelidade 1:1 integral depende dos PNGs versionados, assets mais refinados, navegação final e testes visuais. Não modificar licença, assinatura, OTA, índice SQLite, recuperação ou exportação nesta entrega.
+
+
+## 10. Entrega P7.3-A — estrutura visual do Explorador (20/10/2026)
+
+**Status: implementado parcialmente na branch de trabalho, sujeito ao CI e revisão de screenshots.**
+
+- [x] Classe nativa `P7ExplorerChrome` com título "Explorador de Arquivos", subtítulo e cartão do APK atual; nome de pacote/tamanho vêm do relatório da sessão, não de dados demonstrativos.
+- [x] Indicador de alterações pendentes conectado ao `EditPlan`, inclusive pluralização correta de zero, uma ou várias edições.
+- [x] Breadcrumb horizontal acessível com raiz APK e até quatro últimos segmentos visíveis; cada segmento aberto navega à pasta real e reinicia o offset.
+- [x] Filtros rápidos horizontais **Todos, Código DEX, Recursos, Assets e Alterados**, conectados às categorias existentes. O menu avançado preserva as outras categorias.
+- [x] Listagem original, botões de paginação SQLite, busca, prévia, plano de edição e ação de pasta continuam sendo a fonte funcional; filtros fora de "Todos" ainda usam o fallback clássico.
+- [x] Remoção do título redundante do módulo Arquivos e do rótulo antigo de pasta duplicado; contexto de busca permanece.
+- [x] `P7ExplorerChromeInstrumentedTest` cobre seleção de categoria, retorno pela trilha e contador de edições. `IndexedExplorerViewInstrumentedTest` foi incluído na matriz do CI para proteger paginação de 301 itens.
+- [x] Script `tools/p7_explorer_smoke.py` abre a aba Arquivos no emulador e coleta screenshot sem carregar arquivo pessoal.
+- [x] Corrigido erro de compilação detectado pelo CI (`search` final capturada antes de ser inicializada pela callback do breadcrumb).
+- [x] Home: contador de itens usa primeiro o número `entries` real do relatório, com fallback para campos compatíveis quando indisponível.
+- [ ] Aguardar aprovação de todos os testes Android 10/15 no commit definitivo; publicar links de evidência e discrepâncias, não chamar de aprovado enquanto pendente.
+- [ ] Refinar largura, tipografia, ícones e contornos por comparação de pixels com PNG oficial.
+- [ ] Incorporar os PNGs de referência no GitHub; construir o Design Studio, editor de logo/ícone e concluir 1:1 nos três layouts.
+
+**Restrições:** sem aumentar limite de importação, sem modificar APK original, sem operações de segurança/assinatura automáticas. P7.3-A não representa homologação completa da P7.3.
