@@ -266,6 +266,9 @@ public final class ExplorerView {
         list.removeAllViews();
         String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
         breadcrumb.setText(query.isEmpty() ? "APK / " + folder : "Busca em todo o APK: " + query);
+        // The segmented trail replaces the old duplicate path label. Keep
+        // the search context line visible when querying the entire APK.
+        breadcrumb.setVisibility(query.isEmpty() ? View.GONE : View.VISIBLE);
         upButton.setEnabled(!folder.isEmpty() || !query.isEmpty());
         breadcrumb.setOnClickListener(v -> {
             folder = "";
@@ -347,6 +350,7 @@ public final class ExplorerView {
             list.removeAllViews();
             breadcrumb.setText(query.isEmpty() ? "APK / " + folder
                 : "Busca em todo o APK: " + query);
+            breadcrumb.setVisibility(query.isEmpty() ? View.GONE : View.VISIBLE);
             upButton.setEnabled(!folder.isEmpty() || !query.isEmpty());
             breadcrumb.setOnClickListener(v -> {
                 folder = ""; indexPageOffset = 0;
