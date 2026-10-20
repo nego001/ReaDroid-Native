@@ -1078,6 +1078,9 @@ public class MainActivity extends Activity {
         StudioDashboard.featureHeader(this, aiSection, 4, "Assistente IA",
             "Compartilhe um relatório técnico para análise no ChatGPT.");
         homeOverview = new P7HomeOverview(this, v -> showSection(1));
+        homeOverview.setHistoryCallbacks(this::openRecentProject,
+            v -> showAllRecentProjects());
+        refreshRecentProjects();
         // Home-only branding and a separate, functional Design page.
         // Remove the global header so Explorer and Design do not show a
         // second title above their own headers.
@@ -1107,6 +1110,7 @@ public class MainActivity extends Activity {
             selectedApkUri = state.getParcelable("selected_apk_uri");
             if (!retained && selectedApkUri != null) analyzeSelectedApk(selectedApkUri);
         }
+        refreshRecentProjects();
     }
 
     /** The same report renderer is used for fresh APKs and retained workspaces. */
@@ -1139,6 +1143,7 @@ public class MainActivity extends Activity {
             explorerView.setIndexedFiles(paths, currentApk, currentIndex);
         else explorerView.setFiles(paths, currentApk);
         explorerView.setProjectSummary(headline, resultJson.optLong("sizeBytes", -1));
+        refreshRecentProjects();
         share.setEnabled(true);
         ai.setEnabled(true);
         apkAdvisor.setEnabled(profile != null);
@@ -1254,9 +1259,11 @@ public class MainActivity extends Activity {
         LinearLayout[] sections = {homeSection, filesSection, securitySection, buildSection, designSection};
         if (index < 0 || index >= sections.length) return;
         selectedSection = index;
-        if (index == 0 && homeOverview != null)
+        if (index == 0 && homeOverview != null) {
             homeOverview.update(report, explorerView == null ? 0
                 : explorerView.getEditPlan().size());
+            refreshRecentProjects();
+        }
         for (int i = 0; i < sections.length; i++) {
             boolean selected = i == index;
             sections[i].setVisibility(selected ? View.VISIBLE : View.GONE);
@@ -1341,7 +1348,87 @@ public class MainActivity extends Activity {
         if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
         if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
         if (request != 1) return;
-        analyzeSelectedApk(data.getData());
+        selectApkWithConfirmation(data.getData(), true);
+    }
+
+    private void refreshRecentProjects() {
+        if (homeOverview == null) return;
+        homeOverview.setRecentProjects(P7ProjectHistory.list(this),
+            report == null ? null : selectedApkUri);
+    }
+
+    private void openRecentProject(P7ProjectHistory.Entry item) {
+        if (!P7ProjectHistory.hasPermission(this, item.uri)) {
+            refreshRecentProjects();
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Permissão expirada")
+                .setMessage("O Android não permite mais acessar este APK. Selecione-o "
+                    + "novamente pelo gerenciador de arquivos.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        selectApkWithConfirmation(item.uri, false);
+    }
+
+    private void showAllRecentProjects() {
+        List<P7ProjectHistory.Entry> entries = P7ProjectHistory.list(this);
+        if (entries.isEmpty()) {
+            refreshRecentProjects();
+            return;
+        }
+        String[] names = new String[entries.size()];
+        for (int i = 0; i < entries.size(); i++) {
+            P7ProjectHistory.Entry item = entries.get(i);
+            names[i] = item.name + "  •  " + item.packageName;
+        }
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Projetos recentes")
+            .setItems(names, (dialog, which) -> openRecentProject(entries.get(which)))
+            .setNeutralButton("Limpar lista", (dialog, which) ->
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Limpar histórico?")
+                    .setMessage("Remove apenas a lista de projetos recentes deste "
+                        + "aplicativo. Não exclui APKs nem planos de edição.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Limpar", (d, w) -> {
+                        P7ProjectHistory.clear(this);
+                        refreshRecentProjects();
+                    }).show())
+            .setNegativeButton("Fechar", null).show();
+    }
+
+    private void selectApkWithConfirmation(Uri uri, boolean fromPicker) {
+        if (uri == null || !"content".equals(uri.getScheme())) {
+            new android.app.AlertDialog.Builder(this)
+                .setMessage("Selecione um APK pelo gerenciador de arquivos do Android.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        Runnable open = () -> {
+            if (fromPicker) {
+                try {
+                    getContentResolver().takePersistableUriPermission(uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException | IllegalArgumentException denied) {
+                    // Import works for this session, but must NOT appear
+                    // in the persistent list without a real SAF permission.
+                }
+            }
+            analyzeSelectedApk(uri);
+        };
+        if (explorerView != null && explorerView.getEditPlan().size() > 0) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Trocar de APK?")
+                .setMessage("Existem " + explorerView.getEditPlan().size()
+                    + " alterações pendentes. Ao abrir outro projeto, "
+                    + "essas alterações não exportadas serão descartadas. "
+                    + "Salve uma cópia de recuperação antes, se necessário.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Descartar e abrir", (d, which) -> open.run())
+                .show();
+        } else {
+            open.run();
+        }
     }
 
     private void analyzeSelectedApk(Uri uri) {
@@ -1368,6 +1455,14 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 AnalyzedApk result = analyze(uri);
+                // Only authorized SAF grants are saved; never persist APK bytes.
+                // Metadata lookup happens off the UI thread.
+                if (sequence == analysisSequence) {
+                    JSONObject manifest = result.report.optJSONObject("manifestAnalysis");
+                    String packageName = manifest == null ? "" :
+                        manifest.optString("packageName", "");
+                    P7ProjectHistory.record(this, uri, packageName);
+                }
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
                         result.file.delete();
@@ -1378,6 +1473,7 @@ public class MainActivity extends Activity {
                     currentApk = result.file;
                     currentIndex = result.indexFile;
                     displayAnalyzedReport(result.report);
+                    refreshRecentProjects();
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
