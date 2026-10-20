@@ -38,3 +38,10 @@
 - Galerias nativas do Design Studio ainda têm miniaturas aproximadas; editores completos de ícones e logos seguem pendentes.
 - Os PNGs inteiros das duas referências aprovadas ainda não foram incorporados à árvore GitHub como arquivos binários, apenas a arte compactada do mascote.
 - Falta aprovação física no Samsung Galaxy A55 e checklist de dimensões/cores da captura real.
+
+## Registro de regressões e capturas desta versão
+
+- A revisão da captura Android 15 do primeiro mascote encontrou uma sobreposição temporária do diálogo **Pixel Launcher isn't responding**. A captura ocorreu antes do script de recuperação específico do emulador; isso **não foi identificado como travamento do NegrecoDroid**. O workflow passou a verificar que a Home está visível e rejeitar a sobreposição antes de salvar a imagem.
+- O primeiro teste de filtro XML falhou porque tentou adicionar ao plano um `res/config.xml` não suportado pelo editor textual. Mantido o bloqueio real do `EditPlan`; agora o teste valida o XML como navegação e usa `assets/a.txt` para testar edição, sem relaxar a política de formatos.
+- Os chips seguem a ordem do mockup; a consulta SQLite real de extensões tem um teste independente de índice para prevenir regressão.
+- O mascot vem **da própria referência**, mas o crop original é uma fonte de baixa resolução; não o anunciar como ilustração vetorial ou pixel-perfect redimensionada.
