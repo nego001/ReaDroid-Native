@@ -21,9 +21,15 @@ public final class P7VisualCatalog {
     }
 
     public static int currentPreset(Context c) {
-        int value = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt("p7_active_preset", -1);
-        return value >= 0 && value < PRESET_NAMES.length ? value : -1;
+        SharedPreferences prefs = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        int value = prefs.getInt("p7_active_preset", -1);
+        if (value < 0 || value >= PRESET_NAMES.length) return -1;
+        String[] themes = {"oled", "oled", "light", "graphite", "oled"};
+        String[] accents = {"blue", "purple", "blue", "blue", "orange"};
+        if (!themes[value].equals(prefs.getString("theme", "oled"))
+                || !accents[value].equals(prefs.getString("accent", "blue")))
+            return -1;
+        return value;
     }
 
     public static void applyLayout(Activity a, int value) {
