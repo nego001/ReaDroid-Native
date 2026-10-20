@@ -58,7 +58,9 @@ public final class P7ExplorerChromeInstrumentedTest {
                         .put(new JSONObject().put("path", "lib/libdemo.so")
                             .put("sizeBytes", 10).put("category", "Bibliotecas"))
                         .put(new JSONObject().put("path", "res/icon.png")
-                            .put("sizeBytes", 11).put("category", "Recursos"));
+                            .put("sizeBytes", 11).put("category", "Recursos"))
+                        .put(new JSONObject().put("path", "res/config.xml")
+                            .put("sizeBytes", 12).put("category", "Recursos"));
                     explorer.setFiles(entries, null);
                     explorer.setProjectSummary("com.example.synthetic", 4096);
                     assertNotNull(find(root, "Explorador de Arquivos"));
@@ -69,27 +71,32 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertEquals("Up button should not occupy root screen", View.GONE,
                         back.getVisibility());
                     assertNotNull(findPrefix(root, "▸  lib/"));
-                    TextView chip = find(root, "Assets");
-                    assertNotNull("Quick filter chip is missing", chip);
+                    assertNotNull("Screenshot must have a Smali chip", find(root, "Smali"));
+                    assertNotNull("Screenshot must have an image chip", find(root, "Imagens"));
+                    TextView chip = find(root, "XML");
+                    assertNotNull("Reference XML filter chip is missing", chip);
                     assertTrue(chip.performClick());
-                    assertNull("Assets filter should hide libs",
+                    assertNull("XML filter should hide libs",
                         findPrefix(root, "▸  lib/"));
-                    TextView folder = findPrefix(root, "▸  assets/");
+                    assertNull("XML filter should hide assets",
+                        findPrefix(root, "▸  assets/"));
+                    TextView folder = findPrefix(root, "▸  res/");
                     assertNotNull(folder);
                     assertTrue(folder.performClick());
                     assertEquals(View.VISIBLE, back.getVisibility());
-                    assertNotNull(findPrefix(root, "a.txt"));
-                    assertEquals("assets/", explorer.snapshotBrowseState().folder);
+                    assertNotNull(findPrefix(root, "config.xml"));
+                    assertNull(findPrefix(root, "icon.png"));
+                    assertEquals("res/", explorer.snapshotBrowseState().folder);
                     TextView rootCrumb = find(root, "APK");
                     assertNotNull(rootCrumb);
                     assertTrue(rootCrumb.performClick());
                     assertEquals("", explorer.snapshotBrowseState().folder);
-                    assertNotNull(findPrefix(root, "▸  assets/"));
-                    explorer.getEditPlan().addTextReplacement("assets/a.txt", "edited");
+                    assertNotNull(findPrefix(root, "▸  res/"));
+                    explorer.getEditPlan().addTextReplacement("res/config.xml", "edited");
                     explorer.refresh();
                     assertNotNull(find(root, "1 alteração pendente"));
-                    assertTrue(findPrefix(root, "▸  assets/").performClick());
-                    assertNotNull(findPrefix(root, "●  a.txt"));
+                    assertTrue(findPrefix(root, "▸  res/").performClick());
+                    assertNotNull(findPrefix(root, "●  config.xml"));
                 } catch (Exception failure) {
                     throw new AssertionError(failure);
                 }
