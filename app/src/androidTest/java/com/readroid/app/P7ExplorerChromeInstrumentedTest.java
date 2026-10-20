@@ -82,7 +82,7 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull(findPrefix(root, "▸  assets/"));
                     explorer.getEditPlan().addTextReplacement("assets/a.txt", "edited");
                     explorer.refresh();
-                    assertNotNull(find(root, "1 alterações pendentes"));
+                    assertNotNull(find(root, "1 alteração pendente"));
                     assertTrue(findPrefix(root, "▸  assets/").performClick());
                     assertNotNull(findPrefix(root, "●  a.txt"));
                 } catch (Exception failure) {
