@@ -82,7 +82,7 @@ public final class ExplorerView {
         folder = validFolder ? state.folder : "";
         activeCategory = java.util.Arrays.asList(CATEGORIES).contains(state.category)
             ? state.category : "Todos";
-        filterButton.setText("Filtro: " + activeCategory + "  ▾");
+        filterButton.setText("▦");
         // setText invokes the TextWatcher (which resets pagination): set the
         // retained limit afterwards and render the final, validated state.
         String safeQuery = state.query == null ? "" : state.query;
@@ -120,31 +120,32 @@ public final class ExplorerView {
         search.setTextColor(NegrescoTheme.TEXT);
         search.setHintTextColor(NegrescoTheme.MUTED);
         search.setBackground(NegrescoTheme.panel(activity));
-        search.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12));
+        search.setPadding(NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 9), NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 9));
         parent.addView(search);
+        // Keep all five reference chips and the extra filters on ONE row.
+        LinearLayout filterRow = new LinearLayout(activity);
+        filterRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(-1, -2);
+        filterParams.topMargin = NegrescoTheme.dp(activity, 7);
+        parent.addView(filterRow, filterParams);
         HorizontalScrollView quickScroller = new HorizontalScrollView(activity);
         quickScroller.setHorizontalScrollBarEnabled(false);
-        LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(-1, -2);
-        filterParams.topMargin = NegrescoTheme.dp(activity, 8);
-        parent.addView(quickScroller, filterParams);
+        quickScroller.setFillViewport(false);
+        filterRow.addView(quickScroller, new LinearLayout.LayoutParams(0, -2, 1f));
         quickFilters = new LinearLayout(activity);
         quickFilters.setOrientation(LinearLayout.HORIZONTAL);
         quickScroller.addView(quickFilters);
-        filterButton = NegrescoTheme.action(activity, "Filtro: Todos  ▾", false);
-        // Advanced categories must remain available, but they are a secondary
-        // compact action: the five common filters live in the chip row above.
-        filterButton.setMinHeight(NegrescoTheme.dp(activity, 40));
-        filterButton.setMinimumHeight(NegrescoTheme.dp(activity, 40));
-        filterButton.setTextSize(12 * NegrescoTheme.FONT_SCALE);
-        filterButton.setPadding(NegrescoTheme.dp(activity, 12), 0,
-            NegrescoTheme.dp(activity, 12), 0);
+        filterButton = NegrescoTheme.action(activity, "▦", false);
+        filterButton.setContentDescription("Abrir filtros avançados");
+        filterButton.setMinHeight(NegrescoTheme.dp(activity, 38));
+        filterButton.setMinimumHeight(NegrescoTheme.dp(activity, 38));
+        filterButton.setTextSize(17 * NegrescoTheme.FONT_SCALE);
+        filterButton.setPadding(0, 0, 0, 0);
         LinearLayout.LayoutParams advancedParams =
-            new LinearLayout.LayoutParams(-2, NegrescoTheme.dp(activity, 42));
-        advancedParams.gravity = android.view.Gravity.END;
-        advancedParams.topMargin = NegrescoTheme.dp(activity, 3);
-        advancedParams.bottomMargin = NegrescoTheme.dp(activity, 5);
-        filterButton.setLayoutParams(advancedParams);
-        parent.addView(filterButton);
+            new LinearLayout.LayoutParams(NegrescoTheme.dp(activity, 41),
+                NegrescoTheme.dp(activity, 40));
+        advancedParams.leftMargin = NegrescoTheme.dp(activity, 5);
+        filterRow.addView(filterButton, advancedParams);
         filterButton.setOnClickListener(v -> {
             new android.app.AlertDialog.Builder(activity)
                 .setTitle("Filtrar arquivos")
@@ -153,7 +154,7 @@ public final class ExplorerView {
                         activeCategory = CATEGORIES[which];
                         pageLimit = 120;
                         indexPageOffset = 0;
-                        filterButton.setText("Filtro: " + activeCategory + "  ▾");
+                        filterButton.setText("▦");
                         render();
                         dialog.dismiss();
                     })
@@ -196,6 +197,11 @@ public final class ExplorerView {
         render();
     }
 
+    /** Native Explorer back/menu controls, supplied by its actual Activity. */
+    public void setNavigationActions(Runnable exit, Runnable openApk) {
+        chrome.setActions(exit, openApk);
+    }
+
     public void setFiles(JSONArray array, java.io.File apkFile) {
         this.apkFile = apkFile;
         this.indexFile = null;
@@ -205,7 +211,7 @@ public final class ExplorerView {
         folder = "";
         activeCategory = "Todos";
         pageLimit = 120;
-        filterButton.setText("Filtro: Todos  ▾");
+        filterButton.setText("▦");
         search.setText("");
         if (array != null) for (int i = 0; i < array.length(); i++) {
             JSONObject file = array.optJSONObject(i);
@@ -238,11 +244,11 @@ public final class ExplorerView {
             chip.setTextSize(12 * NegrescoTheme.FONT_SCALE);
             chip.setTextColor(selected ? NegrescoTheme.ON_ACCENT : NegrescoTheme.TEXT);
             chip.setGravity(android.view.Gravity.CENTER);
-            chip.setMinHeight(NegrescoTheme.dp(activity, 44));
-            chip.setPadding(NegrescoTheme.dp(activity, 14),
-                NegrescoTheme.dp(activity, 8),
-                NegrescoTheme.dp(activity, 14),
-                NegrescoTheme.dp(activity, 8));
+            chip.setMinHeight(NegrescoTheme.dp(activity, 39));
+            chip.setPadding(NegrescoTheme.dp(activity, 10),
+                NegrescoTheme.dp(activity, 6),
+                NegrescoTheme.dp(activity, 10),
+                NegrescoTheme.dp(activity, 6));
             android.graphics.drawable.GradientDrawable bg =
                 new android.graphics.drawable.GradientDrawable();
             bg.setColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.SURFACE);
@@ -259,11 +265,11 @@ public final class ExplorerView {
                 activeCategory = name;
                 pageLimit = 120;
                 indexPageOffset = 0;
-                filterButton.setText("Filtro: " + activeCategory + "  ▾");
+                filterButton.setText("▦");
                 render();
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.rightMargin = NegrescoTheme.dp(activity, 7);
+            lp.rightMargin = NegrescoTheme.dp(activity, 5);
             quickFilters.addView(chip, lp);
         }
     }
@@ -608,12 +614,19 @@ public final class ExplorerView {
         view.setTextColor(NegrescoTheme.TEXT);
         view.setTextSize(14 * NegrescoTheme.FONT_SCALE);
         view.setLineSpacing(NegrescoTheme.dp(activity, 3), 1f);
-        view.setMinHeight(NegrescoTheme.dp(activity, 56));
-        view.setPadding(NegrescoTheme.dp(activity, 16), NegrescoTheme.dp(activity, 12),
-            NegrescoTheme.dp(activity, 16), NegrescoTheme.dp(activity, 12));
-        view.setBackground(NegrescoTheme.studioCard(activity, false));
+        view.setMinHeight(NegrescoTheme.dp(activity, 51));
+        view.setPadding(NegrescoTheme.dp(activity, 8), NegrescoTheme.dp(activity, 9),
+            NegrescoTheme.dp(activity, 8), NegrescoTheme.dp(activity, 9));
+        // Flat rows with subtle separators reproduce the file list rather
+        // than stacking oversized rounded action cards.
+        android.graphics.drawable.GradientDrawable row =
+            new android.graphics.drawable.GradientDrawable();
+        row.setColor(NegrescoTheme.BACKGROUND);
+        row.setStroke(NegrescoTheme.dp(activity, 1), NegrescoTheme.BORDER);
+        row.setCornerRadius(NegrescoTheme.dp(activity, 5));
+        view.setBackground(row);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.bottomMargin = NegrescoTheme.dp(activity, 7);
+        params.bottomMargin = NegrescoTheme.dp(activity, 2);
         view.setLayoutParams(params);
         return view;
     }
