@@ -27,3 +27,5 @@ jobs:
             if [ -f "$script" ]; then python3 -m py_compile "$script"; fi
           done
           echo "Source layout and Python syntax checks passed"
+      - name: Protect major-only APK generation policy
+        run: python3 -m unittest discover -s tests -p 'test_major_apk_policy.py' -v
