@@ -22,8 +22,11 @@ def check():
     assert "selecionada" in current.attrib.get("content-desc", ""), (
         "Design tab not selected")
     labels = {n.attrib.get("text", "") for n in nodes}
+    # The approved reference shows all these groups in the first viewport.
+    # Do not count a long scroll containing them as a 1:1 success.
     for needed in ("Design Studio", "Previews de Temas", "Opções de Layout",
-                   "Temas", "Layout", "Ícones", "Logotipo"):
+                   "Presets de Aparência", "Criador de Ícones", "Logo Studio",
+                   "Temas", "Layout", "Ícones", "Logotipo", "Dark OLED"):
         if needed not in labels:
             raise AssertionError("Missing Design Studio element: " + needed)
     api = smoke.adb("shell", "getprop", "ro.build.version.sdk").strip()
