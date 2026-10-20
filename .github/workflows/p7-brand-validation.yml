@@ -1,0 +1,66 @@
+name: P7 NegrecoDroid brand validation
+on:
+  pull_request:
+    branches: [docs/p7-negrecodroid-ui-1to1, feature/v3-design-studio]
+    paths:
+      - 'app/src/main/**'
+      - 'app/src/qa/**'
+      - 'app/src/androidTest/**'
+      - '.github/workflows/p7-brand-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-brand:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Enable hardware acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Check brand on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 2048M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            set -eu
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest
+            gradle --no-daemon :app:assembleQa
+            SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+            "$SDK_ROOT/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/qa/app-qa.apk | grep -F "application-label:'NegrecoDroid V3 Teste'"
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.readroid.app/.MainActivity
+            sleep 2
+            adb exec-out screencap -p > p7-brand-android-${{ matrix.api }}.png
+            test -s p7-brand-android-${{ matrix.api }}.png
+      - name: Upload launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7-brand-android-${{ matrix.api }}
+          path: |
+            p7-brand-android-*.png
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
