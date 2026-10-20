@@ -62,4 +62,28 @@ public final class P7NavigationInstrumentedTest {
             });
         }
     }
+
+    @Test public void homeHeaderOpensActualMenuAndDesignPreferences() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View menu = byDescription(root, "Abrir menu de navegação");
+                View settings = byDescription(root, "Abrir personalização");
+                assertNotNull("Approved hamburger control is missing", menu);
+                assertNotNull("Approved settings gear is missing", settings);
+                assertTrue("Menu must be a working control", menu.isClickable());
+                assertTrue("Settings must be a working control",
+                    settings.performClick());
+                assertTrue("Settings must open the actual Design Studio",
+                    hasText(root, "Design Studio"));
+                View home = byDescription(root, "Abrir seção Início");
+                assertNotNull(home);
+                assertTrue(home.performClick());
+                assertTrue("Menu must return with Home", menu.isShown());
+                assertTrue(menu.performClick());
+            });
+        }
+    }
+
 }
