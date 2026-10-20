@@ -43,18 +43,18 @@ public final class P7MascotArtworkInstrumentedTest {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         P7MascotView mascot = new P7MascotView(context);
         assertTrue(mascot.usesApprovedArtwork());
-        mascot.layout(0, 0, 280, 360);
-        Bitmap frame = Bitmap.createBitmap(280, 360, Bitmap.Config.ARGB_8888);
+        mascot.layout(0, 0, 160, 248);
+        Bitmap frame = Bitmap.createBitmap(160, 248, Bitmap.Config.ARGB_8888);
         try {
             mascot.draw(new Canvas(frame));
-            int middleX = 210;
-            int middleY = 210;
+            int middleX = 80;
+            int middleY = 124;
             int middleAlpha = Color.alpha(frame.getPixel(middleX, middleY));
             assertTrue("The mascot content must still be visible", middleAlpha > 60);
             // The approved source crop was a hard-edged opaque rectangle.
             // Both its lateral border and base must now fade to transparent.
-            int leftAlpha = Color.alpha(frame.getPixel(126, middleY));
-            int bottomAlpha = Color.alpha(frame.getPixel(middleX, 359));
+            int leftAlpha = Color.alpha(frame.getPixel(1, middleY));
+            int bottomAlpha = Color.alpha(frame.getPixel(middleX, 247));
             assertTrue("The left edge must blend into OLED", leftAlpha < middleAlpha / 3);
             assertTrue("The bottom edge must blend into OLED",
                 bottomAlpha < middleAlpha / 3);
