@@ -2,6 +2,13 @@ package com.readroid.app;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.RectF;
+import android.util.Base64;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.view.View;
@@ -9,16 +16,49 @@ import android.view.View;
 /** P7 native low-cost hooded tech mascot. Decorative, never blocks touch input. */
 public final class P7MascotView extends View {
     private final Paint pen = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Bitmap approvedArtwork;
 
     public P7MascotView(Context context) {
         super(context);
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         setClickable(false);
+        approvedArtwork = loadApprovedArtwork(context);
     }
+
+    /** The mascot crop is taken from the user's actual approved image. */
+    private static Bitmap loadApprovedArtwork(Context context) {
+        try (InputStream input = context.getAssets().open("p7_reference_mascot.webp.base64");
+             ByteArrayOutputStream data = new ByteArrayOutputStream(5000)) {
+            byte[] buffer = new byte[4096];
+            int length;
+            while ((length = input.read(buffer)) != -1) data.write(buffer, 0, length);
+            byte[] webp = Base64.decode(data.toByteArray(), Base64.DEFAULT);
+            return BitmapFactory.decodeByteArray(webp, 0, webp.length);
+        } catch (IOException | IllegalArgumentException error) {
+            return null;
+        }
+    }
+
+    /** True only when the actual approved visual asset was decoded successfully. */
+    boolean usesApprovedArtwork() { return approvedArtwork != null; }
 
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c);
         if (getWidth() == 0 || getHeight() == 0) return;
+        if (approvedArtwork != null) {
+            float factor = Math.min(getWidth() / (float) approvedArtwork.getWidth(),
+                getHeight() / (float) approvedArtwork.getHeight());
+            float width = approvedArtwork.getWidth() * factor;
+            float height = approvedArtwork.getHeight() * factor;
+            pen.setStyle(Paint.Style.FILL);
+            pen.setColor(0xffffffff);
+            pen.setFilterBitmap(true);
+            c.drawBitmap(approvedArtwork, null,
+                new RectF(getWidth() - width, getHeight() - height,
+                    getWidth(), getHeight()), pen);
+            return;
+        }
+        // The vector remains a safe fallback for a corrupt/missing resource.
         c.save();
         c.translate((getWidth() - Math.min(getWidth(), getHeight()) * 0.80f) / 2f, 0f);
         c.scale(Math.min(getWidth(), getHeight()) / 100f,
