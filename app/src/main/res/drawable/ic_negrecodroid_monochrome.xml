@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Monochrome follows launcher/Material You tint. -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M54,11 L91,30 L91,72 L54,99 L17,72 L17,30 Z
+        M54,20 L25,35 L25,68 L54,89 L83,68 L83,35 Z"/>
+    <path android:fillColor="#FFFFFFFF"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="8"
+        android:strokeLineJoin="round"
+        android:pathData="M34,72 L34,37 L74,72 L74,37"/>
+</vector>
