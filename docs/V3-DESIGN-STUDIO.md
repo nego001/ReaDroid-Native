@@ -264,3 +264,11 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
   implementam o CTA; limites atuais permanecem intactos.
 - Especificação completa no documento
   [MULTI_GB_EXPLORER_AND_SYNC.md](MULTI_GB_EXPLORER_AND_SYNC.md).
+
+## Plano mestre de 28 módulos (19/10/2026)
+
+- O usuário aprovou **todas as 12 propostas iniciais** e pediu mais funcionalidades. As **28 capacidades previstas** estão detalhadas no [plano mestre #9](https://github.com/nego001/ReaDroid-Native/issues/9), com IDs F01–F28, fases, dependências, segurança e critérios de aceite.
+- Eixos principais: **Deep Explorer** multi-GB, **Adaptive Engine**, Format Radar, Hex Lab, Smart Editor e Build Factory; **Time Machine** e Security Command; **Mission Control** com General Supremo → CTA → CTO → generais dos sistemas e agentes especializados, todos com permissões limitadas; laboratório de testes, compatibilidade, diagnósticos e busca; sincronização E2EE opcional e versões Windows/Linux com REA após homologação Android.
+- **Próxima entrega técnica**: infraestrutura Android de explorador indexado/virtualizado por partes, sem carregar arquivos imensos ou listagens completas na RAM. Não elevar limite atual de importação de 1 GiB sem streaming/seek/ZIP64 verificados em teste real. No Android, uma análise de 500 GB ou multi-TB só é possível em operações/provedores com capacidade provada.
+- Cada capacidade terá estados visíveis **Planejado → Experimental → Testado → Disponível**, ou **Bloqueado** se não houver suporte seguro. Não anunciar 28 módulos como implementados.
+- A UI futura (issue #1) permanece após a estabilização funcional. OTA continua desativada. Nenhum APK/EXE é executado ou sincronizado automaticamente; ações de maior risco dependem de autorização.
