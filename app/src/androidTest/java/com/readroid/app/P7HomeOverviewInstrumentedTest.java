@@ -35,7 +35,7 @@ public final class P7HomeOverviewInstrumentedTest {
                     assertTrue(contains(panel, "Nenhum projeto aberto"));
                     assertTrue(contains(panel, "—"));
                     assertTrue(contains(panel,
-                        "O histórico persistente ainda está em desenvolvimento."));
+                        "Abra um APK para começar seu histórico local."));
                     JSONObject current = new JSONObject();
                     current.put("explorer", new JSONObject().put("fileCount", 301));
                     current.put("manifestAnalysis", new JSONObject()
