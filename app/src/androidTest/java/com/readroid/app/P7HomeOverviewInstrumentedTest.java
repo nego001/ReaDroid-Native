@@ -3,6 +3,8 @@ package com.readroid.app;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.LinearLayout;
+import android.widget.ImageView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.json.JSONObject;
@@ -32,6 +34,17 @@ public final class P7HomeOverviewInstrumentedTest {
                     final P7HomeOverview panel = new P7HomeOverview(activity,
                         v -> { });
                     activity.setContentView(panel);
+                    LinearLayout firstRow = (LinearLayout) panel.getChildAt(0);
+                    LinearLayout projectStat = (LinearLayout) firstRow.getChildAt(0);
+                    LinearLayout fileStat = (LinearLayout) firstRow.getChildAt(1);
+                    assertEquals("Reference stat cards must align icon and data",
+                        LinearLayout.HORIZONTAL, projectStat.getOrientation());
+                    assertTrue("Project statistics require actual left icon",
+                        projectStat.getChildAt(0) instanceof ImageView);
+                    assertTrue("File statistics require actual left icon",
+                        fileStat.getChildAt(0) instanceof ImageView);
+                    assertTrue("Stacked statistics to the right of the icon",
+                        projectStat.getChildAt(1) instanceof LinearLayout);
                     assertTrue(contains(panel, "Nenhum projeto aberto"));
                     assertTrue(contains(panel, "—"));
                     assertTrue(contains(panel,
