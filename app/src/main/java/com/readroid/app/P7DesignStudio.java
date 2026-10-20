@@ -50,6 +50,10 @@ public final class P7DesignStudio {
             .setNegativeButton("Cancelar", (dialog, which) -> {
                 restoreCurrentTheme();
                 render();
+            })
+            .setOnCancelListener(dialog -> {
+                restoreCurrentTheme();
+                render();
             }).show();
     }
     private int selectedLayout = 0;
@@ -261,6 +265,10 @@ public final class P7DesignStudio {
             .setNegativeButton("Cancelar", (dialog, which) -> {
                 selectedLayout = P7VisualCatalog.currentLayout(a);
                 render();
+            })
+            .setOnCancelListener(dialog -> {
+                selectedLayout = P7VisualCatalog.currentLayout(a);
+                render();
             }).show();
     }
 
@@ -286,6 +294,10 @@ public final class P7DesignStudio {
                 }
             })
             .setNegativeButton("Cancelar", (dialog, which) -> {
+                selectedPreset = P7VisualCatalog.currentPreset(a);
+                render();
+            })
+            .setOnCancelListener(dialog -> {
                 selectedPreset = P7VisualCatalog.currentPreset(a);
                 render();
             }).show();
