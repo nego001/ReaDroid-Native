@@ -257,10 +257,13 @@ public final class StudioDashboard {
         welcomeText.addView(label(a,
             "Analise, edite e reconstrua seus apps de forma simples e poderosa.",
             11, NegrescoTheme.MUTED, false));
-        int artWidth = a.getResources().getConfiguration().screenWidthDp < 360 ? 70 : 83;
+        // The approved mascot is a tall illustration, not a tiny glyph.
+        // Match its portrait silhouette without stretching the source artwork.
+        int artWidth = a.getResources().getConfiguration().screenWidthDp < 360 ? 104 : 126;
+        int artHeight = a.getResources().getConfiguration().screenWidthDp < 360 ? 126 : 151;
         P7MascotView mascot = new P7MascotView(a);
         LinearLayout.LayoutParams art = new LinearLayout.LayoutParams(
-            dp(a, artWidth), dp(a, 88));
+            dp(a, artWidth), dp(a, artHeight));
         art.leftMargin = dp(a, 5);
         welcomeLine.addView(mascot, art);
         home.addView(welcome);
