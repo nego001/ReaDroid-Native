@@ -804,7 +804,7 @@ public class MainActivity extends Activity {
             chooser.addCategory(Intent.CATEGORY_OPENABLE);
             chooser.setType("*/*");
             startActivityForResult(chooser, 1);
-        });
+        }, this::reviewEditPlan);
         Button compare = NegrescoTheme.action(this, "Comparar com outro APK", false);
         filesSection.addView(compare);
         compare.setOnClickListener(v -> {
