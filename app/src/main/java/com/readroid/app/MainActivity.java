@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     }
     private TextView apkSummary;
     private TextView projectMetrics;
+    private P7HomeOverview homeOverview;
     private ScrollView contentScroll;
 
     /** Holds a project in memory across theme changes and rotation only. */
@@ -1051,8 +1052,9 @@ public class MainActivity extends Activity {
             "Inspecione certificados, assinaturas e sua identidade local.");
         StudioDashboard.featureHeader(this, aiSection, 4, "Assistente IA",
             "Compartilhe um relatório técnico para análise no ChatGPT.");
+        homeOverview = new P7HomeOverview(this, v -> showSection(1));
         StudioDashboard.compose(this, homeSection, apkSummary, projectMetrics, choose,
-            shortcutsTitle, shortcutHint, quickGrid,
+            homeOverview, shortcutsTitle, shortcutHint, quickGrid,
             customizationTitle, customizationHint, togglePersonalization, personalizationGroup,
             new Button[]{themePicker, accentPicker, textScale, densityPicker, navLabels,
                 favoriteShortcut, identityPicker, appearancePreview,
@@ -1070,6 +1072,8 @@ public class MainActivity extends Activity {
     /** The same report renderer is used for fresh APKs and retained workspaces. */
     private void displayAnalyzedReport(JSONObject resultJson) {
         report = resultJson;
+        if (homeOverview != null)
+            homeOverview.update(report, explorerView.getEditPlan().size());
         output.setText(formatReport(resultJson));
         JSONObject info = resultJson.optJSONObject("manifestAnalysis");
         String packageName = info == null ? "Desconhecido" : info.optString("packageName", "Desconhecido");
@@ -1126,6 +1130,7 @@ public class MainActivity extends Activity {
             }
         }
         explorerView.restoreBrowseState(workspace.browse);
+        homeOverview.update(report, explorerView.getEditPlan().size());
         showSection(workspace.activeSection);
         return true;
     }
@@ -1208,6 +1213,9 @@ public class MainActivity extends Activity {
         LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
         if (index < 0 || index >= sections.length) return;
         selectedSection = index;
+        if (index == 0 && homeOverview != null)
+            homeOverview.update(report, explorerView == null ? 0
+                : explorerView.getEditPlan().size());
         for (int i = 0; i < sections.length; i++) {
             boolean selected = i == index;
             sections[i].setVisibility(selected ? View.VISIBLE : View.GONE);
@@ -1299,6 +1307,7 @@ public class MainActivity extends Activity {
         final int sequence = ++analysisSequence;
         selectedApkUri = uri;
         report = null;
+        if (homeOverview != null) homeOverview.update(null, 0);
         if (currentApk != null) { currentApk.delete(); currentApk = null; }
         if (currentIndex != null) {
             android.database.sqlite.SQLiteDatabase.deleteDatabase(currentIndex);
