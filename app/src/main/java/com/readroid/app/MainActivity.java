@@ -1392,9 +1392,12 @@ public class MainActivity extends Activity {
     }
 
     /** Short result first; the technical verification is available on demand. */
-    private void showExportSuccess(long bytes, String verification, String preflight) {
+    private void showExportSuccess(long bytes, String verification, String preflight,
+            String sourceSha256, String rebuiltSha256) {
         final String details = verification + "\n\n" + preflight
-            + "\n\nOriginal preservado. Exportação comparada por SHA-256.";
+            + "\n\nSHA-256 da origem (antes e depois):\n" + sourceSha256
+            + "\n\nSHA-256 do APK reconstruído e exportado:\n" + rebuiltSha256
+            + "\n\nArquivo original conferido; saída relida e comparada por SHA-256.";
         new android.app.AlertDialog.Builder(this)
             .setTitle("Exportação verificada")
             .setMessage("✓ Arquivo gravado e verificado por SHA-256 (" + bytes + " bytes)."
@@ -1423,19 +1426,30 @@ public class MainActivity extends Activity {
         final File source = currentApk;
         final Map<String, String> changes = explorerView.getEditPlan().snapshot();
         if (changes.isEmpty()) return;
+        final String originalImportHash = report == null
+            ? "" : report.optString("sha256", "");
         rebuild.setEnabled(false);
         executor.execute(() -> {
             File temp = null;
             try {
+                // The cached original must match the imported APK, and cannot
+                // change while the export is being reconstructed or verified.
+                ApkIntegrity.confirmExpected(source, originalImportHash);
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
                 ApkRebuilder.rebuild(source, temp, changes);
-                final String verification = RebuildVerifier.verify(temp, changes);
+                final String verification = RebuildVerifier.verifyAgainstOriginal(
+                    source, temp, changes);
                 final String preflight = SigningPreflight.inspect(temp);
+                final String rebuiltSha256 = ApkIntegrity.sha256(temp);
+                // Check again immediately before and after read-back from SAF.
+                ApkIntegrity.confirmExpected(source, originalImportHash);
                 final long exportedBytes = SafExportVerifier.copyAndVerify(
                     getContentResolver(), temp, destination);
+                ApkIntegrity.confirmExpected(source, originalImportHash);
                 runOnUiThread(() -> {
                     if (!isFinishing() && !isDestroyed())
-                        showExportSuccess(exportedBytes, verification, preflight);
+                        showExportSuccess(exportedBytes, verification, preflight,
+                            originalImportHash, rebuiltSha256);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {

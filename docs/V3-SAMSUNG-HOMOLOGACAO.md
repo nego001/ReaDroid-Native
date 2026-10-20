@@ -123,3 +123,9 @@ e não apague cópias sem decisão explícita.
 - **PENDENTE:** verificar o texto exato no arquivo exportado, comparar com o conteúdo do APK original, registrar confirmação inequívoca de `Forçar parada` e, idealmente, hashes antes/depois para prova independente.
 - **PENDENTE:** TalkBack, teclado físico, mudança de rotação, gestos e navegação alternativa no aparelho físico. Não há release final, assinatura de produção nem OTA habilitada.
 - Capturas não anexadas ao GitHub. Nenhum dado do usuário além dos resultados técnicos foi copiado.
+
+## Checagem reforçada de integridade de exportação (19/10/2026)
+- O APK reconstruído agora é comparado com a cópia original **entrada por entrada**: todas as entradas não editadas devem preservar conteúdo SHA-256, as editadas obedecem ao plano, e o resultado não pode perder/adicionar arquivos fora das remoções esperadas de assinaturas antigas.
+- Antes, durante e após exportação, o SHA-256 da cópia de origem é comparado ao hash calculado na importação; o arquivo SAF exportado continua sendo relido integralmente e verificado por SHA-256. O diálogo de detalhes técnicos passa a apresentar hashes completos de entrada e saída.
+- Testes sintéticos adicionais cobrem corrupção de entrada não editada, arquivo inesperado e alteração da origem durante o fluxo. **CI não constitui evidência da exportação física Samsung; permanece pendente a captura da exportação, revisão do texto final e verificação independente do arquivo original.**
+- Exportação permanece **sem assinatura/sem garantia de instalação**, sem auto-instalação, sem OTA e sem modificação do APK selecionado.

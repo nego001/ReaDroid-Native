@@ -86,6 +86,8 @@ public final class ApkRebuilderInstrumentedTest {
                 assertNull(rebuilt.getEntry("META-INF/MANIFEST.MF"));
             }
             assertTrue(RebuildVerifier.verify(output, edit.snapshot()).contains("1 alteração"));
+            assertTrue(RebuildVerifier.verifyAgainstOriginal(original, output, edit.snapshot())
+                .contains("arquivo(s) não editado(s) conferido(s)"));
             assertTrue(SigningPreflight.inspect(output).contains("Pré-verificação estrutural aprovada"));
         } finally {
             original.delete();
@@ -130,6 +132,86 @@ public final class ApkRebuilderInstrumentedTest {
         } finally {
             original.delete();
             output.delete();
+        }
+    }
+
+
+    @Test public void comparisonDetectsTamperedUntouchedEntryEvenWhenEditLooksCorrect()
+            throws Exception {
+        File original = file(".apk");
+        File rebuilt = file(".apk");
+        try {
+            fixture(original, false);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"message\":\"alterado\"}");
+            // Construct a ZIP with the correct edited file and manifest/DEX,
+            // but corrupt the untouched binary without warning the edit plan.
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(rebuilt.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("binary manifest placeholder"));
+                add(out, "classes.dex", new byte[]{100, 101, 120, 10, 0, 0, 0});
+                add(out, "assets/config.json", utf8("{\"message\":\"alterado\"}"));
+                add(out, "assets/original.bin", new byte[]{99, 3, 8, -1, 16});
+            }
+            assertTrue("Edit-only verifier cannot detect unrelated corruption",
+                RebuildVerifier.verify(rebuilt, plan.snapshot()).contains("1 alteração"));
+            try {
+                RebuildVerifier.verifyAgainstOriginal(original, rebuilt, plan.snapshot());
+                fail("The untouched binary must match its original SHA-256");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("não editado"));
+            }
+        } finally {
+            original.delete();
+            rebuilt.delete();
+        }
+    }
+
+    @Test public void comparisonDetectsUnexpectedNewEntries() throws Exception {
+        File original = file(".apk");
+        File rebuilt = file(".apk");
+        try {
+            fixture(original, false);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"message\":\"novo\"}");
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(rebuilt.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("binary manifest placeholder"));
+                add(out, "classes.dex", new byte[]{100, 101, 120, 10, 0, 0, 0});
+                add(out, "assets/config.json", utf8("{\"message\":\"novo\"}"));
+                add(out, "assets/original.bin", new byte[]{0, 3, 8, -1, 16});
+                add(out, "assets/injected.bin", new byte[]{1, 2});
+            }
+            try {
+                RebuildVerifier.verifyAgainstOriginal(original, rebuilt, plan.snapshot());
+                fail("A new file outside the edit plan must be rejected");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("inesperado"));
+            }
+        } finally {
+            original.delete();
+            rebuilt.delete();
+        }
+    }
+
+    @Test public void sourceHashCheckRejectsUnexpectedOriginalMutation() throws Exception {
+        File original = file(".apk");
+        try {
+            fixture(original, false);
+            String checksum = ApkIntegrity.sha256(original);
+            assertEquals(64, checksum.length());
+            ApkIntegrity.confirmExpected(original, checksum);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(original, true)) {
+                out.write(0x55);
+            }
+            try {
+                ApkIntegrity.confirmExpected(original, checksum);
+                fail("A changed source must be detected before export");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("não confere"));
+            }
+        } finally {
+            original.delete();
         }
     }
 
