@@ -50,7 +50,7 @@ public final class P7HomeOverviewInstrumentedTest {
                     assertFalse(contains(panel, "Nenhum projeto aberto"));
                     panel.update(null, 0);
                     assertTrue(contains(panel, "Nenhum projeto aberto"));
-                    assertTrue(contains(panel, "Pendente"));
+                    assertTrue(contains(panel, "—"));
                 } catch (Exception error) {
                     throw new AssertionError(error);
                 }
