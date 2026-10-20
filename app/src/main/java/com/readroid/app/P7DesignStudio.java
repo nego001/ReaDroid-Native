@@ -17,6 +17,7 @@ public final class P7DesignStudio {
     private final Button[] actions;
     private int activeTab = 0;
     private final LinearLayout body;
+    private final TextView[] tabViews=new TextView[4];
 
     private int dp(int n) { return NegrescoTheme.dp(a,n); }
     private TextView label(String text,int size,int color,boolean bold) {
@@ -60,6 +61,7 @@ public final class P7DesignStudio {
             tab.setPadding(dp(10),0,dp(10),0);
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(44));
             p.rightMargin=dp(5);tabs.addView(tab,p);
+            tabViews[i]=tab;
             tab.setOnClickListener(v->{activeTab=index;render();});
             tab.setTag(index);
         }
@@ -109,6 +111,13 @@ public final class P7DesignStudio {
         p.bottomMargin=dp(8);body.addView(button,p);
     }
     private void render(){
+        for(int i=0;i<tabViews.length;i++){
+            if(tabViews[i]==null)continue;
+            boolean selected=i==activeTab;
+            tabViews[i].setBackground(background(selected));
+            tabViews[i].setTextColor(selected?NegrescoTheme.ACCENT:NegrescoTheme.TEXT);
+            tabViews[i].setSelected(selected);
+        }
         body.removeAllViews();
         if(activeTab==0){
             heading("Previews de Temas");startCards();
