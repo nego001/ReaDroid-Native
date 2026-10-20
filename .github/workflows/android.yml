@@ -1,13 +1,20 @@
 name: Android APK
+# Installable APK artifacts are created only for an explicitly approved
+# major milestone. Pull requests continue using Source checks and P7 emulator
+# testing, which build internally without publishing a downloadable installer.
 on:
-  push:
-    branches: [main, feature/v3-personalizacao, feature/ota-seguro, feature/v3-design-studio]
-  pull_request:
   workflow_dispatch:
+    inputs:
+      major_update_approved:
+        description: 'Confirmar: esta entrega é uma atualização grande e aprovada para gerar APK?'
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   build:
+    if: ${{ inputs.major_update_approved == true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -50,10 +57,8 @@ jobs:
           "$TOOLS/zipalign" -c -p 4 "$APK"
           sha256sum "$APK" | tee apk-sha256.txt
       - name: Build separate QA APK
-        if: github.ref == 'refs/heads/feature/v3-design-studio' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-'))
         run: gradle --stacktrace --no-daemon :app:assembleQa
       - name: Verify QA identity and signing
-        if: github.ref == 'refs/heads/feature/v3-design-studio' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-'))
         shell: bash
         run: |
           set -euo pipefail
@@ -68,21 +73,11 @@ jobs:
           grep -q "application-label:'NegrecoDroid V3 Teste'" qa-badging.txt
           sha256sum "$APK" | tee qa-apk-sha256.txt
       - name: Upload separate QA APK
-        if: github.ref == 'refs/heads/feature/v3-design-studio' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-'))
         uses: actions/upload-artifact@v4
         with:
-          name: NegrecoDroid-P7-v3-preview12-QA
+          name: NegrecoDroid-QA-Major-Update-${{ github.run_number }}
           path: |
             app/build/outputs/apk/qa/app-qa.apk
             qa-apk-sha256.txt
             qa-badging.txt
-          if-no-files-found: error
-      - name: Upload APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReaDroid-Native-debug
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            apk-sha256.txt
           if-no-files-found: error
