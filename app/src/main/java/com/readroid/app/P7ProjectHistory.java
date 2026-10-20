@@ -133,6 +133,19 @@ public final class P7ProjectHistory {
         }
     }
 
+    /** Remove only one recent reference; leave the original APK untouched. */
+    public static boolean forget(Context context, Uri uri) {
+        if (!safeUri(uri)) return false;
+        List<Entry> items = new ArrayList<>(list(context));
+        if (!items.removeIf(e -> uri.equals(e.uri))) return false;
+        try {
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY, encode(items)).commit();
+        } catch (Exception invalid) {
+            return false;
+        }
+    }
+
     public static boolean hasPermission(Context context, Uri uri) {
         return safeUri(uri) && authorized(context).contains(uri.toString());
     }
