@@ -100,17 +100,17 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull(back);
                     assertEquals("Up button should not occupy root screen", View.GONE,
                         back.getVisibility());
-                    assertNotNull(findPrefix(root, "▸  lib/"));
+                    assertNotNull(byDescription(root, "Abrir pasta lib/"));
                     assertNotNull("Screenshot must have a Smali chip", find(root, "Smali"));
                     assertNotNull("Screenshot must have an image chip", find(root, "Imagens"));
                     TextView chip = find(root, "XML");
                     assertNotNull("Reference XML filter chip is missing", chip);
                     assertTrue(chip.performClick());
                     assertNull("XML filter should hide libs",
-                        findPrefix(root, "▸  lib/"));
+                        byDescription(root, "Abrir pasta lib/"));
                     assertNull("XML filter should hide assets",
-                        findPrefix(root, "▸  assets/"));
-                    TextView folder = findPrefix(root, "▸  res/");
+                        byDescription(root, "Abrir pasta assets/"));
+                    View folder = byDescription(root, "Abrir pasta res/");
                     assertNotNull(folder);
                     assertTrue(folder.performClick());
                     assertEquals(View.VISIBLE, back.getVisibility());
@@ -121,18 +121,21 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull(rootCrumb);
                     assertTrue(rootCrumb.performClick());
                     assertEquals("", explorer.snapshotBrowseState().folder);
-                    assertNotNull(findPrefix(root, "▸  res/"));
+                    assertNotNull(byDescription(root, "Abrir pasta res/"));
                     // The XML filter may show compiled Android XML, which is
                     // not a supported text edit. Use a known editable TXT instead.
                     TextView all = find(root, "Todos");
                     assertNotNull(all);
                     assertTrue(all.performClick());
-                    assertNotNull(findPrefix(root, "▸  assets/"));
+                    assertNotNull(byDescription(root, "Abrir pasta assets/"));
                     explorer.getEditPlan().addTextReplacement("assets/a.txt", "edited");
                     explorer.refresh();
                     assertNotNull(find(root, "1 alteração pendente"));
-                    assertTrue(findPrefix(root, "▸  assets/").performClick());
-                    assertNotNull(findPrefix(root, "●  a.txt"));
+                    assertTrue(byDescription(root, "Abrir pasta assets/").performClick());
+                    assertNotNull(byDescription(root, "Abrir arquivo a.txt, alterado"));
+                    View options = byDescription(root, "Opções de a.txt");
+                    assertNotNull("File row must offer native three-dot options", options);
+                    assertTrue(options.isClickable());
                 } catch (Exception failure) {
                     throw new AssertionError(failure);
                 }
