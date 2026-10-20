@@ -8,6 +8,7 @@ import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
@@ -43,6 +44,18 @@ public final class P7ExplorerChromeInstrumentedTest {
         return null;
     }
 
+    private static View byDescription(View node, String expected) {
+        if (expected.equals(node.getContentDescription())) return node;
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = byDescription(group.getChildAt(i), expected);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     @Test public void projectCardChipsAndBreadcrumbsRespectRealBrowserState() throws Exception {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
@@ -52,6 +65,23 @@ public final class P7ExplorerChromeInstrumentedTest {
                     root.setOrientation(LinearLayout.VERTICAL);
                     activity.setContentView(root);
                     ExplorerView explorer = new ExplorerView(activity, root);
+                    AtomicInteger exited = new AtomicInteger();
+                    AtomicInteger opened = new AtomicInteger();
+                    AtomicInteger plans = new AtomicInteger();
+                    explorer.setNavigationActions(exited::incrementAndGet,
+                        opened::incrementAndGet, plans::incrementAndGet);
+                    View backButton = byDescription(root, "Voltar no Explorador");
+                    View menu = byDescription(root, "Mais opções do Explorador");
+                    View edits = byDescription(root, "Abrir plano de edição");
+                    View advanced = byDescription(root, "Abrir filtros avançados");
+                    assertNotNull("Reference back button missing", backButton);
+                    assertNotNull("Reference overflow menu missing", menu);
+                    assertNotNull("Reference edit plan chip missing", edits);
+                    assertNotNull("Advanced filters must share the chip row", advanced);
+                    assertTrue(backButton.performClick());
+                    assertEquals(1, exited.get());
+                    assertTrue(edits.performClick());
+                    assertEquals(1, plans.get());
                     JSONArray entries = new JSONArray()
                         .put(new JSONObject().put("path", "assets/a.txt")
                             .put("sizeBytes", 9).put("category", "Assets"))
