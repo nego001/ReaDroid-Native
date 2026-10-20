@@ -51,6 +51,13 @@ public final class P7NavigationInstrumentedTest {
                 assertTrue(hasText(root,"Previews de Temas"));
                 assertTrue(hasText(root,"Opções de Layout"));
                 assertTrue(hasText(root,"Presets de Aparência"));
+                View dark = byDescription(root,"Negreco Blue, prévia selecionada");
+                View matrix = byDescription(root,"Matrix Green, selecionar prévia");
+                assertNotNull(dark);
+                assertNotNull(matrix);
+                assertTrue(matrix.performClick());
+                assertNotNull(byDescription(root,"Matrix Green, prévia selecionada"));
+                assertNotNull(byDescription(root,"Negreco Blue, selecionar prévia"));
                 assertNotNull(byDescription(root,"Abrir seção Início"));
             });
         }
