@@ -279,3 +279,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - Artefatos previstos: `results.json` + `summary.md` + `report.html` + JUnit XML quando aplicável. Relatar versão/commit, duração, ambiente, métricas, hashes e causas de erro; nunca registrar senhas/chaves/dados privados em claro.
 - Homologação final depende de **testes reais Android/Samsung**, integridade e exportação, e posteriormente builds desktop, sem tratar testes de política com arquivos esparsos como prova de processamento real de 500 GB.
 - **Script final ainda não implementado.** Testes automatizados existentes continuam desde agora a cada fase; o script final agrega e audita a cobertura completa, não substitui testes incrementais.
+
+## Índice de arquivos ZIP em disco: P1 experimental (19/10/2026)
+
+- Novo `ApkDiskIndex` cria um **índice SQLite em arquivo privado**, sem produzir um `JSONArray` de todos os caminhos. Insere metadados durante a enumeração, cria pastas implícitas, separa rótulos, caminho, categoria, tamanho e origem explícita; consultas por pasta, busca ou categoria retornam **no máximo 120 itens**, com contagem de resultados.
+- Impõe limite de entradas 150 mil, tamanho de cada entrada 1 GiB e total descompactado 2 GiB, rejeita traversal, profundidade excessiva, nomes enormes e índice existente, aplica cota SQLite de ~128 MiB e apaga o banco incompleto se houver falha/cancelamento. Metadados de tamanho/data da origem evitam reutilizar índices obviamente obsoletos, mas não substituem hash de integridade.
+- Testes instrumentados com ZIPs sintéticos verificam **301 arquivos em três páginas**, busca por nome, pastas implícitas/explicitas, rejeição de traversal, paginação excessiva, arquivo modificado e rollback de banco incompleto.
+- **Ainda não conectado à interface atual**, que continua usando o explorador legado em memória: é uma etapa isolada de preparação. Não certifica ZIP64 multi-GB, não altera importação 1 GiB nem possibilita análise de 500 GB. Próxima fase: conectar o índice ao fluxo de importação, ao `ExplorerView` e gerenciar ciclo de vida/limpeza com testes de regressão.
