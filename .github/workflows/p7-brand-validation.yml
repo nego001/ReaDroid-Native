@@ -6,6 +6,7 @@ on:
       - 'app/src/main/**'
       - 'app/src/qa/**'
       - 'app/src/androidTest/**'
+      - 'tools/p7_explorer_smoke.py'
       - '.github/workflows/p7-brand-validation.yml'
   workflow_dispatch:
 permissions:
@@ -56,6 +57,8 @@ jobs:
             sleep 2
             adb exec-out screencap -p > p7-brand-android-${{ matrix.api }}.png
             test -s p7-brand-android-${{ matrix.api }}.png
+            python3 tools/p7_explorer_smoke.py
+            test -s p7-explorer-android-${{ matrix.api }}.png
       - name: Upload launch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,6 +66,7 @@ jobs:
           name: p7-brand-android-${{ matrix.api }}
           path: |
             p7-brand-android-*.png
+            p7-explorer-android-*.png
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
           if-no-files-found: warn
