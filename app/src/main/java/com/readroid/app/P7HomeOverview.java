@@ -9,7 +9,6 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
-import android.widget.ImageView;
 import android.widget.TextView;
 import java.text.DateFormat;
 import java.util.ArrayList;
@@ -164,7 +163,8 @@ public final class P7HomeOverview extends LinearLayout {
         return name == null || name.trim().isEmpty() ? "APK atual" : name;
     }
 
-    private void addRow(String name, String info, String date, Uri document, Runnable action) {
+    private void addRow(String name, String info, String date, Uri document,
+                        boolean recorded, Runnable action) {
         LinearLayout line = new LinearLayout(activity);
         line.setGravity(Gravity.CENTER_VERTICAL);
         line.setPadding(dp(10), dp(8), dp(8), dp(8));
@@ -203,10 +203,51 @@ public final class P7HomeOverview extends LinearLayout {
             dateParams.leftMargin = dp(4);
             line.addView(when, dateParams);
         }
+        if (recorded && document != null) {
+            TextView overflow = text("⋮", 21, NegrescoTheme.MUTED, true);
+            overflow.setGravity(Gravity.CENTER);
+            overflow.setMinWidth(dp(40));
+            overflow.setMinHeight(dp(40));
+            overflow.setContentDescription("Mais opções de " + name);
+            overflow.setFocusable(true);
+            overflow.setClickable(true);
+            overflow.setOnClickListener(v -> showRecentOptions(name, document, action));
+            line.addView(overflow, new LayoutParams(dp(40), dp(40)));
+        }
         line.setContentDescription("Abrir projeto " + name + ", " + info);
         line.setClickable(true);
         line.setFocusable(true);
         line.setOnClickListener(v -> action.run());
+    }
+
+    private void showRecentOptions(String name, Uri uri, Runnable open) {
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle(name)
+            .setItems(new String[]{"Abrir projeto", "Remover do histórico"},
+                (dialog, item) -> {
+                    if (item == 0) {
+                        open.run();
+                    } else {
+                        new android.app.AlertDialog.Builder(activity)
+                            .setTitle("Remover do histórico?")
+                            .setMessage("Apenas esta referência será removida. " +
+                                "O APK original não será apagado.")
+                            .setNegativeButton("Cancelar", null)
+                            .setPositiveButton("Remover", (confirm, which) -> {
+                                if (P7ProjectHistory.forget(activity, uri)) {
+                                    List<P7ProjectHistory.Entry> updated =
+                                        P7ProjectHistory.list(activity);
+                                    P7RecentAppIcons.prune(activity, updated);
+                                    setRecentProjects(updated, currentUri);
+                                } else {
+                                    new android.app.AlertDialog.Builder(activity)
+                                        .setMessage("Não foi possível remover este item.")
+                                        .setPositiveButton("OK", null).show();
+                                }
+                            }).show();
+                    }
+                })
+            .setNegativeButton("Fechar", null).show();
     }
 
     private void renderHistory() {
@@ -223,7 +264,7 @@ public final class P7HomeOverview extends LinearLayout {
         }
         if (active && !includedCurrent) {
             addRow(currentPackage(), "Projeto aberto nesta sessão", "",
-                currentUri, () ->
+                currentUri, false, () ->
                 openFiles.onClick(this));
             shown++;
             total++;
@@ -232,7 +273,7 @@ public final class P7HomeOverview extends LinearLayout {
             if (shown >= 3) break;
             String date = entry.openedAt <= 0 ? "" :
                 DateFormat.getDateInstance(DateFormat.SHORT).format(new Date(entry.openedAt));
-            addRow(entry.name, entry.packageName, date, entry.uri, () -> {
+            addRow(entry.name, entry.packageName, date, entry.uri, true, () -> {
                 if (currentReport != null && currentUri != null
                         && currentUri.equals(entry.uri)) {
                     openFiles.onClick(this);
