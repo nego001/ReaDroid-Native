@@ -11,6 +11,11 @@ on:
       - 'tools/p7_home_smoke.py'
       - '.github/workflows/p7-brand-validation.yml'
   workflow_dispatch:
+# A new PR commit supersedes old emulator runs. Don't burn GitHub Actions
+# minutes testing abandoned in-flight revisions.
+concurrency:
+  group: p7-brand-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
