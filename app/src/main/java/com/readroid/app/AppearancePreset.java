@@ -21,7 +21,7 @@ public final class AppearancePreset {
         o.put("compact", p.getBoolean("compact", false));
         o.put("nav_labels", p.getBoolean("nav_labels", true));
         o.put("favorite_tab", p.getInt("favorite_tab", 1));
-        o.put("display_name", p.getString("display_name", "NEGRESCODROID"));
+        o.put("display_name", p.getString("display_name", "NegrecoDroid"));
         o.put("display_subtitle", p.getString("display_subtitle", "APK ENGINEERING STUDIO"));
         return o.toString(2);
     }
