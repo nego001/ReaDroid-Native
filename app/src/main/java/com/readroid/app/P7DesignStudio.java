@@ -84,7 +84,9 @@ public final class P7DesignStudio {
         card.addView(preview,new LinearLayout.LayoutParams(-1,dp(95)));
         TextView title=label(name,12,NegrescoTheme.TEXT,true);card.addView(title);
         TextView detail=label(subtitle,10,NegrescoTheme.MUTED,false);card.addView(detail);
-        card.setClickable(true);card.setFocusable(true);card.setContentDescription(name);
+        card.setClickable(true);card.setFocusable(true);
+        card.setSelected(selected);
+        card.setContentDescription(name + (selected ? ", prévia selecionada" : ", selecionar prévia"));
         card.setOnClickListener(v->click.run());
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(116),-2);
         p.rightMargin=dp(8);
