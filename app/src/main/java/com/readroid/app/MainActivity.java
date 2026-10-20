@@ -166,7 +166,8 @@ public class MainActivity extends Activity {
         title.setMaxLines(2);
         brandText.addView(title);
         TextView brandSubtitleView = new TextView(this);
-        brandSubtitleView.setText("ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS");
+        brandSubtitleView.setText("APK ENGINEERING STUDIO".equals(displaySubtitle)
+            ? "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS" : displaySubtitle);
         brandSubtitleView.setTextColor(NegrescoTheme.MUTED);
         brandSubtitleView.setTextSize(8.5f * NegrescoTheme.FONT_SCALE);
         brandSubtitleView.setLetterSpacing(0.13f);
