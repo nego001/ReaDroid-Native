@@ -39,13 +39,18 @@ public final class P7DesignStudio {
                 try {
                     P7ThemeCatalog.apply(a, selectedTheme);
                 } catch (Exception error) {
+                    restoreCurrentTheme();
+                    render();
                     new android.app.AlertDialog.Builder(a)
                         .setTitle("Não foi possível aplicar")
                         .setMessage(error.getMessage())
                         .setPositiveButton("OK", null).show();
                 }
             })
-            .setNegativeButton("Cancelar", null).show();
+            .setNegativeButton("Cancelar", (dialog, which) -> {
+                restoreCurrentTheme();
+                render();
+            }).show();
     }
     private int selectedLayout = 0;
     private int selectedPreset = 0;
@@ -247,9 +252,16 @@ public final class P7DesignStudio {
             .setMessage("O visual será atualizado sem modificar o APK aberto ou o plano de edições.")
             .setPositiveButton("Aplicar", (d, w) -> {
                 try { P7VisualCatalog.applyLayout(a, choice); }
-                catch (RuntimeException error) { showError(error); }
+                catch (RuntimeException error) {
+                    selectedLayout = P7VisualCatalog.currentLayout(a);
+                    render();
+                    showError(error);
+                }
             })
-            .setNegativeButton("Cancelar", null).show();
+            .setNegativeButton("Cancelar", (dialog, which) -> {
+                selectedLayout = P7VisualCatalog.currentLayout(a);
+                render();
+            }).show();
     }
 
     private void confirmPreset() {
@@ -267,9 +279,16 @@ public final class P7DesignStudio {
                 "O aplicativo reiniciará mantendo o projeto atual.")
             .setPositiveButton("Aplicar", (d, w) -> {
                 try { P7VisualCatalog.applyPreset(a, choice); }
-                catch (RuntimeException error) { showError(error); }
+                catch (RuntimeException error) {
+                    selectedPreset = P7VisualCatalog.currentPreset(a);
+                    render();
+                    showError(error);
+                }
             })
-            .setNegativeButton("Cancelar", null).show();
+            .setNegativeButton("Cancelar", (dialog, which) -> {
+                selectedPreset = P7VisualCatalog.currentPreset(a);
+                render();
+            }).show();
     }
 
     private void showError(RuntimeException error) {
@@ -333,7 +352,11 @@ public final class P7DesignStudio {
             for(int i=0;i<themes.length;i++){
                 final int index=i;
                 tile(themes[i],subtitles[i],colors[i],selectedTheme==i,
-                    0, ()->{selectedTheme=index;render();});
+                    0, () -> {
+                        selectedTheme = index;
+                        render();
+                        applySelectedTheme();
+                    });
             }
             sectionHeader("Opções de Layout", () -> showCatalogDialog(1));
             startCards();
@@ -342,7 +365,11 @@ public final class P7DesignStudio {
             for(int i=0;i<layouts.length;i++){
                 final int index=i;
                 tile(layouts[i],"",layoutColors[i],selectedLayout==i,
-                    1, ()->{selectedLayout=index;render();});
+                    1, () -> {
+                        selectedLayout = index;
+                        render();
+                        confirmLayout();
+                    });
             }
             creatorRow();
             sectionHeader("Presets de Aparência", () -> showCatalogDialog(2));
@@ -352,7 +379,11 @@ public final class P7DesignStudio {
             for(int i=0;i<presets.length;i++){
                 final int index=i;
                 tile(presets[i],"",presetColors[i],selectedPreset==i,
-                    2, ()->{selectedPreset=index;render();});
+                    2, () -> {
+                        selectedPreset = index;
+                        render();
+                        confirmPreset();
+                    });
             }
             // The visible "Ver todos" control opens a real preset chooser.
         }else if(activeTab==1){
@@ -362,7 +393,11 @@ public final class P7DesignStudio {
             for(int i=0;i<modes.length;i++){
                 final int choice=i;
                 tile(modes[i], "Aplicável", 0xff29acff,
-                    selectedLayout==i, 1, ()->{selectedLayout=choice;render();});
+                    selectedLayout==i, 1, () -> {
+                        selectedLayout = choice;
+                        render();
+                        confirmLayout();
+                    });
             }
             actionCard("Aplicar layout selecionado",
                 "Salvar a mudança da interface", -2);
