@@ -8,6 +8,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import org.json.JSONArray;
@@ -20,6 +21,11 @@ import java.util.Locale;
 public final class ExplorerView {
     private final Activity activity;
     private final LinearLayout list;
+    private final P7ExplorerChrome chrome;
+    private final LinearLayout quickFilters;
+    private static final String[] QUICK_CATEGORIES = {
+        "Todos", "Código DEX", "Recursos", "Assets", "Alterados"
+    };
     private final TextView breadcrumb;
     private final TextView countLabel;
     private final Button upButton;
@@ -96,15 +102,14 @@ public final class ExplorerView {
 
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
-        TextView heading = new TextView(activity);
-        heading.setText("CONTEÚDO DO PACOTE");
-        heading.setTextColor(NegrescoTheme.ACCENT);
-        heading.setTextSize(12 * NegrescoTheme.FONT_SCALE);
-        heading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-        heading.setLetterSpacing(0.08f);
-        heading.setPadding(0, NegrescoTheme.dp(activity, 4),
-            0, NegrescoTheme.dp(activity, 12));
-        parent.addView(heading);
+        chrome = new P7ExplorerChrome(activity, parent, destination -> {
+            folder = destination;
+            pageLimit = 120;
+            indexPageOffset = 0;
+            if (!search.getText().toString().isEmpty())
+                search.setText("");
+            render();
+        });
         search = new EditText(activity);
         search.setSingleLine(true);
         boolean narrow = activity.getResources().getConfiguration().screenWidthDp <= 360;
@@ -115,6 +120,14 @@ public final class ExplorerView {
         search.setBackground(NegrescoTheme.panel(activity));
         search.setPadding(NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12), NegrescoTheme.dp(activity, 14), NegrescoTheme.dp(activity, 12));
         parent.addView(search);
+        HorizontalScrollView quickScroller = new HorizontalScrollView(activity);
+        quickScroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(-1, -2);
+        filterParams.topMargin = NegrescoTheme.dp(activity, 8);
+        parent.addView(quickScroller, filterParams);
+        quickFilters = new LinearLayout(activity);
+        quickFilters.setOrientation(LinearLayout.HORIZONTAL);
+        quickScroller.addView(quickFilters);
         filterButton = NegrescoTheme.action(activity, "Filtro: Todos  ▾", false);
         parent.addView(filterButton);
         filterButton.setOnClickListener(v -> {
@@ -172,6 +185,7 @@ public final class ExplorerView {
         this.apkFile = apkFile;
         this.indexFile = null;
         indexPageOffset = 0;
+        chrome.setProject(null, -1);
         files.clear();
         folder = "";
         activeCategory = "Todos";
@@ -194,7 +208,56 @@ public final class ExplorerView {
         render();
     }
 
+    /** Called by MainActivity only when the real report has been accepted. */
+    public void setProjectSummary(String packageName, long sourceSizeBytes) {
+        chrome.setProject(packageName, sourceSizeBytes);
+        chrome.setEditCount(editPlan.size());
+    }
+
+    private void refreshQuickFilters() {
+        quickFilters.removeAllViews();
+        for (String name : QUICK_CATEGORIES) {
+            final boolean selected = name.equals(activeCategory);
+            TextView chip = new TextView(activity);
+            chip.setText(name);
+            chip.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+            chip.setTextColor(selected ? NegrescoTheme.ON_ACCENT : NegrescoTheme.TEXT);
+            chip.setGravity(android.view.Gravity.CENTER);
+            chip.setMinHeight(NegrescoTheme.dp(activity, 44));
+            chip.setPadding(NegrescoTheme.dp(activity, 14),
+                NegrescoTheme.dp(activity, 8),
+                NegrescoTheme.dp(activity, 14),
+                NegrescoTheme.dp(activity, 8));
+            android.graphics.drawable.GradientDrawable bg =
+                new android.graphics.drawable.GradientDrawable();
+            bg.setColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.SURFACE);
+            bg.setStroke(NegrescoTheme.dp(activity, 1),
+                selected ? NegrescoTheme.ACCENT : NegrescoTheme.BORDER);
+            bg.setCornerRadius(NegrescoTheme.dp(activity, 14));
+            chip.setBackground(bg);
+            chip.setContentDescription("Filtrar por " + name
+                + (selected ? ", selecionado" : ""));
+            chip.setClickable(true);
+            chip.setFocusable(true);
+            chip.setOnClickListener(v -> {
+                if (name.equals(activeCategory)) return;
+                activeCategory = name;
+                pageLimit = 120;
+                indexPageOffset = 0;
+                filterButton.setText("Filtro: " + activeCategory + "  ▾");
+                render();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = NegrescoTheme.dp(activity, 7);
+            quickFilters.addView(chip, lp);
+        }
+    }
+
     private void render() {
+        String queryText = search.getText().toString().trim();
+        chrome.updateBreadcrumb(folder, !queryText.isEmpty());
+        chrome.setEditCount(editPlan.size());
+        refreshQuickFilters();
         if (indexFile != null && "Todos".equals(activeCategory)) {
             if (renderIndexPage()) return;
             indexFile = null; // Fall back on a stale or unavailable index.
