@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- P7 first-pass vector. Refine against the approved original artwork. -->
+    <!-- Six-sided protective outline: N + electronic circuit nodes. -->
+    <path android:fillColor="#06172B"
+        android:pathData="M54,11 L91,30 L91,72 L54,99 L17,72 L17,30 Z"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#158EFF" android:strokeWidth="4.5"
+        android:strokeLineJoin="round"
+        android:pathData="M54,11 L91,30 L91,72 L54,99 L17,72 L17,30 Z"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#9EDAFF" android:strokeWidth="1.4"
+        android:pathData="M54,17 L85,34"/>
+    <!-- Angular N monogram: blue ascending ribbon and silver upright. -->
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#D9E9FF"
+        android:strokeWidth="10"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:pathData="M32,72 L32,35"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#129EF8"
+        android:strokeWidth="11"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:pathData="M35,38 L72,72"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#63D8FF"
+        android:strokeWidth="10"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:pathData="M76,72 L76,38"/>
+    <!-- Circuit connectors kept separate from the monogram for legibility. -->
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#56D9FF" android:strokeWidth="2.4"
+        android:pathData="M50,40 L50,28 M63,53 L63,35 M49,75 L49,87"/>
+    <path android:fillColor="#0C2754"
+        android:strokeColor="#8BE9FF" android:strokeWidth="2.8"
+        android:pathData="M50,22 a5,5 0,1 1,0 10 a5,5 0,1 1,0 -10"/>
+    <path android:fillColor="#0C2754"
+        android:strokeColor="#8BE9FF" android:strokeWidth="2.8"
+        android:pathData="M63,29 a5,5 0,1 1,0 10 a5,5 0,1 1,0 -10"/>
+    <path android:fillColor="#0C2754"
+        android:strokeColor="#8BE9FF" android:strokeWidth="2.8"
+        android:pathData="M49,83 a5,5 0,1 1,0 10 a5,5 0,1 1,0 -10"/>
+</vector>
