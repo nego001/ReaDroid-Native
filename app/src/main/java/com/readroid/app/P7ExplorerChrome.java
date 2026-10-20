@@ -8,6 +8,7 @@ import android.view.View;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ImageView;
 
 /**
  * P7.3 native visual chrome. APK inspection, SQLite and edits stay in ExplorerView.
@@ -22,6 +23,9 @@ public final class P7ExplorerChrome extends LinearLayout {
     private final TextView projectName;
     private final TextView projectDescription;
     private final TextView editCounter;
+    private Runnable onExit;
+    private Runnable onOpenApk;
+    private String currentFolder = "";
 
     private int dp(int v) { return NegrescoTheme.dp(activity, v); }
 
@@ -46,9 +50,22 @@ public final class P7ExplorerChrome extends LinearLayout {
         titleRow.setOrientation(HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         addView(titleRow);
-        NavGlyph icon = new NavGlyph(activity, 1);
-        icon.setSelectedState(true);
-        titleRow.addView(icon, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        TextView back = text("‹", 30, NegrescoTheme.TEXT, false);
+        back.setGravity(Gravity.CENTER);
+        back.setMinWidth(dp(38));
+        back.setMinHeight(dp(44));
+        back.setContentDescription("Voltar no Explorador");
+        back.setClickable(true);
+        back.setFocusable(true);
+        back.setOnClickListener(v -> {
+            if (!currentFolder.isEmpty()) {
+                String parentFolder = currentFolder.substring(0, currentFolder.length() - 1);
+                int previous = parentFolder.lastIndexOf('/');
+                navigator.navigate(previous < 0 ? "" : parentFolder.substring(0, previous + 1));
+            } else if (onExit != null) onExit.run();
+            else navigator.navigate("");
+        });
+        titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(44)));
         LinearLayout heading = new LinearLayout(activity);
         heading.setOrientation(VERTICAL);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1);
@@ -57,38 +74,80 @@ public final class P7ExplorerChrome extends LinearLayout {
         heading.addView(text("Explorador de Arquivos", 19, NegrescoTheme.TEXT, true));
         heading.addView(text("Navegue e edite o conteúdo do APK", 11,
             NegrescoTheme.MUTED, false));
+        TextView overflow = text("⋮", 24, NegrescoTheme.TEXT, true);
+        overflow.setGravity(Gravity.CENTER);
+        overflow.setMinWidth(dp(40));
+        overflow.setMinHeight(dp(44));
+        overflow.setContentDescription("Mais opções do Explorador");
+        overflow.setClickable(true);
+        overflow.setFocusable(true);
+        overflow.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
+            .setTitle("Explorador de Arquivos")
+            .setItems(new String[]{"Abrir outro APK", "Voltar ao início"}, (dialog, which) -> {
+                if (which == 0 && onOpenApk != null) onOpenApk.run();
+                else if (which == 1 && onExit != null) onExit.run();
+            })
+            .setNegativeButton("Fechar", null).show());
+        titleRow.addView(overflow,
+            new LinearLayout.LayoutParams(dp(40), dp(44)));
 
         LinearLayout projectCard = new LinearLayout(activity);
-        projectCard.setOrientation(VERTICAL);
-        projectCard.setPadding(dp(14), dp(12), dp(14), dp(12));
-        projectCard.setBackground(NegrescoTheme.studioCard(activity, true));
+        projectCard.setOrientation(HORIZONTAL);
+        projectCard.setGravity(Gravity.CENTER_VERTICAL);
+        projectCard.setPadding(dp(10), dp(9), dp(10), dp(9));
+        projectCard.setBackground(NegrescoTheme.studioCard(activity, false));
         LinearLayout.LayoutParams projectParams = new LinearLayout.LayoutParams(-1, -2);
-        projectParams.topMargin = dp(12);
+        projectParams.topMargin = dp(9);
         addView(projectCard, projectParams);
-        projectName = text("Nenhum APK selecionado", 15, NegrescoTheme.TEXT, true);
-        projectName.setMaxLines(2);
+
+        ImageView apkIcon = new ImageView(activity);
+        apkIcon.setImageResource(R.drawable.ic_p7_file);
+        apkIcon.setContentDescription("Ícone do APK selecionado");
+        projectCard.addView(apkIcon,
+            new LinearLayout.LayoutParams(dp(35), dp(35)));
+        LinearLayout detail = new LinearLayout(activity);
+        detail.setOrientation(VERTICAL);
+        LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
+            0, -2, 1);
+        detailParams.leftMargin = dp(9);
+        detailParams.rightMargin = dp(6);
+        projectCard.addView(detail, detailParams);
+        projectName = text("Nenhum APK selecionado", 13, NegrescoTheme.TEXT, true);
+        projectName.setMaxLines(1);
         projectName.setEllipsize(TextUtils.TruncateAt.END);
-        projectCard.addView(projectName);
-        projectDescription = text("Abra um APK para explorar os arquivos.", 11,
+        detail.addView(projectName);
+        projectDescription = text("Abra um APK para explorar os arquivos.", 10,
             NegrescoTheme.MUTED, false);
-        projectCard.addView(projectDescription);
-        editCounter = text("0 alterações pendentes", 11, NegrescoTheme.ACCENT, true);
-        LinearLayout.LayoutParams edits = new LinearLayout.LayoutParams(-2, -2);
-        edits.topMargin = dp(8);
-        projectCard.addView(editCounter, edits);
+        projectDescription.setMaxLines(1);
+        projectDescription.setEllipsize(TextUtils.TruncateAt.END);
+        detail.addView(projectDescription);
+
+        editCounter = text("0 alterações pendentes", 10, NegrescoTheme.ACCENT, true);
+        editCounter.setGravity(Gravity.CENTER);
+        editCounter.setBackground(NegrescoTheme.studioCard(activity, true));
+        editCounter.setMaxLines(2);
+        editCounter.setContentDescription("Plano de edição");
+        editCounter.setPadding(dp(7), dp(7), dp(7), dp(7));
+        projectCard.addView(editCounter,
+            new LinearLayout.LayoutParams(dp(113), -2));
 
         HorizontalScrollView breadcrumbs = new HorizontalScrollView(activity);
         breadcrumbs.setHorizontalScrollBarEnabled(false);
         breadcrumbs.setFillViewport(false);
         LinearLayout.LayoutParams crumbParams = new LinearLayout.LayoutParams(-1, -2);
-        crumbParams.topMargin = dp(12);
-        crumbParams.bottomMargin = dp(7);
+        crumbParams.topMargin = dp(5);
+        crumbParams.bottomMargin = dp(4);
         addView(breadcrumbs, crumbParams);
         breadcrumbItems = new LinearLayout(activity);
         breadcrumbItems.setOrientation(HORIZONTAL);
         breadcrumbItems.setGravity(Gravity.CENTER_VERTICAL);
         breadcrumbs.addView(breadcrumbItems);
         updateBreadcrumb("", false);
+    }
+
+    public void setActions(Runnable exit, Runnable openApk) {
+        onExit = exit;
+        onOpenApk = openApk;
     }
 
     public void setProject(String title, long sizeBytes) {
@@ -106,6 +165,7 @@ public final class P7ExplorerChrome extends LinearLayout {
     }
 
     public void updateBreadcrumb(String folder, boolean searching) {
+        currentFolder = folder == null ? "" : folder;
         breadcrumbItems.removeAllViews();
         crumb("APK", "", !searching && (folder == null || folder.isEmpty()));
         if (searching) {
