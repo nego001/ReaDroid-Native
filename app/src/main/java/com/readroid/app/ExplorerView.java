@@ -130,6 +130,19 @@ public final class ExplorerView {
         quickFilters.setOrientation(LinearLayout.HORIZONTAL);
         quickScroller.addView(quickFilters);
         filterButton = NegrescoTheme.action(activity, "Filtro: Todos  ▾", false);
+        // Advanced categories must remain available, but they are a secondary
+        // compact action: the five common filters live in the chip row above.
+        filterButton.setMinHeight(NegrescoTheme.dp(activity, 40));
+        filterButton.setMinimumHeight(NegrescoTheme.dp(activity, 40));
+        filterButton.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        filterButton.setPadding(NegrescoTheme.dp(activity, 12), 0,
+            NegrescoTheme.dp(activity, 12), 0);
+        LinearLayout.LayoutParams advancedParams =
+            new LinearLayout.LayoutParams(-2, NegrescoTheme.dp(activity, 42));
+        advancedParams.gravity = android.view.Gravity.END;
+        advancedParams.topMargin = NegrescoTheme.dp(activity, 3);
+        advancedParams.bottomMargin = NegrescoTheme.dp(activity, 5);
+        filterButton.setLayoutParams(advancedParams);
         parent.addView(filterButton);
         filterButton.setOnClickListener(v -> {
             new android.app.AlertDialog.Builder(activity)
@@ -270,6 +283,8 @@ public final class ExplorerView {
         // the search context line visible when querying the entire APK.
         breadcrumb.setVisibility(query.isEmpty() ? View.GONE : View.VISIBLE);
         upButton.setEnabled(!folder.isEmpty() || !query.isEmpty());
+        upButton.setVisibility(folder.isEmpty() && query.isEmpty()
+            ? View.GONE : View.VISIBLE);
         breadcrumb.setOnClickListener(v -> {
             folder = "";
             search.setText("");
@@ -321,7 +336,9 @@ public final class ExplorerView {
                 })
                 .setNegativeButton("Detalhes técnicos", (dialog, which) -> inspectEntry(path)).show());
         }
-        if (shown == 0) list.addView(item("Nenhum arquivo nesta pasta."));
+        if (shown == 0) list.addView(item(apkFile == null
+            ? "Abra um APK para explorar os arquivos."
+            : "Nenhum arquivo nesta pasta."));
         if (shown < folders.size() + visible.size()) {
             Button more = NegrescoTheme.action(activity,
                 "Carregar mais (" + Math.min(120, folders.size() + visible.size() - shown) + ")", false);
@@ -352,6 +369,8 @@ public final class ExplorerView {
                 : "Busca em todo o APK: " + query);
             breadcrumb.setVisibility(query.isEmpty() ? View.GONE : View.VISIBLE);
             upButton.setEnabled(!folder.isEmpty() || !query.isEmpty());
+            upButton.setVisibility(folder.isEmpty() && query.isEmpty()
+                ? View.GONE : View.VISIBLE);
             breadcrumb.setOnClickListener(v -> {
                 folder = ""; indexPageOffset = 0;
                 search.setText(""); render();
