@@ -17,6 +17,35 @@ public final class P7DesignStudio {
     private final Button[] actions;
     private int activeTab = 0;
     private int selectedTheme = 0;
+    private static final String[] THEME_NAMES =
+        {"Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset"};
+    private void restoreCurrentTheme() {
+        android.content.SharedPreferences prefs =
+            a.getSharedPreferences("v3_personalizacao", Activity.MODE_PRIVATE);
+        String theme = prefs.getString("theme", "oled");
+        String accent = prefs.getString("accent", "blue");
+        if ("graphite".equals(theme)) selectedTheme = 1;
+        else if ("green".equals(accent)) selectedTheme = 2;
+        else if ("orange".equals(accent)) selectedTheme = 3;
+        else selectedTheme = 0;
+    }
+    private void applySelectedTheme() {
+        new android.app.AlertDialog.Builder(a)
+            .setTitle("Aplicar " + THEME_NAMES[selectedTheme] + "?")
+            .setMessage("O tema será salvo e a interface reiniciada. "
+                + "O APK e o plano de edições serão preservados.")
+            .setPositiveButton("Aplicar", (dialog, which) -> {
+                try {
+                    P7ThemeCatalog.apply(a, selectedTheme);
+                } catch (Exception error) {
+                    new android.app.AlertDialog.Builder(a)
+                        .setTitle("Não foi possível aplicar")
+                        .setMessage(error.getMessage())
+                        .setPositiveButton("OK", null).show();
+                }
+            })
+            .setNegativeButton("Cancelar", null).show();
+    }
     private int selectedLayout = 0;
     private int selectedPreset = 0;
     private final LinearLayout body;
@@ -40,6 +69,7 @@ public final class P7DesignStudio {
     }
     public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions) {
         a=activity;root=container;actions=appearanceActions;
+        restoreCurrentTheme();
         LinearLayout header=new LinearLayout(a);
         header.setGravity(Gravity.CENTER_VERTICAL);root.addView(header);
         NavGlyph palette=new NavGlyph(a,4);palette.setSelectedState(true);
@@ -109,7 +139,10 @@ public final class P7DesignStudio {
         button.setPadding(dp(16),dp(18),dp(14),dp(18));
         button.setBackground(background(false));
         button.setMinHeight(dp(76));button.setClickable(true);button.setFocusable(true);
-        button.setOnClickListener(v->open(actionIndex));
+        button.setOnClickListener(v->{
+            if (actionIndex == -1) applySelectedTheme();
+            else open(actionIndex);
+        });
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);
         p.bottomMargin=dp(8);body.addView(button,p);
     }
@@ -137,7 +170,8 @@ public final class P7DesignStudio {
                 tile(themes[i],subtitles[i],colors[i],selectedTheme==i,
                     ()->{selectedTheme=index;render();});
             }
-            note("Seleção de prévia. Para alterar as cores reais, use Cores e tons.");
+            note("Selecione e confirme um tema para aplicar ao aplicativo.");
+            actionCard("Aplicar tema selecionado", "Salvar e atualizar toda a interface", -1);
             heading("Opções de Layout");startCards();
             String[] layouts={"Padrão","Compacto","Moderno"};
             int[] layoutColors={0xff29acff,0xff8d9cb1,0xff7acfff};
