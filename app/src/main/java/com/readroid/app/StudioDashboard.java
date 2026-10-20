@@ -273,6 +273,9 @@ public final class StudioDashboard {
             11, NegrescoTheme.MUTED, false));
 
         P7MascotView mascot = new P7MascotView(a);
+        // A card has its own elevation. Without a higher Z, Android draws
+        // the opaque card over the artist's face despite child order.
+        mascot.setElevation(dp(a, 8));
         FrameLayout.LayoutParams art = new FrameLayout.LayoutParams(
             dp(a, mascotWidth), dp(a, mascotHeight),
             Gravity.TOP | Gravity.RIGHT);
