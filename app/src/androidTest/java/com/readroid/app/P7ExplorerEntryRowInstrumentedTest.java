@@ -27,6 +27,27 @@ public final class P7ExplorerEntryRowInstrumentedTest {
         return null;
     }
 
+    @Test public void distinctIconsAreChosenFromActualFileExtensions() {
+        assertEquals(R.drawable.ic_p7_folder,
+            P7ExplorerEntryRow.iconResource("assets/", true));
+        assertEquals(R.drawable.ic_p7_image,
+            P7ExplorerEntryRow.iconResource("res/banner.webp", false));
+        assertEquals(R.drawable.ic_p7_image,
+            P7ExplorerEntryRow.iconResource("logo.PNG", false));
+        assertEquals(R.drawable.ic_p7_code,
+            P7ExplorerEntryRow.iconResource("AndroidManifest.xml", false));
+        assertEquals(R.drawable.ic_p7_code,
+            P7ExplorerEntryRow.iconResource("smali/Main.smali", false));
+        assertEquals(R.drawable.ic_p7_cube,
+            P7ExplorerEntryRow.iconResource("classes.dex", false));
+        assertEquals(R.drawable.ic_p7_cube,
+            P7ExplorerEntryRow.iconResource("lib/arm64-v8a/libx.so", false));
+        assertEquals(R.drawable.ic_p7_file,
+            P7ExplorerEntryRow.iconResource("assets/data.txt", false));
+        assertEquals(R.drawable.ic_p7_file,
+            P7ExplorerEntryRow.iconResource("../unknown", false));
+    }
+
     @Test public void folderAndFileProvideRealIconsLabelsAndSeparateActions() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
