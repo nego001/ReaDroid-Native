@@ -9,6 +9,7 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.util.Locale;
 
 /**
  * Live, accessible Explorer row matching the approved file-browser structure.
@@ -17,6 +18,26 @@ import android.widget.TextView;
 public final class P7ExplorerEntryRow extends LinearLayout {
     private static int dp(Activity a, int value) {
         return NegrescoTheme.dp(a, value);
+    }
+
+    /**
+     * All glyphs are bundled with the app; filenames supply only a visual
+     * category. No resource, URL or executable content is loaded from the APK.
+     */
+    static int iconResource(String name, boolean folder) {
+        if (folder) return R.drawable.ic_p7_folder;
+        String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".png") || lower.endsWith(".webp")
+                || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif") || lower.endsWith(".bmp"))
+            return R.drawable.ic_p7_image;
+        if (lower.endsWith(".xml") || lower.endsWith(".smali")
+                || lower.endsWith(".kt") || lower.endsWith(".java"))
+            return R.drawable.ic_p7_code;
+        if (lower.endsWith(".dex") || lower.endsWith(".so")
+                || lower.endsWith(".arsc"))
+            return R.drawable.ic_p7_cube;
+        return R.drawable.ic_p7_file;
     }
 
     public P7ExplorerEntryRow(Activity activity, String name, String detail,
@@ -35,8 +56,7 @@ public final class P7ExplorerEntryRow extends LinearLayout {
         setBackground(background);
 
         ImageView glyph = new ImageView(activity);
-        glyph.setImageResource(folder ? R.drawable.ic_p7_folder
-            : R.drawable.ic_p7_file);
+        glyph.setImageResource(iconResource(name, folder));
         glyph.setScaleType(ImageView.ScaleType.FIT_CENTER);
         glyph.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(glyph, new LayoutParams(dp(activity, 33), dp(activity, 33)));
