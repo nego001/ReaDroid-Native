@@ -1122,6 +1122,7 @@ public class MainActivity extends Activity {
         if (currentIndex != null && currentIndex.isFile())
             explorerView.setIndexedFiles(paths, currentApk, currentIndex);
         else explorerView.setFiles(paths, currentApk);
+        explorerView.setProjectSummary(headline, resultJson.optLong("sizeBytes", -1));
         share.setEnabled(true);
         ai.setEnabled(true);
         apkAdvisor.setEnabled(profile != null);
