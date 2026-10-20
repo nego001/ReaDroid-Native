@@ -272,3 +272,10 @@ Este trabalho fica numa branch de desenvolvimento, separado do lançamento
 - **Próxima entrega técnica**: infraestrutura Android de explorador indexado/virtualizado por partes, sem carregar arquivos imensos ou listagens completas na RAM. Não elevar limite atual de importação de 1 GiB sem streaming/seek/ZIP64 verificados em teste real. No Android, uma análise de 500 GB ou multi-TB só é possível em operações/provedores com capacidade provada.
 - Cada capacidade terá estados visíveis **Planejado → Experimental → Testado → Disponível**, ou **Bloqueado** se não houver suporte seguro. Não anunciar 28 módulos como implementados.
 - A UI futura (issue #1) permanece após a estabilização funcional. OTA continua desativada. Nenhum APK/EXE é executado ou sincronizado automaticamente; ações de maior risco dependem de autorização.
+
+## Homologação total das 28 funções no encerramento (19/10/2026)
+- Requisito do usuário registrado na [issue #10](https://github.com/nego001/ReaDroid-Native/issues/10) e vinculado ao [plano mestre #9](https://github.com/nego001/ReaDroid-Native/issues/9): implementar F01–F28 progressivamente e **ao final** entregar script/suíte de validação completa com registro de execução e evidências.
+- Runner futuro: manifesto de casos F01–F28 por SO e versões; CLI/CI e testes de dispositivo, quando existirem; resultados verificáveis `PASS`, `FAIL`, `SKIP_UNSUPPORTED`, `NOT_IMPLEMENTED`, `BLOCKED_MISSING_CONSENT`, `MANUAL_REQUIRED`.
+- Artefatos previstos: `results.json` + `summary.md` + `report.html` + JUnit XML quando aplicável. Relatar versão/commit, duração, ambiente, métricas, hashes e causas de erro; nunca registrar senhas/chaves/dados privados em claro.
+- Homologação final depende de **testes reais Android/Samsung**, integridade e exportação, e posteriormente builds desktop, sem tratar testes de política com arquivos esparsos como prova de processamento real de 500 GB.
+- **Script final ainda não implementado.** Testes automatizados existentes continuam desde agora a cada fase; o script final agrega e audita a cobertura completa, não substitui testes incrementais.
