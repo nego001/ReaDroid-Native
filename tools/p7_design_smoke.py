@@ -29,6 +29,9 @@ def check():
                    "Temas", "Layout", "Ícones", "Logotipo", "Dark OLED"):
         if needed not in labels:
             raise AssertionError("Missing Design Studio element: " + needed)
+    dialogs = [n for n in nodes if n.attrib.get("content-desc", "") ==
+               "Ver todos: Previews de Temas"]
+    assert len(dialogs) == 1, "Reference catalog action missing"
     api = smoke.adb("shell", "getprop", "ro.build.version.sdk").strip()
     if api not in ("29", "35"):
         raise AssertionError("Unexpected Android SDK level: " + api)
@@ -36,6 +39,13 @@ def check():
     with open(target, "wb") as stream:
         stream.write(subprocess.check_output(
             ["adb", "exec-out", "screencap", "-p"], timeout=45))
+    # "Ver todos" must actually open the native catalog, not be decorative.
+    smoke.tap(dialogs[0])
+    opened = {n.attrib.get("text", "") for n in smoke.visible_app_hierarchy()}
+    assert "Temas disponíveis" in opened, "Theme catalog dialog did not open"
+    assert "Carbon Dark" in opened, "Theme catalog options not loaded"
+    smoke.adb("shell", "input", "keyevent", "4")
+    smoke.ensure_foreground()
     print(f"P7_DESIGN_PASS api={api} screenshot={target}", flush=True)
 
 
