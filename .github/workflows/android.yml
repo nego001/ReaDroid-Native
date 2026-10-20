@@ -22,7 +22,9 @@ jobs:
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           mkdir -p "$SDK_ROOT/cmdline-tools"
-          curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/android-tools.zip
+          curl -fSL --retry 4 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+            -o /tmp/android-tools.zip
           unzip -q /tmp/android-tools.zip -d /tmp/android-tools
           mv /tmp/android-tools/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
           echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
