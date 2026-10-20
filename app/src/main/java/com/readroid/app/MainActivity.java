@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     private LinearLayout securitySection;
     private LinearLayout buildSection;
     private LinearLayout aiSection;
+    private LinearLayout designSection;
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
     private LinearLayout[] navigationContainers;
@@ -172,7 +173,7 @@ public class MainActivity extends Activity {
         brandSubtitleView.setMaxLines(2);
         brandText.addView(brandSubtitleView);
         root.addView(brandRow);
-        String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
+        String[] tabs = {"Início", "Arquivos", "Segurança", "Build", "Design"};
         boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
             .getBoolean("nav_labels", true);
         navigationItems = new TextView[tabs.length];
@@ -239,6 +240,7 @@ public class MainActivity extends Activity {
         buildSection = section(root);
         securitySection = section(root);
         aiSection = section(root);
+        designSection = section(root);
 
         TextView customizationTitle = new TextView(this);
         customizationTitle.setText("V3 • PERSONALIZAÇÃO");
@@ -707,14 +709,14 @@ public class MainActivity extends Activity {
                 pick.setType("*/*");
                 startActivityForResult(pick, 1);
             },
-            v -> showSection(3),
             v -> showSection(2),
+            v -> showSection(3),
             v -> new android.app.AlertDialog.Builder(this)
                 .setTitle("Decompilação")
                 .setMessage("Decompilação Smali completa ainda não disponível.")
                 .setPositiveButton("Fechar", null).show(),
             v -> showSection(1),
-            v -> showSection(3)
+            v -> showSection(2)
         };
         for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
             LinearLayout actionRow = new LinearLayout(this);
@@ -1055,6 +1057,16 @@ public class MainActivity extends Activity {
                 exportAppearance, importAppearance, glowPicker, cornersPicker, resetAppearance},
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
+        // The illustrated P7 navigation now has a real, separate Design tab.
+        // Legacy AI controls remain accessible inside Design Studio.
+        new P7DesignStudio(this, designSection, new Button[]{
+            themePicker, accentPicker, textScale, densityPicker, navLabels,
+            favoriteShortcut, identityPicker, appearancePreview,
+            exportAppearance, importAppearance, glowPicker, cornersPicker,
+            resetAppearance
+        });
+        ((android.view.ViewGroup) aiSection.getParent()).removeView(aiSection);
+        designSection.addView(aiSection);
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
         boolean retained = restoreWorkspace();
         if (state != null) {
@@ -1205,7 +1217,7 @@ public class MainActivity extends Activity {
     }
 
     private void showSection(int index) {
-        LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
+        LinearLayout[] sections = {homeSection, filesSection, securitySection, buildSection, designSection};
         if (index < 0 || index >= sections.length) return;
         selectedSection = index;
         if (index == 0 && homeOverview != null)
