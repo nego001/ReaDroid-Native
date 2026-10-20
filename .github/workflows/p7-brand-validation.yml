@@ -49,7 +49,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest
             gradle --no-daemon :app:assembleQa
             SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
             "$(dirname "$(command -v adb)")/../build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/qa/app-qa.apk | grep -F "application-label:'NegrecoDroid V3 Teste'"
