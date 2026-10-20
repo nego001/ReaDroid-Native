@@ -205,6 +205,7 @@ public final class StudioDashboard {
 
     public static void compose(Activity a, LinearLayout home,
                                TextView apkSummary, TextView projectMetrics, Button choose,
+                               P7HomeOverview overview,
                                TextView shortcutsTitle, TextView shortcutHint, LinearLayout quickGrid,
                                TextView customizationTitle, TextView customizationHint,
                                Button togglePersonalization, LinearLayout personalizationGroup,
@@ -215,8 +216,30 @@ public final class StudioDashboard {
         home.setClipChildren(false);
         home.setClipToPadding(false);
 
+        // P7.2: high-contrast welcome hero and low-cost Canvas mascot.
+        LinearLayout welcome = card(a, true);
+        LinearLayout welcomeLine = new LinearLayout(a);
+        welcomeLine.setGravity(Gravity.CENTER_VERTICAL);
+        welcome.addView(welcomeLine);
+        LinearLayout welcomeText = column(a);
+        welcomeLine.addView(welcomeText, new LinearLayout.LayoutParams(0, -2, 1f));
+        welcomeText.addView(label(a, "Olá, Desenvolvedor", 19,
+            NegrescoTheme.TEXT, true));
+        gap(a, welcomeText, 5);
+        welcomeText.addView(label(a,
+            "Analise, edite e organize seus APKs com controle e segurança.",
+            12, NegrescoTheme.MUTED, false));
+        int artWidth = a.getResources().getConfiguration().screenWidthDp < 360 ? 66 : 106;
+        P7MascotView mascot = new P7MascotView(a);
+        LinearLayout.LayoutParams art = new LinearLayout.LayoutParams(
+            dp(a, artWidth), dp(a, 110));
+        art.leftMargin = dp(a, 5);
+        welcomeLine.addView(mascot, art);
+        home.addView(welcome);
+        gap(a, home, 12);
+
         // Main project area with the live report-bound text views and real picker.
-        LinearLayout hero = card(a, true);
+        LinearLayout hero = card(a, false);
         TextView heroLabel = label(a, "◈  PROJETO ATUAL", 12, NegrescoTheme.ACCENT, true);
         heroLabel.setLetterSpacing(0.05f);
         hero.addView(heroLabel);
@@ -245,14 +268,17 @@ public final class StudioDashboard {
         hero.addView(choose);
         home.addView(hero);
         gap(a, home, 14);
+        // Session-only counters and a clickable current-project row.
+        home.addView(overview);
+        gap(a, home, 14);
 
         // Quick actions, native icons, two-column layout on phones.
-        shortcutsTitle.setText("ACESSO RÁPIDO");
+        shortcutsTitle.setText("Ações rápidas");
         shortcutsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         shortcutsTitle.setLetterSpacing(0.05f);
         shortcutsTitle.setPadding(0, dp(a, 2), 0, dp(a, 2));
         home.addView(shortcutsTitle);
-        shortcutHint.setText("FERRAMENTAS PRINCIPAIS");
+        shortcutHint.setText("Acesso às ferramentas disponíveis");
         shortcutHint.setPadding(0, 0, 0, dp(a, 10));
         home.addView(shortcutHint);
         home.addView(quickGrid);
