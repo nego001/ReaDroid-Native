@@ -9,6 +9,7 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 import java.text.DateFormat;
 import java.util.ArrayList;
@@ -60,25 +61,50 @@ public final class P7HomeOverview extends LinearLayout {
         setOrientation(VERTICAL);
 
         String[] names = {"Projetos", "Arquivos", "APKs Builds", "Ameaças"};
-        String[] symbols = {"◇", "▤", "⚒", "⬡"};
         for (int row = 0; row < 2; row++) {
             LinearLayout line = new LinearLayout(activity);
             line.setOrientation(HORIZONTAL);
             addView(line);
             for (int column = 0; column < 2; column++) {
                 int i = row * 2 + column;
-                LinearLayout cell = vertical();
-                cell.setMinimumHeight(dp(58));
-                cell.setPadding(dp(10), dp(6), dp(8), dp(6));
+                // Approved stat tiles: bright blue glyph on the LEFT,
+                // number + caption vertically stacked to its RIGHT.
+                LinearLayout cell = new LinearLayout(activity);
+                cell.setOrientation(HORIZONTAL);
+                cell.setGravity(Gravity.CENTER_VERTICAL);
+                cell.setMinimumHeight(dp(62));
+                cell.setPadding(dp(10), dp(7), dp(8), dp(7));
                 cell.setBackground(NegrescoTheme.studioCard(activity, false));
                 LayoutParams lp = new LayoutParams(0, -2, 1);
                 lp.setMargins(column == 0 ? 0 : dp(5), 0,
-                    column == 0 ? dp(5) : 0, dp(9));
+                    column == 0 ? dp(5) : 0, dp(7));
                 line.addView(cell, lp);
-                cell.addView(text(symbols[i], 15, NegrescoTheme.ACCENT, true));
-                values[i] = text("—", 17, NegrescoTheme.TEXT, true);
-                cell.addView(values[i]);
-                cell.addView(text(names[i], 10, NegrescoTheme.MUTED, false));
+
+                View icon;
+                if (i == 0 || i == 1) {
+                    ImageView resource = new ImageView(activity);
+                    resource.setImageResource(i == 0
+                        ? R.drawable.ic_p7_cube : R.drawable.ic_p7_file);
+                    resource.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    icon = resource;
+                } else {
+                    NavGlyph vector = new NavGlyph(activity, i == 2 ? 2 : 3);
+                    vector.setSelectedState(true);
+                    icon = vector;
+                }
+                icon.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+                cell.addView(icon, new LayoutParams(dp(29), dp(29)));
+                LinearLayout metrics = vertical();
+                LayoutParams metricsLp = new LayoutParams(0, -2, 1f);
+                metricsLp.leftMargin = dp(11);
+                cell.addView(metrics, metricsLp);
+                values[i] = text("—", 18, NegrescoTheme.TEXT, true);
+                values[i].setIncludeFontPadding(false);
+                metrics.addView(values[i]);
+                TextView caption = text(names[i], 10, NegrescoTheme.MUTED, false);
+                caption.setMaxLines(1);
+                caption.setEllipsize(TextUtils.TruncateAt.END);
+                metrics.addView(caption);
             }
         }
 
