@@ -53,9 +53,16 @@ public final class P7MascotView extends View {
             pen.setStyle(Paint.Style.FILL);
             pen.setColor(0xffffffff);
             pen.setFilterBitmap(true);
-            c.drawBitmap(approvedArtwork, null,
-                new RectF(getWidth() - width, getHeight() - height,
-                    getWidth(), getHeight()), pen);
+            RectF destination = new RectF(getWidth() - width,
+                getHeight() - height, getWidth(), getHeight());
+            c.save();
+            // The original promotional crop includes a settings glyph.
+            // The Home now has a real interactive settings button, so mask
+            // ONLY that duplicate top-right corner. Preserve the character.
+            c.clipOutRect(destination.left + width * 0.79f, destination.top,
+                destination.right, destination.top + height * 0.22f);
+            c.drawBitmap(approvedArtwork, null, destination, pen);
+            c.restore();
             return;
         }
         // The vector remains a safe fallback for a corrupt/missing resource.
