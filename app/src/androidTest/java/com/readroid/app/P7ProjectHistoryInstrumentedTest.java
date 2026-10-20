@@ -101,6 +101,11 @@ public final class P7ProjectHistoryInstrumentedTest {
                 assertNotNull(row);
                 assertTrue(row.performClick());
                 assertEquals(1, opened.get());
+                View more = findDescription(home, "Mais opções de Arquivo1.apk");
+                assertNotNull("Reference projects require a contextual ⋮ menu", more);
+                assertTrue("Context actions must be accessible", more.isClickable());
+                assertFalse(P7ProjectHistory.forget(a,
+                    Uri.parse("content://ungranted.example/document/1")));
                 View all = findDescription(home, "Ver todos os projetos recentes");
                 assertNotNull(all);
                 assertTrue(all.performClick());
