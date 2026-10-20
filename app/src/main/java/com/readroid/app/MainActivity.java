@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private LinearLayout designSection;
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
+    private View[] navigationIndicators;
     private LinearLayout[] navigationContainers;
     private int selectedSection = 0;
     private Uri selectedApkUri;
@@ -182,6 +183,7 @@ public class MainActivity extends Activity {
             .getBoolean("nav_labels", true);
         navigationItems = new TextView[tabs.length];
         navigationIcons = new NavGlyph[tabs.length];
+        navigationIndicators = new View[tabs.length];
         navigationContainers = new LinearLayout[tabs.length];
         for (int index = 0; index < tabs.length; index++) {
             final int target = index;
@@ -206,6 +208,21 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 64), 1f);
             navParams.setMargins(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
             nav.addView(tabContainer, navParams);
+            // A narrow electric-blue dash above the active icon matches the
+            // approved five-tab bar, while preserving 64dp touch targets.
+            View indicator = new View(this);
+            android.graphics.drawable.GradientDrawable marker =
+                new android.graphics.drawable.GradientDrawable();
+            marker.setColor(NegrescoTheme.ACCENT);
+            marker.setCornerRadius(NegrescoTheme.dp(this, 5));
+            indicator.setBackground(marker);
+            indicator.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            indicator.setVisibility(View.INVISIBLE);
+            LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(
+                NegrescoTheme.dp(this, 28), NegrescoTheme.dp(this, 3));
+            markerParams.bottomMargin = NegrescoTheme.dp(this, 4);
+            tabContainer.addView(indicator, markerParams);
+            navigationIndicators[index] = indicator;
             int[] tabIcons = {0, 1, 3, 2, 4};
             NavGlyph glyph = new NavGlyph(this, tabIcons[index]);
             tabContainer.addView(glyph, new LinearLayout.LayoutParams(NegrescoTheme.dp(this, 27), NegrescoTheme.dp(this, 27)));
@@ -1294,6 +1311,7 @@ public class MainActivity extends Activity {
             sections[i].setVisibility(selected ? View.VISIBLE : View.GONE);
             navigationItems[i].setTextColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
             navigationIcons[i].setSelectedState(selected);
+            navigationIndicators[i].setVisibility(selected ? View.VISIBLE : View.INVISIBLE);
             navigationContainers[i].setBackground(NegrescoTheme.navigationSurface(
                 this, selected, navigationContainers[i].hasFocus()));
             navigationContainers[i].setSelected(selected);
