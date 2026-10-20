@@ -7,6 +7,7 @@ on:
       - 'app/src/qa/**'
       - 'app/src/androidTest/**'
       - 'tools/p7_explorer_smoke.py'
+      - 'tools/p7_design_smoke.py'
       - '.github/workflows/p7-brand-validation.yml'
   workflow_dispatch:
 permissions:
@@ -48,7 +49,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest
             gradle --no-daemon :app:assembleQa
             SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
             "$(dirname "$(command -v adb)")/../build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/qa/app-qa.apk | grep -F "application-label:'NegrecoDroid V3 Teste'"
@@ -59,6 +60,8 @@ jobs:
             test -s p7-brand-android-${{ matrix.api }}.png
             python3 tools/p7_explorer_smoke.py
             test -s p7-explorer-android-${{ matrix.api }}.png
+            python3 tools/p7_design_smoke.py
+            test -s p7-design-android-${{ matrix.api }}.png
       - name: Upload launch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,6 +70,7 @@ jobs:
           path: |
             p7-brand-android-*.png
             p7-explorer-android-*.png
+            p7-design-android-*.png
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
           if-no-files-found: warn
