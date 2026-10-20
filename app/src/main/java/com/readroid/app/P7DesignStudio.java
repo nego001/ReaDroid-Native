@@ -10,6 +10,11 @@ import android.widget.HorizontalScrollView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ImageView;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import java.util.Locale;
 
 /** Native, operational P7 Design Studio. Uses the existing appearance handlers. */
 public final class P7DesignStudio {
@@ -310,6 +315,54 @@ public final class P7DesignStudio {
             .setPositiveButton("OK", null).show();
     }
 
+    /** Native preview of the actual saved header identity, never sample logos. */
+    private void liveLogoPreview() {
+        android.content.SharedPreferences prefs =
+            a.getSharedPreferences("v3_personalizacao", Activity.MODE_PRIVATE);
+        String name = prefs.getString("display_name", "NegrecoDroid");
+        if (name == null || name.trim().isEmpty()) name = "NegrecoDroid";
+        String subtitle = prefs.getString("display_subtitle", "APK ENGINEERING STUDIO");
+        if (subtitle == null || subtitle.trim().isEmpty())
+            subtitle = "APK ENGINEERING STUDIO";
+        if ("APK ENGINEERING STUDIO".equals(subtitle))
+            subtitle = "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS";
+
+        LinearLayout preview = new LinearLayout(a);
+        preview.setOrientation(LinearLayout.HORIZONTAL);
+        preview.setGravity(Gravity.CENTER_VERTICAL);
+        preview.setPadding(dp(15), dp(16), dp(15), dp(16));
+        preview.setBackground(background(false));
+        preview.setContentDescription("Prévia da identidade visual atual");
+        LinearLayout.LayoutParams outer = new LinearLayout.LayoutParams(-1, -2);
+        outer.bottomMargin = dp(10);
+        body.addView(preview, outer);
+
+        ImageView icon = new ImageView(a);
+        icon.setImageResource(R.drawable.ic_negrecodroid_foreground);
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        preview.addView(icon, new LinearLayout.LayoutParams(dp(54), dp(54)));
+
+        LinearLayout names = column();
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        textParams.leftMargin = dp(12);
+        preview.addView(names, textParams);
+
+        TextView brand = label("", 20, NegrescoTheme.TEXT, true);
+        SpannableString style = new SpannableString(name);
+        int blue = name.toLowerCase(Locale.ROOT).lastIndexOf("droid");
+        if (blue >= 0) style.setSpan(new ForegroundColorSpan(NegrescoTheme.ACCENT),
+            blue, blue + 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        brand.setText(style);
+        brand.setMaxLines(2);
+        names.addView(brand);
+
+        TextView secondary = label(subtitle, 9, NegrescoTheme.MUTED, false);
+        secondary.setMaxLines(2);
+        secondary.setLetterSpacing(0.12f);
+        names.addView(secondary);
+        note("Prévia do cabeçalho atual. Não altera o ícone instalado nem assina APKs.");
+    }
+
     /** The two creative cards occupy one row as in the approved reference. */
     private void creatorRow() {
         LinearLayout row = new LinearLayout(a);
@@ -420,8 +473,9 @@ public final class P7DesignStudio {
             actionCard("Prévia visual","A ferramenta de edição de ícones ainda não está pronta",7);
         }else{
             heading("Logo Studio");
-            actionCard("Identidade da interface","Configurar o nome e subtítulo",6);
-            actionCard("Prévia da logo","Conferir antes de aplicar",7);
+            liveLogoPreview();
+            actionCard("Editar nome e subtítulo", "Atualizar a identidade exibida na Home", 6);
+            actionCard("Prévia de aparência", "Conferir as preferências atuais", 7);
         }
         heading("Personalização existente");
         actionCard("Cores e tons","Abrir paleta de destaques",1);
