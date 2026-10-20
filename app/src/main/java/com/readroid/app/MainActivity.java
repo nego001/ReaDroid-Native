@@ -715,14 +715,37 @@ public class MainActivity extends Activity {
                 pick.setType("*/*");
                 startActivityForResult(pick, 1);
             },
-            v -> showSection(2),
+            v -> {
+                if (report == null) {
+                    Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    pick.addCategory(Intent.CATEGORY_OPENABLE);
+                    pick.setType("*/*");
+                    startActivityForResult(pick, 1);
+                } else {
+                    showSection(0);
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Análise do APK atual")
+                        .setMessage("O relatório técnico está disponível na Home.")
+                        .setPositiveButton("Ver relatório", (d, w) ->
+                            output.post(() -> output.requestRectangleOnScreen(
+                                new android.graphics.Rect(0, 0,
+                                    Math.max(1, output.getWidth()), 90), true)))
+                        .setNegativeButton("Fechar", null).show();
+                }
+            },
             v -> showSection(3),
             v -> new android.app.AlertDialog.Builder(this)
                 .setTitle("Decompilação")
                 .setMessage("Decompilação Smali completa ainda não disponível.")
                 .setPositiveButton("Fechar", null).show(),
             v -> showSection(1),
-            v -> showSection(2)
+            v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Assinar APK")
+                .setMessage("A assinatura de APKs reconstruídos ainda não está "
+                    + "disponível. A seção Segurança permite inspecionar "
+                    + "certificados e testar uma identidade local.")
+                .setPositiveButton("Ver segurança", (d, w) -> showSection(2))
+                .setNegativeButton("Fechar", null).show()
         };
         for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
             LinearLayout actionRow = new LinearLayout(this);
