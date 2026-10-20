@@ -51,7 +51,7 @@ def visible_app_hierarchy():
     """
     nodes = hierarchy()
     if any(n.attrib.get("text") in ("NegrecoDroid isn't responding",
-                                  "NegrecoDroid isn't responding") for n in nodes):
+                                  "NegrescoDroid isn't responding") for n in nodes):
         raise AssertionError("NegrecoDroid ANR: refusing automated dismissal")
     launcher_anr = any(
         n.attrib.get("text") == "Pixel Launcher isn't responding"
