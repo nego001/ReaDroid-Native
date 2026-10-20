@@ -46,7 +46,28 @@ def check():
     assert "Carbon Dark" in opened, "Theme catalog options not loaded"
     smoke.adb("shell", "input", "keyevent", "4")
     smoke.ensure_foreground()
-    print(f"P7_DESIGN_PASS api={api} screenshot={target}", flush=True)
+    # Tiles must apply a real catalog choice via confirmation, not merely
+    # move a decorative selection check. Back must undo the pending highlight.
+    before = smoke.visible_app_hierarchy()
+    selected = [n.attrib.get("content-desc", "") for n in before
+                if ", prévia selecionada" in n.attrib.get("content-desc", "")
+                and n.attrib.get("content-desc", "").startswith(
+                    ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset"))]
+    assert len(selected) == 1, "A saved theme must be reflected in its preview"
+    theme = "Matrix Green" if not selected[0].startswith("Matrix Green") else "Negreco Blue"
+    tile = next((n for n in before if n.attrib.get("content-desc") ==
+                 theme + ", selecionar prévia"), None)
+    assert tile is not None, "Unselected preview is not an interactive tile"
+    smoke.tap(tile)
+    modal = {n.attrib.get("text", "") for n in smoke.visible_app_hierarchy()}
+    assert "Aplicar " + theme + "?" in modal, (
+        "Theme preview did not open a real confirmation")
+    smoke.adb("shell", "input", "keyevent", "4")
+    smoke.ensure_foreground()
+    after = smoke.visible_app_hierarchy()
+    assert any(n.attrib.get("content-desc") == selected[0] for n in after), (
+        "Android Back must restore the previously applied theme")
+    print(f"P7_DESIGN_PASS api={api} screenshot={target} apply_cancel=ok", flush=True)
 
 
 if __name__ == "__main__":
