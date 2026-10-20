@@ -1520,6 +1520,13 @@ public class MainActivity extends Activity {
                 }
             }
             JSONObject json = new JSONObject();
+            FileHeaderProbe.Result header = FileHeaderProbe.inspect(file);
+            JSONObject formatHint = new JSONObject();
+            formatHint.put("format", header.format);
+            formatHint.put("description", header.description);
+            formatHint.put("sampleBytes", header.sampleBytes);
+            formatHint.put("recognized", header.recognized);
+            json.put("fileHeader", formatHint);
             json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
             json.put("explorer", ApkExplorer.inspect(file));
             json.put("sizeBytes", size);
@@ -1552,6 +1559,11 @@ public class MainActivity extends Activity {
             out.append("Android alvo (API): ").append(manifest.optString("targetSdk", "?")).append("\\n");
             out.append("Permissões: ").append(manifest.optJSONArray("requestedPermissions") == null ? 0 : manifest.optJSONArray("requestedPermissions").length()).append("\\n");
         }
+        JSONObject header = data.optJSONObject("fileHeader");
+        if (header != null)
+            out.append("Formato identificado: ")
+                .append(header.optString("description", "Não identificado"))
+                .append(" (pré-inspeção)\\n");
         out.append("Tamanho: ").append(data.optLong("sizeBytes") / 1024).append(" KB\\n");
         out.append("SHA-256: ").append(data.optString("sha256")).append("\\n\\n");
         JSONObject explorer = data.optJSONObject("explorer");

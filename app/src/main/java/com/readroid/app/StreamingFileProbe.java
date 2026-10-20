@@ -71,7 +71,13 @@ public final class StreamingFileProbe {
         while (true) {
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Leitura de arquivo cancelada");
-            int read = in.read(buffer, 0, buffer.length);
+            // Read only the remaining allowance plus a single sentinel byte
+            // to distinguish an exact-sized file from one exceeding the limit.
+            // This never requests an unchecked extra 64 KiB past the budget.
+            long remaining = maxBytes - total;
+            int request = remaining >= buffer.length
+                ? buffer.length : (int) (remaining + 1L);
+            int read = in.read(buffer, 0, request);
             if (read < 0) break;
             if (read == 0) {
                 if (++zeroReads > 16)

@@ -65,6 +65,37 @@ public final class StreamingFileProbeInstrumentedTest {
         }
     }
 
+
+    @Test public void exceedsBudgetWithOnlyOneSentinelByteOfOverread()
+            throws Exception {
+        byte[] data = new byte[1024 * 1024];
+        final int[] bytesRead = {0};
+        ByteArrayInputStream source = new ByteArrayInputStream(data) {
+            @Override public synchronized int read(byte[] destination, int off, int len) {
+                int n = super.read(destination, off, len);
+                if (n > 0) bytesRead[0] += n;
+                return n;
+            }
+        };
+        try {
+            StreamingFileProbe.inspect(source, 17, null);
+            fail("Byte budget must block");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("Limite autorizado"));
+            assertEquals("Only one sentinel byte may be read past the budget",
+                18, bytesRead[0]);
+        }
+    }
+
+    @Test public void acceptsFileExactlyAtTheBudget()
+            throws Exception {
+        byte[] data = new byte[65536];
+        StreamingFileProbe.Result result = StreamingFileProbe.inspect(
+            new ByteArrayInputStream(data), data.length, null);
+        assertEquals(data.length, result.bytesRead);
+        assertEquals(sha256(data), result.sha256);
+    }
+
     @Test public void rejectsUnknownOrInvalidPermissionsAndBudgets() throws Exception {
         try {
             StreamingFileProbe.inspect(new ByteArrayInputStream(new byte[3]), 0, null);
