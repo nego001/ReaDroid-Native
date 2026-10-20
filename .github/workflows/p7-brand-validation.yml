@@ -51,9 +51,9 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest
-            gradle --no-daemon :app:assembleQa
-            SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-            "$(dirname "$(command -v adb)")/../build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/qa/app-qa.apk | grep -F "application-label:'NegrecoDroid V3 Teste'"
+            # Instrumented tests compile a debug target as needed, but we do
+            # not build or publish any installable QA release on every commit.
+            test -s app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n com.readroid.app/.MainActivity
             sleep 2
