@@ -67,6 +67,39 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    private static View clickableText(View view, String text) {
+        if (view instanceof TextView && text.equals(((TextView) view).getText().toString())
+                && view.isClickable()) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = clickableText(group.getChildAt(i), text);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    @Test public void logoStudioShowsSavedBrandInsteadOfAFakeExample() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View window = activity.getWindow().getDecorView();
+                String saved = activity.getSharedPreferences(
+                    "v3_personalizacao", android.content.Context.MODE_PRIVATE)
+                    .getString("display_name", "NegrecoDroid");
+                assertTrue(byDescription(window, "Abrir seção Design").performClick());
+                View logoTab = clickableText(window, "Logotipo");
+                assertNotNull("Logo Studio must be a real selectable tab", logoTab);
+                assertTrue(logoTab.performClick());
+                assertTrue(hasText(window, "Logo Studio"));
+                assertTrue("The user-saved brand must be shown in its preview",
+                    hasText(window, saved));
+                assertNotNull(byDescription(window, "Prévia da identidade visual atual"));
+            });
+        }
+    }
+
     @Test public void homeHeaderOpensActualMenuAndDesignPreferences() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
