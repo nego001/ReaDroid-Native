@@ -20,6 +20,7 @@ public final class NegrescoTheme {
     public static int ON_ACCENT = 0xffffffff;
     public static float FONT_SCALE = 1f;
     public static boolean COMPACT = false;
+    public static int LAYOUT_VARIANT = 0;
     public static boolean STUDIO_GLOW = true;
     public static int CARD_RADIUS = 18;
     private NegrescoTheme() {}
@@ -39,7 +40,10 @@ public final class NegrescoTheme {
         }
         String accent = prefs.getString("accent", "blue");
         FONT_SCALE = Math.max(0.85f, Math.min(1.35f, prefs.getInt("font_percent", 100) / 100f));
-        COMPACT = prefs.getBoolean("compact", false);
+        LAYOUT_VARIANT = prefs.getInt("layout_variant",
+            prefs.getBoolean("compact", false) ? 1 : 0);
+        if (LAYOUT_VARIANT < 0 || LAYOUT_VARIANT > 2) LAYOUT_VARIANT = 0;
+        COMPACT = LAYOUT_VARIANT == 1;
         ACCENT = "purple".equals(accent) ? 0xff9b6dff
             : "green".equals(accent) ? 0xff27c99a
             : "orange".equals(accent) ? 0xffffa24a : 0xff1688ff;
