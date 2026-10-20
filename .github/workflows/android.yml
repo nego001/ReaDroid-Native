@@ -71,7 +71,7 @@ jobs:
         if: github.ref == 'refs/heads/feature/v3-design-studio' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-'))
         uses: actions/upload-artifact@v4
         with:
-          name: NegrecoDroid-P7-v3-preview5-QA
+          name: NegrecoDroid-P7-v3-preview6-QA
           path: |
             app/build/outputs/apk/qa/app-qa.apk
             qa-apk-sha256.txt
