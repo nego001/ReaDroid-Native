@@ -2,6 +2,8 @@ package com.readroid.app;
 
 import android.app.Activity;
 import android.graphics.Typeface;
+import android.graphics.Bitmap;
+import android.widget.ImageView;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -136,7 +138,7 @@ public final class P7HomeOverview extends LinearLayout {
         return name == null || name.trim().isEmpty() ? "APK atual" : name;
     }
 
-    private void addRow(String name, String info, String date, Runnable action) {
+    private void addRow(String name, String info, String date, Uri document, Runnable action) {
         LinearLayout line = new LinearLayout(activity);
         line.setGravity(Gravity.CENTER_VERTICAL);
         line.setPadding(dp(10), dp(8), dp(8), dp(8));
@@ -145,8 +147,16 @@ public final class P7HomeOverview extends LinearLayout {
         lp.bottomMargin = dp(5);
         recentCard.addView(line, lp);
 
-        TextView symbol = text("▣", 20, NegrescoTheme.ACCENT, true);
-        line.addView(symbol, new LayoutParams(dp(29), -2));
+        // Real launcher artwork is read from the inspected APK resource table.
+        // For unsigned/obfuscated APKs without a drawable, use our own icon.
+        ImageView symbol = new ImageView(activity);
+        Bitmap artwork = document == null ? null :
+            P7RecentAppIcons.load(activity, document);
+        if (artwork != null) symbol.setImageBitmap(artwork);
+        else symbol.setImageResource(R.drawable.ic_p7_file);
+        symbol.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        symbol.setContentDescription("Ícone do arquivo " + name);
+        line.addView(symbol, new LayoutParams(dp(34), dp(34)));
 
         LinearLayout labels = vertical();
         LayoutParams main = new LayoutParams(0, -2, 1f);
@@ -186,7 +196,8 @@ public final class P7HomeOverview extends LinearLayout {
                 if (entry.uri.equals(currentUri)) includedCurrent = true;
         }
         if (active && !includedCurrent) {
-            addRow(currentPackage(), "Projeto aberto nesta sessão", "", () ->
+            addRow(currentPackage(), "Projeto aberto nesta sessão", "",
+                currentUri, () ->
                 openFiles.onClick(this));
             shown++;
             total++;
@@ -195,7 +206,7 @@ public final class P7HomeOverview extends LinearLayout {
             if (shown >= 3) break;
             String date = entry.openedAt <= 0 ? "" :
                 DateFormat.getDateInstance(DateFormat.SHORT).format(new Date(entry.openedAt));
-            addRow(entry.name, entry.packageName, date, () -> {
+            addRow(entry.name, entry.packageName, date, entry.uri, () -> {
                 if (currentReport != null && currentUri != null
                         && currentUri.equals(entry.uri)) {
                     openFiles.onClick(this);
