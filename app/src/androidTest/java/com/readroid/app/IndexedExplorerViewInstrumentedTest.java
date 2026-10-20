@@ -34,6 +34,18 @@ public final class IndexedExplorerViewInstrumentedTest {
         return null;
     }
 
+    private static View entry(View v, String description) {
+        if (description.equals(v.getContentDescription())) return v;
+        if (v instanceof ViewGroup) {
+            ViewGroup p = (ViewGroup) v;
+            for (int i = 0; i < p.getChildCount(); i++) {
+                View result = entry(p.getChildAt(i), description);
+                if (result != null) return result;
+            }
+        }
+        return null;
+    }
+
     private static EditText input(View v) {
         if (v instanceof EditText) return (EditText) v;
         if (v instanceof ViewGroup) {
@@ -71,24 +83,24 @@ public final class IndexedExplorerViewInstrumentedTest {
                     activity.setContentView(root);
                     ExplorerView explorer = new ExplorerView(activity, root);
                     explorer.setIndexedFiles(entries, apk, index);
-                    TextView assets = find(root, "▸  assets/");
+                    View assets = entry(root, "Abrir pasta assets/");
                     assertNotNull(assets);
                     assets.performClick();
-                    assertNotNull(find(root, "a000.txt"));
-                    assertNull(find(root, "a300.txt"));
+                    assertNotNull(entry(root, "Abrir arquivo a000.txt"));
+                    assertNull(entry(root, "Abrir arquivo a300.txt"));
                     assertNotNull(find(root, "Próxima página"));
                     find(root, "Próxima página").performClick();
                     assertNotNull(find(root, "Página anterior"));
-                    assertNotNull(find(root, "a120.txt"));
+                    assertNotNull(entry(root, "Abrir arquivo a120.txt"));
                     find(root, "Próxima página").performClick();
-                    assertNotNull(find(root, "a300.txt"));
+                    assertNotNull(entry(root, "Abrir arquivo a300.txt"));
                     explorer.getEditPlan().addTextReplacement("assets/a300.txt", "modified");
                     explorer.refresh();
-                    assertNotNull(find(root, "●  a300.txt"));
+                    assertNotNull(entry(root, "Abrir arquivo a300.txt, alterado"));
                     EditText search = input(root);
                     assertNotNull(search);
                     search.setText("a005");
-                    assertNotNull(find(root, "assets/a005.txt"));
+                    assertNotNull(entry(root, "Abrir arquivo assets/a005.txt"));
                     ExplorerView.BrowseState saved = explorer.snapshotBrowseState();
                     assertEquals(0, saved.indexPageOffset);
                     search.setText("");
