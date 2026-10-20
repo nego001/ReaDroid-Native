@@ -25,6 +25,7 @@ public final class P7ExplorerChrome extends LinearLayout {
     private final TextView editCounter;
     private Runnable onExit;
     private Runnable onOpenApk;
+    private Runnable onReviewPlan;
     private String currentFolder = "";
 
     private int dp(int v) { return NegrescoTheme.dp(activity, v); }
@@ -126,7 +127,13 @@ public final class P7ExplorerChrome extends LinearLayout {
         editCounter.setGravity(Gravity.CENTER);
         editCounter.setBackground(NegrescoTheme.studioCard(activity, true));
         editCounter.setMaxLines(2);
-        editCounter.setContentDescription("Plano de edição");
+        editCounter.setContentDescription("Abrir plano de edição");
+        editCounter.setClickable(true);
+        editCounter.setFocusable(true);
+        editCounter.setMinHeight(dp(44));
+        editCounter.setOnClickListener(v -> {
+            if (onReviewPlan != null) onReviewPlan.run();
+        });
         editCounter.setPadding(dp(7), dp(7), dp(7), dp(7));
         projectCard.addView(editCounter,
             new LinearLayout.LayoutParams(dp(113), -2));
@@ -145,9 +152,10 @@ public final class P7ExplorerChrome extends LinearLayout {
         updateBreadcrumb("", false);
     }
 
-    public void setActions(Runnable exit, Runnable openApk) {
+    public void setActions(Runnable exit, Runnable openApk, Runnable reviewPlan) {
         onExit = exit;
         onOpenApk = openApk;
+        onReviewPlan = reviewPlan;
     }
 
     public void setProject(String title, long sizeBytes) {
