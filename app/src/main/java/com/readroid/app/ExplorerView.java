@@ -102,6 +102,8 @@ public final class ExplorerView {
 
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
+        // Final search is initialized before the breadcrumb callback captures it.
+        search = new EditText(activity);
         chrome = new P7ExplorerChrome(activity, parent, destination -> {
             folder = destination;
             pageLimit = 120;
@@ -110,7 +112,6 @@ public final class ExplorerView {
                 search.setText("");
             render();
         });
-        search = new EditText(activity);
         search.setSingleLine(true);
         boolean narrow = activity.getResources().getConfiguration().screenWidthDp <= 360;
         search.setHint(narrow ? "Buscar no APK..." : "Buscar arquivo pelo nome ou caminho");
