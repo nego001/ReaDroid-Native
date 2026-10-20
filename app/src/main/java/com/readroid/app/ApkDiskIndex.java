@@ -95,7 +95,12 @@ public final class ApkDiskIndex {
             db.execSQL("PRAGMA cache_size = -2048");
             int pageSize = pragmaInteger(db, "page_size");
             if (pageSize <= 0) throw new IOException("Tamanho de página SQLite inválido");
-            db.execSQL("PRAGMA max_page_count = " + (MAX_INDEX_BYTES / pageSize));
+            // PRAGMA max_page_count returns a row; Android SQLiteDatabase.execSQL
+            // refuses it even when used as an assignment. setMaximumSize()
+            // applies the quota through Android's supported SQLite API.
+            long maximum = db.setMaximumSize(MAX_INDEX_BYTES);
+            if (maximum < pageSize || maximum > MAX_INDEX_BYTES + pageSize)
+                throw new IOException("Cota do índice SQLite não aplicada");
             db.execSQL("CREATE TABLE entries ("
                 + "path TEXT PRIMARY KEY NOT NULL,"
                 + "parent TEXT NOT NULL, name TEXT NOT NULL,"

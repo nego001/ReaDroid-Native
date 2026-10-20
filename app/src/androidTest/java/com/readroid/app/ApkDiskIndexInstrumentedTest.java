@@ -153,6 +153,28 @@ public final class ApkDiskIndexInstrumentedTest {
         }
     }
 
+    @Test public void databaseQuotaIsEnforcedOnAndroidApi29And35() throws Exception {
+        File archive = temp(".apk");
+        File index = temp(".db");
+        index.delete();
+        try {
+            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
+                add(zip, "assets/ok.json");
+            }
+            ApkDiskIndex.build(archive, index);
+            try (android.database.sqlite.SQLiteDatabase db =
+                    android.database.sqlite.SQLiteDatabase.openDatabase(index.getPath(),
+                        null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY)) {
+                long maximum = db.getMaximumSize();
+                assertTrue("Quota must not be unlimited", maximum <= 128L * 1024 * 1024 + 65536);
+                assertTrue("Quota must allow normal indexes", maximum >= 120L * 1024 * 1024);
+            }
+        } finally {
+            archive.delete();
+            android.database.sqlite.SQLiteDatabase.deleteDatabase(index);
+        }
+    }
+
     @Test public void changedSourceCannotReuseIndex() throws Exception {
         File archive = temp(".apk");
         File index = temp(".db");
