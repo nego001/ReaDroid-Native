@@ -293,8 +293,9 @@ public final class StudioDashboard {
         choose.setContentDescription("Selecionar arquivo APK para analisar");
         choose.setMinHeight(dp(a, 52));
         hero.addView(choose);
-        home.addView(hero);
-        gap(a, home, 14);
+        // Put live information immediately after the welcome card, exactly
+        // as in the approved Home mockup; the full project card goes below
+        // the six compact actions so it doesn't consume the first viewport.
         // Session-only counters and a clickable current-project row.
         home.addView(overview);
         gap(a, home, 14);
@@ -309,7 +310,9 @@ public final class StudioDashboard {
         shortcutHint.setPadding(0, 0, 0, dp(a, 10));
         home.addView(shortcutHint);
         home.addView(quickGrid);
-        gap(a, home, 8);
+        gap(a, home, 12);
+        home.addView(hero);
+        gap(a, home, 10);
 
         // Personalization panel: 11 real controls rendered as compact two-column
         // options. Their original click handlers remain authoritative.
