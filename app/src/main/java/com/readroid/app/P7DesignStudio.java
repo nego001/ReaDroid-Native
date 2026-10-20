@@ -16,6 +16,9 @@ public final class P7DesignStudio {
     private final LinearLayout root;
     private final Button[] actions;
     private int activeTab = 0;
+    private int selectedTheme = 0;
+    private int selectedLayout = 0;
+    private int selectedPreset = 0;
     private final LinearLayout body;
     private final TextView[] tabViews=new TextView[4];
 
@@ -108,6 +111,11 @@ public final class P7DesignStudio {
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);
         p.bottomMargin=dp(8);body.addView(button,p);
     }
+    private void note(String message) {
+        TextView text=label(message,11,NegrescoTheme.MUTED,false);
+        text.setPadding(0,dp(7),0,dp(1));
+        body.addView(text);
+    }
     private void render(){
         for(int i=0;i<tabViews.length;i++){
             if(tabViews[i]==null)continue;
@@ -119,23 +127,36 @@ public final class P7DesignStudio {
         body.removeAllViews();
         if(activeTab==0){
             heading("Previews de Temas");startCards();
-            tile("Negreco Blue","Profissional",0xff29acff,true,()->open(0));
-            tile("Carbon Dark","Minimalista",0xffa8b3c0,false,()->open(0));
-            tile("Matrix Green","Hacker Style",0xff16d995,false,()->open(0));
-            tile("Sunset","Vibrante",0xffff7080,false,()->open(0));
+            String[] themes={"Negreco Blue","Carbon Dark","Matrix Green","Sunset"};
+            String[] subtitles={"Profissional","Minimalista","Hacker Style","Vibrante"};
+            int[] colors={0xff29acff,0xffa8b3c0,0xff16d995,0xffff7080};
+            for(int i=0;i<themes.length;i++){
+                final int index=i;
+                tile(themes[i],subtitles[i],colors[i],selectedTheme==i,
+                    ()->{selectedTheme=index;render();});
+            }
+            note("Seleção de prévia. Para alterar as cores reais, use Cores e tons.");
             heading("Opções de Layout");startCards();
-            tile("Padrão","Interface",0xff29acff,true,()->open(3));
-            tile("Compacto","Denso",0xff8d9cb1,false,()->open(3));
-            tile("Moderno","Confortável",0xff7acfff,false,()->open(3));
+            String[] layouts={"Padrão","Compacto","Moderno"};
+            int[] layoutColors={0xff29acff,0xff8d9cb1,0xff7acfff};
+            for(int i=0;i<layouts.length;i++){
+                final int index=i;
+                tile(layouts[i],"Prévia",layoutColors[i],selectedLayout==i,
+                    ()->{selectedLayout=index;render();});
+            }
+            note("Layout selecionado apenas nesta prévia. O ajuste real de densidade fica na aba Layout.");
             heading("Ferramentas criativas");
             actionCard("Criador de Ícones","Editor em desenvolvimento",7);
             actionCard("Logo Studio","Identidade visual e prévia",6);
             heading("Presets de Aparência");startCards();
-            tile("Dark OLED","Escuro",0xff29acff,true,()->open(0));
-            tile("Cyber Neon","Neon",0xffde42ff,false,()->open(0));
-            tile("Minimal","Claro",0xffcbd8f9,false,()->open(0));
-            tile("Glass","Vidro",0xff56c9ff,false,()->open(0));
-            tile("Retro","Colorido",0xffff518a,false,()->open(0));
+            String[] presets={"Dark OLED","Cyber Neon","Minimal","Glass","Retro"};
+            int[] presetColors={0xff29acff,0xffde42ff,0xffcbd8f9,0xff56c9ff,0xffff518a};
+            for(int i=0;i<presets.length;i++){
+                final int index=i;
+                tile(presets[i],"Prévia",presetColors[i],selectedPreset==i,
+                    ()->{selectedPreset=index;render();});
+            }
+            note("Presets de exemplo: ainda não são arquivos salvos nem estilos aplicados.");
         }else if(activeTab==1){
             heading("Opções de Layout");
             actionCard("Padrão / Compacto","Alterar densidade real da interface",3);
