@@ -24,7 +24,12 @@ def check():
     labels = {n.attrib.get("text", "") for n in nodes}
     assert "Explorador de Arquivos" in labels, "P7 Explorer header missing"
     assert "Nenhum APK selecionado" in labels, "Unloaded state missing"
-    assert "Todos" in labels, "Quick filter bar missing"
+    for chip in ("Todos", "Smali", "Recursos", "Imagens", "XML"):
+        assert chip in labels, f"Reference filter missing: {chip}"
+    for description in ("Voltar no Explorador", "Mais opções do Explorador",
+                        "Abrir plano de edição", "Abrir filtros avançados"):
+        assert any(n.attrib.get("content-desc", "") == description
+                   for n in nodes), f"Missing real Explorer control: {description}"
     assert any(n.attrib.get("content-desc", "").startswith("Ir à raiz do APK")
                for n in nodes), "Interactive breadcrumb root missing"
     api = smoke.adb("shell", "getprop", "ro.build.version.sdk").strip()
