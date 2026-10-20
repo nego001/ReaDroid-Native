@@ -117,7 +117,10 @@ public final class ApkDiskIndexInstrumentedTest {
                 ApkDiskIndex.build(archive, index);
                 fail("Traversal must fail before an index becomes available");
             } catch (IOException expected) {
-                assertTrue(expected.getMessage().contains("inseguro"));
+                assertTrue("Rejeição deveria identificar caminho inseguro, mas foi: "
+                    + expected.getMessage(),
+                    expected.getMessage() != null
+                        && expected.getMessage().toLowerCase(Locale.ROOT).contains("inseguro"));
                 assertFalse("Partial DB must be removed", index.exists());
             }
         } finally {
