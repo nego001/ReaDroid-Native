@@ -1392,6 +1392,7 @@ public class MainActivity extends Activity {
                     .setNegativeButton("Cancelar", null)
                     .setPositiveButton("Limpar", (d, w) -> {
                         P7ProjectHistory.clear(this);
+                        P7RecentAppIcons.prune(this, P7ProjectHistory.list(this));
                         refreshRecentProjects();
                     }).show())
             .setNegativeButton("Fechar", null).show();
@@ -1461,7 +1462,10 @@ public class MainActivity extends Activity {
                     JSONObject manifest = result.report.optJSONObject("manifestAnalysis");
                     String packageName = manifest == null ? "" :
                         manifest.optString("packageName", "");
-                    P7ProjectHistory.record(this, uri, packageName);
+                    if (P7ProjectHistory.record(this, uri, packageName)) {
+                        P7RecentAppIcons.capture(this, uri, result.file);
+                        P7RecentAppIcons.prune(this, P7ProjectHistory.list(this));
+                    }
                 }
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
