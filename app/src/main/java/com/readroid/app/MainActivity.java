@@ -132,15 +132,21 @@ public class MainActivity extends Activity {
 
         android.content.SharedPreferences appearance =
             getSharedPreferences("v3_personalizacao", MODE_PRIVATE);
-        String displayName = appearance.getString("display_name", "NEGRESCODROID");
+        String displayName = appearance.getString("display_name", "NegrecoDroid");
+        // Migrate only the old built-in brand; user-supplied names are retained.
+        if ("NEGRESCODROID".equals(displayName) || "NegrescoDroid".equals(displayName)) {
+            displayName = "NegrecoDroid";
+            appearance.edit().putString("display_name", displayName).apply();
+        }
         String displaySubtitle = appearance.getString("display_subtitle", "APK ENGINEERING STUDIO");
         LinearLayout brandRow = new LinearLayout(this);
         brandRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         brandRow.setPadding(0, NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 14));
-        NavGlyph brandMark = new NavGlyph(this, 2);
-        brandMark.setSelectedState(true);
+        android.widget.ImageView brandMark = new android.widget.ImageView(this);
+        brandMark.setImageResource(R.drawable.ic_negrecodroid_foreground);
+        brandMark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         brandRow.addView(brandMark, new LinearLayout.LayoutParams(
-            NegrescoTheme.dp(this, 38), NegrescoTheme.dp(this, 38)));
+            NegrescoTheme.dp(this, 46), NegrescoTheme.dp(this, 46)));
         LinearLayout brandText = new LinearLayout(this);
         brandText.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -395,7 +401,7 @@ public class MainActivity extends Activity {
                 | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
             nameInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(30)});
             nameInput.setText(getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
-                .getString("display_name", "NEGRESCODROID"));
+                .getString("display_name", "NegrecoDroid"));
             form.addView(nameInput);
             android.widget.EditText subtitleInput = new android.widget.EditText(this);
             subtitleInput.setSingleLine(true);
@@ -411,7 +417,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     String name = nameInput.getText().toString().trim();
                     String subtitle = subtitleInput.getText().toString().trim();
-                    if (name.isEmpty()) name = "NEGRESCODROID";
+                    if (name.isEmpty()) name = "NegrecoDroid";
                     if (subtitle.isEmpty()) subtitle = "APK ENGINEERING STUDIO";
                     getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
                         .putString("display_name", name)
@@ -430,7 +436,7 @@ public class MainActivity extends Activity {
             preview.setBackgroundColor(NegrescoTheme.BACKGROUND);
             TextView previewTitle = NegrescoTheme.heading(this,
                 getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
-                    .getString("display_name", "NEGRESCODROID"),
+                    .getString("display_name", "NegrecoDroid"),
                 getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
                     .getString("display_subtitle", "APK ENGINEERING STUDIO"));
             preview.addView(previewTitle);
@@ -938,7 +944,7 @@ public class MainActivity extends Activity {
         securitySection.addView(signingGuide);
         signingGuide.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
             .setTitle("Assinatura de APK modificado")
-            .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO ReaDroid ainda NÃO assina APKs modificados.")
+            .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO NegrecoDroid ainda NÃO assina APKs modificados.")
             .setPositiveButton("Entendi", null).show());
 
         localIdentity = NegrescoTheme.action(this, "", false);
