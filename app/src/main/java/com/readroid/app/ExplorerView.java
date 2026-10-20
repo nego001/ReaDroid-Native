@@ -562,7 +562,7 @@ public final class ExplorerView {
         // Keep the original text prefixes and click listeners for accessibility
         // and for the proven SQLite/legacy navigation test contracts.
         int glyph = value.startsWith("▸  ") ? R.drawable.ic_p7_folder
-            : (value.contains("\\n") ? R.drawable.ic_p7_file : 0);
+            : (value.contains("\n") ? R.drawable.ic_p7_file : 0);
         if (glyph != 0) {
             android.graphics.drawable.Drawable icon = activity.getDrawable(glyph);
             if (icon != null) {
