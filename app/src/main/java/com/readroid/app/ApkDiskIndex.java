@@ -220,7 +220,16 @@ public final class ApkDiskIndex {
                 where.append("is_dir = 0 AND instr(lower(path), lower(?)) > 0");
                 args.add(query);
             }
-            if (!"Todos".equals(filter)) {
+            if ("Smali".equals(filter)) {
+                where.append(" AND (is_dir = 1 OR lower(path) LIKE '%.smali')");
+            } else if ("XML".equals(filter)) {
+                where.append(" AND (is_dir = 1 OR lower(path) LIKE '%.xml')");
+            } else if ("Imagens".equals(filter)) {
+                where.append(" AND (is_dir = 1 OR lower(path) LIKE '%.png'"
+                    + " OR lower(path) LIKE '%.webp' OR lower(path) LIKE '%.jpg'"
+                    + " OR lower(path) LIKE '%.jpeg' OR lower(path) LIKE '%.gif'"
+                    + " OR lower(path) LIKE '%.bmp')");
+            } else if (!"Todos".equals(filter)) {
                 where.append(" AND (is_dir = 1 OR category = ?)");
                 args.add(filter);
             }
