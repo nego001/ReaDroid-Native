@@ -198,8 +198,9 @@ public final class ExplorerView {
     }
 
     /** Native Explorer back/menu controls, supplied by its actual Activity. */
-    public void setNavigationActions(Runnable exit, Runnable openApk) {
-        chrome.setActions(exit, openApk);
+    public void setNavigationActions(Runnable exit, Runnable openApk,
+            Runnable reviewPlan) {
+        chrome.setActions(exit, openApk, reviewPlan);
     }
 
     public void setFiles(JSONArray array, java.io.File apkFile) {
