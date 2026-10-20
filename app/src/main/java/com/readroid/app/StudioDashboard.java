@@ -230,7 +230,7 @@ public final class StudioDashboard {
         button.setContentDescription(title + ". " + description);
     }
 
-    public static void compose(Activity a, LinearLayout home,
+    public static void compose(Activity a, LinearLayout home, LinearLayout designSettingsDestination,
                                TextView apkSummary, TextView projectMetrics, Button choose,
                                P7HomeOverview overview,
                                TextView shortcutsTitle, TextView shortcutHint, LinearLayout quickGrid,
@@ -314,6 +314,7 @@ public final class StudioDashboard {
         home.addView(hero);
         gap(a, home, 10);
 
+        // Real appearance controls belong to the Design Studio, not the Home viewport.
         // Personalization panel: 11 real controls rendered as compact two-column
         // options. Their original click handlers remain authoritative.
         LinearLayout settingsPanel = card(a, true);
@@ -335,8 +336,8 @@ public final class StudioDashboard {
         buildOptions(a, personalizationGroup, controls);
         personalizationGroup.setVisibility(expanded ? View.VISIBLE : View.GONE);
         settingsPanel.addView(personalizationGroup);
-        home.addView(settingsPanel);
-        gap(a, home, 14);
+        designSettingsDestination.addView(settingsPanel);
+        gap(a, designSettingsDestination, 14);
 
         // Actual OTA status is retained: no false claims about availability.
         LinearLayout updates = card(a, false);
