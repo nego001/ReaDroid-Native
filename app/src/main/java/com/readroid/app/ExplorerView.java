@@ -46,6 +46,10 @@ public final class ExplorerView {
         final int pageLimit;
         final int indexPageOffset;
 
+        BrowseState(String folder, String category, String query, int pageLimit) {
+            this(folder, category, query, pageLimit, 0);
+        }
+
         BrowseState(String folder, String category, String query,
                 int pageLimit, int indexPageOffset) {
             this.folder = folder;
