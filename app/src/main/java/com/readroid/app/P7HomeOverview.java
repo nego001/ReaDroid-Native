@@ -40,14 +40,10 @@ public final class P7HomeOverview extends LinearLayout {
         super(a);
         activity = a;
         setOrientation(VERTICAL);
-        TextView title = text("VISÃO GERAL", 13, NegrescoTheme.TEXT, true);
-        title.setLetterSpacing(0.06f);
-        addView(title);
-        View space = new View(a);
-        addView(space, new LayoutParams(1, dp(8)));
-        String[] names = {"Projetos abertos", "Itens do APK",
-            "Edições no plano", "Segurança"};
-        String[] symbols = {"◇", "▤", "✎", "⬡"};
+        // The reference starts directly with the four statistic cards.
+        String[] names = {"Projetos", "Arquivos",
+            "APKs Builds", "Ameaças"};
+        String[] symbols = {"◇", "▤", "⚒", "⬡"};
         for (int row = 0; row < 2; row++) {
             LinearLayout line = new LinearLayout(a);
             line.setOrientation(HORIZONTAL);
@@ -55,26 +51,26 @@ public final class P7HomeOverview extends LinearLayout {
             for (int column = 0; column < 2; column++) {
                 int i = row * 2 + column;
                 LinearLayout cell = vertical();
-                cell.setMinimumHeight(dp(76));
-                cell.setPadding(dp(12), dp(10), dp(10), dp(10));
+                cell.setMinimumHeight(dp(58));
+                cell.setPadding(dp(10), dp(6), dp(8), dp(6));
                 cell.setBackground(NegrescoTheme.studioCard(a, false));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
                 lp.setMargins(column == 0 ? 0 : dp(5), 0,
                     column == 0 ? dp(5) : 0, dp(9));
                 line.addView(cell, lp);
-                TextView icon = text(symbols[i], 17, NegrescoTheme.ACCENT, true);
+                TextView icon = text(symbols[i], 15, NegrescoTheme.ACCENT, true);
                 cell.addView(icon);
-                values[i] = text("—", 19, NegrescoTheme.TEXT, true);
+                values[i] = text("—", 17, NegrescoTheme.TEXT, true);
                 cell.addView(values[i]);
-                TextView name = text(names[i], 11, NegrescoTheme.MUTED, false);
+                TextView name = text(names[i], 10, NegrescoTheme.MUTED, false);
                 cell.addView(name);
             }
         }
         TextView heading = text("Projetos recentes", 15, NegrescoTheme.TEXT, true);
-        heading.setPadding(0, dp(7), 0, dp(9));
+        heading.setPadding(0, dp(9), 0, dp(6));
         addView(heading);
         recentCard = vertical();
-        recentCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        recentCard.setPadding(dp(12), dp(9), dp(12), dp(9));
         recentCard.setBackground(NegrescoTheme.studioCard(a, false));
         addView(recentCard);
         recentName = text("Nenhum projeto aberto", 14, NegrescoTheme.TEXT, true);
@@ -98,9 +94,10 @@ public final class P7HomeOverview extends LinearLayout {
         if (count < 0 && explorer != null && explorer.optJSONArray("files") != null)
             count = explorer.optJSONArray("files").length();
         values[1].setText(count >= 0 ? String.valueOf(count) : "—");
-        values[2].setText(active ? String.valueOf(Math.max(0, editCount)) : "—");
-        values[3].setText(active ? "Consultar" : "Pendente");
-        values[3].setTextSize(14 * NegrescoTheme.FONT_SCALE);
+        // The app has no persisted build counter or verified threat scan yet.
+        // Showing zero threats or fabricated builds would mislead the user.
+        values[2].setText("—");
+        values[3].setText("—");
         if (!active) {
             recentName.setText("Nenhum projeto aberto");
             recentDetails.setText("O histórico persistente ainda está em desenvolvimento.");
