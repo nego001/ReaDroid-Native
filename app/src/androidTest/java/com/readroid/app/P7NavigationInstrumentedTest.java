@@ -13,7 +13,7 @@ import static org.junit.Assert.*;
 public final class P7NavigationInstrumentedTest {
     private static View byDescription(View view,String prefix) {
         CharSequence label=view.getContentDescription();
-        if(label!=null && label.toString().startsWith(prefix))return view;
+        if(label!=null && (label.toString().startsWith(prefix)\n            || (prefix.startsWith("Abrir seção ") && label.toString()\n                .startsWith("Seção " + prefix.substring("Abrir seção ".length()))))\n            && view.isClickable())return view;
         if(view instanceof ViewGroup) {
             ViewGroup group=(ViewGroup)view;
             for(int i=0;i<group.getChildCount();i++) {
