@@ -737,6 +737,30 @@ public class MainActivity extends Activity {
             }
         }
 
+        // Extra P7 shortcuts use actual existing commands, not simulated builds.
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        quickGrid.addView(actionRow);
+        LinearLayout openTile = StudioDashboard.quickTile(this, "Abrir APK",
+            "Selecionar arquivo no Android", 1, false, v -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                startActivityForResult(intent, 1);
+            });
+        LinearLayout planTile = StudioDashboard.quickTile(this, "Plano de edição",
+            "Revisar alterações pendentes", 2, false, v -> reviewEditPlan());
+        for (int col = 0; col < 2; col++) {
+            LinearLayout tile = col == 0 ? openTile : planTile;
+            tile.setMinimumHeight(NegrescoTheme.dp(this,
+                NegrescoTheme.COMPACT ? 122 : 142));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            lp.setMargins(col == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
+                col == 0 ? NegrescoTheme.dp(this, 5) : 0,
+                NegrescoTheme.dp(this, 10));
+            actionRow.addView(tile, lp);
+        }
+
         TextView detailsTitle = new TextView(this);
         detailsTitle.setText("RELATÓRIO TÉCNICO");
         detailsTitle.setTextSize(12);
