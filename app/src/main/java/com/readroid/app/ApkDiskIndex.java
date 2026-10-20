@@ -292,7 +292,8 @@ public final class ApkDiskIndex {
         return values;
     }
 
-    private static void validatePath(String path) throws IOException {
+    // Package-private for platform-independent path-security regression tests.
+    static void validatePath(String path) throws IOException {
         if (path == null || path.isEmpty() || path.length() > MAX_PATH_CHARS
                 || path.startsWith("/") || path.indexOf('\\') >= 0
                 || path.indexOf(0) >= 0)

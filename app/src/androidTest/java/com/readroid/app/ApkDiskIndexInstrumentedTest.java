@@ -117,16 +117,33 @@ public final class ApkDiskIndexInstrumentedTest {
                 ApkDiskIndex.build(archive, index);
                 fail("Traversal must fail before an index becomes available");
             } catch (IOException expected) {
-                assertTrue("Rejeição deveria identificar caminho inseguro, mas foi: "
-                    + expected.getMessage(),
-                    expected.getMessage() != null
-                        && expected.getMessage().toLowerCase(Locale.ROOT).contains("inseguro"));
+                // Android 14+ ZipFile may reject traversal names itself,
+                // before validatePath() runs. Both outcomes must fail closed.
                 assertFalse("Partial DB must be removed", index.exists());
             }
         } finally {
             archive.delete();
             android.database.sqlite.SQLiteDatabase.deleteDatabase(index);
         }
+    }
+
+    @Test public void internalPathValidatorRejectsTraversalOnEveryAndroid()
+            throws Exception {
+        String[] invalid = {"../bad.txt", "assets/../../bad.txt",
+            "/absolute/file.bin", "assets/./bad.txt",
+            "assets//bad.txt", "assets\\\\bad.txt", ""};
+        for (String name : invalid) {
+            try {
+                ApkDiskIndex.validatePath(name);
+                fail("The internal validator accepted unsafe path: " + name);
+            } catch (IOException expected) {
+                assertTrue("Path should be described as unsafe: " + name,
+                    expected.getMessage() != null
+                    && (expected.getMessage().contains("inseguro")
+                        || expected.getMessage().contains("insegura")));
+            }
+        }
+        ApkDiskIndex.validatePath("assets/nested/ok.txt");
     }
 
     @Test public void refusesExistingIndexAndUnboundedPages() throws Exception {
