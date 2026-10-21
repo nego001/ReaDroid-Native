@@ -78,7 +78,10 @@ def check():
                    "Abrir criador de ícones  ↗")
                and n.attrib.get("clickable") == "true"]
     assert len(actions) == 1, "Native icon creator entry missing"
-    smoke.tap(actions[0])
+    templates = [n for n in icon_nodes if n.attrib.get("content-desc") ==
+                 "Personalizar ícone Código Neon"]
+    assert len(templates) == 1, "Original icon template gallery missing"
+    smoke.tap(templates[0])
     workshop = smoke.visible_app_hierarchy()
     workshop_texts = {n.attrib.get("text", "") for n in workshop}
     for expected in ("Criador de Ícones", "Cor", "Símbolo",
@@ -87,6 +90,12 @@ def check():
             "Native icon workshop missing real control " + expected)
     assert any(n.attrib.get("content-desc") == "Prévia original do ícone"
                for n in workshop), "Native Canvas icon preview not displayed"
+    # This template must preselect its real saved-to-PNG drawing parameters.
+    for choice in ("Violeta", "Código", "Circular"):
+        assert any(n.attrib.get("text") == choice
+                   and n.attrib.get("checked") == "true"
+                   for n in workshop), (
+            "Catalog template did not initialize option " + choice)
     # Cancel, don't create an APK or write a PNG during CI smoke.
     smoke.adb("shell", "input", "keyevent", "4")
     smoke.ensure_foreground()
