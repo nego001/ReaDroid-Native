@@ -195,3 +195,13 @@ O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por pl
 **Regressão:** `IndexedExplorerViewInstrumentedTest` cola string de 300 caracteres e verifica o corte para 256, ausência de alerta de índice inválido, preservação de busca em arquivo na terceira página (`assets/a300.txt`) e restauração segura da busca. A execução do novo commit ainda depende da matriz Android 10/15.
 
 **Escopo:** P7 apenas, PR draft, `main` intacta, sem APK distribuível nem versionCode, P8 separada. Fidelidade 1:1 e teste no aparelho físico pendentes.
+
+## P7.0 — verificador de integridade das artes oficiais (21/10/2026)
+
+**Bloqueio confirmado:** `design/reference/p7/` ainda não contém os dois mockups PNG aprovados na issue #11. Não é possível declarar conformidade visual 1:1 sem os bytes originais.
+
+**Preparação verificável:** `tools/p7_reference_assets.py` valida os dois nomes fixos, dimensões 1448×1086, chunks/CRC da estrutura PNG, IEND e o SHA-256 exato documentado. Arquivos ausentes, regravados ou danificados resultam em `P7_REFERENCE_BLOCKED` com exit code diferente de zero, sem geração de substitutos. README documenta a inserção dos PNGs oficiais em `design/reference/p7/`.
+
+**Testes automáticos da ferramenta:** `tests/test_p7_reference_assets.py` utiliza apenas PNGs sintéticos pequenos para verificar integridade, dimensões incorretas, adulterações, dados adicionais e exigência dos dois arquivos. `.github/workflows/static-check.yml` executa esses testes, sem tentar homologar como presente uma referência não versionada.
+
+**Pendente:** obter as duas imagens originais do proprietário, confirmar seus hashes e só então integrar comparação 1:1 das capturas reais. A validação do novo commit Android 10/15 e CI ainda precisa ser confirmada. Sem APK distribuível, sem merge na main e sem antecipar P8.
