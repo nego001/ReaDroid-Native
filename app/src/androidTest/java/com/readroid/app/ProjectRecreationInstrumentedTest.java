@@ -1,5 +1,6 @@
 package com.readroid.app;
 
+import android.net.Uri;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -19,6 +20,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -175,6 +179,61 @@ public final class ProjectRecreationInstrumentedTest {
                 });
                 assertArrayEquals("Rotation must never modify the original APK",
                     original, Files.readAllBytes(apk.toPath()));
+            }
+        } finally {
+            apk.delete();
+        }
+    }
+
+    @Test public void failedReplacementRetainsOldApkAndUnsavedEdits()
+            throws Exception {
+        File apk = File.createTempFile("p7_previous_project_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            byte[] originalBytes = Files.readAllBytes(apk.toPath());
+            Uri previousUri = Uri.parse("content://com.readroid.app.original/project.apk");
+            Uri brokenUri = Uri.parse("content://com.readroid.app.invalid/new.apk");
+            CountDownLatch analyzed = new CountDownLatch(1);
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        setField(activity, "selectedApkUri", previousUri);
+                        // Exercise the actual async import implementation.
+                        // The invalid content authority cannot produce an APK.
+                        Method open = MainActivity.class.getDeclaredMethod(
+                            "analyzeSelectedApk", Uri.class);
+                        open.setAccessible(true);
+                        open.invoke(activity, brokenUri);
+                        assertWorkspace(activity, apk);
+                        ExecutorService worker = (ExecutorService) field(activity,
+                            "executor");
+                        worker.execute(analyzed::countDown);
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                assertTrue("Failed import worker did not complete",
+                    analyzed.await(20, TimeUnit.SECONDS));
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, apk);
+                        assertEquals("Failed import must not replace selected URI",
+                            previousUri, field(activity, "selectedApkUri"));
+                        assertNull("Failed import must clear its pending URI",
+                            field(activity, "pendingApkUri"));
+                        TextView summary = (TextView) field(activity, "apkSummary");
+                        assertFalse("Previous project summary was replaced by failure",
+                            summary.getText().toString().contains("FALHA"));
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                assertArrayEquals("Failed import changed the existing APK bytes",
+                    originalBytes, Files.readAllBytes(apk.toPath()));
             }
         } finally {
             apk.delete();

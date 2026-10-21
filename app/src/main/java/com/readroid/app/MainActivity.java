@@ -65,6 +65,8 @@ public class MainActivity extends Activity {
     private int sectionNavigationGeneration;
     private int pendingScrollSection = -1;
     private Uri selectedApkUri;
+    /** A replacement is staged independently until its analysis succeeds. */
+    private Uri pendingApkUri;
     private volatile int analysisSequence = 0;
 
     /** Keep worker output separate from the Activity's current project. */
@@ -1188,7 +1190,12 @@ public class MainActivity extends Activity {
         boolean retained = restoreWorkspace();
         if (state != null) {
             selectedApkUri = state.getParcelable("selected_apk_uri");
-            if (!retained && selectedApkUri != null) analyzeSelectedApk(selectedApkUri);
+            Uri interruptedImport = state.getParcelable("pending_apk_uri");
+            // A rotation must not lose the user's already-authorized request
+            // or replace the retained old project with an unfinished import.
+            if (interruptedImport != null) analyzeSelectedApk(interruptedImport);
+            else if (!retained && selectedApkUri != null)
+                analyzeSelectedApk(selectedApkUri);
         }
         refreshRecentProjects();
     }
@@ -1607,11 +1614,12 @@ public class MainActivity extends Activity {
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Trocar de APK?")
                 .setMessage("Existem " + explorerView.getEditPlan().size()
-                    + " alterações pendentes. Ao abrir outro projeto, "
-                    + "essas alterações não exportadas serão descartadas. "
-                    + "Salve uma cópia de recuperação antes, se necessário.")
+                    + " alterações pendentes. Elas só serão descartadas "
+                    + "depois que o novo APK passar pela análise e abrir "
+                    + "com sucesso. Se falhar, seu projeto atual permanece. "
+                    + "Salve uma recuperação antes, se necessário.")
                 .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Descartar e abrir", (d, which) -> open.run())
+                .setPositiveButton("Verificar e abrir", (d, which) -> open.run())
                 .show();
         } else {
             open.run();
@@ -1620,57 +1628,85 @@ public class MainActivity extends Activity {
 
     private void analyzeSelectedApk(Uri uri) {
         final int sequence = ++analysisSequence;
-        selectedApkUri = uri;
-        report = null;
-        if (homeOverview != null) homeOverview.update(null, 0);
-        if (currentApk != null) { currentApk.delete(); currentApk = null; }
-        if (currentIndex != null) {
-            android.database.sqlite.SQLiteDatabase.deleteDatabase(currentIndex);
-            currentIndex = null;
+        pendingApkUri = uri;
+        final boolean previousProjectIsUsable =
+            currentApk != null && currentApk.isFile() && report != null;
+        // Transactional replacement: never destroy the old APK cache, its
+        // SQLite index or unsaved edit plan before the candidate validates.
+        // Keep the current project fully usable if the provider returns an
+        // invalid, missing, oversized or inaccessible replacement document.
+        if (!previousProjectIsUsable) {
+            report = null;
+            if (homeOverview != null) homeOverview.update(null, 0);
+            output.setText("Analisando...");
+            apkSummary.setText("ANÁLISE EM ANDAMENTO");
+            projectMetrics.setText("ESTRUTURA   •   Analisando...");
+            share.setEnabled(false);
+            ai.setEnabled(false);
+            apkAdvisor.setEnabled(false);
+            project.setEnabled(false);
+            rebuild.setEnabled(false);
+            signatureInfo.setEnabled(false);
+            explorerView.setFiles(null, null);
+        } else {
+            android.widget.Toast.makeText(this,
+                "Verificando novo APK. Seu projeto atual será preservado até a validação.",
+                android.widget.Toast.LENGTH_LONG).show();
         }
-        output.setText("Analisando...");
-        apkSummary.setText("ANÁLISE EM ANDAMENTO");
-        projectMetrics.setText("ESTRUTURA   •   Analisando...");
-        share.setEnabled(false);
-        ai.setEnabled(false);
-        apkAdvisor.setEnabled(false);
-        project.setEnabled(false);
-        rebuild.setEnabled(false);
-        signatureInfo.setEnabled(false);
-        explorerView.getEditPlan().clear();
-        explorerView.setFiles(null, null);
         executor.execute(() -> {
             try {
-                AnalyzedApk result = analyze(uri);
-                // Only authorized SAF grants are saved; never persist APK bytes.
-                // Metadata lookup happens off the UI thread.
+                AnalyzedApk candidate = analyze(uri);
+                // Metadata/history work stays off the UI thread. Record only
+                // validated APKs, never malformed or failed imports.
                 if (sequence == analysisSequence) {
-                    JSONObject manifest = result.report.optJSONObject("manifestAnalysis");
+                    JSONObject manifest = candidate.report.optJSONObject("manifestAnalysis");
                     String packageName = manifest == null ? "" :
                         manifest.optString("packageName", "");
                     if (P7ProjectHistory.record(this, uri, packageName)) {
-                        P7RecentAppIcons.capture(this, uri, result.file);
+                        P7RecentAppIcons.capture(this, uri, candidate.file);
                         P7RecentAppIcons.prune(this, P7ProjectHistory.list(this));
                     }
                 }
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
-                        result.file.delete();
-                        if (result.indexFile != null)
-                            android.database.sqlite.SQLiteDatabase.deleteDatabase(result.indexFile);
+                        candidate.file.delete();
+                        if (candidate.indexFile != null)
+                            android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate.indexFile);
                         return;
                     }
-                    currentApk = result.file;
-                    currentIndex = result.indexFile;
-                    displayAnalyzedReport(result.report);
+                    File previousApk = currentApk;
+                    File previousIndex = currentIndex;
+                    // Commit the replacement only when a complete, validated
+                    // report and private file/index are ready to display.
+                    explorerView.getEditPlan().clear();
+                    currentApk = candidate.file;
+                    currentIndex = candidate.indexFile;
+                    selectedApkUri = uri;
+                    pendingApkUri = null;
+                    displayAnalyzedReport(candidate.report);
                     refreshRecentProjects();
+                    if (previousApk != null && previousApk != candidate.file)
+                        previousApk.delete();
+                    if (previousIndex != null && previousIndex != candidate.indexFile)
+                        android.database.sqlite.SQLiteDatabase.deleteDatabase(previousIndex);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) return;
-                    output.setText("Erro: " + error.getMessage());
-                    apkSummary.setText("FALHA AO ABRIR PROJETO");
-                    projectMetrics.setText("ESTRUTURA   •   Indisponível");
+                    pendingApkUri = null;
+                    if (previousProjectIsUsable) {
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Falha ao abrir outro APK")
+                            .setMessage("Não foi possível validar o novo arquivo: "
+                                + error.getMessage()
+                                + "\n\nSeu projeto, a pesquisa e as alterações "
+                                + "pendentes foram preservados.")
+                            .setPositiveButton("Entendi", null).show();
+                    } else {
+                        output.setText("Erro: " + error.getMessage());
+                        apkSummary.setText("FALHA AO ABRIR PROJETO");
+                        projectMetrics.setText("ESTRUTURA   •   Indisponível");
+                    }
                 });
             }
         });
@@ -1970,6 +2006,7 @@ public class MainActivity extends Activity {
                 Integer.toString(pendingLogoExport.color),
                 Integer.toString(pendingLogoExport.background) });
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
+        if (pendingApkUri != null) outState.putParcelable("pending_apk_uri", pendingApkUri);
         super.onSaveInstanceState(outState);
     }
 
