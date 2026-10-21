@@ -32,14 +32,17 @@ def populate(directory, api=29, size=(400, 800), density=160):
 
 
 class P7ScreenshotInventoryTests(unittest.TestCase):
-    def test_all_eleven_named_screens_and_hashes_are_recorded(self):
+    def test_all_thirteen_named_screens_and_hashes_are_recorded(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             populate(root)
             result = capture.build_manifest(
                 root, 29, (400, 800), 160, reference_dir=root)
             self.assertEqual(1, result["schema_version"])
-            self.assertEqual(11, len(result["screenshots"]))
+            self.assertEqual(13, len(result["screenshots"]))
+            self.assertEqual({("security", "normal"), ("build", "normal")},
+                {(s["screen"], s["scenario"]) for s in result["screenshots"]
+                 if s["screen"] in ("security", "build")})
             self.assertEqual("BLOCKED", result["official_references"])
             self.assertFalse(result["pixel_perfect_approved"])
             self.assertFalse(result["physical_device_approved"])

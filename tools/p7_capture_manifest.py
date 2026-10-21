@@ -26,6 +26,8 @@ MAX_BYTES = 16 * 1024 * 1024
 SCREENS = (
     ("home", "normal", "p7-brand-android-{api}.png"),
     ("explorer", "normal", "p7-explorer-android-{api}.png"),
+    ("security", "normal", "p7-security-android-{api}.png"),
+    ("build", "normal", "p7-build-android-{api}.png"),
     ("design", "normal", "p7-design-android-{api}.png"),
     ("icon_workshop", "normal", "p7-icon-workshop-android-{api}.png"),
     ("logo_workshop", "normal", "p7-logo-workshop-android-{api}.png"),
@@ -100,7 +102,7 @@ def inspect_png(path):
 
 
 def build_manifest(directory, api, viewport, density, reference_dir=None):
-    """Validate all eleven screenshots; never silently omit a failed scene."""
+    """Validate all thirteen screenshots; never silently omit a failed scene."""
     if str(api) not in ("29", "35"):
         raise ScreenshotEvidenceError("Unexpected Android API for P7 evidence")
     width, height = viewport

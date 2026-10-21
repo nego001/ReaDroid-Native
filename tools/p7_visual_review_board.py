@@ -2,7 +2,7 @@
 """Offline P7 visual-review board from verified Android emulator evidence.
 
 The result is a human review aid, NOT automated visual or physical acceptance.
-Open it alongside the 11 PNG files from the same downloaded workflow artifact.
+Open it alongside the 13 PNG files from the same downloaded workflow artifact.
 Reference artwork is embedded ONLY after the exact original PNGs pass SHA-256.
 """
 import argparse
@@ -23,6 +23,8 @@ MAX_MANIFEST_BYTES = 128 * 1024
 SCENE_NAMES = {
     "home": "Início",
     "explorer": "Explorador de arquivos",
+    "security": "Segurança",
+    "build": "Construir",
     "design": "Design Studio",
     "icon_workshop": "Criador de ícones",
     "logo_workshop": "Criador de logotipos",
@@ -84,7 +86,7 @@ def verified_manifest(manifest_path, screenshots, reference_dir):
     except (KeyError, ValueError, TypeError, OSError,
             capture.ScreenshotEvidenceError) as error:
         raise ReviewBoardError(f"Invalid P7 screenshot evidence: {error}") from error
-    # Require all 11 canonical filenames, real bytes, recomputed hashes,
+    # Require all 13 canonical filenames, real bytes, recomputed hashes,
     # declared viewport/density and honest approval flags.
     if data != expected:
         raise ReviewBoardError(
@@ -117,7 +119,7 @@ def render_board(manifest_path, screenshots, reference_dir):
         f"<p class='meta'>Viewport: {manifest['emulator']['baseline_width_px']} × "
         f"{manifest['emulator']['baseline_height_px']} px · "
         f"Densidade: {manifest['emulator']['density_dpi']} dpi · "
-        "11 capturas verificadas por SHA-256, dimensão e estrutura PNG.</p></div>",
+        "13 capturas verificadas por SHA-256, dimensão e estrutura PNG.</p></div>",
         "<h2>Artes oficiais vinculantes</h2><div class='grid'>",
     ]
     for name, expected_hash in references.REFERENCES.items():

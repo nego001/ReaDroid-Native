@@ -48,7 +48,9 @@ class ReviewBoardTests(unittest.TestCase):
             self.assertIn("BLOQUEADO: ARTES OFICIAIS", content)
             self.assertIn("Visual 1:1:</strong> NÃO APROVADO", content)
             self.assertIn("Teste físico:</strong> NÃO APROVADO", content)
-            self.assertEqual(11, content.count("loading='lazy'"))
+            self.assertEqual(13, content.count("loading='lazy'"))
+            self.assertIn("Segurança", content)
+            self.assertIn("Construir", content)
             self.assertEqual(2, content.count("Imagem oficial não disponível"))
             self.assertNotIn("data:image/png;base64", content)
             self.assertNotIn("<script", content)
@@ -89,7 +91,7 @@ class ReviewBoardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             manifest = fixture(root)
-            (root / "p7-logo-workshop-android-29.png").unlink()
+            (root / "p7-security-android-29.png").unlink()
             with self.assertRaises(board.ReviewBoardError):
                 board.render_board(manifest, root, root)
             manifest.write_bytes(b" " * (board.MAX_MANIFEST_BYTES + 1))

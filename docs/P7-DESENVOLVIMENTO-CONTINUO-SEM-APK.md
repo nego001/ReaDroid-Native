@@ -349,3 +349,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Pipeline:** workflow P7 roda testes unitários, depois gera o HTML após a coleta das 11 imagens e envia HTML + manifest JSON + PNGs no mesmo artefato Android 10/15; sem arquivos/cópias de APK de distribuição. Testes `tests/test_p7_visual_review_board.py` cobrem integridade do material, status bloqueado, ausência de recursos externos, não modificação de PNGs, falsificação de aprovação, hash divergente, imagem danificada ou faltante.
 
 **Status:** esta entrega de documentação/ferramenta não é aprovação 1:1. Confirmar Source/OTA/matriz API29/35 no SHA resultante antes de marcar PASS; nunca presumir aprovação a partir do código enviado. PR #13 draft, `main`, P8 e arquitetura das IAs intocadas.
+
+## P7.6 — evidência das cinco seções principais (21/10/2026)
+
+**Base verificada:** commit `d512f14c`, [matriz Android 39656969573](https://github.com/nego001/ReaDroid-Native/actions/runs/39656969573) `success`, **36/36 instrumentações nas APIs 29 e 35**, fontes 130% e 200%, `P7_EVIDENCE_PASS` e `P7_VISUAL_BOARD_PASS` nos dois Androids. [Source 39656969676](https://github.com/nego001/ReaDroid-Native/actions/runs/39656969676) e [OTA 39656969535](https://github.com/nego001/ReaDroid-Native/actions/runs/39656969535) aprovados. API35 recuperada de erro transitório do SDK no rerun, sem alteração de código.
+
+**Lacuna:** a navegação já tem cinco seções (Início, Arquivos, Segurança, Build, Design), mas as capturas da P7 não documentavam as páginas Segurança e Construir, apesar de terem ações importantes como o guia de assinatura e a revisão de edições.
+
+**Melhoria:** novo `tools/p7_security_build_smoke.py` visita as abas Segurança e Build, valida títulos e seleção, captura os PNGs reais `p7-security-android-{api}.png` e `p7-build-android-{api}.png`, abre somente o guia informativo de assinatura e o diálogo de revisão do plano, e volta sem modificar o projeto. Não importa APK, não cria chave/assinatura, não exporta APK nem limpa o plano. Inventário passa de **11 para 13** PNGs obrigatórios por API, com integridade CRC, dimensões e SHA-256; painel visual offline expõe Segurança e Construir; testes unitários exercitam os novos cenários e rejeição de captura ausente. O workflow executa o smoke antes do Design e inclui imagens e relatório no mesmo artefato.
+
+**Homologação:** depende de matriz API29/35 `success` no commit desta mudança. As artes oficiais ainda faltam, por isso `official_references=BLOCKED`; nenhum aceite visual 1:1, Galaxy A55, merge, APK distribuível, OTA ou versionCode novo. PR #13 draft, P8/IA social intactos.

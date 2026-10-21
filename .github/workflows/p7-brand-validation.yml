@@ -7,6 +7,7 @@ on:
       - 'app/src/qa/**'
       - 'app/src/androidTest/**'
       - 'tools/p7_explorer_smoke.py'
+      - 'tools/p7_security_build_smoke.py'
       - 'tools/p7_compact_smoke.py'
       - 'tools/p7_large_text_smoke.py'
       - 'tools/p7_capture_manifest.py'
@@ -81,6 +82,9 @@ jobs:
             python3 tools/p7_home_smoke.py
             python3 tools/p7_explorer_smoke.py
             test -s p7-explorer-android-${{ matrix.api }}.png
+            python3 tools/p7_security_build_smoke.py
+            test -s p7-security-android-${{ matrix.api }}.png
+            test -s p7-build-android-${{ matrix.api }}.png
             python3 tools/p7_design_smoke.py
             test -s p7-design-android-${{ matrix.api }}.png
             test -s p7-icon-workshop-android-${{ matrix.api }}.png
@@ -105,6 +109,8 @@ jobs:
           path: |
             p7-brand-android-*.png
             p7-explorer-android-*.png
+            p7-security-android-*.png
+            p7-build-android-*.png
             p7-design-android-*.png
             p7-compact-*-android-*.png
             p7-large-text-*-android-*.png
