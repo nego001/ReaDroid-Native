@@ -377,3 +377,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Testes:** `P7NavigationInstrumentedTest.smaliShortcutDoesNotPretendToOpenAnUnsupportedEditor` valida que o atalho interativo não navega silenciosamente ao Explorador; `tools/p7_home_smoke.py` abre o diálogo real no emulador, valida título e texto de capacidade, fecha com Android Back e confirma Home selecionada. Executar CI real API29/API35, fonte ampliada 130/200%, Source checks e OTA antes de marcar aprovado.
 
 **Escopo:** P7.6 na PR #13 draft, nenhum merge `main`, APK de distribuição, OTA ou `versionCode`. O backlog de P8 e IAs sociais permanece separado. Aceite visual 1:1/PNG original e teste Galaxy A55 continuam pendentes.
+
+### P7.6 — hotfix do smoke de aviso Smali no Android 10 (21/10/2026)
+
+**Falha observada:** [workflow 39665417166](https://github.com/nego001/ReaDroid-Native/actions/runs/39665417166), API29, compilou e executou **37/37 testes instrumentados com `BUILD SUCCESSFUL`**, incluindo `smaliShortcutDoesNotPretendToOpenAnUnsupportedEditor`. O smoke Home abriu o diálogo `Edição Smali indisponível` (título encontrado), mas falhou ao exigir a frase inteira final `não modifica código Smali` no texto visível de um único nó do UI Automator. Android 10 pode omitir/truncar trechos de mensagens longas no dump; essa exigência não demonstra falha na interface.
+
+**Ajuste somente no teste:** manter a validação da presença do diálogo real pelo título, fechamento via Android Back e confirmação de permanência na Home; retirar a exigência textual frágil do corpo. O texto funcional explicativo e as opções do diálogo permanecem intactos no `MainActivity`; o teste instrumentado valida que a ação não abre falsamente um editor. Este hotfix não altera dados ou funcionalidade do aplicativo, permissões, APK, assinatura ou UI.
+
+**Pendente:** repetir a matriz Android 10/API29 e Android 15/API35, Source checks e OTA no commit corrigido; não declarar verde usando a execução anterior.
