@@ -43,3 +43,25 @@ obtidos por ADB. Qualquer captura ausente ou inválida faz o job falhar.
 mas **NÃO aprova a fidelidade visual 1:1**, não substitui os dois PNGs aprovados
 pelo usuário e não substitui homologação no Galaxy A55. Enquanto as referências
 oficiais estiverem ausentes, o campo `official_references` será `BLOCKED`.
+
+## Painel local de comparação humana
+
+Após o workflow, cada artefato `p7-brand-android-29` e `p7-brand-android-35`
+inclui, além das 11 capturas e seu JSON de integridade, o arquivo
+`p7-visual-review-android-{api}.html`. Extraia o ZIP preservando os PNGs na
+mesma pasta e abra o HTML no navegador para inspecionar as imagens lado a lado
+por cenário. É uma ferramenta **offline, sem JavaScript e sem chamadas de rede**.
+
+O painel revalida o inventário contra os próprios PNGs antes da geração e
+mostra as artes oficiais apenas quando o verificador exige e confirma os dois
+SHA-256 originais. Se os PNGs aprovados não estiverem no repositório, indica
+`BLOQUEADO`, sem substituir imagens por arte sintética ou capturas de CI.
+Mesmo com as referências presentes, a análise 1:1 e o teste físico exigem
+aprovação humana separada. O painel é gerado com:
+
+```sh
+python3 tools/p7_visual_review_board.py
+```
+
+A saída preserva os PNGs originais, não faz recortes automáticos ou inferência
+de alinhamento entre uma arte de 1448×1086 e uma captura vertical.
