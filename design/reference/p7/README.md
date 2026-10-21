@@ -23,3 +23,23 @@ substituir hashes automaticamente. A verificação do script em CI usa PNGs
 sintéticos gerados apenas nos testes, não aceita mockups ausentes como
 referências válidas. Depois da incorporação, executar comparação manual
 de screenshots reais vs. os recortes oficiais no viewport definido na issue #11.
+
+## Evidências automatizadas da matriz Android
+
+Além das capturas do emulador, a matriz P7 gera o arquivo
+`p7-evidence-android-29.json` ou `p7-evidence-android-35.json` via:
+
+```sh
+python3 tools/p7_capture_manifest.py
+```
+
+O manifesto exige onze screenshots por API: Home, Explorador, Design Studio,
+editor de ícones, editor de logotipo, três capturas a 320dp/fonte 130% e três
+a fonte 200%. Ele verifica a estrutura CRC/IHDR/IEND do PNG, dimensões reais,
+cenário e SHA-256 de cada arquivo e inclui os metadados de densidade/API
+obtidos por ADB. Qualquer captura ausente ou inválida faz o job falhar.
+
+**Cuidado:** esse JSON documenta evidências reais de execução do emulador,
+mas **NÃO aprova a fidelidade visual 1:1**, não substitui os dois PNGs aprovados
+pelo usuário e não substitui homologação no Galaxy A55. Enquanto as referências
+oficiais estiverem ausentes, o campo `official_references` será `BLOCKED`.

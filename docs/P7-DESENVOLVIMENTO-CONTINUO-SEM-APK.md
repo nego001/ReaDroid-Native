@@ -327,3 +327,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Teste novo:** `P7NavigationInstrumentedTest.narrowDesignKeepsSelectedTabVisible` cria widget Android real em viewport artificial de **240dp**, começa com aba Logotipo selecionada, aguarda layout, verifica que a aba está inteiramente dentro da região rolada, seleciona Temas e confirma scroll horizontal zerado. Matriz Android 10/15 e Source/OTA ainda precisam validar o novo SHA.
 
 **Limites:** P7 segue isolada em PR #13 draft, sem merge main, APK de distribuição, OTA ou versionCode alterados; P8 e IA social seguem separados. Aceite 1:1 segue condicionado aos PNGs oficiais e QA no A55.
+
+## P7.6 — inventário automático e verificável de capturas Android (21/10/2026)
+
+**Base comprovada:** commit `31519ea7` e [matriz Android 39650804366](https://github.com/nego001/ReaDroid-Native/actions/runs/39650804366) com 36/36 instrumentações por Android 10/API29 e Android 15/API35, telas funcionais, viewport 320dp/130% e fonte 200%; Source/OTA verdes. Duas referências oficiais PNG continuam ausentes e a conferência Galaxy A55 continua pendente.
+
+**Lacuna na auditoria P7.6:** o workflow armazenava várias capturas isoladas mas não tinha inventário legível por máquina com autoria da execução (API/densidade), cenário, dimensão, hash por PNG e distinção explícita entre evidência estrutural e aprovação visual 1:1. Falta de qualquer captura podia passar despercebida caso não houvesse teste específico.
+
+**Implementação planejada nesta revisão:** adicionar `tools/p7_capture_manifest.py`, com verificação de todos os **11** PNGs obrigatórios em cada Android: Home, Explorador, Design, Icon Workshop, Logo Studio, três telas 320dp/130%, três telas com fonte 200%. Cada PNG será inspecionado quanto a assinatura, IHDR, dimensões, CRC de chunks, IDAT, IEND e ausência de lixo após IEND; os hashes SHA-256 e tamanhos são registrados em `p7-evidence-android-{api}.json` com API, densidade real e resolução ADB. Nome ausente, PNG inválido ou dimensão incorreta falham fechados. A execução consulta o validador oficial de PNGs e registra `BLOCKED` enquanto as artes não estiverem disponíveis, sem transformar isso em falso aceite.
+
+**Testes:** `tests/test_p7_capture_manifest.py` com PNGs sintéticos **apenas dentro do teste unitário**, cobrindo inventário completo, cena ausente, dimensões erradas, CRC/IHDR/IEND/trailing e API inválida. O workflow passa a executar os testes antes dos emuladores, gerar o JSON após os smokes e fazer upload junto dos screenshots. Não gera APK de distribuição nem altera aplicativo/SAF/SQLite.
+
+**Status inicial:** código de auditoria novo; aprovação real da matriz Android 10/15, source e OTA deve ser verificada **no SHA do commit final**. Este JSON não compara pixels do app com as imagens promocionais originais. PR #13 draft, main/P8/IA social intactos.
