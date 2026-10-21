@@ -142,8 +142,12 @@ public final class ProjectRecreationInstrumentedTest {
                         assertEquals("assets/", snapshot.folder);
                         assertEquals("Editáveis", snapshot.category);
                         assertEquals("v3_test", snapshot.query);
-                        assertEquals("Filtro: Editáveis  ▾",
-                            ((android.widget.Button) field(explorer, "filterButton")).getText().toString());
+                        // P7 uses a compact filter icon; the active category
+                        // is announced on its selected accessible quick chip.
+                        assertEquals("▦",
+                            ((android.widget.Button) field(explorer, "filterButton"))
+                                .getText().toString());
+                        assertEquals("Editáveis", snapshot.category);
                     } catch (Exception error) { throw new AssertionError(error); }
                 });
             }

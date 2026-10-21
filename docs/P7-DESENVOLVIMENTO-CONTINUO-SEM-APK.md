@@ -417,3 +417,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção de CI:** adicionar `com.readroid.app.ProjectRecreationInstrumentedTest` à mesma matriz Gradle `connectedDebugAndroidTest` (Android 10/API29 e Android 15/API35), incluindo seus testes anteriores de retenção de projeto e filtros após `ActivityScenario.recreate()` e o novo teste da URI inválida. Isso complementa a cobertura anterior sem diminuir nenhum teste, remover smokes de 13 imagens ou gerar APK instalável de distribuição. Atualização documentada porque evidência de CI deve representar testes efetivamente executados.
 
 **Critério:** verificar aumento da contagem para **42 instrumentações por API** (39 anteriores + 3 dessa classe), nova matriz `success`, Source e OTA `success`, e ausência de regressões antes de marcar P7.6 avançada. P7 continua PR draft, P8/IA social e `main` intocados.
+
+### P7.6 — atualização de asserção legada para o filtro compacto (21/10/2026)
+
+**Auditoria da matriz [39673753692](https://github.com/nego001/ReaDroid-Native/actions/runs/39673753692):** a inclusão de `ProjectRecreationInstrumentedTest` fez os dois emuladores executarem **42 testes**. Cada API29/API35 apresentou **uma** falha na asserção antiga `expected Filtro: Editáveis ▾, actual ▦`. A própria avaliação de `snapshotBrowseState()` no teste confirmava que pasta `assets/`, categoria **Editáveis** e busca `v3_test` continuaram intactas depois da rotação. O `ExplorerView.restoreBrowseState()` da P7 usa `filterButton.setText("▦")` para o seletor compacto; o rótulo textual longo é comportamento anterior da UI.
+
+**Hotfix apenas de teste:** `ProjectRecreationInstrumentedTest.explorerFolderSearchAndFilterSurviveRecreation` confere o ícone atual **▦** e a categoria **Editáveis** restaurada no snapshot, sem alterar o widget, sua filtragem, armazenamento, SAF ou outras asserções. Mantidas as três regressões de recriação/importação na matriz. Confirmar 42/42 nas duas APIs no SHA resultante antes de homologar a troca transacional.
+
+**Fronteiras:** PR #13 draft, `main` intacta; sem APK/OTA/versionCode novos, P8 ou IA social; assets oficiais visuais e Galaxy A55 ainda não homologados.
