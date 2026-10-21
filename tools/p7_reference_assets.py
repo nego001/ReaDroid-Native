@@ -78,13 +78,14 @@ def validate_png(path, expected_sha256, dimensions=DIMENSIONS):
     return digest
 
 
-def check_references(directory=REFERENCE_DIR, references=REFERENCES):
+def check_references(directory=REFERENCE_DIR, references=REFERENCES,
+                     dimensions=DIMENSIONS):
     """Return (success, result messages), never silently accept missing PNGs."""
     messages = []
     okay = True
     for filename, sha in references.items():
         try:
-            digest = validate_png(Path(directory) / filename, sha)
+            digest = validate_png(Path(directory) / filename, sha, dimensions)
             messages.append(f"P7_REFERENCE_PASS {filename} sha256={digest}")
         except (ReferenceValidationError, OSError) as error:
             okay = False

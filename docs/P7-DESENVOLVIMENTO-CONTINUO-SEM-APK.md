@@ -205,3 +205,9 @@ O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por pl
 **Testes automáticos da ferramenta:** `tests/test_p7_reference_assets.py` utiliza apenas PNGs sintéticos pequenos para verificar integridade, dimensões incorretas, adulterações, dados adicionais e exigência dos dois arquivos. `.github/workflows/static-check.yml` executa esses testes, sem tentar homologar como presente uma referência não versionada.
 
 **Pendente:** obter as duas imagens originais do proprietário, confirmar seus hashes e só então integrar comparação 1:1 das capturas reais. A validação do novo commit Android 10/15 e CI ainda precisa ser confirmada. Sem APK distribuível, sem merge na main e sem antecipar P8.
+
+## P7.0 — correção do teste sintético do validador (21/10/2026)
+
+O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Native/actions/runs/39548519373) falhou no teste `test_both_official_files_are_required`: a fixture utiliza um PNG sintético de **3×2**, enquanto o coletor de verificação aplicava implicitamente o tamanho oficial **1448×1086** também a essa fixture. A verificação de integridade propriamente dita e os outros três testes passaram.
+
+**Correção objetiva:** o coletor `check_references` mantém **1448×1086 como padrão imutável para produção** mas recebe uma dimensão explicitamente injetada pelos testes sintéticos. Os dois cenários (uma imagem faltante e as duas presentes) passam a testar somente os PNGs 3×2 sem afrouxar a validação das artes oficiais. Novo commit exige nova execução de Source checks, OTA e emuladores, sem declarar aceite visual 1:1.

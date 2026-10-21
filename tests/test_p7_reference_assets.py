@@ -69,12 +69,12 @@ class ApprovedArtTests(unittest.TestCase):
             digest = hashlib.sha256(data).hexdigest()
             names = {"ref_one.png": digest, "ref_two.png": digest}
             Path(tmp, "ref_one.png").write_bytes(data)
-            ok, messages = assets.check_references(tmp, names)
+            ok, messages = assets.check_references(tmp, names, (3, 2))
             self.assertFalse(ok)
             self.assertEqual(2, len(messages))
             self.assertIn("P7_REFERENCE_BLOCKED ref_two.png", messages[1])
             Path(tmp, "ref_two.png").write_bytes(data)
-            ok, messages = assets.check_references(tmp, names)
+            ok, messages = assets.check_references(tmp, names, (3, 2))
             self.assertTrue(ok)
             self.assertTrue(all(x.startswith("P7_REFERENCE_PASS") for x in messages))
 
