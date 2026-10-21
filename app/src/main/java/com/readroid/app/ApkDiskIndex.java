@@ -259,6 +259,41 @@ public final class ApkDiskIndex {
         }
     }
 
+    /**
+     * Checks a retained directory against the real indexed archive. The
+     * "entries" table includes explicit and inferred directories, so this
+     * works even when that folder is absent from the limited JSON fallback.
+     * A stale/corrupt index is never accepted as authority for navigation.
+     */
+    static boolean containsDirectory(File archive, File indexFile, String directory)
+            throws IOException {
+        if (archive == null || !archive.isFile() || indexFile == null
+                || !indexFile.isFile() || directory == null
+                || !directory.endsWith("/"))
+            throw new IOException("Diretório ou índice indisponível");
+        validatePath(directory);
+        SQLiteDatabase db = null;
+        try {
+            db = SQLiteDatabase.openDatabase(indexFile.getPath(), null,
+                SQLiteDatabase.OPEN_READONLY);
+            try (Cursor meta = db.rawQuery(
+                    "SELECT source_bytes, source_modified FROM meta", null)) {
+                if (!meta.moveToFirst() || meta.getLong(0) != archive.length()
+                        || meta.getLong(1) != archive.lastModified())
+                    throw new IOException("Índice pertence a outra versão do arquivo");
+            }
+            try (Cursor found = db.rawQuery(
+                    "SELECT is_dir FROM entries WHERE path = ? LIMIT 1",
+                    new String[]{directory})) {
+                return found.moveToFirst() && found.getInt(0) == 1;
+            }
+        } catch (android.database.SQLException invalid) {
+            throw new IOException("Falha ao validar pasta no índice", invalid);
+        } finally {
+            if (db != null && db.isOpen()) db.close();
+        }
+    }
+
     private static int pragmaInteger(SQLiteDatabase db, String name) throws IOException {
         try (Cursor value = db.rawQuery("PRAGMA " + name, null)) {
             if (!value.moveToFirst()) throw new IOException("PRAGMA SQLite indisponível");

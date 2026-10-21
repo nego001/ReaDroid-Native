@@ -139,3 +139,15 @@ A matriz do commit `b9f8f0e4` concluiu com sucesso: [GitHub Actions 39537487473]
 **Explorador acessível:** controles nativos de voltar, menu, revisar plano, filtros avançados, chips rápidos, trilha de pastas e menu contextual de cada arquivo foram ajustados para alvos de toque de **48 dp no eixo pertinente**, sem mudar callbacks, planos de edição, pesquisa ou índice SQLite. Testes de UI foram ampliados para conferir dimensões reais dos controles principais.
 
 **Pendente:** resultado da próxima matriz Android 10/15 no HEAD exato e inspeção visual manual; screenshots não são, sozinhos, homologação 1:1. Continuam proibidos APK de distribuição automático, incremento de versionCode, merge na main ou antecipação da P8.
+
+## P7 — continuidade do Explorador após rotação (21/10/2026)
+
+**CI anterior:** [execução 39539885544](https://github.com/nego001/ReaDroid-Native/actions/runs/39539885544) concluiu com sucesso em Android 10 e 15, além de [Source checks](https://github.com/nego001/ReaDroid-Native/actions/runs/39539885632) e [OTA](https://github.com/nego001/ReaDroid-Native/actions/runs/39539885555) aprovados.
+
+**Defeito identificado:** o `ExplorerView.restoreBrowseState` validava a pasta ativa apenas pelos caminhos do JSON de fallback. Em arquivos grandes cujo índice SQLite traz centenas de pastas, a lista JSON pode estar parcial, e uma pasta profunda real era indevidamente descartada na recriação da Activity/rotação.
+
+**Correção:** `ApkDiskIndex.containsDirectory` verifica a linha exata de diretório (incluindo pastas vazias) em SQLite somente leitura e valida a origem por tamanho + data modificada, sem ler o conteúdo do APK. O Explorador agora restaura diretórios válidos presentes no índice, mesmo quando ausentes do fallback. Caminhos absolutos, com travessia ou inexistentes voltam à raiz de modo seguro. Nomes legítimos contendo `..` como parte do nome não são rejeitados automaticamente; a validação opera por segmentos.
+
+**Regressão:** `IndexedExplorerViewInstrumentedTest` criou fixture ZIP com 145 arquivos, fallback parcial limitado a 120, pasta aninhada fora do fallback e pasta explicitamente vazia. Verifica navegação real, restauração, diretórios inexistentes e tentativas de path traversal nas APIs 29/35.
+
+**Pendente:** validar a compilação, instrumentação Android 10/15 e evidências de navegação no commit exato antes de homologar esta correção. Mantidas as regras sem APK novo, sem versionCode, sem integração à main; P8 segue backlog.

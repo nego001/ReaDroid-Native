@@ -58,6 +58,79 @@ public final class IndexedExplorerViewInstrumentedTest {
         return null;
     }
 
+    @Test public void restoresDeepIndexedFolderMissingFromJsonFallback() throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                File apk = null, index = null;
+                try {
+                    apk = File.createTempFile("deep_restore_", ".apk", activity.getCacheDir());
+                    index = new File(apk.getAbsolutePath() + ".idx.db");
+                    JSONArray partialFallback = new JSONArray();
+                    try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                        for (int i = 0; i < 145; i++) {
+                            String path = String.format(Locale.ROOT, "assets/a%03d.txt", i);
+                            out.putNextEntry(new ZipEntry(path));
+                            out.write("a".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            out.closeEntry();
+                            if (i < 120) partialFallback.put(new JSONObject()
+                                .put("path", path).put("category", "Assets")
+                                .put("sizeBytes", 1));
+                        }
+                        out.putNextEntry(new ZipEntry("verydeep/inner/readme.txt"));
+                        out.write("hello".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        out.closeEntry();
+                        out.putNextEntry(new ZipEntry("emptyfolder/"));
+                        out.closeEntry();
+                    }
+                    ApkDiskIndex.build(apk, index);
+                    assertTrue(ApkDiskIndex.containsDirectory(apk, index, "verydeep/inner/"));
+                    assertTrue(ApkDiskIndex.containsDirectory(apk, index, "emptyfolder/"));
+                    assertFalse(ApkDiskIndex.containsDirectory(apk, index, "missing/"));
+
+                    LinearLayout firstRoot = new LinearLayout(activity);
+                    firstRoot.setOrientation(LinearLayout.VERTICAL);
+                    ExplorerView first = new ExplorerView(activity, firstRoot);
+                    first.setIndexedFiles(partialFallback, apk, index);
+                    assertTrue(entry(firstRoot, "Abrir pasta verydeep/").performClick());
+                    assertTrue(entry(firstRoot, "Abrir pasta inner/").performClick());
+                    ExplorerView.BrowseState deepState = first.snapshotBrowseState();
+                    assertEquals("verydeep/inner/", deepState.folder);
+
+                    // Simulate Activity recreation with a new ExplorerView.
+                    LinearLayout secondRoot = new LinearLayout(activity);
+                    secondRoot.setOrientation(LinearLayout.VERTICAL);
+                    ExplorerView restored = new ExplorerView(activity, secondRoot);
+                    restored.setIndexedFiles(partialFallback, apk, index);
+                    restored.restoreBrowseState(deepState);
+                    assertEquals("Deep folder should survive rotation",
+                        "verydeep/inner/", restored.snapshotBrowseState().folder);
+                    assertNotNull(entry(secondRoot, "Abrir arquivo readme.txt"));
+
+                    // Explicitly empty folders also exist in SQLite.
+                    restored.restoreBrowseState(new ExplorerView.BrowseState(
+                        "emptyfolder/", "Todos", "", 120));
+                    assertEquals("emptyfolder/", restored.snapshotBrowseState().folder);
+
+                    // Rejected paths must not escape to another archive or the host FS.
+                    for (String bad : new String[]{"verydeep/../", "/absolute/",
+                            "nonexistent/", "verydeep/inner"}) {
+                        restored.restoreBrowseState(new ExplorerView.BrowseState(
+                            bad, "Todos", "", 120));
+                        assertEquals("Unsafe or missing directory accepted",
+                            "", restored.snapshotBrowseState().folder);
+                    }
+                } catch (Exception err) {
+                    throw new AssertionError(err);
+                } finally {
+                    if (index != null)
+                        android.database.sqlite.SQLiteDatabase.deleteDatabase(index);
+                    if (apk != null) apk.delete();
+                }
+            });
+        }
+    }
+
     @Test public void indexedPagesSearchAndEditPlanSurviveNavigation() throws Exception {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

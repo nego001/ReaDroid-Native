@@ -75,11 +75,10 @@ public final class ExplorerView {
     void restoreBrowseState(BrowseState state) {
         if (state == null) return;
         // Do not trust a retained folder unless it still belongs to this APK.
-        boolean validFolder = state.folder != null && (state.folder.isEmpty()
-            || (state.folder.endsWith("/") && !state.folder.startsWith("/")
-                && !state.folder.contains("..") && !state.folder.contains("\\")
-                && hasFileBelow(state.folder)));
-        folder = validFolder ? state.folder : "";
+        // The JSON fallback may contain only a small prefix of a large APK.
+        // Restore a deep folder from the real SQLite index, not exclusively
+        // from the partial JSON list. Never trust the retained path alone.
+        folder = isRestorableFolder(state.folder) ? state.folder : "";
         activeCategory = java.util.Arrays.asList(CATEGORIES).contains(state.category)
             ? state.category : "Todos";
         filterButton.setText("▦");
@@ -99,6 +98,24 @@ public final class ExplorerView {
             if (file.optString("path").startsWith(prefix)) return true;
         }
         return false;
+    }
+
+    private boolean isRestorableFolder(String proposed) {
+        if (proposed == null) return false;
+        if (proposed.isEmpty()) return true;
+        if (!proposed.endsWith("/")) return false;
+        try {
+            // Segment-based validation allows legitimate names such as
+            // "release..backup/" but rejects traversal and absolute paths.
+            ApkDiskIndex.validatePath(proposed);
+            if (hasFileBelow(proposed)) return true;
+            // The SQLite metadata query validates the source size and mtime
+            // and checks the exact directory row (including empty folders).
+            return apkFile != null && indexFile != null
+                && ApkDiskIndex.containsDirectory(apkFile, indexFile, proposed);
+        } catch (java.io.IOException invalidOrStale) {
+            return false;
+        }
     }
 
     public ExplorerView(Activity activity, LinearLayout parent) {
