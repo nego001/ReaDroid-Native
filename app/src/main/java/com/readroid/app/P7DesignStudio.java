@@ -108,6 +108,10 @@ public final class P7DesignStudio {
             TextView tab=label(names[i],11,NegrescoTheme.TEXT,false);
             tab.setGravity(Gravity.CENTER);
             tab.setMinWidth(dp(79));tab.setMinHeight(dp(48));
+            // TextView.setMinHeight affects text layout. View's minimum
+            // property is separate and is required by accessibility
+            // measurement and touch-target contracts on Android 10/15.
+            tab.setMinimumHeight(dp(48));
             tab.setPadding(dp(10),0,dp(10),0);
             tab.setClickable(true);
             tab.setFocusable(true);
@@ -138,6 +142,7 @@ public final class P7DesignStudio {
             TextView viewAll = label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
             viewAll.setGravity(Gravity.CENTER);
             viewAll.setMinHeight(dp(48));
+            viewAll.setMinimumHeight(dp(48));
             viewAll.setPadding(dp(8), 0, dp(3), 0);
             viewAll.setClickable(true);
             viewAll.setFocusable(true);
