@@ -42,7 +42,23 @@ def check():
                       "Abrir personalização"))
     smoke.ensure_foreground()
     require(smoke.visible_app_hierarchy(), "text", "Design Studio")
-    print("P7_HOME_PASS: header, six actions, real menu and Design settings", flush=True)
+    # A Smali editor does not exist yet. The quick action must explain its
+    # actual capabilities before offering navigation to ordinary APK files.
+    smoke.tap(smoke.find_tab(smoke.visible_app_hierarchy(), "Início"))
+    smoke.ensure_foreground()
+    smali = require(smoke.visible_app_hierarchy(), "content-desc", "Editar Smali")
+    smoke.tap(smali)
+    dialog = smoke.visible_app_hierarchy()
+    require(dialog, "text", "Edição Smali indisponível")
+    assert any("não modifica código Smali" in n.attrib.get("text", "")
+               for n in dialog), "Smali shortcut misrepresents edit support"
+    smoke.adb("shell", "input", "keyevent", "4")
+    smoke.ensure_foreground()
+    selected = smoke.find_tab(smoke.visible_app_hierarchy(), "Início")
+    assert "selecionada" in selected.attrib.get("content-desc", ""), (
+        "Closing Smali explanation must not unexpectedly navigate")
+    print("P7_HOME_PASS: header, six actions, real menu, Design settings "
+          "and truthful Smali capability", flush=True)
 
 
 if __name__ == "__main__":

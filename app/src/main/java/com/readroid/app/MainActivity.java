@@ -791,7 +791,14 @@ public class MainActivity extends Activity {
                 .setTitle("Decompilação")
                 .setMessage("Decompilação Smali completa ainda não disponível.")
                 .setPositiveButton("Fechar", null).show(),
-            v -> showSection(1),
+            v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Edição Smali indisponível")
+                .setMessage("O editor Smali ainda não está implementado. "
+                    + "Em Arquivos, você pode navegar pelo APK e planejar "
+                    + "edições de texto compatíveis. Este atalho não "
+                    + "decompila nem modifica código Smali.")
+                .setPositiveButton("Abrir arquivos", (d, w) -> showSection(1))
+                .setNegativeButton("Fechar", null).show(),
             v -> new android.app.AlertDialog.Builder(this)
                 .setTitle("Assinar APK")
                 .setMessage("A assinatura de APKs reconstruídos ainda não está "

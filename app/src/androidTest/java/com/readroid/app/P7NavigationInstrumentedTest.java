@@ -285,6 +285,27 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void smaliShortcutDoesNotPretendToOpenAnUnsupportedEditor() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View home = byDescription(root, "Abrir seção Início");
+                View files = byDescription(root, "Abrir seção Arquivos");
+                View smali = byDescription(root, "Editar Smali");
+                assertNotNull(home);
+                assertNotNull(files);
+                assertNotNull("Smali shortcut is missing", smali);
+                assertTrue("The shortcut must open real capability guidance",
+                    smali.performClick());
+                assertTrue("Unsupported Smali editing must not silently "
+                    + "navigate away", home.isSelected());
+                assertFalse("The file explorer is not a Smali editor",
+                    files.isSelected());
+            });
+        }
+    }
+
     @Test public void homeHeaderOpensActualMenuAndDesignPreferences() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

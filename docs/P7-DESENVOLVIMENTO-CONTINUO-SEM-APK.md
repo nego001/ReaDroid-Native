@@ -365,3 +365,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Falha observada no SHA `1a449134`:** [run 39662050350](https://github.com/nego001/ReaDroid-Native/actions/runs/39662050350), API29, executou **36/36 testes instrumentados** com `BUILD SUCCESSFUL` e capturou `p7-security-android-29.png` após navegação real. O novo smoke abriu corretamente o diálogo **Assinatura de APK modificado** (título encontrado), mas a asserção rígida `require_text(dialog, "Entendi")` falhou porque o botão não apareceu como nó de texto visível na hierarquia uiautomator desse emulador. A falha não demonstra indisponibilidade do guia nem problemas de assinatura; é premissa frágil do teste.
 
 **Hotfix:** remover a exigência de presença textual exata do botão de ação, mantendo comprovação de título do diálogo real, `Back` Android e re-seleção da seção Segurança, sem invocar nenhuma ação de assinatura/chave. Mantido teste posterior da revisão do plano Build. Reexecutar matrizes completas nos dois emuladores antes de declarar 13/13 capturas aprovadas. Sem alteração na UI/app, SAF, APK do usuário ou política de build.
+
+## P7.6 — atalho de Smali sem falsa funcionalidade (21/10/2026)
+
+**Checkpoint:** `ce701f2c` aprovado na [matriz Android 39662929426](https://github.com/nego001/ReaDroid-Native/actions/runs/39662929426), **36/36 instrumentações por API 29/35**, 13 capturas reais por API, páginas Segurança/Build e HTML offline, com `Source checks` e OTA aprovados; referências originais ainda `BLOCKED`.
+
+**Problema de usabilidade e confiança:** no conjunto de seis atalhos da Home, tocar **Editar Smali** executava diretamente `showSection(1)`, abrindo o Explorador de arquivos sem informar que não existe editor Smali implementado. O nome do atalho pode induzir o usuário a acreditar que a operação de edição de código estava disponível. A ação Decompilar já sinalizava sua indisponibilidade, tornando a omissão inconsistente.
+
+**Correção funcional:** o mesmo atalho agora abre um diálogo Android de capacidade real com título **Edição Smali indisponível**, que explica a falta do editor/descompilador Smali, as edições textuais compatíveis existentes e a garantia de não modificar código Smali por esse botão. A pessoa pode optar por **Abrir arquivos** ou **Fechar** sem sair da Home. Nenhuma nova permissão, modificação de APK, assinatura ou gravação foi introduzida. Não se alteraram os seis rótulos e a hierarquia visual aprovados.
+
+**Testes:** `P7NavigationInstrumentedTest.smaliShortcutDoesNotPretendToOpenAnUnsupportedEditor` valida que o atalho interativo não navega silenciosamente ao Explorador; `tools/p7_home_smoke.py` abre o diálogo real no emulador, valida título e texto de capacidade, fecha com Android Back e confirma Home selecionada. Executar CI real API29/API35, fonte ampliada 130/200%, Source checks e OTA antes de marcar aprovado.
+
+**Escopo:** P7.6 na PR #13 draft, nenhum merge `main`, APK de distribuição, OTA ou `versionCode`. O backlog de P8 e IAs sociais permanece separado. Aceite visual 1:1/PNG original e teste Galaxy A55 continuam pendentes.
