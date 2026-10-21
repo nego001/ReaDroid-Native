@@ -21,8 +21,7 @@ HEADINGS = (
     ("Design", "Design Studio"),
 )
 REQUIRED_TARGETS = {
-    "Início": ("Abrir menu de navegação", "Abrir personalização",
-               "Ver todos os projetos recentes"),
+    "Início": ("Abrir menu de navegação", "Abrir personalização"),
     "Arquivos": ("Ir à raiz do APK", "Abrir plano de edição"),
     "Design": ("Temas, aba selecionada", "Layout, selecionar aba",
                "Ver todos: Previews de Temas"),
@@ -51,6 +50,13 @@ def check_screen(section, heading, viewport, density, api):
             raise AssertionError(f"{name}: navigation clipped at 200%: {bounds}")
     for description in REQUIRED_TARGETS[section]:
         require_accessible_target(nodes, description, density, viewport)
+    # The history link is intentionally hidden when the history is empty.
+    # If the device has recent entries, verify its full 48dp hitbox.
+    if section == "Início" and any(
+            n.attrib.get("content-desc") == "Ver todos os projetos recentes"
+            for n in nodes):
+        require_accessible_target(nodes, "Ver todos os projetos recentes",
+                                  density, viewport)
     filename = f"p7-large-text-{section.lower().replace('í', 'i')}-android-{api}.png"
     with open(filename, "wb") as screenshot:
         screenshot.write(subprocess.check_output(
