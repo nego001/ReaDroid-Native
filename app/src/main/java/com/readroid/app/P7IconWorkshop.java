@@ -95,15 +95,26 @@ public final class P7IconWorkshop {
         return group;
     }
 
+    /** Native thumbnail: identical drawing pipeline to the exported PNG. */
+    public static View inlinePreview(Context context, Spec spec) {
+        return new Preview(context, spec);
+    }
+
     /** Public entry point opened by either the Icons tab or its Home card. */
     public static android.app.AlertDialog open(MainActivity a) {
-        final int[] state = {0, 0, 0};
+        return open(a, new Spec(0, 0, 0));
+    }
+
+    /** Start with a legitimate, selected catalog template. */
+    public static android.app.AlertDialog open(MainActivity a, Spec initial) {
+        if (initial == null) throw new IllegalArgumentException("Ícone vazio");
+        final int[] state = {initial.color, initial.symbol, initial.shape};
         ScrollView scroll = new ScrollView(a);
         LinearLayout root = new LinearLayout(a);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(a, 15), dp(a, 9), dp(a, 15), dp(a, 8));
         scroll.addView(root);
-        Preview preview = new Preview(a, new Spec(0, 0, 0));
+        Preview preview = new Preview(a, initial);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
             dp(a, 145), dp(a, 145));
         previewParams.gravity = Gravity.CENTER_HORIZONTAL;
@@ -117,9 +128,9 @@ public final class P7IconWorkshop {
         java.util.function.Consumer<Integer> shape = value -> {
             state[2] = value; preview.setSpec(new Spec(state[0], state[1], state[2]));
         };
-        choices(a, root, "Cor", PALETTES, 0, color::accept);
-        choices(a, root, "Símbolo", SYMBOLS, 0, symbol::accept);
-        choices(a, root, "Formato", SHAPES, 0, shape::accept);
+        choices(a, root, "Cor", PALETTES, initial.color, color::accept);
+        choices(a, root, "Símbolo", SYMBOLS, initial.symbol, symbol::accept);
+        choices(a, root, "Formato", SHAPES, initial.shape, shape::accept);
         TextView note = heading(a,
             "Exporta PNG 512×512. Não altera o ícone instalado nem arquivos do APK.");
         note.setTextSize(10 * NegrescoTheme.FONT_SCALE);
