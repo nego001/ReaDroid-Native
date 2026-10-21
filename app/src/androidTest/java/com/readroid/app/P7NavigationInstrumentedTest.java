@@ -174,13 +174,9 @@ public final class P7NavigationInstrumentedTest {
                     assertTrue("Quick action must support TalkBack: " + name,
                         tile.isClickable() && tile.isFocusable());
                 }
-                View history = byDescription(root,
-                    "Ver todos os projetos recentes");
-                assertNotNull("History link not found", history);
-                assertTrue("History link under 48dp",
-                    history.getMinimumHeight() >= min);
-                assertTrue("History link lacks keyboard focus",
-                    history.isFocusable());
+                // Recent-project history is legitimately absent on a fresh
+                // install. The history-link hitbox is tested with a real
+                // visible synthetic history item in P7HomeOverviewInstrumentedTest.
             });
         }
     }
