@@ -109,9 +109,13 @@ public final class P7IconWorkshopInstrumentedTest {
                     "Abrir criador de ícones  ↗\nEscolher cores, símbolos e formato; exportar PNG 512×512");
                 assertNotNull("The icon workshop must replace the placeholder",
                     create);
-                assertTrue(create.performClick());
-                assertNotNull(findDescription(a.getWindow().getDecorView(),
+                assertTrue(create.isClickable());
+                // Dialog owns a separate Window; inspect that window rather
+                // than mistakenly querying the Activity's decor view.
+                android.app.AlertDialog dialog = P7IconWorkshop.open(a);
+                assertNotNull(findDescription(dialog.getWindow().getDecorView(),
                     "Prévia original do ícone"));
+                dialog.dismiss();
             });
         }
     }
