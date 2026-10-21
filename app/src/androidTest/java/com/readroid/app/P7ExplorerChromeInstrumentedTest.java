@@ -141,9 +141,34 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull(all);
                     assertTrue(all.performClick());
                     assertNotNull(byDescription(root, "Abrir pasta assets/"));
+
+                    // Advanced filter selection is visible, removable and
+                    // announced correctly, unlike the previous icon-only UI.
+                    explorer.restoreBrowseState(new ExplorerView.BrowseState(
+                        "", "Editáveis", "", 120));
+                    View editableSelected = byDescription(root,
+                        "Remover filtro Editáveis");
+                    assertNotNull("Active advanced filter must be visible",
+                        editableSelected);
+                    assertEquals(View.VISIBLE, editableSelected.getVisibility());
+                    assertNotNull(findPrefix(root, "Filtro ativo: Editáveis"));
+                    assertTrue(editableSelected.performClick());
+                    assertEquals("Todos", explorer.snapshotBrowseState().category);
+                    assertEquals(View.GONE, editableSelected.getVisibility());
+                    assertNotNull(byDescription(root, "Abrir pasta lib/"));
+
                     explorer.getEditPlan().addTextReplacement("assets/a.txt", "edited");
                     explorer.refresh();
                     assertNotNull(find(root, "1 alteração pendente"));
+                    explorer.restoreBrowseState(new ExplorerView.BrowseState(
+                        "", "Alterados", "", 120));
+                    View changedSelected = byDescription(root,
+                        "Remover filtro Alterados");
+                    assertNotNull(changedSelected);
+                    assertEquals(View.VISIBLE, changedSelected.getVisibility());
+                    assertNotNull(findPrefix(root, "Filtro ativo: Alterados"));
+                    assertTrue(changedSelected.performClick());
+                    assertEquals("Todos", explorer.snapshotBrowseState().category);
                     assertTrue(byDescription(root, "Abrir pasta assets/").performClick());
                     assertNotNull(byDescription(root, "Abrir arquivo a.txt, alterado"));
                     View options = byDescription(root, "Opções de a.txt");

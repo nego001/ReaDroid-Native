@@ -23,6 +23,7 @@ public final class ExplorerView {
     private final LinearLayout list;
     private final P7ExplorerChrome chrome;
     private final LinearLayout quickFilters;
+    private final TextView advancedSelection;
     private static final String[] QUICK_CATEGORIES = {
         "Todos", "Smali", "Recursos", "Imagens", "XML"
     };
@@ -165,6 +166,31 @@ public final class ExplorerView {
                 NegrescoTheme.dp(activity, 48));
         advancedParams.leftMargin = NegrescoTheme.dp(activity, 5);
         filterRow.addView(filterButton, advancedParams);
+
+        // An advanced filter was previously invisible after selection because
+        // none of the five quick chips remained highlighted. Show one compact,
+        // accessible removable selection without hiding the reference chips.
+        advancedSelection = new TextView(activity);
+        advancedSelection.setTextColor(NegrescoTheme.ACCENT);
+        advancedSelection.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        advancedSelection.setMinHeight(NegrescoTheme.dp(activity, 48));
+        advancedSelection.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        advancedSelection.setPadding(NegrescoTheme.dp(activity, 12), 0,
+            NegrescoTheme.dp(activity, 12), 0);
+        advancedSelection.setBackground(NegrescoTheme.studioCard(activity, true));
+        advancedSelection.setClickable(true);
+        advancedSelection.setFocusable(true);
+        advancedSelection.setVisibility(View.GONE);
+        LinearLayout.LayoutParams selectionParams =
+            new LinearLayout.LayoutParams(-1, -2);
+        selectionParams.topMargin = NegrescoTheme.dp(activity, 4);
+        parent.addView(advancedSelection, selectionParams);
+        advancedSelection.setOnClickListener(v -> {
+            activeCategory = "Todos";
+            pageLimit = 120;
+            indexPageOffset = 0;
+            render();
+        });
         filterButton.setOnClickListener(v -> {
             new android.app.AlertDialog.Builder(activity)
                 .setTitle("Filtrar arquivos")
@@ -310,6 +336,20 @@ public final class ExplorerView {
         }
     }
 
+    private void refreshAdvancedSelection() {
+        boolean advanced = !java.util.Arrays.asList(QUICK_CATEGORIES)
+            .contains(activeCategory);
+        advancedSelection.setVisibility(advanced ? View.VISIBLE : View.GONE);
+        if (advanced) {
+            advancedSelection.setText("Filtro ativo: " + activeCategory
+                + "  •  Toque para remover");
+            advancedSelection.setContentDescription(
+                "Remover filtro " + activeCategory);
+        } else {
+            advancedSelection.setContentDescription(null);
+        }
+    }
+
     /** Filters must reflect the real archive, including XML and images in any folder. */
     private boolean matchesCategory(String path, String type) {
         if ("Todos".equals(activeCategory)) return true;
@@ -330,6 +370,7 @@ public final class ExplorerView {
         chrome.updateBreadcrumb(folder, !queryText.isEmpty());
         chrome.setEditCount(editPlan.size());
         refreshQuickFilters();
+        refreshAdvancedSelection();
         if (indexFile != null) {
             if (renderIndexPage()) {
                 indexWarning.setVisibility(View.GONE);

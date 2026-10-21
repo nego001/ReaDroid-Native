@@ -173,3 +173,15 @@ O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por pl
 **Regressão:** `IndexedExplorerViewInstrumentedTest.staleIndexShowsPartialWarningWithoutLosingEdits` cria ZIP sintético de 145 entradas, limita o fallback a 120, constrói índice e depois altera apenas o ZIP temporário para invalidá-lo. Verifica alerta visível, honestidade do contador, preservação do plano temporário e limpeza do aviso na nova sessão.
 
 **Pendente:** compilar e validar o novo commit nas APIs 29 e 35. A P7 continua draft, sem merge na main, APK de distribuição ou versionCode. As referências visuais 1:1 e a homologação física continuam pendentes.
+
+## P7 — identificação e remoção de filtros avançados (21/10/2026)
+
+**Checkpoint:** revisão `dc477f0e` concluiu [matriz Android 10/15](https://github.com/nego001/ReaDroid-Native/actions/runs/39542835377) com **31/31 testes instrumentados em cada API**, smokes de Home/Explorador/Design e código-fonte/OTA aprovados.
+
+**Defeito de usabilidade corrigido:** após selecionar `Editáveis`, `Alterados` ou outra categoria avançada, nenhum chip da barra rápida ficava selecionado e o botão avançado exibia apenas um ícone, sem indicar qual filtro permanecia ativo.
+
+**Solução:** a barra de cinco chips e o botão avançado mantêm a estrutura aprovada; um chip complementar de 48 dp aparece somente com categoria avançada, exibindo `Filtro ativo: [categoria] • Toque para remover`. O chip tem rótulo de acessibilidade específico (`Remover filtro [categoria]`) e limpa a seleção para `Todos`, preservando a pesquisa e o plano temporário e reiniciando apenas a paginação. Filtros rápidos ocultam automaticamente essa faixa.
+
+**Teste:** `P7ExplorerChromeInstrumentedTest` agora cobre tanto `Editáveis` como `Alterados` com seleção acessível, visibilidade e remoção funcional, retornando ao conjunto completo de entradas.
+
+**Ainda não validado neste commit:** nova matriz Android APIs 29/35 e avaliação visual manual. Sem APK de distribuição, versionCode ou merge; P8 permanece separada, fidelidade 1:1 aguarda PNGs oficiais.
