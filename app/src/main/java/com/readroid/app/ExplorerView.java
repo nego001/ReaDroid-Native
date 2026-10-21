@@ -312,8 +312,7 @@ public final class ExplorerView {
         chrome.updateBreadcrumb(folder, !queryText.isEmpty());
         chrome.setEditCount(editPlan.size());
         refreshQuickFilters();
-        if (indexFile != null && !"Editáveis".equals(activeCategory)
-                && !"Alterados".equals(activeCategory)) {
+        if (indexFile != null) {
             if (renderIndexPage()) return;
             indexFile = null; // Fall back on a stale or unavailable index.
         }
@@ -386,18 +385,26 @@ public final class ExplorerView {
     }
 
 
+    /** Dispatch both edit-aware filters to the complete archive index. */
+    private ApkDiskIndex.Page currentIndexPage(String query) throws java.io.IOException {
+        if ("Alterados".equals(activeCategory)) {
+            return ApkDiskIndex.pageChanged(apkFile, indexFile, folder, query,
+                editPlan.snapshot().keySet(), indexPageOffset, 120);
+        }
+        return ApkDiskIndex.page(apkFile, indexFile, folder,
+            query, activeCategory, indexPageOffset, 120);
+    }
+
     /** Each visible page is bounded to 120 entries. SQLite is read-only. */
     private boolean renderIndexPage() {
         if (apkFile == null || !apkFile.isFile() || !indexFile.isFile())
             return false;
         String query = search.getText().toString().trim();
         try {
-            ApkDiskIndex.Page page = ApkDiskIndex.page(apkFile, indexFile, folder,
-                query, activeCategory, indexPageOffset, 120);
+            ApkDiskIndex.Page page = currentIndexPage(query);
             if (indexPageOffset > 0 && page.items.isEmpty()) {
                 indexPageOffset = 0;
-                page = ApkDiskIndex.page(apkFile, indexFile, folder,
-                    query, activeCategory, indexPageOffset, 120);
+                page = currentIndexPage(query);
             }
             list.removeAllViews();
             breadcrumb.setText(query.isEmpty() ? "APK / " + folder

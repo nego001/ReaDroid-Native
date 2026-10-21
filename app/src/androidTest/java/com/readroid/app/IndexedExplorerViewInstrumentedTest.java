@@ -131,6 +131,76 @@ public final class IndexedExplorerViewInstrumentedTest {
         }
     }
 
+    @Test public void editsBeyondFallbackRemainVisibleInChangedAndEditableFilters()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                File apk = null, index = null;
+                try {
+                    apk = File.createTempFile("edits_index_", ".apk", activity.getCacheDir());
+                    index = new File(apk.getAbsolutePath() + ".idx.db");
+                    JSONArray truncatedJson = new JSONArray();
+                    try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                        for (int i = 0; i < 145; i++) {
+                            String path = String.format(Locale.ROOT, "assets/a%03d.txt", i);
+                            out.putNextEntry(new ZipEntry(path));
+                            out.write("text".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            out.closeEntry();
+                            if (i < 120) truncatedJson.put(new JSONObject()
+                                .put("path", path).put("category", "Assets")
+                                .put("sizeBytes", 4));
+                        }
+                        out.putNextEntry(new ZipEntry("assets/raw.bin"));
+                        out.write(new byte[]{1, 2, 3});
+                        out.closeEntry();
+                    }
+                    ApkDiskIndex.build(apk, index);
+                    LinearLayout root = new LinearLayout(activity);
+                    root.setOrientation(LinearLayout.VERTICAL);
+                    ExplorerView explorer = new ExplorerView(activity, root);
+                    explorer.setIndexedFiles(truncatedJson, apk, index);
+                    explorer.getEditPlan().addTextReplacement(
+                        "assets/a144.txt", "temporary edit");
+                    // A stale plan entry is never shown as a real APK file.
+                    explorer.getEditPlan().addTextReplacement(
+                        "ghost/missing.txt", "not really in the APK");
+                    explorer.restoreBrowseState(
+                        new ExplorerView.BrowseState("", "Alterados", "", 120));
+                    assertNotNull("Real edited folder should be browsable",
+                        entry(root, "Abrir pasta assets/"));
+                    assertNull("Ghost folder must not be fabricated",
+                        entry(root, "Abrir pasta ghost/"));
+                    assertTrue(entry(root, "Abrir pasta assets/").performClick());
+                    assertNotNull("Edited entry must come from the full index",
+                        entry(root, "Abrir arquivo a144.txt, alterado"));
+                    assertNull(entry(root, "Abrir arquivo a000.txt"));
+                    EditText search = input(root);
+                    search.setText("a144");
+                    assertNotNull("Edited file should be searchable globally",
+                        entry(root, "Abrir arquivo assets/a144.txt, alterado"));
+                    assertEquals(2, explorer.getEditPlan().size());
+                    explorer.restoreBrowseState(
+                        new ExplorerView.BrowseState("assets/", "Editáveis", "", 120));
+                    assertEquals("assets/", explorer.snapshotBrowseState().folder);
+                    assertNotNull(entry(root, "Abrir arquivo a000.txt"));
+                    assertNotNull(find(root, "Próxima página"));
+                    find(root, "Próxima página").performClick();
+                    assertNotNull("Editable item beyond fallback must be pageable",
+                        entry(root, "Abrir arquivo a144.txt, alterado"));
+                    assertNull("Binary entries cannot count as editable",
+                        entry(root, "Abrir arquivo raw.bin"));
+                } catch (Exception err) {
+                    throw new AssertionError(err);
+                } finally {
+                    if (index != null)
+                        android.database.sqlite.SQLiteDatabase.deleteDatabase(index);
+                    if (apk != null) apk.delete();
+                }
+            });
+        }
+    }
+
     @Test public void indexedPagesSearchAndEditPlanSurviveNavigation() throws Exception {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

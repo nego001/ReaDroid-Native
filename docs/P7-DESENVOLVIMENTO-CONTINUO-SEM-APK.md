@@ -151,3 +151,15 @@ A matriz do commit `b9f8f0e4` concluiu com sucesso: [GitHub Actions 39537487473]
 **Regressão:** `IndexedExplorerViewInstrumentedTest` criou fixture ZIP com 145 arquivos, fallback parcial limitado a 120, pasta aninhada fora do fallback e pasta explicitamente vazia. Verifica navegação real, restauração, diretórios inexistentes e tentativas de path traversal nas APIs 29/35.
 
 **Pendente:** validar a compilação, instrumentação Android 10/15 e evidências de navegação no commit exato antes de homologar esta correção. Mantidas as regras sem APK novo, sem versionCode, sem integração à main; P8 segue backlog.
+
+## P7 — filtros Editáveis/Alterados em índice completo (21/10/2026)
+
+O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por plataforma, e smokes de Home, Explorador, Design e exportações visuais, na [matriz 39541545036](https://github.com/nego001/ReaDroid-Native/actions/runs/39541545036).
+
+**Falha de fidelidade funcional detectada:** os filtros avançados `Editáveis` e `Alterados` ignoravam o SQLite completo e percorriam apenas o JSON de fallback, potencialmente parcial. Isso ocultava arquivos editáveis/alterados além da amostra de 120 entradas.
+
+**Correção:** `ApkDiskIndex.page` ganhou predicados SQL indexados para extensões textuais autorizadas (`EditPlan.isEditable`), preservando pastas navegáveis. `ApkDiskIndex.pageChanged` consulta o plano temporário contra linhas reais do índice em modo somente leitura, ignora caminhos antigos/inexistentes, agrupa pastas e pagina a até 120 entradas com metadados verdadeiros, sem carregar conteúdos. `ExplorerView.currentIndexPage` integra ambos sem alterar o fluxo de preview/edição, o plano ou a assinatura.
+
+**Testes:** fixture ZIP com 145 arquivos, JSON apenas das primeiras 120, edição na última página e um caminho de edição inexistente. Verifica que `Alterados` encontra o item real mas nunca fabrica a pasta `ghost/`; `Editáveis` oferece segunda página e exclui binários. Cobertura SQL de extensões, caixa alta e subpastas incluída em `P7IndexedFiltersInstrumentedTest`.
+
+**Pendente:** executar matriz e revisar resultados deste commit exato; resultado anterior não homologa automaticamente esta mudança. Mantidas as restrições sem APK de distribuição, sem versionCode, sem merge na main, P8 separada. UI 1:1 ainda aguarda referências oficiais e homologação física.

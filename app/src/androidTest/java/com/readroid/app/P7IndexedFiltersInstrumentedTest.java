@@ -15,6 +15,45 @@ import static org.junit.Assert.*;
 /** Filters from the approved mockup must query the real paged index. */
 @RunWith(AndroidJUnit4.class)
 public final class P7IndexedFiltersInstrumentedTest {
+    @Test public void editableFilterReadsFullIndexWithCorrectFileTypes() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File apk = File.createTempFile("p7_editable_", ".apk", context.getCacheDir());
+        File index = new File(apk.getAbsolutePath() + ".db");
+        try {
+            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(apk))) {
+                for (String path : new String[]{
+                        "assets/first.txt", "assets/second.JSON",
+                        "assets/deep/site.html", "assets/deep/app.js",
+                        "assets/bin.dat", "classes.dex"}) {
+                    zip.putNextEntry(new ZipEntry(path));
+                    zip.write("a".getBytes(StandardCharsets.UTF_8));
+                    zip.closeEntry();
+                }
+            }
+            ApkDiskIndex.build(apk, index);
+            ApkDiskIndex.Page root = ApkDiskIndex.page(
+                apk, index, "", "", "Editáveis", 0, 120);
+            assertEquals(1, root.totalMatches);
+            assertTrue(root.items.get(0).directory);
+            assertEquals("assets/", root.items.get(0).path);
+            ApkDiskIndex.Page files = ApkDiskIndex.page(
+                apk, index, "assets/", "", "Editáveis", 0, 120);
+            assertEquals(3, files.totalMatches); // .txt, .JSON and deep/
+            assertTrue(files.items.stream().anyMatch(item ->
+                item.directory && item.path.equals("assets/deep/")));
+            assertTrue(files.items.stream().anyMatch(item ->
+                item.path.equals("assets/second.JSON")));
+            ApkDiskIndex.Page global = ApkDiskIndex.page(
+                apk, index, "", ".", "Editáveis", 0, 120);
+            assertEquals(4, global.totalMatches);
+            for (ApkDiskIndex.Item item : global.items)
+                assertTrue(EditPlan.isEditable(item.path));
+        } finally {
+            android.database.sqlite.SQLiteDatabase.deleteDatabase(index);
+            apk.delete();
+        }
+    }
+
     @Test public void matchesXmlImagesAndSmaliWithoutFabricatedResults() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File apk = File.createTempFile("p7_filters_", ".apk", context.getCacheDir());

@@ -229,6 +229,19 @@ public final class ApkDiskIndex {
                     + " OR lower(path) LIKE '%.webp' OR lower(path) LIKE '%.jpg'"
                     + " OR lower(path) LIKE '%.jpeg' OR lower(path) LIKE '%.gif'"
                     + " OR lower(path) LIKE '%.bmp')");
+            } else if ("Editáveis".equals(filter)) {
+                // Never fall back to a truncated JSON summary to find editable
+                // items: use the whole paginated SQLite index, but still
+                // include folders so the user can navigate to them.
+                where.append(" AND (is_dir = 1 OR (is_dir = 0 AND (");
+                String[] extensions = {".txt", ".json", ".html", ".css",
+                    ".js", ".properties", ".md", ".csv"};
+                for (int i = 0; i < extensions.length; i++) {
+                    if (i > 0) where.append(" OR ");
+                    where.append("lower(path) LIKE ?");
+                    args.add("%" + extensions[i]);
+                }
+                where.append(")))");
             } else if (!"Todos".equals(filter)) {
                 where.append(" AND (is_dir = 1 OR category = ?)");
                 args.add(filter);
@@ -254,6 +267,93 @@ public final class ApkDiskIndex {
             return new Page(items, total, offset);
         } catch (android.database.SQLException invalid) {
             throw new IOException("Falha ao consultar índice SQLite", invalid);
+        } finally {
+            if (db != null && db.isOpen()) db.close();
+        }
+    }
+
+    /**
+     * Browses an in-memory edit plan against the complete, read-only SQLite
+     * archive index. No partial JSON fallback is consulted. Directory entries
+     * are inferred from *verified* edited files, so users can navigate through
+     * the Alterados filter without fabricating results.
+     *
+     * Each edit is looked up by its exact path using the primary-key index;
+     * only metadata is read. Results are sorted and paged at 120 items.
+     */
+    static Page pageChanged(File archive, File indexFile, String folder,
+            String search, java.util.Set<String> changedPaths,
+            int offset, int limit) throws IOException {
+        if (archive == null || !archive.isFile() || indexFile == null
+                || !indexFile.isFile() || changedPaths == null)
+            throw new IOException("Arquivo, índice ou plano indisponível");
+        if (offset < 0 || limit < 1 || limit > MAX_PAGE)
+            throw new IOException("Paginação fora dos limites");
+        String directory = folder == null ? "" : folder;
+        if (!directory.isEmpty()) {
+            validatePath(directory);
+            if (!directory.endsWith("/"))
+                throw new IOException("Pasta deve terminar com /");
+        }
+        String query = search == null ? "" : search.trim();
+        if (query.length() > 256)
+            throw new IOException("Busca excessivamente longa");
+        String lowerQuery = query.toLowerCase(Locale.ROOT);
+        SQLiteDatabase db = null;
+        try {
+            db = SQLiteDatabase.openDatabase(indexFile.getPath(), null,
+                SQLiteDatabase.OPEN_READONLY);
+            try (Cursor meta = db.rawQuery(
+                    "SELECT source_bytes, source_modified FROM meta", null)) {
+                if (!meta.moveToFirst() || meta.getLong(0) != archive.length()
+                        || meta.getLong(1) != archive.lastModified())
+                    throw new IOException("Índice pertence a outra versão do arquivo");
+            }
+            java.util.LinkedHashMap<String, Item> visible = new java.util.LinkedHashMap<>();
+            for (String path : changedPaths) {
+                if (path == null || path.isEmpty()) continue;
+                if (query.isEmpty() ? !path.startsWith(directory)
+                        : !path.toLowerCase(Locale.ROOT).contains(lowerQuery))
+                    continue;
+                try (Cursor row = db.rawQuery(
+                        "SELECT category,size_bytes FROM entries"
+                            + " WHERE path = ? AND is_dir = 0 LIMIT 1",
+                        new String[]{path})) {
+                    if (!row.moveToFirst()) continue; // Stale edit path, not in APK.
+                    int slash = path.lastIndexOf('/');
+                    String name = path.substring(slash + 1);
+                    if (!query.isEmpty()) {
+                        visible.put(path, new Item(path, name, row.getString(0),
+                            false, row.getLong(1)));
+                        continue;
+                    }
+                    String rest = path.substring(directory.length());
+                    int childSeparator = rest.indexOf('/');
+                    if (childSeparator >= 0) {
+                        String child = rest.substring(0, childSeparator + 1);
+                        String childPath = directory + child;
+                        if (!visible.containsKey(childPath))
+                            visible.put(childPath, new Item(childPath, child,
+                                "Pasta", true, 0));
+                    } else {
+                        visible.put(path, new Item(path, name, row.getString(0),
+                            false, row.getLong(1)));
+                    }
+                }
+            }
+            List<Item> sorted = new ArrayList<>(visible.values());
+            sorted.sort((left, right) -> {
+                if (left.directory != right.directory)
+                    return left.directory ? -1 : 1;
+                int byName = left.name.compareToIgnoreCase(right.name);
+                return byName != 0 ? byName : left.path.compareTo(right.path);
+            });
+            int begin = Math.min(offset, sorted.size());
+            int end = Math.min(sorted.size(), begin + limit);
+            return new Page(new ArrayList<>(sorted.subList(begin, end)),
+                sorted.size(), offset);
+        } catch (android.database.SQLException invalid) {
+            throw new IOException("Falha ao consultar alterações do índice", invalid);
         } finally {
             if (db != null && db.isOpen()) db.close();
         }
