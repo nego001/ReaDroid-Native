@@ -105,6 +105,10 @@ public final class P7IconWorkshopInstrumentedTest {
                 View iconsTab = byText(root, "Ícones");
                 assertNotNull(iconsTab);
                 assertTrue(iconsTab.performClick());
+                View template = findDescription(root,
+                    "Personalizar ícone Código Neon");
+                assertNotNull("Catalog must offer four real icon templates", template);
+                assertTrue(template.isClickable());
                 View create = byText(root,
                     "Abrir criador de ícones  ↗\nEscolher cores, símbolos e formato; exportar PNG 512×512");
                 assertNotNull("The icon workshop must replace the placeholder",
@@ -116,6 +120,40 @@ public final class P7IconWorkshopInstrumentedTest {
                 assertNotNull(findDescription(dialog.getWindow().getDecorView(),
                     "Prévia original do ícone"));
                 dialog.dismiss();
+            });
+        }
+    }
+
+    private static boolean hasCheckedChoice(View node, String value) {
+        if (node instanceof android.widget.RadioButton) {
+            android.widget.RadioButton choice =
+                (android.widget.RadioButton) node;
+            if (choice.isChecked() && value.equals(
+                    choice.getText().toString())) return true;
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++)
+                if (hasCheckedChoice(group.getChildAt(i), value)) return true;
+        }
+        return false;
+    }
+
+    @Test public void aCatalogTemplateActuallyPrefillsItsEditorChoices() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(a -> {
+                android.app.AlertDialog dialog = P7IconWorkshop.open(a,
+                    new P7IconWorkshop.Spec(2, 1, 1));
+                try {
+                    View view = dialog.getWindow().getDecorView();
+                    assertTrue("Catalog purple palette must be selected",
+                        hasCheckedChoice(view, "Violeta"));
+                    assertTrue("Catalog source-code glyph must be selected",
+                        hasCheckedChoice(view, "Código"));
+                    assertTrue("Catalog round shape must be selected",
+                        hasCheckedChoice(view, "Circular"));
+                } finally { dialog.dismiss(); }
             });
         }
     }
