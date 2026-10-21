@@ -223,3 +223,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **CI:** `.github/workflows/p7-brand-validation.yml` roda esse smoke depois das evidências normais e inclui `p7-compact-*-android-*.png` nos artefatos; testes Python `tests/test_p7_compact_smoke.py` cobrem extração de estado físico/override, densidades, conversão dp↔px e entradas malformadas.
 
 **Pendente:** compilar/executar nos Androids 10/15, corrigir eventuais falhas de UI ou calibração identificadas. Imagens aprovadas originais e homologação física Galaxy A55 ainda ausentes; não declarar visual 1:1. PR #13 draft, main preservada, sem APK para distribuição e P8 separado.
+
+## P7.6 — alvos de toque e estado acessível das abas do Design Studio (21/10/2026)
+
+**Checkpoint prévio:** commit `05473bd7` passou em [Android 10 e 15, execução 39551315389](https://github.com/nego001/ReaDroid-Native/actions/runs/39551315389): 31/31 testes instrumentados por API, validação 320 dp / 130% em Home/Arquivos/Design, seis screenshots e restauração confirmada do emulador. Source checks e OTA aprovados.
+
+**Falha objetiva:** quatro abas internas do Design Studio tinham hitboxes com altura de apenas **36 dp** (o scroller pai tinha 43 dp). Os controles `Ver todos` tinham **37 dp**, inclusive o contêiner pai, menos que os 48 dp exigidos pelo contrato P7.6. O estado selecionado era indicado visualmente, mas não no rótulo do TalkBack.
+
+**Correção aplicada:** abas internas com 48 dp de altura mínima e explícita, faixa horizontal com 52 dp, selecionabilidade/foco declarados, e `contentDescription` dinâmica `[aba], aba selecionada` ou `[aba], selecionar aba`. Cabeçalhos com `Ver todos` passam para 48 dp sem aumentar limite de paginação nem afetar temas/planos de edição. Não há alteração em APK, assinatura, identidades do projeto ou preferências.
+
+**Teste novo:** `P7NavigationInstrumentedTest.designTabsAndCatalogButtonsMeetMinimumTouchTargets` abre a aba Design de verdade, valida dimensões físicas em dp de todas as quatro abas, foco/descrição para TalkBack, altura do botão de catálogo e do pai; também navega entre abas Ícones e Logotipo para verificar atualização do estado acessível. Matriz Android 10/15 e smoke compacto devem ser confirmados para o commit atual.
+
+**Restrições:** P7 ainda draft, `main` sem merge, sem APK de distribuição e P8 separada. Homologação 1:1 depende das duas artes originais ausentes e de Galaxy A55 físico.

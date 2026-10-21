@@ -96,6 +96,47 @@ public final class P7NavigationInstrumentedTest {
         return null;
     }
 
+    @Test public void designTabsAndCatalogButtonsMeetMinimumTouchTargets()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                int minimum = NegrescoTheme.dp(activity, 48);
+                String[] tabs = {"Temas", "Layout", "Ícones", "Logotipo"};
+                for (String title : tabs) {
+                    View tab = clickableText(root, title);
+                    assertNotNull("Missing interactive Design tab " + title, tab);
+                    assertTrue("Tab too short: " + title,
+                        tab.getLayoutParams().height >= minimum);
+                    assertTrue("Tab must be keyboard/TalkBack focusable",
+                        tab.isFocusable());
+                    assertTrue("Tab minHeight too short: " + title,
+                        tab.getMinimumHeight() >= minimum);
+                }
+                View themes = byDescription(root,
+                    "Ver todos: Previews de Temas");
+                assertNotNull("Missing theme gallery action", themes);
+                assertTrue("Catalog action height below 48 dp",
+                    themes.getMinimumHeight() >= minimum);
+                assertEquals("Theme gallery parent must not clip hitbox",
+                    minimum, ((View) themes.getParent()).getLayoutParams().height);
+                assertNotNull(byDescription(root, "Temas, aba selecionada"));
+                View icons = clickableText(root, "Ícones");
+                assertTrue(icons.performClick());
+                assertNotNull(byDescription(root, "Ícones, aba selecionada"));
+                assertNotNull(byDescription(root, "Temas, selecionar aba"));
+                assertNotNull(byDescription(root, "Logotipo, selecionar aba"));
+                View logo = clickableText(root, "Logotipo");
+                assertTrue(logo.performClick());
+                assertNotNull(byDescription(root, "Logotipo, aba selecionada"));
+            });
+        }
+    }
+
     @Test public void logoStudioShowsSavedBrandInsteadOfAFakeExample() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

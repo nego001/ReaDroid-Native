@@ -98,7 +98,7 @@ public final class P7DesignStudio {
         titles.addView(label("Personalize a aparência do seu app",12,NegrescoTheme.MUTED,false));
         HorizontalScrollView scroll=new HorizontalScrollView(a);
         scroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(43));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));
         sp.topMargin=dp(12);root.addView(scroll,sp);
         LinearLayout tabs=new LinearLayout(a);tabs.setOrientation(LinearLayout.HORIZONTAL);
         scroll.addView(tabs);
@@ -107,9 +107,11 @@ public final class P7DesignStudio {
             final int index=i;
             TextView tab=label(names[i],11,NegrescoTheme.TEXT,false);
             tab.setGravity(Gravity.CENTER);
-            tab.setMinWidth(dp(79));tab.setMinHeight(dp(36));
+            tab.setMinWidth(dp(79));tab.setMinHeight(dp(48));
             tab.setPadding(dp(10),0,dp(10),0);
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(36));
+            tab.setClickable(true);
+            tab.setFocusable(true);
+            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(48));
             p.rightMargin=dp(5);tabs.addView(tab,p);
             tabViews[i]=tab;
             tab.setOnClickListener(v->{activeTab=index;render();});
@@ -127,7 +129,7 @@ public final class P7DesignStudio {
         LinearLayout row = new LinearLayout(a);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, dp(37));
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, dp(48));
         rp.topMargin = dp(6);
         body.addView(row, rp);
         TextView label = label(title, 15, NegrescoTheme.TEXT, true);
@@ -135,7 +137,7 @@ public final class P7DesignStudio {
         if (onViewAll != null) {
             TextView viewAll = label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
             viewAll.setGravity(Gravity.CENTER);
-            viewAll.setMinHeight(dp(37));
+            viewAll.setMinHeight(dp(48));
             viewAll.setPadding(dp(8), 0, dp(3), 0);
             viewAll.setClickable(true);
             viewAll.setFocusable(true);
@@ -465,6 +467,12 @@ public final class P7DesignStudio {
             tabViews[i].setBackground(background(selected));
             tabViews[i].setTextColor(selected?NegrescoTheme.ACCENT:NegrescoTheme.TEXT);
             tabViews[i].setSelected(selected);
+            // Expose the real selection state to TalkBack instead of relying
+            // only on blue text and a border.
+            String tabName = tabViews[i].getText().toString();
+            tabViews[i].setContentDescription(selected
+                ? tabName + ", aba selecionada"
+                : tabName + ", selecionar aba");
         }
         body.removeAllViews();
         if(activeTab==0){
