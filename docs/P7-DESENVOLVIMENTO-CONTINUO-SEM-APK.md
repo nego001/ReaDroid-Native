@@ -385,3 +385,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Ajuste somente no teste:** manter a validação da presença do diálogo real pelo título, fechamento via Android Back e confirmação de permanência na Home; retirar a exigência textual frágil do corpo. O texto funcional explicativo e as opções do diálogo permanecem intactos no `MainActivity`; o teste instrumentado valida que a ação não abre falsamente um editor. Este hotfix não altera dados ou funcionalidade do aplicativo, permissões, APK, assinatura ou UI.
 
 **Pendente:** repetir a matriz Android 10/API29 e Android 15/API35, Source checks e OTA no commit corrigido; não declarar verde usando a execução anterior.
+
+## P7.6 — rolagem por seção preservada sem interferir no APK (21/10/2026)
+
+**Checkpoint comprovado:** commit `dc9304dc`, [matriz Android 39666348530](https://github.com/nego001/ReaDroid-Native/actions/runs/39666348530), **37/37 instrumentações API29 e 37/37 API35**, `P7_HOME_PASS` com aviso honesto de Smali, Segurança/Build reais, 13 capturas verificadas por API e painéis offline; [Source checks 39666348500](https://github.com/nego001/ReaDroid-Native/actions/runs/39666348500) e [OTA 39666348507](https://github.com/nego001/ReaDroid-Native/actions/runs/39666348507) `success`. PNGs oficiais e Galaxy A55 ainda pendentes.
+
+**Problema funcional:** a navegação inferior tinha cinco seções, mas `MainActivity.showSection()` executava sempre `contentScroll.scrollTo(0,0)`. Uma pessoa que descesse na lista de arquivos/Design e visitasse Build ou Segurança perdia o ponto de leitura ao voltar.
+
+**Correção:** posições verticais independentes para Início, Arquivos, Segurança, Build e Design; gravar a seção anterior ao mudar, restaurar a nova após o layout com token anti-callback obsoleto; pressionar novamente a aba atualmente selecionada continua retornando ao topo. `Bundle` salva/restaura o vetor validado de cinco deslocamentos após rotação ou recriação Android. O estado existe somente em memória e Bundle, sem SharedPreferences, novos acessos, alteração de relatórios/SQLite/SAF, API, APK ou projeto.
+
+**Regressões:** `P7NavigationInstrumentedTest.bottomTabsKeepIndependentScrollPositionsAndReselectResets` testa offsets distintos com altura sintética aplicada **somente no teste**, troca Home ↔ Design, primeira visita no topo e re-seleção ao topo. `selectedSectionScrollSurvivesActivityRecreation` usa o conteúdo real rolável de Design e `ActivityScenario.recreate()` para garantir preservação visual, além da seleção da aba. Exigir CI API29/35 completo, Source checks, OTA, 320dp/130% e fonte 200% antes de aprovar esta mudança.
+
+**Escopo:** exclusivo à P7 na PR #13 draft, `main` intacta, nenhum APK de distribuição ou OTA, versionCode, P8 ou IA social alterado. Referências oficiais 1:1 e QA físico no Galaxy A55 permanecem pendentes.

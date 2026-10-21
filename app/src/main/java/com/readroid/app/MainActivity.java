@@ -58,6 +58,12 @@ public class MainActivity extends Activity {
     private View[] navigationIndicators;
     private LinearLayout[] navigationContainers;
     private int selectedSection = 0;
+    // Each bottom section has its own vertical reading position. Re-tapping
+    // the active section intentionally returns to its beginning.
+    private final int[] sectionScrollPositions = new int[5];
+    private boolean sectionNavigationInitialized;
+    private int sectionNavigationGeneration;
+    private int pendingScrollSection = -1;
     private Uri selectedApkUri;
     private volatile int analysisSequence = 0;
 
@@ -1172,6 +1178,12 @@ public class MainActivity extends Activity {
         // Legacy AI controls remain accessible in Design without losing them.
         ((android.view.ViewGroup) aiSection.getParent()).removeView(aiSection);
         designSection.addView(aiSection);
+        if (state != null) {
+            int[] savedOffsets = state.getIntArray("p7_section_scroll_positions");
+            if (savedOffsets != null && savedOffsets.length == sectionScrollPositions.length)
+                for (int i = 0; i < savedOffsets.length; i++)
+                    sectionScrollPositions[i] = Math.max(0, savedOffsets[i]);
+        }
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
         boolean retained = restoreWorkspace();
         if (state != null) {
@@ -1346,6 +1358,19 @@ public class MainActivity extends Activity {
     private void showSection(int index) {
         LinearLayout[] sections = {homeSection, filesSection, securitySection, buildSection, designSection};
         if (index < 0 || index >= sections.length) return;
+        if (sectionNavigationInitialized) {
+            if (index == selectedSection) {
+                // Standard bottom-navigation behavior: tapping the current
+                // section again scrolls it to its beginning.
+                sectionScrollPositions[index] = 0;
+            } else if (pendingScrollSection != selectedSection) {
+                // Don't replace a not-yet-restored offset with the temporary
+                // zero position from an immediately preceding tab change.
+                sectionScrollPositions[selectedSection] =
+                    Math.max(0, contentScroll.getScrollY());
+            }
+        }
+        sectionNavigationInitialized = true;
         selectedSection = index;
         if (index == 0 && homeOverview != null) {
             homeOverview.update(report, explorerView == null ? 0
@@ -1368,7 +1393,19 @@ public class MainActivity extends Activity {
             navigationItems[i].setTypeface(null,
                 selected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         }
+        // Layout height changes when a different section becomes VISIBLE.
+        // Post restoration after layout, and invalidate old pending callbacks
+        // when the user changes tabs rapidly.
+        int desiredY = sectionScrollPositions[index];
+        int generation = ++sectionNavigationGeneration;
+        pendingScrollSection = index;
         contentScroll.scrollTo(0, 0);
+        contentScroll.post(() -> {
+            if (generation != sectionNavigationGeneration || selectedSection != index)
+                return;
+            contentScroll.scrollTo(0, desiredY);
+            pendingScrollSection = -1;
+        });
     }
 
     /** Uses the Android document picker, never broad storage write access. */
@@ -1916,6 +1953,11 @@ public class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putInt("active_studio_section", selectedSection);
+        if (sectionNavigationInitialized && pendingScrollSection != selectedSection)
+            sectionScrollPositions[selectedSection] =
+                Math.max(0, contentScroll.getScrollY());
+        outState.putIntArray("p7_section_scroll_positions",
+            sectionScrollPositions.clone());
         if (designStudio != null)
             outState.putInt("p7_design_active_tab", designStudio.getActiveTab());
         if (pendingIconExport != null)

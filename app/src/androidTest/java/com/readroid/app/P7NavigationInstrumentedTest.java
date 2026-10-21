@@ -6,6 +6,9 @@ import android.widget.TextView;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import androidx.test.platform.app.InstrumentationRegistry;
+import java.lang.reflect.Field;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Test;
@@ -302,6 +305,106 @@ public final class P7NavigationInstrumentedTest {
                     + "navigate away", home.isSelected());
                 assertFalse("The file explorer is not a Smali editor",
                     files.isSelected());
+            });
+        }
+    }
+
+    private static View sectionView(MainActivity activity, String fieldName) {
+        try {
+            Field field = MainActivity.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return (View) field.get(activity);
+        } catch (Exception error) {
+            throw new AssertionError("Missing P7 view: " + fieldName, error);
+        }
+    }
+
+    private static ScrollView mainScroll(MainActivity activity) {
+        return (ScrollView) sectionView(activity, "contentScroll");
+    }
+
+    @Test public void bottomTabsKeepIndependentScrollPositionsAndReselectResets() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            // Extra height lives only in the test Activity, not production UI.
+            scenario.onActivity(activity -> {
+                for (String name : new String[]{"homeSection", "designSection"}) {
+                    LinearLayout section = (LinearLayout) sectionView(activity, name);
+                    section.addView(new View(activity),
+                        new LinearLayout.LayoutParams(1,
+                            NegrescoTheme.dp(activity, 1500)));
+                }
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            final int[] offsets = new int[2];
+            scenario.onActivity(activity -> {
+                ScrollView scroll = mainScroll(activity);
+                scroll.scrollTo(0, NegrescoTheme.dp(activity, 130));
+                offsets[0] = scroll.getScrollY();
+                assertTrue("Home fixture must support scrolling", offsets[0] > 0);
+                assertTrue(byDescription(activity.getWindow().getDecorView(),
+                    "Abrir seção Design").performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                ScrollView scroll = mainScroll(activity);
+                assertEquals("First visit must start at the Design top", 0,
+                    scroll.getScrollY());
+                scroll.scrollTo(0, NegrescoTheme.dp(activity, 225));
+                offsets[1] = scroll.getScrollY();
+                assertTrue("Design fixture must support scrolling", offsets[1] > 0);
+                assertTrue(byDescription(activity.getWindow().getDecorView(),
+                    "Abrir seção Início").performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                assertEquals("Home position lost while visiting Design",
+                    offsets[0], mainScroll(activity).getScrollY());
+                assertTrue(byDescription(activity.getWindow().getDecorView(),
+                    "Abrir seção Design").performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                assertEquals("Design position lost while visiting Home",
+                    offsets[1], mainScroll(activity).getScrollY());
+                assertTrue(byDescription(activity.getWindow().getDecorView(),
+                    "Abrir seção Design").performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> assertEquals(
+                "Reselecting active Design must scroll to top",
+                0, mainScroll(activity).getScrollY()));
+        }
+    }
+
+    @Test public void selectedSectionScrollSurvivesActivityRecreation() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> assertTrue(
+                byDescription(activity.getWindow().getDecorView(),
+                    "Abrir seção Design").performClick()));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            final int[] previous = new int[1];
+            scenario.onActivity(activity -> {
+                ScrollView scroll = mainScroll(activity);
+                int maxY = Math.max(0, scroll.getChildAt(0).getHeight()
+                    - scroll.getHeight());
+                assertTrue("Real Design page should scroll on the emulator",
+                    maxY >= NegrescoTheme.dp(activity, 40));
+                scroll.scrollTo(0, Math.min(NegrescoTheme.dp(activity, 105), maxY));
+                previous[0] = scroll.getScrollY();
+                assertTrue(previous[0] > 0);
+            });
+            scenario.recreate();
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                ScrollView scroll = mainScroll(activity);
+                assertEquals("Recreated Design page lost reading position",
+                    previous[0], scroll.getScrollY());
+                View design = byDescription(activity.getWindow().getDecorView(),
+                    "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.isSelected());
             });
         }
     }
