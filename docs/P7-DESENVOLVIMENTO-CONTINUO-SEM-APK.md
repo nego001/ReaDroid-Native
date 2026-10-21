@@ -295,3 +295,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção:** `bb7de25f` removeu a exigência de link visível do teste genérico de Home vazia; `291d52af` mudou o teste `recentProjectMenuIsAccessibleWithoutDeletingOriginal` para criar referência sintética **não persistida**, ligar callback auditável e verificar que `Ver todos` aparece, mede >=48dp, recebe foco e aciona callback **somente no estado com projeto**. Mantida a verificação de 48dp para os seis atalhos e menu `⋮`. Sem alterar dados reais, grants SAF ou a lógica da UI.
 
 **Pendência:** rodar novamente os 34 testes instrumentados nas APIs 29 e 35 e os smokes de 130%/200% no SHA atualizado. Não usar as execuções anteriores como aprovação da correção; registrar incidentes novos separadamente.
+
+### P7.6 — harmonização do smoke de fonte 200% com estado vazio (21/10/2026)
+
+**Revisão preventiva:** o ensaio `p7_large_text_smoke.py` usava originalmente a mesma premissa errada da instrumentação de Home: `Ver todos os projetos recentes` constava como obrigatório mesmo quando o histórico está vazio e o controle deve ter `View.GONE`. A verificação estática do fluxo `renderHistory()` confirma esse contrato.
+
+**Correção `05711fa7`:** o teste de 200% verifica sempre os controles Home menu/personalização e **somente quando existe no XML visível** verifica o tamanho do link `Ver todos`. O teste instrumentado separado, com uma referência sintética e callback sem efeitos colaterais, já valida o caminho em que o histórico existe. Mantidos os 48dp da UI, as capturas reais e restauração de `font_scale`. Não introduzir histórico falso no app só para satisfazer QA.
+
+**Matriz final:** o último ciclo de emuladores deve validar o novo script e as 34 instrumentações por API; Source/OTA do SHA anterior passaram, mas status completo do SHA novo precisa ser verificado.
