@@ -409,3 +409,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Teste instrumentado:** `ProjectRecreationInstrumentedTest.failedReplacementRetainsOldApkAndUnsavedEdits` prepara ZIP sintético em cache privado, relatório legítimo de teste e uma edição pendente; tenta abrir uma URI `content://` inválida pelo caminho assíncrono real; aguarda a fila de análise, valida manutenção do arquivo, bytes originais, edição, aba, relatório, URI original e limpeza do campo de importação pendente. Funcionalidade anterior de recuperação do projeto ao recriar a Activity continua coberta. Exigir resultado verde nas duas APIs antes de anunciar aprovado.
 
 **Escopo:** exclusivamente P7 da PR #13 draft, sem alterar `main`, versionCode, publicar APK/OTA ou avançar P8/IA social. As duas imagens oficiais e aceite no Galaxy A55 continuam pendentes.
+
+### P7.6 — fechamento de cobertura real de recriação/importação no CI (21/10/2026)
+
+**Auditoria:** [matriz 39672626665](https://github.com/nego001/ReaDroid-Native/actions/runs/39672626665) no primeiro commit `6ca89df5` executava as 14 classes P7 listadas explicitamente no comando Gradle. A classe `ProjectRecreationInstrumentedTest`, onde foi implementada `failedReplacementRetainsOldApkAndUnsavedEdits`, **não integrava essa lista**; o contador anterior 39 testes/API era o baseline, não prova da correção nova. Não declarar a proteção validada com aquele run.
+
+**Correção de CI:** adicionar `com.readroid.app.ProjectRecreationInstrumentedTest` à mesma matriz Gradle `connectedDebugAndroidTest` (Android 10/API29 e Android 15/API35), incluindo seus testes anteriores de retenção de projeto e filtros após `ActivityScenario.recreate()` e o novo teste da URI inválida. Isso complementa a cobertura anterior sem diminuir nenhum teste, remover smokes de 13 imagens ou gerar APK instalável de distribuição. Atualização documentada porque evidência de CI deve representar testes efetivamente executados.
+
+**Critério:** verificar aumento da contagem para **42 instrumentações por API** (39 anteriores + 3 dessa classe), nova matriz `success`, Source e OTA `success`, e ausência de regressões antes de marcar P7.6 avançada. P7 continua PR draft, P8/IA social e `main` intocados.
