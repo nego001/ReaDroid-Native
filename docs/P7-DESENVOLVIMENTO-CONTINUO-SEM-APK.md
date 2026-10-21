@@ -303,3 +303,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção `05711fa7`:** o teste de 200% verifica sempre os controles Home menu/personalização e **somente quando existe no XML visível** verifica o tamanho do link `Ver todos`. O teste instrumentado separado, com uma referência sintética e callback sem efeitos colaterais, já valida o caminho em que o histórico existe. Mantidos os 48dp da UI, as capturas reais e restauração de `font_scale`. Não introduzir histórico falso no app só para satisfazer QA.
 
 **Matriz final:** o último ciclo de emuladores deve validar o novo script e as 34 instrumentações por API; Source/OTA do SHA anterior passaram, mas status completo do SHA novo precisa ser verificado.
+
+## P7.6 — preservar aba interna do Design Studio ao recriar Activity (21/10/2026)
+
+**Checkpoint antes desta alteração:** `a0ab36da` com [matriz Android 10/15 39646626656](https://github.com/nego001/ReaDroid-Native/actions/runs/39646626656), [Source 39646626666](https://github.com/nego001/ReaDroid-Native/actions/runs/39646626666) e [OTA 39646626941](https://github.com/nego001/ReaDroid-Native/actions/runs/39646626941) aprovados. Testes anteriores também cobrem fonte 200%, alvo 48dp, histórico vazio e regressões reais.
+
+**Falha funcional identificada na leitura de código:** `MainActivity` preservava a seção principal `active_studio_section`, mas `P7DesignStudio` construía cada nova instância sempre com `activeTab=0` (Temas). Após rotação/recriação da Activity ou mudanças de configuração, a pessoa podia perder a seção interna Ícones, Logotipo ou Layout, mesmo permanecendo no Design. Isso compromete o contrato de navegação/restauração P7, sem ser uma diferença apenas cosmética.
+
+**Correção implementada:** salvar o índice da aba interna do Design no `Bundle` da Activity, chave `p7_design_active_tab`, somente durante recriação; reconstituir `P7DesignStudio` com tab validada na faixa 0–3 (caso inválido = Temas) e reexibir seu conteúdo/seleção acessível no fluxo de `render()`. A opção atual não é gravada em SharedPreferences nem em dados do APK, não muda temas, ações, edições, histórico ou permissões. MainActivity mantém o estado principal original.
+
+**Novo teste real:** `P7NavigationInstrumentedTest.designSubtabSurvivesRealActivityRecreation` navega para Design → Ícones, executa `ActivityScenario.recreate()`, valida seção e conteúdo visíveis, muda para Logotipo, recria novamente e confirma rótulo TalkBack e conteúdo `Logo Studio`, sem criar ou alterar APK do usuário. Requer CI API29/35 e regressão dos smokes 130%/200% antes de declarar aprovado.
+
+**Escopo e limites:** alteração da PR #13 exclusivamente P7, sem alterar `main`, `versionCode` ou OTA. Issue #14 P8 e documentação de IAs #15/#16 permanecem separadas. PNGs oficiais e aceite físico no Galaxy A55 ainda faltam para 1:1 completo.

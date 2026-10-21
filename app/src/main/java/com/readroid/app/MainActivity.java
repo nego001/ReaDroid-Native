@@ -52,6 +52,7 @@ public class MainActivity extends Activity {
     private LinearLayout buildSection;
     private LinearLayout aiSection;
     private LinearLayout designSection;
+    private P7DesignStudio designStudio;
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
     private View[] navigationIndicators;
@@ -1144,12 +1145,12 @@ public class MainActivity extends Activity {
         // second title above their own headers.
         root.removeView(homeToolbar);
         root.removeView(brandRow);
-        new P7DesignStudio(this, designSection, new Button[]{
+        designStudio = new P7DesignStudio(this, designSection, new Button[]{
             themePicker, accentPicker, textScale, densityPicker, navLabels,
             favoriteShortcut, identityPicker, appearancePreview,
             exportAppearance, importAppearance, glowPicker, cornersPicker,
             resetAppearance
-        });
+        }, state == null ? 0 : state.getInt("p7_design_active_tab", 0));
         StudioDashboard.compose(this, homeSection, designSection,
             apkSummary, projectMetrics, choose,
             homeOverview, shortcutsTitle, shortcutHint, quickGrid,
@@ -1908,6 +1909,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putInt("active_studio_section", selectedSection);
+        if (designStudio != null)
+            outState.putInt("p7_design_active_tab", designStudio.getActiveTab());
         if (pendingIconExport != null)
             outState.putIntArray("p7_icon_export", new int[] {
                 pendingIconExport.color, pendingIconExport.symbol,

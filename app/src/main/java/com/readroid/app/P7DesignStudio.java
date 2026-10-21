@@ -82,8 +82,13 @@ public final class P7DesignStudio {
         d.setStroke(dp(1),selected?NegrescoTheme.ACCENT:0xff283846);
         return d;
     }
-    public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions) {
+    public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions,
+                          int restoredTab) {
         a=activity;root=container;actions=appearanceActions;
+        // Rotation/Activity recreation restores navigation only. This is
+        // deliberately not stored in appearance preferences or APK metadata.
+        activeTab = restoredTab >= 0 && restoredTab < tabViews.length
+            ? restoredTab : 0;
         restoreCurrentTheme();
         selectedLayout = P7VisualCatalog.currentLayout(a);
         selectedPreset = P7VisualCatalog.currentPreset(a);
@@ -124,6 +129,11 @@ public final class P7DesignStudio {
         body=column();root.addView(body);
         render();
     }
+    /** For Activity saved-state only; never persists a navigation-only choice. */
+    public int getActiveTab() {
+        return activeTab;
+    }
+
     private void heading(String title) {
         sectionHeader(title, null);
     }

@@ -137,6 +137,50 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void designSubtabSurvivesRealActivityRecreation() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                View icons = clickableText(root, "Ícones");
+                assertNotNull(icons);
+                assertTrue(icons.performClick());
+                assertNotNull(byDescription(root, "Ícones, aba selecionada"));
+                assertTrue(hasText(root, "Criador de Ícones"));
+            });
+            // ActivityScenario recreates an Android Activity, exercising the
+            // real Bundle save/restore path instead of testing a mock field.
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue("Parent Design tab must stay selected",
+                    design.isSelected());
+                assertNotNull("Icons subtab lost during activity recreation",
+                    byDescription(root, "Ícones, aba selecionada"));
+                assertTrue(hasText(root, "Criador de Ícones"));
+                View logo = clickableText(root, "Logotipo");
+                assertNotNull(logo);
+                assertTrue(logo.performClick());
+                assertNotNull(byDescription(root, "Logotipo, aba selecionada"));
+                assertTrue(hasText(root, "Logo Studio"));
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertNotNull("Logo subtab lost during second recreation",
+                    byDescription(root, "Logotipo, aba selecionada"));
+                assertTrue(hasText(root, "Logo Studio"));
+                assertNotNull(byDescription(root, "Temas, selecionar aba"));
+                assertNotNull(byDescription(root, "Ícones, selecionar aba"));
+            });
+        }
+    }
+
     @Test public void logoStudioShowsSavedBrandInsteadOfAFakeExample() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
