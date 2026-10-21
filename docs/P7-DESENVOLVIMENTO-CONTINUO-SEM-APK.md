@@ -84,3 +84,26 @@ Somente quando houver um conjunto significativo de melhorias funcionais/visuais 
 
 **Regra para novas ideias:** registrar as ideias novas em seção ou issue própria como `BACKLOG / NOVAS IDEIAS`, sem alterar critérios de aceite da P7 ou apagar os itens pendentes. Só reordenar prioridades quando o proprietário solicitar; não dar merge na `main` nem produzir APK por conta própria. Quando o usuário pedir para retomar, continuar a partir deste checkpoint e do HEAD atual da branch.
 
+
+
+## P7 — Criador de Ícones nativo (trabalho acumulado, sem APK)
+
+**Origem:** conclusão gradual do Design Studio 1:1, sem iniciar a P8 nem abandonar o aceite visual da Home e do Explorador.
+
+### Implementado no código-fonte
+
+- [x] Novo `P7IconWorkshop`: oficina local aberta na aba **Ícones** e no cartão **Criador de Ícones**, com prévia nativa criada por `Canvas`.
+- [x] Paleta com cinco cores, quatro desenhos originais (escudo, código, pasta e estrela) e três formatos (arredondado, circular e quadrado). Opções de cor roláveis para caber em telas pequenas.
+- [x] Renderização determinística de ícone **PNG 512 × 512** com transparência real fora da forma selecionada.
+- [x] Exportação pelo seletor `ACTION_CREATE_DOCUMENT` do Android; **não solicita acesso irrestrito ao armazenamento** e não escreve em arquivos do projeto ou altera o ícone instalado.
+- [x] `MainActivity` guarda temporariamente os três índices da escolha do usuário durante o fluxo do seletor, inclusive ao girar a tela, sem armazenar imagem temporária privada desnecessária.
+- [x] Novo `P7IconWorkshopInstrumentedTest` verifica dimensões, assinatura PNG, mudança real de pixels entre estilos, transparência, rejeição de esquema `file:` e acesso ao editor a partir da aba Ícones; execução obrigatória no CI Android 10 e 15.
+- [ ] Revisão final de interação e screenshot em Galaxy A55 ainda pendente. A ferramenta **não é um editor vetorial completo** com importação de SVG e camadas; este é o primeiro compositor de ícones autêntico.
+
+### Estado da integração
+
+- Nenhum APK QA produzido e `versionCode` permanece o da última prévia disponibilizada.
+- `main` preservada, [PR #13](https://github.com/nego001/ReaDroid-Native/pull/13) permanece em rascunho.
+- A [Issue P8 #14](https://github.com/nego001/ReaDroid-Native/issues/14) mantém separadamente todos os laboratórios, IP Locator e investigações futuras; **a P7 continua prioritária**.
+- Homologar os testes do **HEAD exato**, não reutilizar resultados da Preview 12 nem declarar 1:1 visualmente concluído por somente compilar.
+
