@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
     private static final int REQUEST_COMPARE_APK = 3;
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
     private static final int REQUEST_IMPORT_APPEARANCE = 42;
+    private static final int REQUEST_EXPORT_P7_ICON = 43;
+    private P7IconWorkshop.Spec pendingIconExport;
     private JSONObject report;
     private File currentApk;
     private File currentIndex;
@@ -100,6 +102,17 @@ public class MainActivity extends Activity {
             ? android.R.style.Theme_Material_Light_NoActionBar
             : android.R.style.Theme_Material_NoActionBar);
         super.onCreate(state);
+        if (state != null && state.containsKey("p7_icon_export")) {
+            int[] selected = state.getIntArray("p7_icon_export");
+            if (selected != null && selected.length == 3) {
+                try {
+                    pendingIconExport = new P7IconWorkshop.Spec(
+                        selected[0], selected[1], selected[2]);
+                } catch (IllegalArgumentException ignored) {
+                    pendingIconExport = null;
+                }
+            }
+        }
         // Window insets are not available until after the content view is attached.
         // Calling Window.getInsetsController here crashes on Android 15.
         LinearLayout root = new LinearLayout(this);
@@ -1337,8 +1350,38 @@ public class MainActivity extends Activity {
         contentScroll.scrollTo(0, 0);
     }
 
+    /** Uses the Android document picker, never broad storage write access. */
+    public void startP7IconExport(P7IconWorkshop.Spec icon) {
+        pendingIconExport = icon;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/png");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-icone.png");
+        startActivityForResult(create, REQUEST_EXPORT_P7_ICON);
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == REQUEST_EXPORT_P7_ICON) {
+            P7IconWorkshop.Spec requested = pendingIconExport;
+            pendingIconExport = null;
+            if (result != RESULT_OK || data == null ||
+                    data.getData() == null || requested == null) return;
+            try {
+                P7IconWorkshop.export(this, requested, data.getData());
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Ícone exportado")
+                    .setMessage("PNG 512×512 salvo no destino escolhido. " +
+                        "O APK e a identidade instalada não foram alterados.")
+                    .setPositiveButton("OK", null).show();
+            } catch (Exception error) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Falha ao exportar ícone")
+                    .setMessage(error.getMessage())
+                    .setPositiveButton("OK", null).show();
+            }
+            return;
+        }
         if ((request == REQUEST_EXPORT_APPEARANCE || request == REQUEST_IMPORT_APPEARANCE)
             && result == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
@@ -1822,6 +1865,10 @@ public class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putInt("active_studio_section", selectedSection);
+        if (pendingIconExport != null)
+            outState.putIntArray("p7_icon_export", new int[] {
+                pendingIconExport.color, pendingIconExport.symbol,
+                pendingIconExport.shape });
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
         super.onSaveInstanceState(outState);
     }
