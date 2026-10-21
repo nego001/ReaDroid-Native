@@ -232,6 +232,10 @@ public final class P7DesignStudio {
         scroll.addView(cards);
     }
     private void open(int index) {
+        if (index == -4) {
+            if (a instanceof MainActivity) P7IconWorkshop.open((MainActivity) a);
+            return;
+        }
         if(index>=0 && index<actions.length && actions[index]!=null)
             actions[index].performClick();
     }
@@ -369,7 +373,7 @@ public final class P7DesignStudio {
         row.setOrientation(LinearLayout.HORIZONTAL);
         body.addView(row);
         creator(row, "◉", "Criador de Ícones",
-            "Editor em desenvolvimento", 7, true);
+            "Criar e exportar PNG", -4, true);
         creator(row, "N", "Logo Studio",
             "Personalizar nome e logo", 6, false);
     }
@@ -470,7 +474,10 @@ public final class P7DesignStudio {
             actionCard("Bordas dos cartões","Configurar o arredondamento",11);
         }else if(activeTab==2){
             heading("Criador de Ícones");
-            actionCard("Prévia visual","A ferramenta de edição de ícones ainda não está pronta",7);
+            actionCard("Abrir criador de ícones",
+                "Escolher cores, símbolos e formato; exportar PNG 512×512", -4);
+            note("Ícones originais gerados localmente. Nenhum APK é alterado.");
+
         }else{
             heading("Logo Studio");
             liveLogoPreview();
