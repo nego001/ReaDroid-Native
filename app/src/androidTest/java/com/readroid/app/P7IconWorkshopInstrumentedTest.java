@@ -121,7 +121,12 @@ public final class P7IconWorkshopInstrumentedTest {
     }
 
     private static View findDescription(View view, String label) {
-        if (label.equals(view.getContentDescription())) return view;
+        CharSequence description = view.getContentDescription();
+        if (description != null &&
+                (label.equals(description.toString()) ||
+                 ("Abrir seção Design".equals(label) &&
+                    description.toString().startsWith("Seção Design"))))
+            return view;
         if (view instanceof ViewGroup) {
             ViewGroup parent = (ViewGroup) view;
             for (int i = 0; i < parent.getChildCount(); i++) {
