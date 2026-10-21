@@ -88,6 +88,15 @@ def check():
                      "Formato", "Exportar PNG"):
         assert expected in workshop_texts, (
             "Native icon workshop missing real control " + expected)
+    export_actions = [n for n in workshop
+                      if n.attrib.get("text") == "Exportar PNG"
+                      and n.attrib.get("content-desc") == "Exportar PNG 512×512"
+                      and n.attrib.get("clickable") == "true"]
+    assert len(export_actions) == 1, (
+        "Export button must be uniquely visible and clickable inside the editor")
+    with open(f"p7-icon-workshop-android-{api}.png", "wb") as stream:
+        stream.write(subprocess.check_output(
+            ["adb", "exec-out", "screencap", "-p"], timeout=45))
     assert any(n.attrib.get("content-desc") == "Prévia original do ícone"
                for n in workshop), "Native Canvas icon preview not displayed"
     # This template must preselect its real saved-to-PNG drawing parameters.

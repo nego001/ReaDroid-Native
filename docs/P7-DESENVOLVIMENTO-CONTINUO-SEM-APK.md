@@ -107,3 +107,13 @@ Somente quando houver um conjunto significativo de melhorias funcionais/visuais 
 - A [Issue P8 #14](https://github.com/nego001/ReaDroid-Native/issues/14) mantém separadamente todos os laboratórios, IP Locator e investigações futuras; **a P7 continua prioritária**.
 - Homologar os testes do **HEAD exato**, não reutilizar resultados da Preview 12 nem declarar 1:1 visualmente concluído por somente compilar.
 
+
+## Correção P7 — botão de exportação no Criador de Ícones (21/10/2026 UTC)
+
+**Falha reproduzida:** a execução [39535239581](https://github.com/nego001/ReaDroid-Native/actions/runs/39535239581) concluiu 24/24 testes instrumentados no Android 10, mas o smoke visual do Design falhou nos Androids 10 e 15: `Exportar PNG` não aparecia na hierarquia acessível do diálogo. Home e Explorador passaram nos dois emuladores. A aprovação dos testes JUnit isoladamente não era aprovação da P7.
+
+**Alteração de código:** a ação primária `Exportar PNG` passa a ser um `Button` nativo, com texto, descrição acessível, estado clicável e altura de toque, posicionado logo após a prévia dentro do editor. Removido o botão positivo redundante do rodapé do `AlertDialog`, mantendo `Fechar` e o fluxo original `ACTION_CREATE_DOCUMENT` com autorização SAF. O editor continua local, sem alterar APK, projeto, preferências ou ícone instalado.
+
+**Regressão acrescentada:** instrumentação verifica o botão real e seu nome acessível. `tools/p7_design_smoke.py` exige uma única ação clicável no Android 10 e 15, e salva `p7-icon-workshop-android-<api>.png` antes de cancelar; o workflow guarda essa imagem mesmo em caso de falha posterior.
+
+**Status:** alteração proposta na branch P7; CI Android 10/15 e capturas do commit exato devem ser conferidos antes de marcar aprovado. Sem novo APK, sem versão nova, sem merge para `main`, sem iniciar a P8.

@@ -117,8 +117,17 @@ public final class P7IconWorkshopInstrumentedTest {
                 // Dialog owns a separate Window; inspect that window rather
                 // than mistakenly querying the Activity's decor view.
                 android.app.AlertDialog dialog = P7IconWorkshop.open(a);
-                assertNotNull(findDescription(dialog.getWindow().getDecorView(),
+                View dialogRoot = dialog.getWindow().getDecorView();
+                assertNotNull(findDescription(dialogRoot,
                     "Prévia original do ícone"));
+                View exportAction = byText(dialogRoot, "Exportar PNG");
+                assertNotNull("Export action must be reachable inside the editor",
+                    exportAction);
+                assertTrue("Export action must be clickable",
+                    exportAction.isClickable());
+                assertEquals("Export PNG dimensions must be accessible",
+                    "Exportar PNG 512×512",
+                    exportAction.getContentDescription().toString());
                 dialog.dismiss();
             });
         }

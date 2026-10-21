@@ -12,6 +12,7 @@ import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.Button;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
@@ -128,6 +129,22 @@ public final class P7IconWorkshop {
         java.util.function.Consumer<Integer> shape = value -> {
             state[2] = value; preview.setSpec(new Spec(state[0], state[1], state[2]));
         };
+        // Keep the primary export action inside the dialog's own scrollable
+        // content, directly below the preview. System AlertDialog footer
+        // buttons were missing from the accessibility tree on API 29/35.
+        // This is a real button, not a label added merely for UI automation.
+        Button exportButton = new Button(a);
+        exportButton.setText("Exportar PNG");
+        exportButton.setContentDescription("Exportar PNG 512×512");
+        exportButton.setAllCaps(false);
+        exportButton.setTextColor(Color.WHITE);
+        exportButton.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        LinearLayout.LayoutParams exportParams = new LinearLayout.LayoutParams(
+            -1, dp(a, 48));
+        exportParams.topMargin = dp(a, 8);
+        exportParams.bottomMargin = dp(a, 4);
+        root.addView(exportButton, exportParams);
         choices(a, root, "Cor", PALETTES, initial.color, color::accept);
         choices(a, root, "Símbolo", SYMBOLS, initial.symbol, symbol::accept);
         choices(a, root, "Formato", SHAPES, initial.shape, shape::accept);
@@ -138,10 +155,14 @@ public final class P7IconWorkshop {
         android.app.AlertDialog workshopDialog = new android.app.AlertDialog.Builder(a)
             .setTitle("Criador de Ícones")
             .setView(scroll)
-            .setPositiveButton("Exportar PNG", (dialog, which) ->
-                a.startP7IconExport(new Spec(state[0], state[1], state[2])))
             .setNegativeButton("Fechar", null)
             .create();
+        exportButton.setOnClickListener(v -> {
+            // Only a deliberate tap starts ACTION_CREATE_DOCUMENT. Closing
+            // the dialog does not modify any saved preference or user APK.
+            workshopDialog.dismiss();
+            a.startP7IconExport(new Spec(state[0], state[1], state[2]));
+        });
         workshopDialog.show();
         return workshopDialog;
     }
