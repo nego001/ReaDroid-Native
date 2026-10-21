@@ -7,6 +7,8 @@ on:
       - 'app/src/qa/**'
       - 'app/src/androidTest/**'
       - 'tools/p7_explorer_smoke.py'
+      - 'tools/p7_compact_smoke.py'
+      - 'tests/test_p7_compact_smoke.py'
       - 'tools/p7_design_smoke.py'
       - 'tools/p7_home_smoke.py'
       - '.github/workflows/p7-brand-validation.yml'
@@ -38,6 +40,8 @@ jobs:
           gradle-version: '8.9'
       - name: Verify ANR recovery regression contracts
         run: python3 -m unittest discover -s tests -p 'test_android_ui_recovery.py' -v
+      - name: Check compact viewport helper with unit tests
+        run: python3 -m unittest discover -s tests -p 'test_p7_compact_smoke.py' -v
       - name: Enable hardware acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -72,6 +76,10 @@ jobs:
             test -s p7-design-android-${{ matrix.api }}.png
             test -s p7-icon-workshop-android-${{ matrix.api }}.png
             test -s p7-logo-workshop-android-${{ matrix.api }}.png
+            python3 tools/p7_compact_smoke.py
+            test -s p7-compact-inicio-android-${{ matrix.api }}.png
+            test -s p7-compact-arquivos-android-${{ matrix.api }}.png
+            test -s p7-compact-design-android-${{ matrix.api }}.png
       - name: Upload launch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,6 +89,7 @@ jobs:
             p7-brand-android-*.png
             p7-explorer-android-*.png
             p7-design-android-*.png
+            p7-compact-*-android-*.png
             p7-icon-workshop-android-*.png
             p7-logo-workshop-android-*.png
             app/build/outputs/androidTest-results/connected/

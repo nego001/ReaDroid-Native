@@ -211,3 +211,15 @@ O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por pl
 O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Native/actions/runs/39548519373) falhou no teste `test_both_official_files_are_required`: a fixture utiliza um PNG sintético de **3×2**, enquanto o coletor de verificação aplicava implicitamente o tamanho oficial **1448×1086** também a essa fixture. A verificação de integridade propriamente dita e os outros três testes passaram.
 
 **Correção objetiva:** o coletor `check_references` mantém **1448×1086 como padrão imutável para produção** mas recebe uma dimensão explicitamente injetada pelos testes sintéticos. Os dois cenários (uma imagem faltante e as duas presentes) passam a testar somente os PNGs 3×2 sem afrouxar a validação das artes oficiais. Novo commit exige nova execução de Source checks, OTA e emuladores, sem declarar aceite visual 1:1.
+
+## P7.6 — teste real de viewport estreito 320 dp e fonte 130% (21/10/2026)
+
+**Checkpoint anterior:** commit `bdb4828c`, [matriz 39548681956](https://github.com/nego001/ReaDroid-Native/actions/runs/39548681956): Android 10 e 15 aprovados (31/31 cada), smokes de Home/Explorer/Design, Source checks e OTA verdes; testes de integridade das duas referências PNG aprovados com fixtures, mas imagens oficiais ainda ausentes.
+
+**Lacuna:** as capturas de P7 validavam exclusivamente o viewport comum do emulador. A issue #11 exige uso em **320 dp com fonte ampliada**, especialmente cabeçalhos e navegação inferior que não podem desaparecer ou sair da tela.
+
+**Implementação:** `tools/p7_compact_smoke.py` descobre densidade e resolução efetivas via `wm`, aplica temporariamente 320 × 720 dp e fonte Android de 130%, reinicia apenas o aplicativo de QA, confirma cabeçalho visível e cinco abas inferiores com coordenadas na viewport e largura mínima de 48 dp em Home/Arquivos/Design, verifica navegação realmente selecionada e salva três screenshots por API. Em `finally`, restaura exatamente o override anterior de resolução ou o estado físico e o valor original de `font_scale`, reiniciando o app normalmente. Tudo em emulador, sem abrir ou modificar APKs pessoais.
+
+**CI:** `.github/workflows/p7-brand-validation.yml` roda esse smoke depois das evidências normais e inclui `p7-compact-*-android-*.png` nos artefatos; testes Python `tests/test_p7_compact_smoke.py` cobrem extração de estado físico/override, densidades, conversão dp↔px e entradas malformadas.
+
+**Pendente:** compilar/executar nos Androids 10/15, corrigir eventuais falhas de UI ou calibração identificadas. Imagens aprovadas originais e homologação física Galaxy A55 ainda ausentes; não declarar visual 1:1. PR #13 draft, main preservada, sem APK para distribuição e P8 separado.
