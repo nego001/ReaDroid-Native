@@ -403,6 +403,57 @@ public final class P7DesignStudio {
         card.setOnClickListener(v -> open(actionIndex));
     }
 
+    /** Four native previews exported by the exact same Canvas renderer. */
+    private void iconTemplateGallery() {
+        sectionHeader("Modelos de Ícones", null);
+        HorizontalScrollView scroll = new HorizontalScrollView(a);
+        scroll.setHorizontalScrollBarEnabled(false);
+        body.addView(scroll);
+        LinearLayout row = new LinearLayout(a);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        scroll.addView(row);
+        String[] names = {"Escudo Azul", "Código Neon", "Pasta Verde",
+            "Estrela Laranja"};
+        P7IconWorkshop.Spec[] templates = {
+            new P7IconWorkshop.Spec(0, 0, 0),
+            new P7IconWorkshop.Spec(2, 1, 1),
+            new P7IconWorkshop.Spec(1, 2, 2),
+            new P7IconWorkshop.Spec(3, 3, 0)
+        };
+        for (int i = 0; i < templates.length; i++) {
+            P7IconWorkshop.Spec template = templates[i];
+            String name = names[i];
+            LinearLayout tile = column();
+            tile.setGravity(Gravity.CENTER);
+            tile.setPadding(dp(7), dp(9), dp(7), dp(9));
+            tile.setBackground(background(false));
+            tile.setClickable(true);
+            tile.setFocusable(true);
+            tile.setContentDescription("Personalizar ícone " + name);
+            tile.setOnClickListener(v -> {
+                if (a instanceof MainActivity)
+                    P7IconWorkshop.open((MainActivity) a, template);
+            });
+            LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
+                dp(106), dp(124));
+            tileParams.rightMargin = dp(7);
+            row.addView(tile, tileParams);
+            View preview = P7IconWorkshop.inlinePreview(a, template);
+            preview.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            tile.addView(preview, new LinearLayout.LayoutParams(
+                dp(70), dp(70)));
+            TextView caption = label(name, 10, NegrescoTheme.TEXT, true);
+            caption.setGravity(Gravity.CENTER);
+            caption.setMaxLines(2);
+            LinearLayout.LayoutParams captionParams =
+                new LinearLayout.LayoutParams(-1, -2);
+            captionParams.topMargin = dp(7);
+            tile.addView(caption, captionParams);
+        }
+        note("Escolha um modelo para personalizar e exportar seu próprio PNG.");
+    }
+
     private void render(){
         for(int i=0;i<tabViews.length;i++){
             if(tabViews[i]==null)continue;
@@ -474,6 +525,7 @@ public final class P7DesignStudio {
             actionCard("Bordas dos cartões","Configurar o arredondamento",11);
         }else if(activeTab==2){
             heading("Criador de Ícones");
+            iconTemplateGallery();
             actionCard("Abrir criador de ícones",
                 "Escolher cores, símbolos e formato; exportar PNG 512×512", -4);
             note("Ícones originais gerados localmente. Nenhum APK é alterado.");
