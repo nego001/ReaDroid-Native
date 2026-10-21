@@ -4,6 +4,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.net.Uri;
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicInteger;
 import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.ImageView;
@@ -50,10 +51,22 @@ public final class P7HomeOverviewInstrumentedTest {
                 P7ProjectHistory.Entry item = new P7ProjectHistory.Entry(
                     Uri.parse("content://p7.synthetic/project.apk"),
                     "Fixture.apk", "com.example.synthetic", 0);
+                AtomicInteger allOpens = new AtomicInteger();
+                panel.setHistoryCallbacks(entry -> {},
+                    v -> allOpens.incrementAndGet());
                 panel.setRecentProjects(Collections.singletonList(item), null);
+                View history = byDescription(panel,
+                    "Ver todos os projetos recentes");
+                assertNotNull("History link must exist when a project is present",
+                    history);
+                int touch = NegrescoTheme.dp(activity, 48);
+                assertEquals(View.VISIBLE, history.getVisibility());
+                assertTrue(history.getMinimumHeight() >= touch);
+                assertTrue(history.isClickable() && history.isFocusable());
+                assertTrue(history.performClick());
+                assertEquals(1, allOpens.get());
                 View menu = byDescription(panel, "Mais opções de Fixture.apk");
                 assertNotNull("Historical overflow missing", menu);
-                int touch = NegrescoTheme.dp(activity, 48);
                 assertTrue(menu.getLayoutParams().width >= touch);
                 assertTrue(menu.getLayoutParams().height >= touch);
                 assertTrue(menu.getMinimumWidth() >= touch);
