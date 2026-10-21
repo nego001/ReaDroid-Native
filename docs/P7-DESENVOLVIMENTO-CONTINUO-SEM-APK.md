@@ -255,3 +255,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção `5027da70`:** `P7DesignStudio.java` agora chama também `setMinimumHeight(dp(48))` em todas as quatro abas internas e em `Ver todos`, preservando o `setMinHeight(48dp)`, `LayoutParams`, foco e descrições acessíveis. Não altera controles de escolha, preferências, exportação nem o plano de edição.
 
 **Validação pendente:** executar o teste instrumentado atualizado + smokes regulares e compactos nas APIs 29/35 no SHA final. O HEAD da PR/Actions estava atrasado em relação ao ref GitHub após commits feitos pelo conector, portanto toda conclusão precisa citar o SHA exato. Nenhum APK de distribuição, merge na main, versionCode ou avanço de P8. Aceite 1:1 segue bloqueado pelas duas referências oficiais e teste físico.
+
+## P7.6 — regressão de densidade após expansão dos alvos (21/10/2026)
+
+**Falha nova observada:** commit `5027da70`, matriz [39614346419](https://github.com/nego001/ReaDroid-Native/actions/runs/39614346419): os **32 testes instrumentados Android 10 terminaram** sem registrar o erro anterior de `minHeight`, mas o smoke `tools/p7_design_smoke.py` falhou com `Missing Design Studio element: Dark OLED`. Os cabeçalhos `Ver todos` + abas tiveram suas áreas reais expandidas para 48dp; essa expansão empurrou o primeiro preset para fora da viewport inicial. No momento do diagnóstico, Android 15 ainda executava. O erro não deve ser resolvido afrouxando a verificação do screenshot ou reduzindo a área clicável.
+
+**Correção `f135eacc`:** miniaturas de Temas passam de 88 para 74 dp; layouts de 69 para 57 dp; presets de 56 para 46 dp. Espaçamento do título de cada miniatura reduzido de 5 para 3 dp, cabeçalhos de 6 para 4 dp e margem superior das abas de 12 para 8 dp. As abas e `Ver todos` mantêm **48dp de alvo**, foco, rótulos dinâmicos e ações funcionais. Não há alteração em preferência, APK, SQLite nem exportações.
+
+**Verificação necessária:** repetir Android 10/15 e ambos os smokes, inclusive compact viewport (320dp/fonte 130%), e confirmar que `Dark OLED` voltou ao primeiro viewport sem violar os alvos de 48dp. `f135eacc` é código ainda não homologado até o resultado da nova matriz. PR #13 segue draft, main e P8 intocadas.
