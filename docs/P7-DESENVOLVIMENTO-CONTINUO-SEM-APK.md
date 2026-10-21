@@ -315,3 +315,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Novo teste real:** `P7NavigationInstrumentedTest.designSubtabSurvivesRealActivityRecreation` navega para Design → Ícones, executa `ActivityScenario.recreate()`, valida seção e conteúdo visíveis, muda para Logotipo, recria novamente e confirma rótulo TalkBack e conteúdo `Logo Studio`, sem criar ou alterar APK do usuário. Requer CI API29/35 e regressão dos smokes 130%/200% antes de declarar aprovado.
 
 **Escopo e limites:** alteração da PR #13 exclusivamente P7, sem alterar `main`, `versionCode` ou OTA. Issue #14 P8 e documentação de IAs #15/#16 permanecem separadas. PNGs oficiais e aceite físico no Galaxy A55 ainda faltam para 1:1 completo.
+
+## P7.6 — aba horizontal selecionada visível em viewport estreita (21/10/2026)
+
+**Checkpoint confirmado:** `ff29525e` passou na [matriz Android 10/15 39649241257](https://github.com/nego001/ReaDroid-Native/actions/runs/39649241257): **35/35 testes por emulador**, telas normais/320dp com fonte 130% e 200%, e restauração da fonte. Source [39649241261](https://github.com/nego001/ReaDroid-Native/actions/runs/39649241261) e OTA [39649241377](https://github.com/nego001/ReaDroid-Native/actions/runs/39649241377) também passaram.
+
+**Pendência UX:** preservar a aba interna após recriação não garantia que ela fosse visualmente acessível. Em viewport estreito, a faixa de quatro abas é rolável e abria à esquerda: a aba restaurada Logotipo poderia ficar fora da área visível.
+
+**Correção:** `P7DesignStudio` agora mantém a referência ao `HorizontalScrollView` das abas e executa `revealActiveTab()` após o layout, deslocando somente o necessário para manter os limites da aba ativa dentro da largura medida. Um retorno para Temas recua automaticamente para o início. Não toca em estado do APK, aparência persistida, plano de edição, nem faz movimentação vertical ou animações custosas.
+
+**Teste novo:** `P7NavigationInstrumentedTest.narrowDesignKeepsSelectedTabVisible` cria widget Android real em viewport artificial de **240dp**, começa com aba Logotipo selecionada, aguarda layout, verifica que a aba está inteiramente dentro da região rolada, seleciona Temas e confirma scroll horizontal zerado. Matriz Android 10/15 e Source/OTA ainda precisam validar o novo SHA.
+
+**Limites:** P7 segue isolada em PR #13 draft, sem merge main, APK de distribuição, OTA ou versionCode alterados; P8 e IA social seguem separados. Aceite 1:1 segue condicionado aos PNGs oficiais e QA no A55.

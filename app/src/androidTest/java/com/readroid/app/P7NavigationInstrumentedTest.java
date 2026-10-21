@@ -3,6 +3,9 @@ package com.readroid.app;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.Button;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Test;
@@ -177,6 +180,63 @@ public final class P7NavigationInstrumentedTest {
                 assertTrue(hasText(root, "Logo Studio"));
                 assertNotNull(byDescription(root, "Temas, selecionar aba"));
                 assertNotNull(byDescription(root, "Ícones, selecionar aba"));
+            });
+        }
+    }
+
+    private static HorizontalScrollView tabScroll(View node) {
+        if (node instanceof HorizontalScrollView)
+            return (HorizontalScrollView) node;
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                HorizontalScrollView found = tabScroll(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    @Test public void narrowDesignKeepsSelectedTabVisible() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                // Real Android widgets in a constrained 240dp content viewport.
+                LinearLayout root = new LinearLayout(activity);
+                root.setOrientation(LinearLayout.VERTICAL);
+                activity.setContentView(root,
+                    new ViewGroup.LayoutParams(
+                        NegrescoTheme.dp(activity, 240), -1));
+                new P7DesignStudio(activity, root, new Button[13], 3);
+                assertNotNull(byDescription(root,
+                    "Logotipo, aba selecionada"));
+            });
+            androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                HorizontalScrollView scroll = tabScroll(root);
+                View logo = byDescription(root, "Logotipo, aba selecionada");
+                assertNotNull(scroll);
+                assertNotNull(logo);
+                assertTrue("Narrow viewport must require scrolling",
+                    scroll.getWidth() < logo.getRight());
+                assertTrue("Selected Logo tab clipped at 240dp",
+                    logo.getLeft() >= scroll.getScrollX()
+                    && logo.getRight() <= scroll.getScrollX() + scroll.getWidth());
+                View themes = clickableText(root, "Temas");
+                assertNotNull(themes);
+                assertTrue(themes.performClick());
+            });
+            androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                HorizontalScrollView scroll = tabScroll(root);
+                assertNotNull(scroll);
+                assertEquals("Returning to Themes must expose first tab",
+                    0, scroll.getScrollX());
+                assertNotNull(byDescription(root, "Temas, aba selecionada"));
             });
         }
     }

@@ -64,6 +64,7 @@ public final class P7DesignStudio {
     private int selectedLayout = 0;
     private int selectedPreset = 0;
     private final LinearLayout body;
+    private final HorizontalScrollView tabScroller;
     private final TextView[] tabViews=new TextView[4];
 
     private int dp(int n) { return NegrescoTheme.dp(a,n); }
@@ -102,6 +103,7 @@ public final class P7DesignStudio {
         titles.addView(label("Design Studio",18,NegrescoTheme.TEXT,true));
         titles.addView(label("Personalize a aparência do seu app",12,NegrescoTheme.MUTED,false));
         HorizontalScrollView scroll=new HorizontalScrollView(a);
+        tabScroller = scroll;
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));
         sp.topMargin=dp(8);root.addView(scroll,sp);
@@ -132,6 +134,21 @@ public final class P7DesignStudio {
     /** For Activity saved-state only; never persists a navigation-only choice. */
     public int getActiveTab() {
         return activeTab;
+    }
+
+    /** Keep the active Design subtab visible after tap or Activity recreation. */
+    private void revealActiveTab() {
+        final int index = activeTab;
+        tabScroller.post(() -> {
+            if (index != activeTab || tabScroller.getWidth() <= 0) return;
+            View target = tabViews[index];
+            int left = target.getLeft();
+            int right = target.getRight();
+            int offset = tabScroller.getScrollX();
+            if (left < offset) tabScroller.scrollTo(left, 0);
+            else if (right > offset + tabScroller.getWidth())
+                tabScroller.scrollTo(right - tabScroller.getWidth(), 0);
+        });
     }
 
     private void heading(String title) {
@@ -570,5 +587,6 @@ public final class P7DesignStudio {
         actionCard("Cores e tons","Abrir paleta de destaques",1);
         actionCard("Exportar aparência","Salvar suas preferências em JSON",8);
         actionCard("Importar aparência","Aplicar preset validado",9);
+        revealActiveTab();
     }
 }
