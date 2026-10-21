@@ -78,6 +78,19 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull("Reference overflow menu missing", menu);
                     assertNotNull("Reference edit plan chip missing", edits);
                     assertNotNull("Advanced filters must share the chip row", advanced);
+                    int touch = NegrescoTheme.dp(activity, 48);
+                    assertTrue("Explorer back hitbox too narrow",
+                        backButton.getLayoutParams().width >= touch);
+                    assertTrue("Explorer back hitbox too short",
+                        backButton.getLayoutParams().height >= touch);
+                    assertTrue("Explorer menu hitbox too narrow",
+                        menu.getLayoutParams().width >= touch);
+                    assertTrue("Explorer menu hitbox too short",
+                        menu.getLayoutParams().height >= touch);
+                    assertTrue("Advanced filter hitbox too narrow",
+                        advanced.getLayoutParams().width >= touch);
+                    assertTrue("Advanced filter hitbox too short",
+                        advanced.getLayoutParams().height >= touch);
                     assertTrue(backButton.performClick());
                     assertEquals(1, exited.get());
                     assertTrue(edits.performClick());

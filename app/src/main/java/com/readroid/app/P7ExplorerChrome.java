@@ -53,8 +53,8 @@ public final class P7ExplorerChrome extends LinearLayout {
         addView(titleRow);
         TextView back = text("‹", 30, NegrescoTheme.TEXT, false);
         back.setGravity(Gravity.CENTER);
-        back.setMinWidth(dp(38));
-        back.setMinHeight(dp(44));
+        back.setMinWidth(dp(48));
+        back.setMinHeight(dp(48));
         back.setContentDescription("Voltar no Explorador");
         back.setClickable(true);
         back.setFocusable(true);
@@ -66,7 +66,7 @@ public final class P7ExplorerChrome extends LinearLayout {
             } else if (onExit != null) onExit.run();
             else navigator.navigate("");
         });
-        titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(44)));
+        titleRow.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout heading = new LinearLayout(activity);
         heading.setOrientation(VERTICAL);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1);
@@ -77,8 +77,8 @@ public final class P7ExplorerChrome extends LinearLayout {
             NegrescoTheme.MUTED, false));
         TextView overflow = text("⋮", 24, NegrescoTheme.TEXT, true);
         overflow.setGravity(Gravity.CENTER);
-        overflow.setMinWidth(dp(40));
-        overflow.setMinHeight(dp(44));
+        overflow.setMinWidth(dp(48));
+        overflow.setMinHeight(dp(48));
         overflow.setContentDescription("Mais opções do Explorador");
         overflow.setClickable(true);
         overflow.setFocusable(true);
@@ -90,7 +90,7 @@ public final class P7ExplorerChrome extends LinearLayout {
             })
             .setNegativeButton("Fechar", null).show());
         titleRow.addView(overflow,
-            new LinearLayout.LayoutParams(dp(40), dp(44)));
+            new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         LinearLayout projectCard = new LinearLayout(activity);
         projectCard.setOrientation(HORIZONTAL);
@@ -130,7 +130,7 @@ public final class P7ExplorerChrome extends LinearLayout {
         editCounter.setContentDescription("Abrir plano de edição");
         editCounter.setClickable(true);
         editCounter.setFocusable(true);
-        editCounter.setMinHeight(dp(44));
+        editCounter.setMinHeight(dp(48));
         editCounter.setOnClickListener(v -> {
             if (onReviewPlan != null) onReviewPlan.run();
         });
@@ -205,7 +205,7 @@ public final class P7ExplorerChrome extends LinearLayout {
         chip.setSingleLine(true);
         chip.setMaxWidth(dp(140));
         chip.setEllipsize(TextUtils.TruncateAt.END);
-        chip.setMinHeight(dp(43));
+        chip.setMinHeight(dp(48));
         chip.setGravity(Gravity.CENTER_VERTICAL);
         chip.setPadding(dp(6), 0, dp(6), 0);
         chip.setContentDescription(destination.isEmpty()

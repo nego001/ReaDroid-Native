@@ -67,6 +67,10 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                 assertEquals(1, opened.get());
                 View options = descendant(folder, "Opções de assets/");
                 assertNotNull(options);
+                assertEquals("File menu hitbox must be at least 48dp",
+                    NegrescoTheme.dp(activity, 48), options.getLayoutParams().width);
+                assertEquals("File menu height must be at least 48dp",
+                    NegrescoTheme.dp(activity, 48), options.getLayoutParams().height);
                 assertTrue(options.performClick());
                 assertEquals(1, optionsOpened.get());
                 assertEquals("Opening options must not enter a folder",

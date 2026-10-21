@@ -137,13 +137,13 @@ public final class ExplorerView {
         quickScroller.addView(quickFilters);
         filterButton = NegrescoTheme.action(activity, "▦", false);
         filterButton.setContentDescription("Abrir filtros avançados");
-        filterButton.setMinHeight(NegrescoTheme.dp(activity, 38));
-        filterButton.setMinimumHeight(NegrescoTheme.dp(activity, 38));
+        filterButton.setMinHeight(NegrescoTheme.dp(activity, 48));
+        filterButton.setMinimumHeight(NegrescoTheme.dp(activity, 48));
         filterButton.setTextSize(17 * NegrescoTheme.FONT_SCALE);
         filterButton.setPadding(0, 0, 0, 0);
         LinearLayout.LayoutParams advancedParams =
-            new LinearLayout.LayoutParams(NegrescoTheme.dp(activity, 41),
-                NegrescoTheme.dp(activity, 40));
+            new LinearLayout.LayoutParams(NegrescoTheme.dp(activity, 48),
+                NegrescoTheme.dp(activity, 48));
         advancedParams.leftMargin = NegrescoTheme.dp(activity, 5);
         filterRow.addView(filterButton, advancedParams);
         filterButton.setOnClickListener(v -> {
@@ -245,7 +245,7 @@ public final class ExplorerView {
             chip.setTextSize(12 * NegrescoTheme.FONT_SCALE);
             chip.setTextColor(selected ? NegrescoTheme.ON_ACCENT : NegrescoTheme.TEXT);
             chip.setGravity(android.view.Gravity.CENTER);
-            chip.setMinHeight(NegrescoTheme.dp(activity, 39));
+            chip.setMinHeight(NegrescoTheme.dp(activity, 48));
             chip.setPadding(NegrescoTheme.dp(activity, 10),
                 NegrescoTheme.dp(activity, 6),
                 NegrescoTheme.dp(activity, 10),

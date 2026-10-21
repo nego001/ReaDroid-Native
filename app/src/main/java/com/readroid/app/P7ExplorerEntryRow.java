@@ -96,7 +96,7 @@ public final class P7ExplorerEntryRow extends LinearLayout {
         overflow.setContentDescription("Opções de " + name);
         overflow.setClickable(true);
         overflow.setFocusable(true);
-        LayoutParams menuParams = new LayoutParams(dp(activity, 44),
+        LayoutParams menuParams = new LayoutParams(dp(activity, 48),
             dp(activity, 48));
         menuParams.leftMargin = dp(activity, 4);
         addView(overflow, menuParams);

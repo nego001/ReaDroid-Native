@@ -44,6 +44,14 @@ public final class P7LogoWorkshopInstrumentedTest {
             assertEquals(0, Color.alpha(transparent.getPixel(0, 0)));
             assertEquals(0, Color.alpha(transparent.getPixel(50, 250)));
             assertEquals(255, Color.alpha(opaque.getPixel(50, 250)));
+            assertEquals("OLED background must be opaque pure black at top-left",
+                Color.BLACK, opaque.getPixel(0, 0));
+            assertEquals("OLED background must be opaque pure black at bottom-right",
+                Color.BLACK, opaque.getPixel(1023, 511));
+            assertEquals("OLED background must not be the old navy shade",
+                Color.BLACK, opaque.getPixel(500, 40));
+            assertFalse("Transparency setting must change actual output",
+                transparent.sameAs(opaque));
             assertFalse("Color must change actual PNG pixels",
                 transparent.sameAs(violet));
             assertFalse("Name must change actual logo pixels",

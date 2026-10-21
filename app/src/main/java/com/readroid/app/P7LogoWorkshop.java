@@ -129,7 +129,8 @@ public final class P7LogoWorkshop {
             super(context);
             spec = first;
             setContentDescription("Prévia original do logo");
-            setBackgroundColor(0xff101925); // Only the preview, never the PNG.
+            // Preview alone shows a checkerboard for transparent output.
+            // The exported bitmap is never composited against this pattern.
         }
 
         void setSpec(Spec updated) {
@@ -146,6 +147,21 @@ public final class P7LogoWorkshop {
             canvas.translate((getWidth() - WIDTH * scale) / 2f,
                 (getHeight() - HEIGHT * scale) / 2f);
             canvas.scale(scale, scale);
+            if (spec.background == 0) {
+                // Checkerboard is a preview affordance, never embedded in PNG.
+                paint.reset();
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawColor(0xff111720);
+                for (int y = 0; y < HEIGHT; y += 48) {
+                    for (int x = 0; x < WIDTH; x += 48) {
+                        if (((x / 48) + (y / 48)) % 2 == 0) {
+                            paint.setColor(0xff263242);
+                            canvas.drawRect(x, y, Math.min(x + 48, WIDTH),
+                                Math.min(y + 48, HEIGHT), paint);
+                        }
+                    }
+                }
+            }
             drawLogo(canvas, spec, paint);
             canvas.restoreToCount(saved);
         }
@@ -276,9 +292,9 @@ public final class P7LogoWorkshop {
         paint.setAntiAlias(true);
         paint.setStyle(Paint.Style.FILL);
         if (spec.background == 1) {
-            paint.setColor(0xff0a1220);
-            canvas.drawRoundRect(new RectF(24, 24, 1000, 488),
-                52, 52, paint);
+            // OLED means true, opaque #000000 across the entire PNG canvas.
+            // No translucent corner pixels or navy tint.
+            canvas.drawColor(Color.BLACK);
         }
         int accent = ACCENTS[spec.color];
         paint.setColor(accent);

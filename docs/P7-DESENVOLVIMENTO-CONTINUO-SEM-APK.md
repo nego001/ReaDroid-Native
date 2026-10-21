@@ -129,3 +129,13 @@ Somente quando houver um conjunto significativo de melhorias funcionais/visuais 
 **Regressões:** novos testes instrumentados conferem PNG, transparência, mudanças de pixels por cor/fundo, rejeição de dados inválidos/URI não autorizada e acesso à ferramenta. Smoke de Design Studio abre o editor real nos Androids 10/15, verifica prévia e ação acessível, salva uma captura `p7-logo-workshop-android-<api>.png` e fecha sem alterar preferências.
 
 **Aceite ainda pendente:** executar a matriz Android 10/15 no novo HEAD e revisar imagens contra a referência. Sem APK de distribuição, sem versionCode novo, sem merge na main. P8 continua backlog separado.
+
+## P7 — revisão OLED real e acessibilidade do Explorador (21/10/2026)
+
+A matriz do commit `b9f8f0e4` concluiu com sucesso: [GitHub Actions 39537487473](https://github.com/nego001/ReaDroid-Native/actions/runs/39537487473) aprovou **27/27 testes instrumentados no Android 10 e 27/27 no Android 15**, além dos smokes de Home, Explorador e Design Studio e imagens do Criador de Logos. Source checks e OTA aprovados.
+
+**Correção funcional do logo:** a opção `OLED preto` exportava um retângulo azul-marinho arredondado sobre transparência, apesar do nome. Passou a exportar **preto #000000 sólido no PNG inteiro**, com alfa 255 nos cantos; a opção Transparente continua com exterior de alfa 0. A prévia local mostra um xadrez discreto quando o fundo é transparente, sem contaminar o PNG exportado. Novas afirmações por pixel nos testes previnem retorno do azul-marinho falso.
+
+**Explorador acessível:** controles nativos de voltar, menu, revisar plano, filtros avançados, chips rápidos, trilha de pastas e menu contextual de cada arquivo foram ajustados para alvos de toque de **48 dp no eixo pertinente**, sem mudar callbacks, planos de edição, pesquisa ou índice SQLite. Testes de UI foram ampliados para conferir dimensões reais dos controles principais.
+
+**Pendente:** resultado da próxima matriz Android 10/15 no HEAD exato e inspeção visual manual; screenshots não são, sozinhos, homologação 1:1. Continuam proibidos APK de distribuição automático, incremento de versionCode, merge na main ou antecipação da P8.
