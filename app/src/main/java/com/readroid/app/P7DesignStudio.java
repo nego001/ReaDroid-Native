@@ -99,7 +99,7 @@ public final class P7DesignStudio {
         HorizontalScrollView scroll=new HorizontalScrollView(a);
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));
-        sp.topMargin=dp(12);root.addView(scroll,sp);
+        sp.topMargin=dp(8);root.addView(scroll,sp);
         LinearLayout tabs=new LinearLayout(a);tabs.setOrientation(LinearLayout.HORIZONTAL);
         scroll.addView(tabs);
         String[] names={"Temas","Layout","Ícones","Logotipo"};
@@ -134,7 +134,7 @@ public final class P7DesignStudio {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, dp(48));
-        rp.topMargin = dp(6);
+        rp.topMargin = dp(4);
         body.addView(row, rp);
         TextView label = label(title, 15, NegrescoTheme.TEXT, true);
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -179,7 +179,9 @@ public final class P7DesignStudio {
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
         final int width = kind == 2 ? 71 : (kind == 1 ? 100 : 100);
-        final int previewHeight = kind == 2 ? 56 : (kind == 1 ? 69 : 88);
+        // Preserve 48dp controls while keeping the three catalog families
+        // visible above the fold at the canonical emulator viewport.
+        final int previewHeight = kind == 2 ? 46 : (kind == 1 ? 57 : 74);
         LinearLayout card = column();
         card.setPadding(dp(5), dp(6), dp(5), dp(7));
         card.setMinimumWidth(dp(width));
@@ -210,7 +212,7 @@ public final class P7DesignStudio {
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2);
-        tp.topMargin = dp(5);
+        tp.topMargin = dp(3);
         card.addView(title, tp);
         if (kind == 0 && !subtitle.isEmpty()) {
             TextView detail = label(subtitle, 9, NegrescoTheme.MUTED, false);
