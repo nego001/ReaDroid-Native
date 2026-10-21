@@ -245,3 +245,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Sincronização/CI pendente:** uma atualização de conteúdo via GitHub Contents API também moveu a branch, porém a PR/Actions não apresentou novo run na consulta imediata. Antes de declarar verde, confirmar que a PR indexou o HEAD e que Source, OTA e Android API 29/35 realmente rodaram sobre o SHA mais recente. A ausência de run não significa sucesso nem falha técnica da implementação.
 
 **Restrições mantidas:** PR #13 draft, `main` intacta, sem APK de distribuição, sem versionCode nem P8. O aceite visual 1:1 continua pendente dos dois PNGs oficiais e homologação real.
+
+## P7.6 — ajuste pós-CI da altura mínima do Design Studio (21/10/2026)
+
+**Teste real:** commit `8099f00c`, matriz [39613408541](https://github.com/nego001/ReaDroid-Native/actions/runs/39613408541), terminou **failure nas APIs 29 e 35** no caso `P7NavigationInstrumentedTest.designTabsAndCatalogButtonsMeetMinimumTouchTargets`: `Tab minHeight too short: Temas`. Em ambas as plataformas, testes Python auxiliares de viewport passaram e a compilação concluiu; a falha foi na instrumentação do layout, sem inferir sucesso do restante do smoke que não rodou.
+
+**Causa:** `TextView.setMinHeight(48dp)` controla o mínimo do layout de texto, mas o teste consulta `View.getMinimumHeight()`, cuja propriedade independente `View.setMinimumHeight()` não havia sido configurada. A altura explícita em `LayoutParams` já era 48 dp, mas o contrato de acesso nativo continuava incompleto.
+
+**Correção `5027da70`:** `P7DesignStudio.java` agora chama também `setMinimumHeight(dp(48))` em todas as quatro abas internas e em `Ver todos`, preservando o `setMinHeight(48dp)`, `LayoutParams`, foco e descrições acessíveis. Não altera controles de escolha, preferências, exportação nem o plano de edição.
+
+**Validação pendente:** executar o teste instrumentado atualizado + smokes regulares e compactos nas APIs 29/35 no SHA final. O HEAD da PR/Actions estava atrasado em relação ao ref GitHub após commits feitos pelo conector, portanto toda conclusão precisa citar o SHA exato. Nenhum APK de distribuição, merge na main, versionCode ou avanço de P8. Aceite 1:1 segue bloqueado pelas duas referências oficiais e teste físico.
