@@ -1,6 +1,8 @@
 """Unit tests for the compact-device viewport calculations."""
 import unittest
-from tools.p7_compact_smoke import parse_wm, viewport_pixels
+import xml.etree.ElementTree as ET
+from tools.p7_compact_smoke import (
+    parse_wm, viewport_pixels, require_accessible_target)
 
 
 class P7CompactViewportTests(unittest.TestCase):
@@ -20,6 +22,27 @@ class P7CompactViewportTests(unittest.TestCase):
         self.assertEqual((640, 1440), viewport_pixels(320, 720, 320))
         with self.assertRaises(AssertionError):
             viewport_pixels(320, 720, 0)
+
+    def test_accessible_design_target_respects_48dp_and_screen_bounds(self):
+        label = "Temas, aba selecionada"
+        def node(bounds, description=label, clickable="true"):
+            return ET.Element("node", {
+                "content-desc": description, "clickable": clickable,
+                "bounds": bounds})
+        good = node("[0,0][132,132]")
+        require_accessible_target([good], label, 440, (880, 1980))
+        for bad in (
+                node("[0,0][131,132]"),  # < 48dp width
+                node("[0,0][132,131]"),  # < 48dp height
+                node("[750,0][910,140]"),  # clipped outside the screen
+                node("[0,0][132,132]", clickable="false")):
+            with self.subTest(bad=bad.attrib):
+                with self.assertRaises(AssertionError):
+                    require_accessible_target([bad], label, 440, (880, 1980))
+        with self.assertRaises(AssertionError):
+            require_accessible_target([good, good], label, 440, (880, 1980))
+        with self.assertRaises(AssertionError):
+            require_accessible_target([], label, 440, (880, 1980))
 
     def test_missing_or_malformed_display_info_fails_closed(self):
         for output in ("", "Override size: 880x1980", "Physical size: 1080",
