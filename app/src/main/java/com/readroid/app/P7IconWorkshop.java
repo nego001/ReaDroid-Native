@@ -87,7 +87,11 @@ public final class P7IconWorkshop {
             group.addView(item);
             if (i == current) group.check(item.getId());
         }
-        root.addView(group);
+        android.widget.HorizontalScrollView strip =
+            new android.widget.HorizontalScrollView(a);
+        strip.setHorizontalScrollBarEnabled(false);
+        strip.addView(group);
+        root.addView(strip);
         return group;
     }
 
