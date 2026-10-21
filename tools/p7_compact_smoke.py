@@ -94,6 +94,20 @@ def check_screen(name, required_text, width_px, height_px, api, density):
             f"{tab_name}: bottom tab clipped outside compact display: {bounds}")
         assert x2 - x1 >= round(48 * width_px / 320), (
             f"{tab_name}: bottom tab has less than 48 dp width")
+    if name == "Início":
+        for description in ("Abrir menu de navegação",
+                            "Abrir personalização"):
+            require_accessible_target(
+                nodes, description, density, (width_px, height_px))
+        print(f"P7_COMPACT_HOME_A11Y_PASS api={api} 48dp targets=2",
+              flush=True)
+    if name == "Arquivos":
+        for description in ("Ir à raiz do APK",
+                            "Abrir plano de edição"):
+            require_accessible_target(
+                nodes, description, density, (width_px, height_px))
+        print(f"P7_COMPACT_EXPLORER_A11Y_PASS api={api} 48dp targets=2",
+              flush=True)
     if name == "Design":
         # The first two tabs must fit without horizontal scrolling on a
         # 320dp screen. The catalog action is independent of tab selection.

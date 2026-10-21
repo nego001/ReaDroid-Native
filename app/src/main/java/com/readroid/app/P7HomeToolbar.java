@@ -20,6 +20,8 @@ public final class P7HomeToolbar extends LinearLayout {
         image.setPadding(dp(a, 9), dp(a, 9), dp(a, 9), dp(a, 9));
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setContentDescription(description);
+        image.setMinimumWidth(dp(a, 48));
+        image.setMinimumHeight(dp(a, 48));
         image.setFocusable(true);
         image.setClickable(true);
         GradientDrawable bg = new GradientDrawable();
@@ -38,13 +40,13 @@ public final class P7HomeToolbar extends LinearLayout {
         setPadding(0, 0, 0, dp(activity, 4));
         ImageView hamburger = action(activity, R.drawable.ic_p7_menu,
             "Abrir menu de navegação");
-        addView(hamburger, new LayoutParams(dp(activity, 38), dp(activity, 38)));
+        addView(hamburger, new LayoutParams(dp(activity, 48), dp(activity, 48)));
         hamburger.setOnClickListener(menu);
         View spacer = new View(activity);
         addView(spacer, new LayoutParams(0, 1, 1));
         ImageView gear = action(activity, R.drawable.ic_p7_settings,
             "Abrir personalização");
-        addView(gear, new LayoutParams(dp(activity, 38), dp(activity, 38)));
+        addView(gear, new LayoutParams(dp(activity, 48), dp(activity, 48)));
         gear.setOnClickListener(settings);
     }
 }

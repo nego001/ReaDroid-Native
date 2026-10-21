@@ -263,3 +263,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção `f135eacc`:** miniaturas de Temas passam de 88 para 74 dp; layouts de 69 para 57 dp; presets de 56 para 46 dp. Espaçamento do título de cada miniatura reduzido de 5 para 3 dp, cabeçalhos de 6 para 4 dp e margem superior das abas de 12 para 8 dp. As abas e `Ver todos` mantêm **48dp de alvo**, foco, rótulos dinâmicos e ações funcionais. Não há alteração em preferência, APK, SQLite nem exportações.
 
 **Verificação necessária:** repetir Android 10/15 e ambos os smokes, inclusive compact viewport (320dp/fonte 130%), e confirmar que `Dark OLED` voltou ao primeiro viewport sem violar os alvos de 48dp. `f135eacc` é código ainda não homologado até o resultado da nova matriz. PR #13 segue draft, main e P8 intocadas.
+
+## P7.6 — área de toque real em Home e breadcrumb do Explorador (21/10/2026)
+
+**Checkpoint anterior:** `486df0b8`, matriz [39615323314](https://github.com/nego001/ReaDroid-Native/actions/runs/39615323314), **success Android 10/15** com instrumentações, smokes regulares, viewport 320dp e fonte 130%; Source [39615324276](https://github.com/nego001/ReaDroid-Native/actions/runs/39615324276) e OTA [39615323505](https://github.com/nego001/ReaDroid-Native/actions/runs/39615323505) aprovados. Relacionado a issue #11/PR #13.
+
+**Deficiência identificada:** os botões reais de menu e personalização da Home mediam **38×38dp**, inferiores ao mínimo de **48×48dp** usado na P7. A raiz "APK" do breadcrumb tinha texto curto sem largura mínima nativa explícita, e o botão do plano de edições usava `TextView.setMinHeight` sem `View.setMinimumHeight`, inconsistência já observada no Design Studio.
+
+**Correção:** `P7HomeToolbar` usa botões de 48×48dp e View.minimumWidth/Height 48dp mantendo os mesmos ícones, descrições e ações. `P7ExplorerChrome` impõe ambos os mínimos TextView/View de 48dp na raiz e demais chips de breadcrumb, além da altura mínima View de 48dp no acesso ao plano de edição. Nada alterado em índice SQLite, SAF, filtros, importação/exportação ou assinatura.
+
+**Regressões:** `P7NavigationInstrumentedTest` valida os alvos de menu e configurações quanto a dimensões, acessibilidade e funcionalidade. `P7ExplorerChromeInstrumentedTest` verifica dimensões mínimas, rótulo e foco do breadcrumb e do plano de edição. O smoke de **320dp/fonte 130%** passa a medir a geometria **real da hierarquia Android** nos dois botões da Home e em raiz/plano do Explorer, não só no Design. Em caso de corte ou alvo menor que 48dp, falha explicitamente, sem alegar conformidade.
+
+**Estado:** alteração implementada e pendente de matriz Android 10/15 e Source/OTA no novo SHA. PR #13 continua draft, main intocada, sem release/distribuição APK, P8 #14 separada e projeto social #15/#16 em documentação independente. Aceite visual 1:1 depende dos dois PNGs oficiais ausentes e homologação física Galaxy A55.

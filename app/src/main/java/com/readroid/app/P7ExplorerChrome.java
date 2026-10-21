@@ -131,6 +131,7 @@ public final class P7ExplorerChrome extends LinearLayout {
         editCounter.setClickable(true);
         editCounter.setFocusable(true);
         editCounter.setMinHeight(dp(48));
+        editCounter.setMinimumHeight(dp(48));
         editCounter.setOnClickListener(v -> {
             if (onReviewPlan != null) onReviewPlan.run();
         });
@@ -205,7 +206,12 @@ public final class P7ExplorerChrome extends LinearLayout {
         chip.setSingleLine(true);
         chip.setMaxWidth(dp(140));
         chip.setEllipsize(TextUtils.TruncateAt.END);
+        // Breadcrumbs are true touch targets, including the short "APK" root
+        // label. Keep the minimum in both TextView and View properties.
+        chip.setMinWidth(dp(48));
+        chip.setMinimumWidth(dp(48));
         chip.setMinHeight(dp(48));
+        chip.setMinimumHeight(dp(48));
         chip.setGravity(Gravity.CENTER_VERTICAL);
         chip.setPadding(dp(6), 0, dp(6), 0);
         chip.setContentDescription(destination.isEmpty()

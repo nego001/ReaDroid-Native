@@ -91,6 +91,18 @@ public final class P7ExplorerChromeInstrumentedTest {
                         advanced.getLayoutParams().width >= touch);
                     assertTrue("Advanced filter hitbox too short",
                         advanced.getLayoutParams().height >= touch);
+                    assertTrue("Plan editor touch target must be at least 48dp tall",
+                        edits.getMinimumHeight() >= touch);
+                    TextView initialRoot = find(root, "APK");
+                    assertNotNull("Accessible APK root breadcrumb missing", initialRoot);
+                    assertEquals("Breadcrumb root must have stable TalkBack label",
+                        "Ir à raiz do APK", initialRoot.getContentDescription());
+                    assertTrue("APK breadcrumb min width below 48dp",
+                        initialRoot.getMinimumWidth() >= touch);
+                    assertTrue("APK breadcrumb min height below 48dp",
+                        initialRoot.getMinimumHeight() >= touch);
+                    assertTrue("APK breadcrumb is not keyboard-focusable",
+                        initialRoot.isFocusable());
                     assertTrue(backButton.performClick());
                     assertEquals(1, exited.get());
                     assertTrue(edits.performClick());

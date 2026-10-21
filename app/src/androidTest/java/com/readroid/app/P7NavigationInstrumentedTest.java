@@ -167,6 +167,19 @@ public final class P7NavigationInstrumentedTest {
                 View settings = byDescription(root, "Abrir personalização");
                 assertNotNull("Approved hamburger control is missing", menu);
                 assertNotNull("Approved settings gear is missing", settings);
+                int minimum = NegrescoTheme.dp(activity, 48);
+                for (View target : new View[]{menu, settings}) {
+                    assertTrue("Home toolbar target too narrow",
+                        target.getLayoutParams().width >= minimum);
+                    assertTrue("Home toolbar target too short",
+                        target.getLayoutParams().height >= minimum);
+                    assertTrue("Home toolbar minimum width missing",
+                        target.getMinimumWidth() >= minimum);
+                    assertTrue("Home toolbar minimum height missing",
+                        target.getMinimumHeight() >= minimum);
+                    assertTrue("Home toolbar target must be accessible",
+                        target.isFocusable());
+                }
                 assertTrue("Menu must be a working control", menu.isClickable());
                 assertTrue("Settings must be a working control",
                     settings.performClick());
