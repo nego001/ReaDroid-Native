@@ -50,7 +50,32 @@ def launch():
     smoke.ensure_foreground()
 
 
-def check_screen(name, required_text, width_px, height_px, api):
+def require_accessible_target(nodes, description, density, viewport):
+    """Fail if a visible, clickable UI node misses the 48dp touch contract."""
+    controls = [node for node in nodes
+                if node.attrib.get("content-desc") == description
+                and node.attrib.get("clickable") == "true"]
+    if len(controls) != 1:
+        raise AssertionError(
+            f"Expected one accessible clickable target {description!r}; "
+            f"found {len(controls)}")
+    bounds = controls[0].attrib.get("bounds", "")
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+    if not match:
+        raise AssertionError(f"Missing target bounds for {description}: {bounds!r}")
+    x1, y1, x2, y2 = map(int, match.groups())
+    width_px, height_px = viewport
+    if not (0 <= x1 < x2 <= width_px and 0 <= y1 < y2 <= height_px):
+        raise AssertionError(
+            f"Target {description} clipped outside viewport: {bounds}")
+    minimum = (48 * density + 159) // 160  # ceil(48dp at current display density)
+    if x2 - x1 < minimum or y2 - y1 < minimum:
+        raise AssertionError(
+            f"Target {description} below 48dp: {x2-x1}x{y2-y1} px; "
+            f"required {minimum}px at density {density}")
+
+
+def check_screen(name, required_text, width_px, height_px, api, density):
     smoke.tap(smoke.find_tab(smoke.visible_app_hierarchy(), name))
     smoke.ensure_foreground()
     nodes = smoke.visible_app_hierarchy()
@@ -69,6 +94,16 @@ def check_screen(name, required_text, width_px, height_px, api):
             f"{tab_name}: bottom tab clipped outside compact display: {bounds}")
         assert x2 - x1 >= round(48 * width_px / 320), (
             f"{tab_name}: bottom tab has less than 48 dp width")
+    if name == "Design":
+        # The first two tabs must fit without horizontal scrolling on a
+        # 320dp screen. The catalog action is independent of tab selection.
+        for description in ("Temas, aba selecionada",
+                            "Layout, selecionar aba",
+                            "Ver todos: Previews de Temas"):
+            require_accessible_target(
+                nodes, description, density, (width_px, height_px))
+        print(f"P7_COMPACT_DESIGN_A11Y_PASS api={api} 48dp targets=3",
+              flush=True)
     filename = f"p7-compact-{name.lower().replace('í', 'i')}-android-{api}.png"
     with open(filename, "wb") as screenshot:
         screenshot.write(subprocess.check_output(
@@ -101,7 +136,7 @@ def check():
                 ("Início", "Olá, Desenvolvedor"),
                 ("Arquivos", "Explorador de Arquivos"),
                 ("Design", "Design Studio")):
-            check_screen(section, title, width_px, height_px, api)
+            check_screen(section, title, width_px, height_px, api, density)
         print(f"P7_COMPACT_PASS api={api} viewport=320dp font=130%",
               flush=True)
     finally:
