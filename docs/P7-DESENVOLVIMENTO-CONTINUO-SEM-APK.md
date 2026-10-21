@@ -235,3 +235,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Teste novo:** `P7NavigationInstrumentedTest.designTabsAndCatalogButtonsMeetMinimumTouchTargets` abre a aba Design de verdade, valida dimensões físicas em dp de todas as quatro abas, foco/descrição para TalkBack, altura do botão de catálogo e do pai; também navega entre abas Ícones e Logotipo para verificar atualização do estado acessível. Matriz Android 10/15 e smoke compacto devem ser confirmados para o commit atual.
 
 **Restrições:** P7 ainda draft, `main` sem merge, sem APK de distribuição e P8 separada. Homologação 1:1 depende das duas artes originais ausentes e de Galaxy A55 físico.
+
+## P7.6 — checagem real de alvos do Design em tela compacta (21/10/2026)
+
+**Problema que motivou a revisão:** o novo commit `cee06523` corrige botões das abas do Design Studio para 48 dp e amplia o controle `Ver todos`, mas a matriz Android anterior (**05473bd7**) não cobre o novo código e não há run novo comprovado no GitHub Actions. A API da PR #13 continuou apontando `05473bd7`, enquanto a ref da branch já estava em `cee06523`; foi confirmada a diferença na própria API GitHub. Não atribuir aprovação da versão anterior à nova.
+
+**Incrementos em commits de conteúdo:** `77a744b3` adicionou `require_accessible_target` ao `tools/p7_compact_smoke.py`. Em 320 dp / 130% de fonte, verifica na hierarquia real de Android que `Temas, aba selecionada`, `Layout, selecionar aba` e `Ver todos: Previews de Temas` são únicos, clicáveis, íntegros dentro da viewport e têm pelo menos **48 dp de largura e altura** usando a densidade real do emulador. Não verifica por aparência desenhada nem usa PNGs falsos. `8099f00c` expandiu `tests/test_p7_compact_smoke.py` com testes unitários de 48 dp exatos, largura/altura insuficientes, corte da viewport, falta de clique, duplicatas e ausência de controle. Todos os testes foram adicionados à matriz existente, ainda dependentes de execução real para serem declarados PASS.
+
+**Sincronização/CI pendente:** uma atualização de conteúdo via GitHub Contents API também moveu a branch, porém a PR/Actions não apresentou novo run na consulta imediata. Antes de declarar verde, confirmar que a PR indexou o HEAD e que Source, OTA e Android API 29/35 realmente rodaram sobre o SHA mais recente. A ausência de run não significa sucesso nem falha técnica da implementação.
+
+**Restrições mantidas:** PR #13 draft, `main` intacta, sem APK de distribuição, sem versionCode nem P8. O aceite visual 1:1 continua pendente dos dois PNGs oficiais e homologação real.
