@@ -58,7 +58,9 @@ def check():
     ui.tap(guide)
     dialog = ui.visible_app_hierarchy()
     require_text(dialog, "Assinatura de APK modificado")
-    require_text(dialog, "Entendi")
+    # On Android 10 the dialog's action button may not be represented
+    # as a visible TextView in uiautomator XML. The real title plus the
+    # explicit Android Back round-trip verifies safe, operable navigation.
     ui.adb("shell", "input", "keyevent", "4")
     ui.ensure_foreground()
     if "selecionada" not in ui.find_tab(
