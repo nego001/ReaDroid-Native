@@ -8,6 +8,7 @@ on:
       - 'app/src/androidTest/**'
       - 'tools/p7_explorer_smoke.py'
       - 'tools/p7_compact_smoke.py'
+      - 'tools/p7_large_text_smoke.py'
       - 'tests/test_p7_compact_smoke.py'
       - 'tools/p7_design_smoke.py'
       - 'tools/p7_home_smoke.py'
@@ -80,6 +81,10 @@ jobs:
             test -s p7-compact-inicio-android-${{ matrix.api }}.png
             test -s p7-compact-arquivos-android-${{ matrix.api }}.png
             test -s p7-compact-design-android-${{ matrix.api }}.png
+            python3 tools/p7_large_text_smoke.py
+            test -s p7-large-text-inicio-android-${{ matrix.api }}.png
+            test -s p7-large-text-arquivos-android-${{ matrix.api }}.png
+            test -s p7-large-text-design-android-${{ matrix.api }}.png
       - name: Upload launch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,6 +95,7 @@ jobs:
             p7-explorer-android-*.png
             p7-design-android-*.png
             p7-compact-*-android-*.png
+            p7-large-text-*-android-*.png
             p7-icon-workshop-android-*.png
             p7-logo-workshop-android-*.png
             app/build/outputs/androidTest-results/connected/

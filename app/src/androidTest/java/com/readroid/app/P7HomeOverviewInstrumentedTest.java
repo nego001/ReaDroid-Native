@@ -2,6 +2,8 @@ package com.readroid.app;
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.net.Uri;
+import java.util.Collections;
 import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.ImageView;
@@ -23,6 +25,42 @@ public final class P7HomeOverviewInstrumentedTest {
                 if (contains(parent.getChildAt(i), text)) return true;
         }
         return false;
+    }
+
+    private static View byDescription(View v, String description) {
+        if (description.equals(v.getContentDescription())) return v;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                View found = byDescription(g.getChildAt(i), description);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    @Test public void recentProjectMenuIsAccessibleWithoutDeletingOriginal() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                P7HomeOverview panel = new P7HomeOverview(activity, v -> {});
+                activity.setContentView(panel);
+                // A synthetic history item does not persist a SAF grant or
+                // create/modify any APK. Cached artwork safely falls back.
+                P7ProjectHistory.Entry item = new P7ProjectHistory.Entry(
+                    Uri.parse("content://p7.synthetic/project.apk"),
+                    "Fixture.apk", "com.example.synthetic", 0);
+                panel.setRecentProjects(Collections.singletonList(item), null);
+                View menu = byDescription(panel, "Mais opções de Fixture.apk");
+                assertNotNull("Historical overflow missing", menu);
+                int touch = NegrescoTheme.dp(activity, 48);
+                assertTrue(menu.getLayoutParams().width >= touch);
+                assertTrue(menu.getLayoutParams().height >= touch);
+                assertTrue(menu.getMinimumWidth() >= touch);
+                assertTrue(menu.getMinimumHeight() >= touch);
+                assertTrue(menu.isClickable() && menu.isFocusable());
+            });
+        }
     }
 
     @Test public void emptyAndActiveStatesNeverInventProjectHistoryOrSecurityResults()

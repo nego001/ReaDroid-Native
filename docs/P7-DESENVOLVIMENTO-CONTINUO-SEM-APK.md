@@ -275,3 +275,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** `P7NavigationInstrumentedTest` valida os alvos de menu e configurações quanto a dimensões, acessibilidade e funcionalidade. `P7ExplorerChromeInstrumentedTest` verifica dimensões mínimas, rótulo e foco do breadcrumb e do plano de edição. O smoke de **320dp/fonte 130%** passa a medir a geometria **real da hierarquia Android** nos dois botões da Home e em raiz/plano do Explorer, não só no Design. Em caso de corte ou alvo menor que 48dp, falha explicitamente, sem alegar conformidade.
 
 **Estado:** alteração implementada e pendente de matriz Android 10/15 e Source/OTA no novo SHA. PR #13 continua draft, main intocada, sem release/distribuição APK, P8 #14 separada e projeto social #15/#16 em documentação independente. Aceite visual 1:1 depende dos dois PNGs oficiais ausentes e homologação física Galaxy A55.
+
+## P7.6 — Home com 48dp e ensaio de fonte 200% (21/10/2026)
+
+**Ponto inicial verificado:** commit `d191fe23` em [CI P7 39641678565](https://github.com/nego001/ReaDroid-Native/actions/runs/39641678565), **32/32 instrumentados** em Android 10/API29 e Android 15/API35; smokes normais e compactos 320dp/fonte130%, além de [Source](https://github.com/nego001/ReaDroid-Native/actions/runs/39641678537) e [OTA](https://github.com/nego001/ReaDroid-Native/actions/runs/39641678588), todos green.
+
+**Achados:** seis atalhos da Home (`StudioDashboard.referenceAction`) tinham `View.setMinimumHeight(47dp)`; o acesso `Ver todos os projetos recentes` tinha 43dp e não declarava foco; menus `⋮` de histórico SAF tinham 40×40dp. São ações funcionais, mas ficam menores que o piso P7 de 48dp.
+
+**Modificações:** mínimo 48dp para as seis ações rápidas; `Ver todos` com `TextView.setMinHeight` e `View.setMinimumHeight(48dp)` e foco; menus de histórico de 48×48dp, mínimos View/TextView, mantendo `Remover do histórico` com confirmação que só exclui referência e não APK original. Testes instrumentados de ação/teclado/áreas no `P7NavigationInstrumentedTest` e histórico sintético no `P7HomeOverviewInstrumentedTest`.
+
+**Novo QA complementar:** `tools/p7_large_text_smoke.py` aplica fonte do sistema **200%** no viewport padrão do emulador, verifica via UI Automator navegação Home/Arquivos/Design, títulos, barra inferior e alvos >=48dp onde visíveis, captura PNG independente das três telas por API e restaura a fonte original no `finally`, inclusive em falha. Não altera tamanho, densidade, APK do usuário, importador SAF, dados de projetos, assinatura, versionCode ou OTA. Rodar após smoke 320dp/130% no workflow P7 Android 10/15; armazenar seis novas capturas no artifact.
+
+**Status:** alterações submetidas a validação da matriz atual; não considerar cobertura de 200% aprovada até CI verde no SHA correspondente. P7 continua draft, P8 e IAs sociais documentadas em branches/PRs diferentes; visual 1:1 aguarda PNGs oficiais e teste real no Galaxy A55.

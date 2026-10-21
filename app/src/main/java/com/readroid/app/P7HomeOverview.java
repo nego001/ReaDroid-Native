@@ -116,9 +116,11 @@ public final class P7HomeOverview extends LinearLayout {
         heading.addView(title, new LayoutParams(0, -2, 1));
         seeAll = text("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
         seeAll.setGravity(Gravity.CENTER);
-        seeAll.setMinHeight(dp(43));
+        seeAll.setMinHeight(dp(48));
+        seeAll.setMinimumHeight(dp(48));
         seeAll.setPadding(dp(8), 0, 0, 0);
         seeAll.setContentDescription("Ver todos os projetos recentes");
+        seeAll.setFocusable(true);
         seeAll.setOnClickListener(v -> {
             if (showAll != null) showAll.onClick(v);
         });
@@ -206,13 +208,15 @@ public final class P7HomeOverview extends LinearLayout {
         if (recorded && document != null) {
             TextView overflow = text("⋮", 21, NegrescoTheme.MUTED, true);
             overflow.setGravity(Gravity.CENTER);
-            overflow.setMinWidth(dp(40));
-            overflow.setMinHeight(dp(40));
+            overflow.setMinWidth(dp(48));
+            overflow.setMinimumWidth(dp(48));
+            overflow.setMinHeight(dp(48));
+            overflow.setMinimumHeight(dp(48));
             overflow.setContentDescription("Mais opções de " + name);
             overflow.setFocusable(true);
             overflow.setClickable(true);
             overflow.setOnClickListener(v -> showRecentOptions(name, document, action));
-            line.addView(overflow, new LayoutParams(dp(40), dp(40)));
+            line.addView(overflow, new LayoutParams(dp(48), dp(48)));
         }
         line.setContentDescription("Abrir projeto " + name + ", " + info);
         line.setClickable(true);

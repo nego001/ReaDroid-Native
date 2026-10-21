@@ -101,7 +101,7 @@ public final class StudioDashboard {
         tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
         tile.setPadding(dp(a, 6), dp(a, 6), dp(a, 5), dp(a, 6));
-        tile.setMinimumHeight(dp(a, 47));
+        tile.setMinimumHeight(dp(a, 48));
         tile.setBackground(NegrescoTheme.studioCard(a, false));
         ImageView symbol = new ImageView(a);
         symbol.setImageResource(glyph);

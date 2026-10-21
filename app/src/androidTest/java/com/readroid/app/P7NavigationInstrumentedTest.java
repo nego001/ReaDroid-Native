@@ -158,6 +158,33 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void homeQuickActionsAndRecentHistoryLinkMeet48dpContract() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                int min = NegrescoTheme.dp(activity, 48);
+                for (String name : new String[]{"Abrir APK", "Analisar",
+                        "Build APK", "Decompilar", "Editar Smali",
+                        "Assinar APK"}) {
+                    View tile = byDescription(root, name);
+                    assertNotNull("Quick action not found: " + name, tile);
+                    assertTrue("Quick action shorter than 48dp: " + name,
+                        tile.getMinimumHeight() >= min);
+                    assertTrue("Quick action must support TalkBack: " + name,
+                        tile.isClickable() && tile.isFocusable());
+                }
+                View history = byDescription(root,
+                    "Ver todos os projetos recentes");
+                assertNotNull("History link not found", history);
+                assertTrue("History link under 48dp",
+                    history.getMinimumHeight() >= min);
+                assertTrue("History link lacks keyboard focus",
+                    history.isFocusable());
+            });
+        }
+    }
+
     @Test public void homeHeaderOpensActualMenuAndDesignPreferences() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
