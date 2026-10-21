@@ -92,7 +92,7 @@ public final class P7IconWorkshop {
     }
 
     /** Public entry point opened by either the Icons tab or its Home card. */
-    public static void open(MainActivity a) {
+    public static android.app.AlertDialog open(MainActivity a) {
         final int[] state = {0, 0, 0};
         ScrollView scroll = new ScrollView(a);
         LinearLayout root = new LinearLayout(a);
@@ -120,13 +120,15 @@ public final class P7IconWorkshop {
             "Exporta PNG 512×512. Não altera o ícone instalado nem arquivos do APK.");
         note.setTextSize(10 * NegrescoTheme.FONT_SCALE);
         root.addView(note);
-        new android.app.AlertDialog.Builder(a)
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(a)
             .setTitle("Criador de Ícones")
             .setView(scroll)
             .setPositiveButton("Exportar PNG", (dialog, which) ->
                 a.startP7IconExport(new Spec(state[0], state[1], state[2])))
             .setNegativeButton("Fechar", null)
-            .show();
+            .create();
+        dialog.show();
+        return dialog;
     }
 
     private static class Preview extends View {
