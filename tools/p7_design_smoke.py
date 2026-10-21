@@ -67,7 +67,40 @@ def check():
     after = smoke.visible_app_hierarchy()
     assert any(n.attrib.get("content-desc") == selected[0] for n in after), (
         "Android Back must restore the previously applied theme")
-    print(f"P7_DESIGN_PASS api={api} screenshot={target} apply_cancel=ok", flush=True)
+    # Icon creation must be an operational editor, not the old placeholder.
+    icon_tabs = [n for n in after if n.attrib.get("text") == "Ícones"
+                 and n.attrib.get("clickable") == "true"]
+    assert len(icon_tabs) == 1, "Design Studio Icons tab missing"
+    smoke.tap(icon_tabs[0])
+    icon_nodes = smoke.visible_app_hierarchy()
+    actions = [n for n in icon_nodes
+               if n.attrib.get("text", "").startswith(
+                   "Abrir criador de ícones  ↗")
+               and n.attrib.get("clickable") == "true"]
+    assert len(actions) == 1, "Native icon creator entry missing"
+    smoke.tap(actions[0])
+    workshop = smoke.visible_app_hierarchy()
+    workshop_texts = {n.attrib.get("text", "") for n in workshop}
+    for expected in ("Criador de Ícones", "Cor", "Símbolo",
+                     "Formato", "Exportar PNG"):
+        assert expected in workshop_texts, (
+            "Native icon workshop missing real control " + expected)
+    assert any(n.attrib.get("content-desc") == "Prévia original do ícone"
+               for n in workshop), "Native Canvas icon preview not displayed"
+    # Cancel, don't create an APK or write a PNG during CI smoke.
+    smoke.adb("shell", "input", "keyevent", "4")
+    smoke.ensure_foreground()
+    logo_nodes = smoke.visible_app_hierarchy()
+    logo_tabs = [n for n in logo_nodes if n.attrib.get("text") == "Logotipo"
+                 and n.attrib.get("clickable") == "true"]
+    assert len(logo_tabs) == 1, "Logo Studio tab missing"
+    smoke.tap(logo_tabs[0])
+    logo_page = smoke.visible_app_hierarchy()
+    assert any(n.attrib.get("content-desc") ==
+               "Prévia da identidade visual atual"
+               for n in logo_page), "Real saved-brand preview missing"
+    print(f"P7_DESIGN_PASS api={api} screenshot={target} "
+          "apply_cancel=ok icon_workshop=ok saved_logo=ok", flush=True)
 
 
 if __name__ == "__main__":
