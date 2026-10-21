@@ -163,3 +163,13 @@ O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por pl
 **Testes:** fixture ZIP com 145 arquivos, JSON apenas das primeiras 120, edição na última página e um caminho de edição inexistente. Verifica que `Alterados` encontra o item real mas nunca fabrica a pasta `ghost/`; `Editáveis` oferece segunda página e exclui binários. Cobertura SQL de extensões, caixa alta e subpastas incluída em `P7IndexedFiltersInstrumentedTest`.
 
 **Pendente:** executar matriz e revisar resultados deste commit exato; resultado anterior não homologa automaticamente esta mudança. Mantidas as restrições sem APK de distribuição, sem versionCode, sem merge na main, P8 separada. UI 1:1 ainda aguarda referências oficiais e homologação física.
+
+## P7 — aviso explícito quando índice SQLite não está disponível (21/10/2026)
+
+**Risco:** quando a validação de tamanho/data ou a leitura do índice falhava, o Explorador substituía silenciosamente o índice pelo JSON de fallback, que pode conter apenas as primeiras entradas. Isso apresentava uma listagem possivelmente parcial como se fosse a navegação completa do APK.
+
+**Correção:** `ExplorerView` mostra agora um aviso de acessibilidade e texto visível: "Índice indisponível. A lista pode estar incompleta. Reabra o APK para analisar novamente." O contador da lista passa a indicar `Prévia possivelmente incompleta`. O aviso só surge quando um índice esperado está ausente ou falha; não aparece em uso normal sem índice. Ao iniciar uma nova sessão `setFiles`, o alerta é limpo. Nenhum arquivo, plano de edição ou preferência é modificado pelo mecanismo de fallback.
+
+**Regressão:** `IndexedExplorerViewInstrumentedTest.staleIndexShowsPartialWarningWithoutLosingEdits` cria ZIP sintético de 145 entradas, limita o fallback a 120, constrói índice e depois altera apenas o ZIP temporário para invalidá-lo. Verifica alerta visível, honestidade do contador, preservação do plano temporário e limpeza do aviso na nova sessão.
+
+**Pendente:** compilar e validar o novo commit nas APIs 29 e 35. A P7 continua draft, sem merge na main, APK de distribuição ou versionCode. As referências visuais 1:1 e a homologação física continuam pendentes.

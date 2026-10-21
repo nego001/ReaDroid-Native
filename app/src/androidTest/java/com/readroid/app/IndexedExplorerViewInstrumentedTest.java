@@ -201,6 +201,76 @@ public final class IndexedExplorerViewInstrumentedTest {
         }
     }
 
+    @Test public void staleIndexShowsPartialWarningWithoutLosingEdits()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                File apk = null, index = null;
+                try {
+                    apk = File.createTempFile("stale_index_", ".apk",
+                        activity.getCacheDir());
+                    index = new File(apk.getAbsolutePath() + ".idx.db");
+                    JSONArray partial = new JSONArray();
+                    try (ZipOutputStream zip = new ZipOutputStream(
+                            new FileOutputStream(apk))) {
+                        for (int i = 0; i < 145; i++) {
+                            String path = String.format(Locale.ROOT,
+                                "assets/a%03d.txt", i);
+                            zip.putNextEntry(new ZipEntry(path));
+                            zip.write("test".getBytes(
+                                java.nio.charset.StandardCharsets.UTF_8));
+                            zip.closeEntry();
+                            if (i < 120) partial.put(new JSONObject()
+                                .put("path", path)
+                                .put("category", "Assets")
+                                .put("sizeBytes", 4));
+                        }
+                    }
+                    ApkDiskIndex.build(apk, index);
+                    LinearLayout root = new LinearLayout(activity);
+                    root.setOrientation(LinearLayout.VERTICAL);
+                    activity.setContentView(root);
+                    ExplorerView explorer = new ExplorerView(activity, root);
+                    explorer.setIndexedFiles(partial, apk, index);
+                    explorer.getEditPlan().addTextReplacement(
+                        "assets/a000.txt", "changed");
+                    explorer.refresh();
+                    TextView warning = find(root, "Índice indisponível.");
+                    assertNotNull("Warning node must be built", warning);
+                    assertEquals("Healthy index must hide warning",
+                        View.GONE, warning.getVisibility());
+
+                    // Mutate only the synthetic source to invalidate size+mtime
+                    // identity, without editing a real user's APK.
+                    try (FileOutputStream output = new FileOutputStream(apk, true)) {
+                        output.write(new byte[]{1, 2, 3, 4});
+                    }
+                    explorer.refresh();
+                    assertEquals("Stale index must not silently show partial data",
+                        View.VISIBLE, warning.getVisibility());
+                    assertNotNull("Fallback counts must admit incompleteness",
+                        find(root, "Prévia possivelmente incompleta"));
+                    assertEquals("In-memory edit plan must survive fallback",
+                        1, explorer.getEditPlan().size());
+                    assertNotNull(entry(root, "Abrir pasta assets/"));
+                    assertNull("Partial listing cannot invent omitted entries",
+                        entry(root, "Abrir arquivo a144.txt"));
+
+                    // Fresh non-indexed sessions must not inherit stale banners.
+                    explorer.setFiles(partial, null);
+                    assertEquals(View.GONE, warning.getVisibility());
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                } finally {
+                    if (index != null)
+                        android.database.sqlite.SQLiteDatabase.deleteDatabase(index);
+                    if (apk != null) apk.delete();
+                }
+            });
+        }
+    }
+
     @Test public void indexedPagesSearchAndEditPlanSurviveNavigation() throws Exception {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

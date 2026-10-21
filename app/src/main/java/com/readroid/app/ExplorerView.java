@@ -28,6 +28,8 @@ public final class ExplorerView {
     };
     private final TextView breadcrumb;
     private final TextView countLabel;
+    private final TextView indexWarning;
+    private boolean indexUnavailable = false;
     private final Button upButton;
     private final EditText search;
     private final Button filterButton;
@@ -185,6 +187,19 @@ public final class ExplorerView {
         countLabel.setTextColor(NegrescoTheme.MUTED);
         countLabel.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         parent.addView(countLabel);
+        indexWarning = new TextView(activity);
+        indexWarning.setText("Índice indisponível. A lista pode estar incompleta. "
+            + "Reabra o APK para analisar novamente.");
+        indexWarning.setTextColor(0xffffba68);
+        indexWarning.setTextSize(12 * NegrescoTheme.FONT_SCALE);
+        indexWarning.setPadding(NegrescoTheme.dp(activity, 9),
+            NegrescoTheme.dp(activity, 8), NegrescoTheme.dp(activity, 9),
+            NegrescoTheme.dp(activity, 8));
+        indexWarning.setBackground(NegrescoTheme.panel(activity));
+        indexWarning.setContentDescription(
+            "Aviso: índice indisponível; listagem de arquivos possivelmente incompleta");
+        indexWarning.setVisibility(View.GONE);
+        parent.addView(indexWarning);
         upButton = NegrescoTheme.action(activity, "← Pasta anterior", false);
         parent.addView(upButton);
         upButton.setOnClickListener(v -> {
@@ -223,6 +238,7 @@ public final class ExplorerView {
     public void setFiles(JSONArray array, java.io.File apkFile) {
         this.apkFile = apkFile;
         this.indexFile = null;
+        indexUnavailable = false; // A new APK starts a fresh browsing session.
         indexPageOffset = 0;
         chrome.setProject(null, -1);
         files.clear();
@@ -244,6 +260,8 @@ public final class ExplorerView {
         setFiles(fallback, source);
         if (source != null && source.isFile() && index != null && index.isFile())
             indexFile = index;
+        else if (source != null && source.isFile())
+            indexUnavailable = true; // Expected index missing.
         render();
     }
 
@@ -313,9 +331,14 @@ public final class ExplorerView {
         chrome.setEditCount(editPlan.size());
         refreshQuickFilters();
         if (indexFile != null) {
-            if (renderIndexPage()) return;
+            if (renderIndexPage()) {
+                indexWarning.setVisibility(View.GONE);
+                return;
+            }
             indexFile = null; // Fall back on a stale or unavailable index.
+            indexUnavailable = true;
         }
+        indexWarning.setVisibility(indexUnavailable ? View.VISIBLE : View.GONE);
         list.removeAllViews();
         String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
         breadcrumb.setText(query.isEmpty() ? "APK / " + folder : "Busca em todo o APK: " + query);
@@ -344,7 +367,8 @@ public final class ExplorerView {
                 else visible.add(item);
             }
         }
-        countLabel.setText(folders.size() + " pastas  •  " + visible.size()
+        countLabel.setText((indexUnavailable ? "Prévia possivelmente incompleta  •  " : "")
+            + folders.size() + " pastas  •  " + visible.size()
             + " arquivos  •  " + editPlan.size() + " alterações pendentes");
         int shown = 0;
         for (String child : folders) {
