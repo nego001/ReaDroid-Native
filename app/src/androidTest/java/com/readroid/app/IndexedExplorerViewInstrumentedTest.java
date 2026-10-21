@@ -316,6 +316,23 @@ public final class IndexedExplorerViewInstrumentedTest {
                     assertNotNull(entry(root, "Abrir arquivo assets/a005.txt"));
                     ExplorerView.BrowseState saved = explorer.snapshotBrowseState();
                     assertEquals(0, saved.indexPageOffset);
+                    char[] oversized = new char[300];
+                    java.util.Arrays.fill(oversized, 'q');
+                    search.setText(new String(oversized));
+                    assertEquals("Overlong paste must be bounded to SQLite limit",
+                        256, search.getText().length());
+                    TextView indexWarning = find(root, "Índice indisponível.");
+                    assertNotNull(indexWarning);
+                    assertEquals("Long paste must not disable healthy index",
+                        View.GONE, indexWarning.getVisibility());
+                    search.setText("a300");
+                    assertNotNull("Search must still see page-3 indexed files",
+                        entry(root, "Abrir arquivo assets/a300.txt, alterado"));
+                    explorer.restoreBrowseState(new ExplorerView.BrowseState(
+                        "assets/", "Todos", new String(oversized), 120));
+                    assertEquals("Retained search must obey the index limit",
+                        256, search.getText().length());
+                    assertEquals(View.GONE, indexWarning.getVisibility());
                     search.setText("");
                     assertNotNull(find(root, "a000.txt"));
                     assertEquals(1, explorer.getEditPlan().size());

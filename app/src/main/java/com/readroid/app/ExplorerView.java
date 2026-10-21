@@ -3,6 +3,7 @@ package com.readroid.app;
 import android.app.Activity;
 import android.graphics.Color;
 import android.text.Editable;
+import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.view.View;
 import android.widget.Button;
@@ -88,7 +89,7 @@ public final class ExplorerView {
         // setText invokes the TextWatcher (which resets pagination): set the
         // retained limit afterwards and render the final, validated state.
         String safeQuery = state.query == null ? "" : state.query;
-        if (safeQuery.length() > 512) safeQuery = safeQuery.substring(0, 512);
+        if (safeQuery.length() > 256) safeQuery = safeQuery.substring(0, 256);
         search.setText(safeQuery);
         pageLimit = Math.max(120, Math.min(state.pageLimit,
             Math.max(120, files.size() + 120)));
@@ -134,6 +135,10 @@ public final class ExplorerView {
             render();
         });
         search.setSingleLine(true);
+        // ApkDiskIndex.page() allows up to 256 characters. Without the same
+        // input bound, pasting a longer query looks like a broken SQLite
+        // index and permanently downgrades the session to the partial JSON.
+        search.setFilters(new InputFilter[]{new InputFilter.LengthFilter(256)});
         boolean narrow = activity.getResources().getConfiguration().screenWidthDp <= 360;
         search.setHint(narrow ? "Buscar no APK..." : "Buscar arquivo pelo nome ou caminho");
         search.setTextSize((narrow ? 13 : 14) * NegrescoTheme.FONT_SCALE);

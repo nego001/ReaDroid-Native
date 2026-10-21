@@ -185,3 +185,13 @@ O commit anterior `123d05b6` passou nos dois emuladores: **28/28** testes por pl
 **Teste:** `P7ExplorerChromeInstrumentedTest` agora cobre tanto `Editáveis` como `Alterados` com seleção acessível, visibilidade e remoção funcional, retornando ao conjunto completo de entradas.
 
 **Ainda não validado neste commit:** nova matriz Android APIs 29/35 e avaliação visual manual. Sem APK de distribuição, versionCode ou merge; P8 permanece separada, fidelidade 1:1 aguarda PNGs oficiais.
+
+## P7 — pesquisa limitada à capacidade segura do índice (21/10/2026)
+
+**Defeito:** `ApkDiskIndex.page()` rejeita consultas acima de 256 caracteres. A pesquisa do `ExplorerView`, porém, aceitava texto sem limite; colar mais de 256 caracteres lançava exceção e fazia o aplicativo abandonar definitivamente o índice SQLite, exibindo somente a prévia JSON resumida. A restauração também tolerava até 512 caracteres e podia reproduzir o problema.
+
+**Correção:** a entrada de pesquisa nativa usa `InputFilter.LengthFilter(256)` e a restauração limita a consulta a 256 caracteres, alinhados ao contrato de `ApkDiskIndex.page()`. O filtro continua preservando pesquisa Unicode sem tocar no APK. A limitação impede uma pesquisa grande de ser erroneamente classificada como índice corrompido.
+
+**Regressão:** `IndexedExplorerViewInstrumentedTest` cola string de 300 caracteres e verifica o corte para 256, ausência de alerta de índice inválido, preservação de busca em arquivo na terceira página (`assets/a300.txt`) e restauração segura da busca. A execução do novo commit ainda depende da matriz Android 10/15.
+
+**Escopo:** P7 apenas, PR draft, `main` intacta, sem APK distribuível nem versionCode, P8 separada. Fidelidade 1:1 e teste no aparelho físico pendentes.
