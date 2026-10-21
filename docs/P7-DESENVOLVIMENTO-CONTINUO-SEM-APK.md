@@ -117,3 +117,15 @@ Somente quando houver um conjunto significativo de melhorias funcionais/visuais 
 **Regressão acrescentada:** instrumentação verifica o botão real e seu nome acessível. `tools/p7_design_smoke.py` exige uma única ação clicável no Android 10 e 15, e salva `p7-icon-workshop-android-<api>.png` antes de cancelar; o workflow guarda essa imagem mesmo em caso de falha posterior.
 
 **Status:** alteração proposta na branch P7; CI Android 10/15 e capturas do commit exato devem ser conferidos antes de marcar aprovado. Sem novo APK, sem versão nova, sem merge para `main`, sem iniciar a P8.
+
+## P7 — Logo Studio nativo com exportação PNG (21/10/2026)
+
+**Problema real:** a aba Logotipo antes mostrava apenas a prévia da identidade visual salva e permitia editar as preferências; não havia exportação nativa de logotipos.
+
+**Implementação:** novo `P7LogoWorkshop` com compositor Android Canvas, prévia em tempo real, campos de nome e subtítulo (pré-carregados da identidade salva), quatro cores, fundo transparente ou OLED, nome central e monograma. Exportação PNG **1024×512**, usando exclusivamente o seletor Android `ACTION_CREATE_DOCUMENT`. A ação foi integrada à aba Logotipo e ao cartão Logo Studio da aba Temas.
+
+**Segurança:** edição temporária não altera `display_name`, `display_subtitle`, ícone instalado ou arquivos do projeto. A identidade exibida no aplicativo continua sendo modificada somente pela função separada `Editar nome e subtítulo`. Nome e subtítulo têm limites de tamanho/caracteres válidos; destino precisa ser URI `content:`. A escolha de exportação é mantida na recriação da Activity durante o seletor SAF.
+
+**Regressões:** novos testes instrumentados conferem PNG, transparência, mudanças de pixels por cor/fundo, rejeição de dados inválidos/URI não autorizada e acesso à ferramenta. Smoke de Design Studio abre o editor real nos Androids 10/15, verifica prévia e ação acessível, salva uma captura `p7-logo-workshop-android-<api>.png` e fecha sem alterar preferências.
+
+**Aceite ainda pendente:** executar a matriz Android 10/15 no novo HEAD e revisar imagens contra a referência. Sem APK de distribuição, sem versionCode novo, sem merge na main. P8 continua backlog separado.

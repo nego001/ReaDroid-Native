@@ -236,6 +236,10 @@ public final class P7DesignStudio {
             if (a instanceof MainActivity) P7IconWorkshop.open((MainActivity) a);
             return;
         }
+        if (index == -5) {
+            if (a instanceof MainActivity) P7LogoWorkshop.open((MainActivity) a);
+            return;
+        }
         if(index>=0 && index<actions.length && actions[index]!=null)
             actions[index].performClick();
     }
@@ -375,7 +379,7 @@ public final class P7DesignStudio {
         creator(row, "◉", "Criador de Ícones",
             "Criar e exportar PNG", -4, true);
         creator(row, "N", "Logo Studio",
-            "Personalizar nome e logo", 6, false);
+            "Criar e exportar logo PNG", -5, false);
     }
 
     private void creator(LinearLayout row, String symbol, String title,
@@ -533,6 +537,7 @@ public final class P7DesignStudio {
         }else{
             heading("Logo Studio");
             liveLogoPreview();
+            actionCard("Criar logo PNG", "Personalizar texto, cor e fundo; exportar PNG 1024×512", -5);
             actionCard("Editar nome e subtítulo", "Atualizar a identidade exibida na Home", 6);
             actionCard("Prévia de aparência", "Conferir as preferências atuais", 7);
         }

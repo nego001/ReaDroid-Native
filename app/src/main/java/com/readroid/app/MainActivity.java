@@ -39,7 +39,9 @@ public class MainActivity extends Activity {
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
     private static final int REQUEST_IMPORT_APPEARANCE = 42;
     private static final int REQUEST_EXPORT_P7_ICON = 43;
+    private static final int REQUEST_EXPORT_P7_LOGO = 44;
     private P7IconWorkshop.Spec pendingIconExport;
+    private P7LogoWorkshop.Spec pendingLogoExport;
     private JSONObject report;
     private File currentApk;
     private File currentIndex;
@@ -110,6 +112,17 @@ public class MainActivity extends Activity {
                         selected[0], selected[1], selected[2]);
                 } catch (IllegalArgumentException ignored) {
                     pendingIconExport = null;
+                }
+            }
+        }
+        if (state != null && state.containsKey("p7_logo_export")) {
+            String[] selected = state.getStringArray("p7_logo_export");
+            if (selected != null && selected.length == 4) {
+                try {
+                    pendingLogoExport = new P7LogoWorkshop.Spec(selected[0], selected[1],
+                        Integer.parseInt(selected[2]), Integer.parseInt(selected[3]));
+                } catch (IllegalArgumentException ignored) {
+                    pendingLogoExport = null;
                 }
             }
         }
@@ -1360,8 +1373,38 @@ public class MainActivity extends Activity {
         startActivityForResult(create, REQUEST_EXPORT_P7_ICON);
     }
 
+    /** Logo export uses the same explicit SAF consent as the icon workshop. */
+    public void startP7LogoExport(P7LogoWorkshop.Spec logo) {
+        pendingLogoExport = logo;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/png");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-logo.png");
+        startActivityForResult(create, REQUEST_EXPORT_P7_LOGO);
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == REQUEST_EXPORT_P7_LOGO) {
+            P7LogoWorkshop.Spec requested = pendingLogoExport;
+            pendingLogoExport = null;
+            if (result != RESULT_OK || data == null ||
+                    data.getData() == null || requested == null) return;
+            try {
+                P7LogoWorkshop.export(this, requested, data.getData());
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Logo exportado")
+                    .setMessage("PNG 1024×512 salvo no destino escolhido. " +
+                        "O APK e a identidade instalada não foram alterados.")
+                    .setPositiveButton("OK", null).show();
+            } catch (Exception error) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Falha ao exportar logo")
+                    .setMessage(error.getMessage())
+                    .setPositiveButton("OK", null).show();
+            }
+            return;
+        }
         if (request == REQUEST_EXPORT_P7_ICON) {
             P7IconWorkshop.Spec requested = pendingIconExport;
             pendingIconExport = null;
@@ -1869,6 +1912,11 @@ public class MainActivity extends Activity {
             outState.putIntArray("p7_icon_export", new int[] {
                 pendingIconExport.color, pendingIconExport.symbol,
                 pendingIconExport.shape });
+        if (pendingLogoExport != null)
+            outState.putStringArray("p7_logo_export", new String[] {
+                pendingLogoExport.name, pendingLogoExport.subtitle,
+                Integer.toString(pendingLogoExport.color),
+                Integer.toString(pendingLogoExport.background) });
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
         super.onSaveInstanceState(outState);
     }

@@ -117,6 +117,27 @@ def check():
     assert any(n.attrib.get("content-desc") ==
                "Prévia da identidade visual atual"
                for n in logo_page), "Real saved-brand preview missing"
+    logo_create = [n for n in logo_page if n.attrib.get("text", "").startswith(
+                   "Criar logo PNG  ↗") and n.attrib.get("clickable") == "true"]
+    assert len(logo_create) == 1, "Real logo editor entry missing"
+    smoke.tap(logo_create[0])
+    editor_nodes = smoke.visible_app_hierarchy()
+    editor_text = {n.attrib.get("text", "") for n in editor_nodes}
+    assert "Criador de Logos" in editor_text, "Native logo editor did not open"
+    assert "Exportar logo PNG" in editor_text, "Logo export action missing"
+    assert any(n.attrib.get("content-desc") == "Prévia original do logo"
+               for n in editor_nodes), "Logo preview missing"
+    assert any(n.attrib.get("content-desc") == "Exportar logo PNG 1024×512"
+               and n.attrib.get("clickable") == "true" for n in editor_nodes), (
+        "Logo exporter must be a functional accessible action")
+    with open(f"p7-logo-workshop-android-{api}.png", "wb") as stream:
+        stream.write(subprocess.check_output(
+            ["adb", "exec-out", "screencap", "-p"], timeout=45))
+    smoke.adb("shell", "input", "keyevent", "4")
+    smoke.ensure_foreground()
+    assert any(n.attrib.get("content-desc") == "Prévia da identidade visual atual"
+               for n in smoke.visible_app_hierarchy()), (
+        "Canceling logo edit must return to saved identity")
     print(f"P7_DESIGN_PASS api={api} screenshot={target} "
           "apply_cancel=ok icon_workshop=ok saved_logo=ok", flush=True)
 
