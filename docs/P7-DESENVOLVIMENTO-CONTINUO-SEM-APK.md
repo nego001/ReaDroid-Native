@@ -449,3 +449,17 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Novo teste instrumentado:** `P7ProjectHistoryInstrumentedTest.clearHistoryRunsAfterPendingMetadataWorkOnSameExecutor` segura propositalmente o worker com `CountDownLatch`, aciona a limpeza pela Activity, comprova que o clique não executou a limpeza síncrona, libera o worker e verifica remoção final da chave `entries`; o teste restaura preferências de teste e não usa APK real. A classe P7ProjectHistoryInstrumentedTest já integra a matriz Android; conferir **43/43** por API e CI completo antes de anunciar aprovação.
 
 **Fronteiras:** PR #13 draft; `main`, P8 e arquitetura social não tocadas; sem APK de distribuição, OTA, versionCode ou publicação. PNGs oficiais e avaliação 1:1 no Galaxy A55 seguem em aberto.
+
+### P7.6 — limitar edições ao tamanho efetivo UTF-8 e verificar a recuperação (21/10/2026)
+
+**Base verificada:** commit `2590afe1`, [matriz Android 39706125409](https://github.com/nego001/ReaDroid-Native/actions/runs/39706125409), **43/43 instrumentações por API29 e API35**, `P7_EVIDENCE_PASS` em 13 capturas por API, e checks Source/OTA verdes.
+
+**Problema encontrado:** `EditPlan.addTextReplacement` e `applyTextEdit` limitavam o texto a **131.072 caracteres Java** (`String.length`), mas `ApkRebuilder` grava **bytes UTF-8**. Um conteúdo com acentos ou ideogramas de tamanho aparente menor podia extrapolar o limite de 128 KiB de conteúdo exportado, causar consumos inesperados e impedir que a cópia de recuperação respeitasse seu orçamento.
+
+**Correção funcional:** adicionar verificação do comprimento efetivamente codificado em UTF-8 (`StandardCharsets.UTF_8`) com teto de **128 KiB por substituição**, mantendo rejeição rápida quando a string já excede o teto em caracteres UTF-16. A validação ocorre **antes** de alterar o `LinkedHashMap`; se uma atualização inválida chegar, o texto anterior do plano continua intacto. Não mudar tipos editáveis, formatos de backup, motor de rebuild ou conteúdo do APK original.
+
+**Regressões acrescentadas:** `EditPlanStateInstrumentedTest.utf8SizeLimitAllowsExactBoundaryAndRejectsOneExtraByte` testa 65.536 caracteres “é” (exatamente 128 KiB), rejeição de um byte adicional e preservação da edição anterior. `tooManyUtf8BytesNeverCreatesEditOrChangesExistingPlan` cobre 44.000 ideogramas (132.000 bytes), inclusive tentativa de gravar texto igual ao original, e garante não afetar outras edições. Incluir na matriz Android de P7 a classe `EditPlanStateInstrumentedTest` e, para cobrir a segurança de recuperação já existente, **`RecoveryVaultInstrumentedTest`** (AES-GCM/Android Keystore, origem SHA-256, adulteração, limites, deleção), sem retirar nenhuma das 43 instrumentações anteriores.
+
+**Critério de homologação:** executar Android 10/API29 e Android 15/API35 com **55/55 testes esperados por API** (43 atuais + 7 testes de EditPlan, sendo 2 novos + 5 de RecoveryVault), Source checks, OTA e inventários PNG. Não anunciar sucesso enquanto CI no novo SHA não terminar. Se Android Keystore do emulador impedir os testes, registrar exatamente o problema em vez de ocultar a falha.
+
+**Fronteiras:** PR #13 segue draft, `main` intacta. Sem APK de distribuição, OTA publicada, `versionCode`, alterações P8/IA social. PNGs oficiais para aceite visual 1:1 e teste físico Galaxy A55 permanecem pendentes.
