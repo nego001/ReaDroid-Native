@@ -613,3 +613,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Testes:** três novos testes instrumentados cobrem a ida e volta de 12 combinações únicas sem interferir no preset ativo indevidamente, rejeição de configurações customizadas e índice fora do catálogo, e amostragem real dos pixels dos três fundos. Meta **95 testes por API** (92 + 3), Source/OTA e capturas de UI. Não declarar aprovado antes da matriz no novo SHA.
 
 **Pendências:** 12 temas efetivos ainda não são os 24 do objetivo visual; 12 layouts completos continuam planejados (existem 3), além de incorporação dos PNGs oficiais, inspeção 1:1 e homologação no Galaxy A55. Sem APK de distribuição, merge, OTA ou mudança de `versionCode`.
+
+### P7.5 — 24 combinações de aparência com brilho nativo opcional (22/10/2026)
+
+**Base validada:** commit `828fed20`, [matriz Android 39796401169](https://github.com/nego001/ReaDroid-Native/actions/runs/39796401169), **95/95** testes em Android 10/API29 e Android 15/API35, Source checks e OTA concluídos com sucesso, 13 capturas por API, `references=BLOCKED` e `visual_1to1=NOT_APPROVED`.
+
+**Implementação:** manter exatamente os 12 índices de cor/superfície anteriores e acrescentar 12 variantes **Clean** sem brilho. Os 24 temas são combinações verificáveis de três superfícies (OLED, grafite, clara), quatro cores de destaque e o valor real `studio_glow` do motor de aparência V3 (neon/clean). Índices 0–11 passam a salvar `studio_glow=true`, índices 12–23 salvam `false`. A configuração usada pela UI passa a ser identificada pelos três atributos, sem confundir cores personalizadas com catálogo; aplicação continua com confirmação e `Activity.recreate()`, sem mudar APK, edição, segurança, backup ou outras preferências. As prévias nativas diferenciam o modo com brilho por realces de contorno e preservam as três cores de fundo, sem simular 24 design systems independentes.
+
+**Regressões:** teste existente de catálogo ampliado para verificar 24 estados únicos, preservação de configuração anterior ao teste e índices legados; dois testes novos verificam o valor efetivo de `NegrescoTheme.STUDIO_GLOW` e pixels distintos para prévias clean/neon. Meta **97 instrumentações por API** (95 + 2), Source e OTA no SHA novo.
+
+**Limite de escopo:** a meta de 24 **opções combinatórias de aparência** fica implementada no código; não são 24 layouts totalmente diferentes. Continuam faltando 12 layouts funcionais (3 disponíveis hoje), PNGs oficiais de referência, comparação visual 1:1 e homologação no Samsung Galaxy A55. Nenhum APK instalável de distribuição, merge, `versionCode`, release ou OTA publicada.

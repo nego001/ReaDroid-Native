@@ -203,11 +203,11 @@ public final class P7DesignStudio {
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
-        tile(name, subtitle, accent, selected, kind, 0, click);
+        tile(name, subtitle, accent, selected, kind, 0, false, click);
     }
 
     private void tile(String name, String subtitle, int accent, boolean selected,
-                      int kind, int themeSurface, Runnable click) {
+                      int kind, int themeSurface, boolean themeGlow, Runnable click) {
         final int width = kind == 2 ? 71 : (kind == 1 ? 100 : 100);
         // Preserve 48dp controls while keeping the three catalog families
         // visible above the fold at the canonical emulator viewport.
@@ -220,7 +220,7 @@ public final class P7DesignStudio {
         FrameLayout previewFrame = new FrameLayout(a);
         card.addView(previewFrame, new LinearLayout.LayoutParams(-1, dp(previewHeight)));
         P7ThemePreviewView miniature =
-            new P7ThemePreviewView(a, accent, kind, themeSurface);
+            new P7ThemePreviewView(a, accent, kind, themeSurface, themeGlow);
         previewFrame.addView(miniature,
             new FrameLayout.LayoutParams(-1, -1));
         if (selected) {
@@ -520,7 +520,8 @@ public final class P7DesignStudio {
                 final int index=i;
                 tile(P7ThemeCatalog.nameAt(i), P7ThemeCatalog.subtitleAt(i),
                     P7ThemeCatalog.previewAccentAt(i), selectedTheme==i,
-                    0, P7ThemeCatalog.surfaceAt(i), () -> {
+                    0, P7ThemeCatalog.surfaceAt(i), P7ThemeCatalog.glowAt(i),
+                    () -> {
                         selectedTheme = index;
                         render();
                         applySelectedTheme();

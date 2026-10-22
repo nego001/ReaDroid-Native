@@ -18,21 +18,29 @@ public final class P7ThemePreviewView extends View {
     private final int accent;
     private final int mode;
     private final int themeSurface;
+    private final boolean themeGlow;
 
     public P7ThemePreviewView(Context context, int accent) {
-        this(context, accent, 0, 0);
+        this(context, accent, 0, 0, false);
     }
 
     public P7ThemePreviewView(Context context, int accent, int mode) {
-        this(context, accent, mode, 0);
+        this(context, accent, mode, 0, false);
     }
 
     /** 0 OLED, 1 graphite, 2 light: real engine surfaces for theme cards. */
     public P7ThemePreviewView(Context context, int accent, int mode, int surface) {
+        this(context, accent, mode, surface, false);
+    }
+
+    /** A highlight uses the same native studio-glow setting as the application. */
+    public P7ThemePreviewView(Context context, int accent, int mode,
+                              int surface, boolean glow) {
         super(context);
         this.accent = accent;
         this.mode = mode;
         this.themeSurface = surface;
+        this.themeGlow = glow;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
@@ -80,6 +88,14 @@ public final class P7ThemePreviewView extends View {
         block(c, accent, 21, 74, 26, 77, 1);
         block(c, surface, 16, 85, 84, 96, 3);
         block(c, accent, 24, 89, 37, 91, 1);
+        if (themeGlow) {
+            // Real V3 studioSurface applies accent-tinted gradients/borders
+            // when studio_glow=true. These restrained strokes communicate the
+            // mode; clean previews keep only their ordinary surface borders.
+            outline(c, accent, 16, 32, 47, 52, 4);
+            outline(c, accent, 53, 32, 84, 52, 4);
+            outline(c, accent, 17, 60, 83, 67, 3);
+        }
     }
 
     private void drawLayout(Canvas c) {
