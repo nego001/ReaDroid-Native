@@ -1,6 +1,8 @@
 package com.readroid.app;
 
 import android.net.Uri;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -13,6 +15,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -49,6 +56,71 @@ public final class P7ProjectHistoryInstrumentedTest {
         assertFalse(P7ProjectHistory.record(
             InstrumentationRegistry.getInstrumentation().getTargetContext(),
             Uri.parse("content://ungranted.example/document/test"), "com.fake"));
+    }
+
+    @Test public void clearHistoryRunsAfterPendingMetadataWorkOnSameExecutor()
+            throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences prefs = context.getSharedPreferences(
+            "p7_recent_apks", Context.MODE_PRIVATE);
+        String original = prefs.getString("entries", null);
+        CountDownLatch workerStarted = new CountDownLatch(1);
+        CountDownLatch releaseWorker = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        try {
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        assertTrue(prefs.edit().putString("entries",
+                            "queued-history-fixture").commit());
+                        Field field = MainActivity.class.getDeclaredField("executor");
+                        field.setAccessible(true);
+                        ExecutorService executor = (ExecutorService) field.get(activity);
+                        executor.execute(() -> {
+                            workerStarted.countDown();
+                            try {
+                                releaseWorker.await(10, TimeUnit.SECONDS);
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                assertTrue("Metadata worker did not start",
+                    workerStarted.await(5, TimeUnit.SECONDS));
+                scenario.onActivity(activity -> {
+                    try {
+                        Method mutate = MainActivity.class.getDeclaredMethod(
+                            "mutateRecentProjectHistory", Uri.class);
+                        mutate.setAccessible(true);
+                        mutate.invoke(activity, (Object) null);
+                        Field field = MainActivity.class.getDeclaredField("executor");
+                        field.setAccessible(true);
+                        ((ExecutorService) field.get(activity))
+                            .execute(completed::countDown);
+                        assertTrue("Clear unexpectedly ran on the UI thread",
+                            prefs.contains("entries"));
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                releaseWorker.countDown();
+                assertTrue("Queued clear and prune never finished",
+                    completed.await(15, TimeUnit.SECONDS));
+                assertFalse("Recent history reappeared after clear",
+                    prefs.contains("entries"));
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull("Clearing must leave the Activity usable",
+                        activity.getWindow().getDecorView());
+                });
+            }
+        } finally {
+            releaseWorker.countDown();
+            SharedPreferences.Editor restoration = prefs.edit();
+            if (original == null) restoration.remove("entries");
+            else restoration.putString("entries", original);
+            assertTrue(restoration.commit());
+        }
     }
 
     private static View findDescription(View node, String text) {

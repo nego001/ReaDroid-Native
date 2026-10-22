@@ -1154,6 +1154,7 @@ public class MainActivity extends Activity {
         homeOverview = new P7HomeOverview(this, v -> showSection(1));
         homeOverview.setHistoryCallbacks(this::openRecentProject,
             v -> showAllRecentProjects());
+        homeOverview.setHistoryRemover(uri -> mutateRecentProjectHistory(uri));
         refreshRecentProjects();
         // Home-only branding and a separate, functional Design page.
         // Remove the global header so Explorer and Design do not show a
@@ -1583,12 +1584,54 @@ public class MainActivity extends Activity {
                     .setMessage("Remove apenas a lista de projetos recentes deste "
                         + "aplicativo. Não exclui APKs nem planos de edição.")
                     .setNegativeButton("Cancelar", null)
-                    .setPositiveButton("Limpar", (d, w) -> {
-                        P7ProjectHistory.clear(this);
-                        P7RecentAppIcons.prune(this, P7ProjectHistory.list(this));
-                        refreshRecentProjects();
-                    }).show())
+                    .setPositiveButton("Limpar", (d, w) ->
+                        mutateRecentProjectHistory(null)).show())
             .setNegativeButton("Fechar", null).show();
+    }
+
+    /**
+     * A history clear/forget must execute after any accepted-project writes
+     * already queued on the same single-thread executor. Otherwise an older
+     * thumbnail/history worker can repopulate a just-cleared list.
+     * Null means clear all; a non-null URI forgets only that entry.
+     */
+    private void mutateRecentProjectHistory(Uri forgottenUri) {
+        final android.content.Context application = getApplicationContext();
+        try {
+            executor.execute(() -> {
+                boolean updated = false;
+                try {
+                    updated = forgottenUri == null
+                        ? P7ProjectHistory.clear(application)
+                        : P7ProjectHistory.forget(application, forgottenUri);
+                    if (updated) {
+                        // Disk pruning is strictly best-effort; a missing or
+                        // corrupt thumbnail must not undo a saved deletion.
+                        try {
+                            P7RecentAppIcons.prune(application,
+                                P7ProjectHistory.list(application));
+                        } catch (RuntimeException brokenThumbnailCache) {
+                            // History data has already been deleted.
+                        }
+                    }
+                } catch (RuntimeException inaccessiblePreferences) {
+                    // Leave the active APK and edit plan untouched.
+                }
+                final boolean success = updated;
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    refreshRecentProjects();
+                    if (!success)
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Não foi possível atualizar o histórico")
+                            .setMessage("A lista de projetos recentes não foi alterada. "
+                                + "O APK aberto e suas edições continuam intactos.")
+                            .setPositiveButton("OK", null).show();
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closing) {
+            // Closing Activity: never start an unsynchronized second writer.
+        }
     }
 
     private void selectApkWithConfirmation(Uri uri, boolean fromPicker) {

@@ -29,6 +29,8 @@ public final class P7HomeOverview extends LinearLayout {
     private final View.OnClickListener openFiles;
     private ProjectOpener projectOpener;
     private View.OnClickListener showAll;
+    /** MainActivity serializes history removal with pending import writes. */
+    private java.util.function.Consumer<Uri> historyRemover;
     private final TextView[] values = new TextView[4];
     private final LinearLayout recentCard;
     private final TextView seeAll;
@@ -136,6 +138,10 @@ public final class P7HomeOverview extends LinearLayout {
         renderHistory();
     }
 
+    public void setHistoryRemover(java.util.function.Consumer<Uri> remove) {
+        historyRemover = remove;
+    }
+
     public void setRecentProjects(List<P7ProjectHistory.Entry> entries, Uri activeUri) {
         recent.clear();
         if (entries != null) recent.addAll(entries);
@@ -238,6 +244,10 @@ public final class P7HomeOverview extends LinearLayout {
                                 "O APK original não será apagado.")
                             .setNegativeButton("Cancelar", null)
                             .setPositiveButton("Remover", (confirm, which) -> {
+                                if (historyRemover != null) {
+                                    historyRemover.accept(uri);
+                                    return;
+                                }
                                 if (P7ProjectHistory.forget(activity, uri)) {
                                     List<P7ProjectHistory.Entry> updated =
                                         P7ProjectHistory.list(activity);

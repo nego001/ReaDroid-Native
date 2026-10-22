@@ -437,3 +437,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Testes:** novo `tests/test_p7_import_history_contract.py` documenta e confere automaticamente o contrato de ordenação entre validação, commit efetivo, agendamento do histórico e atualização assíncrona, além da ausência de persistência antecipada. Incluído nos Source checks e na matriz P7; a regressão instrumentada existente `ProjectRecreationInstrumentedTest.failedReplacementRetainsOldApkAndUnsavedEdits` continua testando a falha de importação sem perdas. **Resultado da nova matriz Android 10/15 ainda deve ser verificado no SHA final.**
 
 **Escopo:** PR #13 draft, somente P7. Não muda índice/SQLite, plano de edição, permissões SAF, identidade, APK original, versionCode, distribuição ou OTA. `main`, P8 e IAs sociais isoladas. Referências PNG oficiais e QA Galaxy A55 continuam pendentes.
+
+### P7.6 — remover histórico sem corrida de gravação ou bloqueio da interface (21/10/2026)
+
+**Base confirmada:** commit `8ede3a7f`, [matriz Android 39702220149](https://github.com/nego001/ReaDroid-Native/actions/runs/39702220149) `success` com 42/42 instrumentações por API29/API35, 3/3 guardas do novo histórico, 13 capturas e painel offline por API. Source e OTA também `success`.
+
+**Falha real de concorrência encontrada:** após aceitar um APK, `recordAcceptedProject` grava história e miniatura na fila do worker. Porém os botões **Limpar lista** (diálogo da Home) e **Remover do histórico** (menu ⋮ dos itens recentes) chamavam `P7ProjectHistory.clear/forget` e `P7RecentAppIcons.prune` diretamente na thread da UI. Assim, o usuário podia apagar o histórico e ainda receber uma gravação anterior do worker, repovoando-o; a exclusão síncrona também fazia I/O de SharedPreferences e miniaturas no caminho de clique.
+
+**Correção isolada:** `MainActivity.mutateRecentProjectHistory(Uri)` executa limpar tudo (URI nula) e remover item individual **na mesma fila FIFO das gravações pós-importação**. Somente ao concluir a operação refresca a lista na thread principal e informa erro de gravação quando necessário; limpeza de miniaturas é best-effort, sem desfazer a exclusão. `P7HomeOverview` oferece callback opcional `setHistoryRemover` para a Activity serializar remoções; o funcionamento isolado legado do componente fica preservado para testes existentes. Nenhum APK é excluído e o projeto atual, SHA, edição pendente, recuperação e permissões SAF não mudam.
+
+**Novo teste instrumentado:** `P7ProjectHistoryInstrumentedTest.clearHistoryRunsAfterPendingMetadataWorkOnSameExecutor` segura propositalmente o worker com `CountDownLatch`, aciona a limpeza pela Activity, comprova que o clique não executou a limpeza síncrona, libera o worker e verifica remoção final da chave `entries`; o teste restaura preferências de teste e não usa APK real. A classe P7ProjectHistoryInstrumentedTest já integra a matriz Android; conferir **43/43** por API e CI completo antes de anunciar aprovação.
+
+**Fronteiras:** PR #13 draft; `main`, P8 e arquitetura social não tocadas; sem APK de distribuição, OTA, versionCode ou publicação. PNGs oficiais e avaliação 1:1 no Galaxy A55 seguem em aberto.
