@@ -21,6 +21,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -587,6 +589,70 @@ public final class RecoveryVaultInstrumentedTest {
             release.countDown();
             workers.shutdownNow();
             assertTrue(workers.awaitTermination(60, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test public void explicitClearRemovesEvenRecentEncryptedStagesOnly()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            File recent = File.createTempFile("checkpoint-", ".tmp", f.folder);
+            File stale = File.createTempFile("checkpoint-", ".tmp", f.folder);
+            File unrelated = new File(f.folder, "private-notes.tmp");
+            File matchingDirectory = new File(f.folder, "checkpoint-subfolder.tmp");
+            try {
+                Files.write(recent.toPath(), new byte[]{1});
+                Files.write(stale.toPath(), new byte[]{2});
+                Files.setLastModifiedTime(stale.toPath(),
+                    FileTime.fromMillis(System.currentTimeMillis() - 48L * 60 * 60 * 1000));
+                Files.write(unrelated.toPath(), new byte[]{3});
+                assertTrue(matchingDirectory.mkdir());
+                byte[] apkBytes = Files.readAllBytes(f.original.toPath());
+                f.vault.clear();
+                assertFalse(f.vault.hasCheckpoint());
+                assertFalse(recent.exists());
+                assertFalse(stale.exists());
+                assertTrue("Unrelated private file must survive", unrelated.isFile());
+                assertTrue("Matching directory must not be traversed or removed",
+                    matchingDirectory.isDirectory());
+                assertArrayEquals(apkBytes, Files.readAllBytes(f.original.toPath()));
+                // A new checkpoint can be created after explicit deletion.
+                f.vault.save(f.original, example());
+                assertEquals(example(), f.vault.loadForSource(f.original));
+            } finally {
+                Files.deleteIfExists(recent.toPath());
+                Files.deleteIfExists(stale.toPath());
+                Files.deleteIfExists(unrelated.toPath());
+                Files.deleteIfExists(matchingDirectory.toPath());
+            }
+        }
+    }
+
+    @Test public void excessiveStagesBlockClearBeforeRemovingValidCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> previous = example();
+            f.vault.save(f.original, previous);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] before = Files.readAllBytes(checkpoint.toPath());
+            List<File> stages = new ArrayList<>();
+            try {
+                for (int i = 0; i < 257; i++)
+                    stages.add(File.createTempFile("checkpoint-", ".tmp", f.folder));
+                try {
+                    f.vault.clear();
+                    fail("Partial cleanup cannot be reported as successful");
+                } catch (IOException expected) {
+                    assertTrue(expected.getMessage().contains("demais"));
+                }
+                assertArrayEquals("Checkpoint must remain until full clear is possible",
+                    before, Files.readAllBytes(checkpoint.toPath()));
+                assertEquals(previous, f.vault.loadForSource(f.original));
+            } finally {
+                for (File stage : stages) Files.deleteIfExists(stage.toPath());
+            }
+            f.vault.clear();
+            assertFalse(f.vault.hasCheckpoint());
         }
     }
 

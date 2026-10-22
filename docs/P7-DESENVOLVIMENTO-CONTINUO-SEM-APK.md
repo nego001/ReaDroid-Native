@@ -555,3 +555,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** dois testes concorrentes com `CountDownLatch` e hook package-private pré-commit, usando instâncias distintas para garantir que a exclusão aguarde a gravação pendente (e seja definitiva) e que um segundo salvamento aguarde o primeiro, sendo o plano mais recente recuperado corretamente. Os threads são finalizados e os temporários testados após ambas as operações.
 
 **Critério:** **83 testes instrumentados previstos por API** (81 + 2), CI Source/OTA e matriz Android 10/API29, Android 15/API35; 13 capturas por API como antes. Não declarar aprovação antes do fim da matriz no SHA atualizado. PR #13 rascunho; `main`, APK instalável, OTA publicada, `versionCode`, P8 e aceite visual 1:1 fora de escopo.
+
+### P7.6 — exclusão explícita também remove estágios criptografados (22/10/2026)
+
+**Estado da base no início:** commit `6fdd5012`: Source e OTA aprovados; CI P7 Android de 83 testes por API ainda em execução quando a mudança foi preparada.
+
+**Lacuna funcional:** o botão “Excluir cópia de recuperação local” chamava `RecoveryVault.clear()`, que apagava somente `edit-plan-checkpoint.v1`. Arquivos temporários criptografados `checkpoint-*.tmp` deixados por encerramentos anteriores continuavam na pasta, inclusive temporários recentes que a limpeza automática de 24 horas propositalmente ignora.
+
+**Correção:** `clear()`, protegida pelo lock compartilhado do processo, remove os arquivos regulares diretos com o padrão exclusivo `checkpoint-*.tmp`, independentemente da idade, **antes** de excluir o checkpoint. Não segue symlinks, não percorre nem apaga diretórios e não toca em outros nomes privados. Limita a análise a 256 candidatos; se não puder completar (muitos candidatos, falha I/O ou interrupção), retorna erro em vez de confirmar exclusão completa, preservando o checkpoint principal. A limpeza rotineira de 24 horas em `save()` continua conservadora e independente.
+
+**Regressões:** exclusão explícita limpa temporários recentes e antigos, mas conserva arquivos privados com outros nomes, diretórios e o APK fonte; novo salvamento/restauração continuam disponíveis. Com 257 candidatos, a operação deve falhar e preservar checkpoint e dados. **85 instrumentações previstas por API** (83 anteriores + 2), além dos checks Source e OTA; aguardar CI deste SHA antes de declarar aprovação.
+
+**Limite informado:** exclusão do nome do arquivo não é apagamento físico forense; o bloqueio é entre instâncias no mesmo processo, não processos Android separados. Sem APK, merge, lançamento OTA, alteração de versão ou escopo P8; PR #13 segue draft, PNGs oficiais/Galaxy A55 ainda pendentes.

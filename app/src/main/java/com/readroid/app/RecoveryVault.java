@@ -91,6 +91,10 @@ public final class RecoveryVault {
 
     public void clear() throws IOException {
         synchronized (IN_PROCESS_LOCK) {
+            // Explicit user deletion also removes encrypted, possibly recent
+            // staging files. Never report success if cleanup is incomplete.
+            // The old checkpoint remains available if cleanup fails.
+            clearEncryptedStages(storage);
             File backup = new File(storage, FILE_NAME);
             if (backup.exists() && !backup.delete())
                 throw new IOException("Não foi possível remover a cópia de recuperação");
@@ -243,6 +247,32 @@ public final class RecoveryVault {
             if (ciphertext != null) Arrays.fill(ciphertext, (byte) 0);
             if (iv != null) Arrays.fill(iv, (byte) 0);
             Arrays.fill(encoded, (byte) 0);
+        }
+    }
+
+    /**
+     * Explicit removal of encrypted staging files, including recent leftovers
+     * after a process crash. IN_PROCESS_LOCK must be held by the caller.
+     * Refuse overly large directories instead of claiming a complete clear.
+     * Preserve directories, symlinks and non-matching private files.
+     */
+    private static void clearEncryptedStages(File directory) throws IOException {
+        if (!Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS))
+            return;
+        int inspected = 0;
+        try (DirectoryStream<Path> entries =
+                Files.newDirectoryStream(directory.toPath(), "checkpoint-*.tmp")) {
+            for (Path candidate : entries) {
+                if (++inspected > MAX_STAGE_SCAN)
+                    throw new IOException("Arquivos temporários demais para exclusão segura");
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Exclusão da recuperação interrompida");
+                if (!Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS))
+                    continue;
+                Files.deleteIfExists(candidate);
+            }
+        } catch (DirectoryIteratorException failed) {
+            throw new IOException("Não foi possível limpar os arquivos temporários", failed);
         }
     }
 
