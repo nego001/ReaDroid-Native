@@ -531,3 +531,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Novas regressões:** (1) falha simulada após o `FileDescriptor.sync()`: checkpoint anterior permanece byte-a-byte idêntico, recuperável; original preservado; temporário apagado; (2) interrupção no instante pré-commit: o mesmo comportamento, incluindo propagação de `InterruptedIOException`. A injeção demonstra comportamento diante de exceções **antes** do commit, não durabilidade absoluta em corte de energia após `rename` (que pode exigir sincronização adicional do diretório no filesystem).
 
 **Critério de aceite:** **79 testes por API** (77 + 2), Source e OTA verdes no mesmo SHA, capturas e status registrado. Sem merge, APK, versionCode, P8 ou mudança no aceite visual 1:1. PR #13 permanece draft.
+
+### P7.6 — limpeza conservadora de temporários criptografados órfãos (22/10/2026)
+
+**Base de código:** commit `0816372b`; testes de falha/interrupção pré-commit introduzidos nessa revisão. Confirmar separadamente CI final da base e deste SHA.
+
+**Problema:** se o processo Android terminar abruptamente depois de escrever o checkpoint temporário, o `finally` do Java não roda; arquivos `checkpoint-*.tmp` criptografados podem permanecer no diretório privado.
+
+**Correção:** na próxima operação de `save`, antes de criar outro arquivo, limpar de forma **best effort** exclusivamente arquivos regulares diretos `checkpoint-*.tmp`, sem seguir symlinks, com **mais de 24 horas**, sem tocar `edit-plan-checkpoint.v1` nem pastas/outros arquivos. Varredura limitada a 256 candidatos por operação e falha de limpeza nunca impede novo salvamento. Não apagar temporários recentes porque podem pertencer a outra operação em andamento.
+
+**Regressões:** teste de temporário velho versus recente, arquivo não relacionado e diretório correspondente ao padrão, preservando bytes e legibilidade do checkpoint real; teste do próximo salvamento remover temporário antigo, preservar o APK fonte e recuperar o mesmo plano. Esperado **81 instrumentações por API** (79 anteriores + 2). Não afirmar deleção forense segura: arquivos temporários já estão criptografados e a exclusão remove o nome do arquivo, não assegura sobrescrita física.
+
+**Fronteiras:** somente P7, sem modificar formato AES-GCM v1/Keystore, `main`, PR draft, OTA publicada, APK instalável ou versão. PNGs oficiais/Galaxy A55 seguem pendentes.

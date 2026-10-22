@@ -18,6 +18,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.DirectoryIteratorException;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -41,6 +46,10 @@ public final class RecoveryVault {
     private static final int MAX_PLAINTEXT = 512 * 1024;
     private static final int MAX_FILE = MAX_PLAINTEXT + 256;
     private static final int MAX_CHANGES = 100;
+    // Never delete a potentially active save; only encrypted stages older
+    // than 24 hours qualify for bounded, best-effort cleanup.
+    private static final long STALE_STAGE_MILLIS = 24L * 60 * 60 * 1000;
+    private static final int MAX_STAGE_SCAN = 256;
     private static final byte[] AAD = "NegrescoDroid:recovery:v1"
         .getBytes(StandardCharsets.US_ASCII);
 
@@ -119,6 +128,7 @@ public final class RecoveryVault {
             encoded = buffer.array();
             if (!storage.isDirectory() && !storage.mkdirs())
                 throw new IOException("Não foi possível criar o diretório privado");
+            pruneAbandonedStages(storage, System.currentTimeMillis());
             temporary = File.createTempFile("checkpoint-", ".tmp", storage);
             try (FileOutputStream out = new FileOutputStream(temporary)) {
                 out.write(encoded);
@@ -214,6 +224,37 @@ public final class RecoveryVault {
             if (iv != null) Arrays.fill(iv, (byte) 0);
             Arrays.fill(encoded, (byte) 0);
         }
+    }
+
+    /**
+     * Remove only app-created encrypted staging files older than one day.
+     * Do not traverse subdirectories, follow symlinks, or touch the actual
+     * checkpoint. Cleanup is best-effort and cannot prevent a valid save.
+     * Package-private for deterministic Android regression coverage.
+     */
+    static int pruneAbandonedStages(File directory, long nowMillis) {
+        if (directory == null
+            || !Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS))
+            return 0;
+        int removed = 0;
+        int visited = 0;
+        try (DirectoryStream<Path> entries =
+                Files.newDirectoryStream(directory.toPath(), "checkpoint-*.tmp")) {
+            for (Path candidate : entries) {
+                if (++visited > MAX_STAGE_SCAN) break;
+                if (!Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS))
+                    continue;
+                FileTime modified = Files.getLastModifiedTime(
+                    candidate, LinkOption.NOFOLLOW_LINKS);
+                long ageMillis = nowMillis - modified.toMillis();
+                if (ageMillis < STALE_STAGE_MILLIS || ageMillis < 0)
+                    continue;
+                if (Files.deleteIfExists(candidate)) removed++;
+            }
+        } catch (IOException | DirectoryIteratorException | SecurityException failure) {
+            // Cleanup never invalidates a checkpoint or blocks a new save.
+        }
+        return removed;
     }
 
     /**

@@ -12,6 +12,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.attribute.FileTime;
 import java.security.KeyStore;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -412,6 +413,64 @@ public final class RecoveryVaultInstrumentedTest {
             assertNoStagedCheckpoint(f);
         } finally {
             Thread.interrupted();
+        }
+    }
+
+    @Test public void staleEncryptedStagesAreRemovedWithoutTouchingCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> valid = example();
+            f.vault.save(f.original, valid);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] checkpointBytes = Files.readAllBytes(checkpoint.toPath());
+            File stale = File.createTempFile("checkpoint-", ".tmp", f.folder);
+            Files.write(stale.toPath(), new byte[]{3, 4, 5});
+            File fresh = File.createTempFile("checkpoint-", ".tmp", f.folder);
+            Files.write(fresh.toPath(), new byte[]{6, 7});
+            File unrelated = new File(f.folder, "notes.tmp");
+            Files.write(unrelated.toPath(), new byte[]{8});
+            File matchedDirectory = new File(f.folder, "checkpoint-directory.tmp");
+            assertTrue(matchedDirectory.mkdir());
+            try {
+                long now = System.currentTimeMillis();
+                Files.setLastModifiedTime(stale.toPath(),
+                    FileTime.fromMillis(now - 48L * 60 * 60 * 1000));
+                assertEquals(1, RecoveryVault.pruneAbandonedStages(f.folder, now));
+                assertFalse(stale.exists());
+                assertTrue("Recent staging may be an active save", fresh.exists());
+                assertTrue(unrelated.isFile());
+                assertTrue("A directory must never be removed", matchedDirectory.isDirectory());
+                assertArrayEquals(checkpointBytes, Files.readAllBytes(checkpoint.toPath()));
+                assertEquals(valid, f.vault.loadForSource(f.original));
+            } finally {
+                Files.deleteIfExists(stale.toPath());
+                Files.deleteIfExists(fresh.toPath());
+                Files.deleteIfExists(unrelated.toPath());
+                Files.deleteIfExists(matchedDirectory.toPath());
+            }
+        }
+    }
+
+    @Test public void savePrunesOldStageWithoutChangingValidRecoveryPlan()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> valid = example();
+            f.vault.save(f.original, valid);
+            byte[] source = Files.readAllBytes(f.original.toPath());
+            File stale = File.createTempFile("checkpoint-", ".tmp", f.folder);
+            Files.write(stale.toPath(), new byte[]{1, 2, 3});
+            Files.setLastModifiedTime(stale.toPath(),
+                FileTime.fromMillis(System.currentTimeMillis() - 48L * 60 * 60 * 1000));
+            try {
+                f.vault.save(f.original, valid);
+                assertFalse("Next successful save should clean abandoned stage",
+                    stale.exists());
+                assertEquals(valid, f.vault.loadForSource(f.original));
+                assertArrayEquals(source, Files.readAllBytes(f.original.toPath()));
+                assertNoStagedCheckpoint(f);
+            } finally {
+                Files.deleteIfExists(stale.toPath());
+            }
         }
     }
 
