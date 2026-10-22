@@ -633,3 +633,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressão:** teste instrumentado com Activity e Views reais verifica os seis cartões clicáveis em largura total, os 13 controles em uma coluna, retorno ao grid 2×3 após recriação, persistência do índice 3 e rejeição do índice 4. Meta **98 testes por API** (97 anteriores + 1); verificar Source, OTA e ambos os emuladores no SHA novo.
 
 **Pendente:** 4 layouts realmente funcionais de uma meta de 12. A arte original PNG ainda não foi versionada e o aceite 1:1/Galaxy A55 está pendente. Manter PR #13 draft, sem merge, APK de distribuição ou OTA publicada.
+
+### P7.5 — corrigir a compilação dos testes do layout Lista (22/10/2026)
+
+**Falha observada:** CI no commit `4f8c1556`, [run Android 39803130392](https://github.com/nego001/ReaDroid-Native/actions/runs/39803130392), encerrou com falha em Android 10/API29 e Android 15/API35 no passo `compileDebugAndroidTestJavaWithJavac`. O novo teste de reflow de listas referencia `LinearLayout` sem o `import android.widget.LinearLayout`; sete erros `cannot find symbol`. **Não houve execução dos 98 testes** nesse SHA; Source e OTA tinham passado.
+
+**Correção:** adicionar a importação Android faltante no teste instrumentado, sem mudar a lógica de produção, layouts, APK original, preferências, assinatura ou formato de arquivo. Reexecutar a matriz de **98 testes por API** e inspecionar logs para distinguir falha de compilação de falha de asserção. Ainda não declarar o layout Lista homologado até ambas as APIs aprovarem.
+
+**Estado:** PR #13 continua draft e `main` preservada. Sem release, APK de distribuição, novo `versionCode` nem OTA publicada.
