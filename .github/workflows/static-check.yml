@@ -29,5 +29,7 @@ jobs:
           echo "Source layout and Python syntax checks passed"
       - name: Verify P7 reference validator with synthetic test PNGs
         run: python3 -m unittest discover -s tests -p 'test_p7_reference_assets.py' -v
+      - name: Verify committed-import history contract
+        run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
       - name: Protect major-only APK generation policy
         run: python3 -m unittest discover -s tests -p 'test_major_apk_policy.py' -v

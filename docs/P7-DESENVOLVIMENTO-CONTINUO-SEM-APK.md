@@ -425,3 +425,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Hotfix apenas de teste:** `ProjectRecreationInstrumentedTest.explorerFolderSearchAndFilterSurviveRecreation` confere o ícone atual **▦** e a categoria **Editáveis** restaurada no snapshot, sem alterar o widget, sua filtragem, armazenamento, SAF ou outras asserções. Mantidas as três regressões de recriação/importação na matriz. Confirmar 42/42 nas duas APIs no SHA resultante antes de homologar a troca transacional.
 
 **Fronteiras:** PR #13 draft, `main` intacta; sem APK/OTA/versionCode novos, P8 ou IA social; assets oficiais visuais e Galaxy A55 ainda não homologados.
+
+### P7.6 — histórico somente de APKs realmente abertos (21/10/2026)
+
+**Base confirmada:** `6a2e3719` com [matriz P7 39674696597](https://github.com/nego001/ReaDroid-Native/actions/runs/39674696597) `success`, **42/42 testes instrumentados** nas APIs 29/35, 13 capturas verificadas em cada, `P7_VISUAL_BOARD_PASS`, [Source checks 39674696548](https://github.com/nego001/ReaDroid-Native/actions/runs/39674696548) e [OTA validation 39674696562](https://github.com/nego001/ReaDroid-Native/actions/runs/39674696562) também `success`.
+
+**Inconsistência encontrada:** `MainActivity.analyzeSelectedApk` executava `P7ProjectHistory.record` e atualização do ícone no worker assim que a análise terminava, **antes** da checagem de validade da Activity e da troca de projeto em `runOnUiThread`. Em uma troca cancelada por recriação/encerramento ou importação mais recente, o candidato poderia registrar um item recente sem ter sido efetivamente aberto. Além disso, exceções de metadados opcionais tinham chance de invalidar a operação principal.
+
+**Correção:** remover qualquer escrita no histórico anterior ao commit da UI. Somente após `currentApk`/`selectedApkUri` e a apresentação do relatório estarem atualizados, `recordAcceptedProject` agenda metadados e miniatura em fila de trabalho, usando contexto de aplicação. A atualização visual posterior é descartada se a geração da análise mudou ou a Activity foi encerrada. Falhas de metadados opcionais e rejeição do executor no encerramento não revertem uma importação já aceita. Importações inválidas/canceladas não são inseridas no histórico por esse fluxo, com SAF e permissões anteriores intactas.
+
+**Testes:** novo `tests/test_p7_import_history_contract.py` documenta e confere automaticamente o contrato de ordenação entre validação, commit efetivo, agendamento do histórico e atualização assíncrona, além da ausência de persistência antecipada. Incluído nos Source checks e na matriz P7; a regressão instrumentada existente `ProjectRecreationInstrumentedTest.failedReplacementRetainsOldApkAndUnsavedEdits` continua testando a falha de importação sem perdas. **Resultado da nova matriz Android 10/15 ainda deve ser verificado no SHA final.**
+
+**Escopo:** PR #13 draft, somente P7. Não muda índice/SQLite, plano de edição, permissões SAF, identidade, APK original, versionCode, distribuição ou OTA. `main`, P8 e IAs sociais isoladas. Referências PNG oficiais e QA Galaxy A55 continuam pendentes.

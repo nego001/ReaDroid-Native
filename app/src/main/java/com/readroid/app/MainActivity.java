@@ -1656,17 +1656,8 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 AnalyzedApk candidate = analyze(uri);
-                // Metadata/history work stays off the UI thread. Record only
-                // validated APKs, never malformed or failed imports.
-                if (sequence == analysisSequence) {
-                    JSONObject manifest = candidate.report.optJSONObject("manifestAnalysis");
-                    String packageName = manifest == null ? "" :
-                        manifest.optString("packageName", "");
-                    if (P7ProjectHistory.record(this, uri, packageName)) {
-                        P7RecentAppIcons.capture(this, uri, candidate.file);
-                        P7RecentAppIcons.prune(this, P7ProjectHistory.list(this));
-                    }
-                }
+                // Validation alone is not an accepted import. The history and
+                // icon cache must not change until the UI commits this candidate.
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
                         candidate.file.delete();
@@ -1685,6 +1676,12 @@ public class MainActivity extends Activity {
                     pendingApkUri = null;
                     displayAnalyzedReport(candidate.report);
                     refreshRecentProjects();
+                    // Side effects happen only after a successful UI commit.
+                    // Metadata remains on the worker so no disk work blocks UI.
+                    JSONObject manifest = candidate.report.optJSONObject("manifestAnalysis");
+                    String packageName = manifest == null ? "" :
+                        manifest.optString("packageName", "");
+                    recordAcceptedProject(uri, packageName, candidate.file, sequence);
                     if (previousApk != null && previousApk != candidate.file)
                         previousApk.delete();
                     if (previousIndex != null && previousIndex != candidate.indexFile)
@@ -1710,6 +1707,38 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    /**
+     * Recent-project metadata is best-effort and follows an accepted import.
+     * Never record a candidate in the analysis worker before UI commitment:
+     * rotation, cancellation or a newer import can discard that candidate.
+     */
+    private void recordAcceptedProject(Uri uri, String packageName,
+            File committedApk, int acceptedSequence) {
+        final android.content.Context application = getApplicationContext();
+        try {
+            executor.execute(() -> {
+                try {
+                    if (!P7ProjectHistory.record(application, uri, packageName)) return;
+                    P7RecentAppIcons.capture(application, uri, committedApk);
+                    P7RecentAppIcons.prune(application, P7ProjectHistory.list(application));
+                    runOnUiThread(() -> {
+                        // A newer project may already have opened by the time
+                        // the optional history work finishes.
+                        if (acceptedSequence == analysisSequence &&
+                                !isFinishing() && !isDestroyed())
+                            refreshRecentProjects();
+                    });
+                } catch (RuntimeException metadataFailure) {
+                    // Untrusted SAF provider metadata must never undo an APK
+                    // already accepted, or corrupt its unsaved edits.
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closing) {
+            // Activity is closing: skipping history is safer than inventing
+            // an opened project or retrying its import.
+        }
     }
 
     private void confirmOtaDownload(OtaRelease release) {
