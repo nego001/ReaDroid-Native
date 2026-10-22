@@ -529,12 +529,12 @@ public final class P7DesignStudio {
             }
             sectionHeader("Opções de Layout", () -> showCatalogDialog(1));
             startCards();
-            String[] layouts={"Padrão","Compacto","Moderno"};
-            int[] layoutColors={0xff29acff,0xff8d9cb1,0xff7acfff};
+            String[] layouts = P7VisualCatalog.LAYOUT_NAMES;
+            int[] layoutColors={0xff29acff,0xff8d9cb1,0xff7acfff,0xff27c99a};
             for(int i=0;i<layouts.length;i++){
                 final int index=i;
                 tile(layouts[i],"",layoutColors[i],selectedLayout==i,
-                    1, () -> {
+                    1, i, false, () -> {
                         selectedLayout = index;
                         render();
                         confirmLayout();
@@ -558,11 +558,11 @@ public final class P7DesignStudio {
         }else if(activeTab==1){
             heading("Opções de Layout");
             startCards();
-            String[] modes={"Padrão","Compacto","Moderno"};
+            String[] modes=P7VisualCatalog.LAYOUT_NAMES;
             for(int i=0;i<modes.length;i++){
                 final int choice=i;
                 tile(modes[i], "Aplicável", 0xff29acff,
-                    selectedLayout==i, 1, () -> {
+                    selectedLayout==i, 1, i, false, () -> {
                         selectedLayout = choice;
                         render();
                         confirmLayout();

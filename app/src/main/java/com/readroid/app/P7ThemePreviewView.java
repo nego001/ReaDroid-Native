@@ -99,6 +99,14 @@ public final class P7ThemePreviewView extends View {
     }
 
     private void drawLayout(Canvas c) {
+        if (themeSurface == 3) {
+            block(c, 0xff07101d, 8, 7, 92, 93, 9);
+            outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
+            block(c, accent, 19, 18, 67, 24, 2);
+            for (int i = 0; i < 6; i++)
+                block(c, 0xff20364d, 18, 34 + i * 8, 82, 39 + i * 8, 2);
+            return;
+        }
         block(c, 0xff07101d, 8, 7, 92, 93, 9);
         outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
         block(c, 0xff7f94a9, 19, 20, 81, 26, 2);

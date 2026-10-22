@@ -161,22 +161,26 @@ public final class StudioDashboard {
             "Neon ou minimalista", "Bordas do seu jeito", "Voltar ao padrão"
         };
         destination.removeAllViews();
-        for (int index = 0; index < actions.length; index += 2) {
+        destination.setTag("p7-personalization-options");
+        final int columns = NegrescoTheme.LAYOUT_VARIANT == 3 ? 1 : 2;
+        for (int index = 0; index < actions.length; index += columns) {
             LinearLayout row = new LinearLayout(a);
             row.setOrientation(LinearLayout.HORIZONTAL);
             destination.addView(row);
-            for (int col = 0; col < 2; col++) {
+            for (int col = 0; col < columns; col++) {
                 int i = index + col;
                 if (i >= actions.length) break;
                 Button action = actions[i];
                 detach(action);
                 LinearLayout tile = option(a, action, glyphs[i], details[i]);
-                boolean lastAlone = (i == actions.length - 1 && col == 0);
-                tile.setMinimumHeight(dp(a, NegrescoTheme.COMPACT ? 106 : 120));
+                boolean alone = columns == 1 ||
+                    (i == actions.length - 1 && col == 0);
+                tile.setMinimumHeight(dp(a, alone ? 76 :
+                    (NegrescoTheme.COMPACT ? 106 : 120)));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    lastAlone ? -1 : 0, -2, lastAlone ? 0f : 1f);
-                lp.setMargins(col == 0 ? 0 : dp(a, 4), 0,
-                    col == 0 ? (lastAlone ? 0 : dp(a, 4)) : 0, dp(a, 8));
+                    alone ? -1 : 0, -2, alone ? 0f : 1f);
+                lp.setMargins(columns == 1 || col == 0 ? 0 : dp(a, 4), 0,
+                    alone || col == 1 ? 0 : dp(a, 4), dp(a, 8));
                 row.addView(tile, lp);
             }
         }

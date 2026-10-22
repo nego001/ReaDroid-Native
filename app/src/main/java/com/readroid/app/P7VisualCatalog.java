@@ -10,7 +10,7 @@ import android.content.SharedPreferences;
 public final class P7VisualCatalog {
     private P7VisualCatalog() {}
     private static final String PREFS = "v3_personalizacao";
-    public static final String[] LAYOUT_NAMES = {"Padrão", "Compacto", "Moderno"};
+    public static final String[] LAYOUT_NAMES = {"Padrão", "Compacto", "Moderno", "Lista"};
     public static final String[] PRESET_NAMES =
         {"Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro"};
 
@@ -32,10 +32,10 @@ public final class P7VisualCatalog {
         return value;
     }
 
-    public static void applyLayout(Activity a, int value) {
+    static void persistLayout(Context context, int value) {
         if (value < 0 || value >= LAYOUT_NAMES.length)
             throw new IllegalArgumentException("Layout não reconhecido");
-        SharedPreferences prefs = a.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         boolean ok = prefs.edit()
             .putInt("layout_variant", value)
             .putBoolean("compact", value == 1)
@@ -43,6 +43,10 @@ public final class P7VisualCatalog {
             .remove("p7_active_preset")
             .commit();
         if (!ok) throw new IllegalStateException("Não foi possível salvar o layout");
+    }
+
+    public static void applyLayout(Activity a, int value) {
+        persistLayout(a, value);
         a.recreate();
     }
 

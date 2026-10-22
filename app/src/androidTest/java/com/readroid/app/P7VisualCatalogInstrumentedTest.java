@@ -11,6 +11,79 @@ import static org.junit.Assert.*;
 /** P7 layout and presets: actual preference writes, no APK or security mutation. */
 @RunWith(AndroidJUnit4.class)
 public final class P7VisualCatalogInstrumentedTest {
+    @Test public void listLayoutIsPersistedAndChangesRealHomeAndSettingsViews() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        SharedPreferences p = context.getSharedPreferences(
+            "v3_personalizacao", Context.MODE_PRIVATE);
+        boolean hadLayout = p.contains("layout_variant");
+        int previous = p.getInt("layout_variant", 0);
+        boolean hadCompact = p.contains("compact");
+        boolean wasCompact = p.getBoolean("compact", false);
+        boolean hadRadius = p.contains("card_radius");
+        int wasRadius = p.getInt("card_radius", 18);
+        boolean hadPreset = p.contains("p7_active_preset");
+        int wasPreset = p.getInt("p7_active_preset", -1);
+        try {
+            assertEquals(4, P7VisualCatalog.LAYOUT_NAMES.length);
+            P7VisualCatalog.persistLayout(context, 3);
+            assertEquals(3, P7VisualCatalog.currentLayout(context));
+            assertFalse(p.getBoolean("compact", true));
+            NegrescoTheme.apply(context);
+            assertEquals(3, NegrescoTheme.LAYOUT_VARIANT);
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    LinearLayout grid = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-quick-actions-grid");
+                    assertNotNull(grid);
+                    assertEquals(6, grid.getChildCount());
+                    for (int i = 0; i < grid.getChildCount(); i++) {
+                        LinearLayout row = (LinearLayout) grid.getChildAt(i);
+                        assertEquals(1, row.getChildCount());
+                        assertTrue(row.getChildAt(0).isClickable());
+                        assertEquals(-1, row.getChildAt(0).getLayoutParams().width);
+                    }
+                    LinearLayout options = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-personalization-options");
+                    assertNotNull(options);
+                    assertEquals(13, options.getChildCount());
+                    for (int i = 0; i < options.getChildCount(); i++)
+                        assertEquals(1,
+                            ((LinearLayout) options.getChildAt(i)).getChildCount());
+                });
+                P7VisualCatalog.persistLayout(context, 0);
+                scenario.recreate();
+                scenario.onActivity(activity -> {
+                    LinearLayout grid = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-quick-actions-grid");
+                    assertEquals(2, grid.getChildCount());
+                    for (int i = 0; i < grid.getChildCount(); i++)
+                        assertEquals(3,
+                            ((LinearLayout) grid.getChildAt(i)).getChildCount());
+                });
+            }
+            try {
+                P7VisualCatalog.persistLayout(context, 4);
+                fail("Invalid layout was applied");
+            } catch (IllegalArgumentException expected) {
+                assertEquals(0, P7VisualCatalog.currentLayout(context));
+            }
+        } finally {
+            SharedPreferences.Editor editor = p.edit();
+            if (hadLayout) editor.putInt("layout_variant", previous);
+            else editor.remove("layout_variant");
+            if (hadCompact) editor.putBoolean("compact", wasCompact);
+            else editor.remove("compact");
+            if (hadRadius) editor.putInt("card_radius", wasRadius);
+            else editor.remove("card_radius");
+            if (hadPreset) editor.putInt("p7_active_preset", wasPreset);
+            else editor.remove("p7_active_preset");
+            assertTrue(editor.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void compactAndModernLayoutsPersistSafely() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

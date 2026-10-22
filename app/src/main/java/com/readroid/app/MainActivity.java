@@ -758,6 +758,7 @@ public class MainActivity extends Activity {
         homeSection.addView(shortcutHint);
         LinearLayout quickGrid = new LinearLayout(this);
         quickGrid.setOrientation(LinearLayout.VERTICAL);
+        quickGrid.setTag("p7-quick-actions-grid");
         homeSection.addView(quickGrid);
         // P7: match the approved two-row / three-column action composition.
         // Every tile opens an actual existing workflow; unsupported operations
@@ -817,19 +818,24 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Ver segurança", (d, w) -> showSection(2))
                 .setNegativeButton("Fechar", null).show()
         };
-        for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
+        final int actionColumns = NegrescoTheme.LAYOUT_VARIANT == 3 ? 1 : 3;
+        for (int rowIndex = 0; rowIndex < actionNames.length / actionColumns;
+                rowIndex++) {
             LinearLayout actionRow = new LinearLayout(this);
             actionRow.setOrientation(LinearLayout.HORIZONTAL);
             quickGrid.addView(actionRow);
-            for (int col = 0; col < 3; col++) {
-                int index = rowIndex * 3 + col;
+            for (int col = 0; col < actionColumns; col++) {
+                int index = rowIndex * actionColumns + col;
                 LinearLayout tile = StudioDashboard.referenceAction(this,
                     actionNames[index], actionGlyphs[index], actionHandlers[index]);
-                LinearLayout.LayoutParams params =
-                    new LinearLayout.LayoutParams(0, -2, 1f);
-                params.setMargins(col == 0 ? 0 : NegrescoTheme.dp(this, 3), 0,
-                    col == 2 ? 0 : NegrescoTheme.dp(this, 3),
-                    NegrescoTheme.dp(this, 7));
+                LinearLayout.LayoutParams params = actionColumns == 1
+                    ? new LinearLayout.LayoutParams(-1, -2)
+                    : new LinearLayout.LayoutParams(0, -2, 1f);
+                params.setMargins(actionColumns == 1 || col == 0
+                        ? 0 : NegrescoTheme.dp(this, 3), 0,
+                    actionColumns == 1 || col == actionColumns - 1
+                        ? 0 : NegrescoTheme.dp(this, 3),
+                    NegrescoTheme.dp(this, actionColumns == 1 ? 5 : 7));
                 actionRow.addView(tile, params);
             }
         }

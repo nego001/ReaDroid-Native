@@ -623,3 +623,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** teste existente de catálogo ampliado para verificar 24 estados únicos, preservação de configuração anterior ao teste e índices legados; dois testes novos verificam o valor efetivo de `NegrescoTheme.STUDIO_GLOW` e pixels distintos para prévias clean/neon. Meta **97 instrumentações por API** (95 + 2), Source e OTA no SHA novo.
 
 **Limite de escopo:** a meta de 24 **opções combinatórias de aparência** fica implementada no código; não são 24 layouts totalmente diferentes. Continuam faltando 12 layouts funcionais (3 disponíveis hoje), PNGs oficiais de referência, comparação visual 1:1 e homologação no Samsung Galaxy A55. Nenhum APK instalável de distribuição, merge, `versionCode`, release ou OTA publicada.
+
+### P7.5 — layout Lista com organização nativa real (22/10/2026)
+
+**Base:** commit `ec870ba9` com 24 combinações de tema, Source e OTA aprovados e matriz Android em acompanhamento. Nesta extensão foi introduzido o **quarto** layout `Lista`, preservando os três índices anteriores.
+
+**Funcionalidade:** `P7VisualCatalog.persistLayout` valida/grava as preferências de layout, e `applyLayout` mantém a confirmação e o `Activity.recreate()` existentes. `NegrescoTheme` reconhece `layout_variant=3`. As seis ações rápidas da Home passam de 2 linhas × 3 cartões para 6 linhas × 1 cartão de largura total, mantendo os seis callbacks/avisos originais. Os 13 controles de personalização passam de 2 colunas para 1 coluna. A miniatura do Design Studio mostra seis linhas de lista em vez do mesmo wireframe das outras opções. Nenhuma função de decompilação ou assinatura é artificialmente ativada.
+
+**Regressão:** teste instrumentado com Activity e Views reais verifica os seis cartões clicáveis em largura total, os 13 controles em uma coluna, retorno ao grid 2×3 após recriação, persistência do índice 3 e rejeição do índice 4. Meta **98 testes por API** (97 anteriores + 1); verificar Source, OTA e ambos os emuladores no SHA novo.
+
+**Pendente:** 4 layouts realmente funcionais de uma meta de 12. A arte original PNG ainda não foi versionada e o aceite 1:1/Galaxy A55 está pendente. Manter PR #13 draft, sem merge, APK de distribuição ou OTA publicada.
