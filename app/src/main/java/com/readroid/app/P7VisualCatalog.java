@@ -17,6 +17,15 @@ public final class P7VisualCatalog {
     };
     public static final String[] PRESET_NAMES =
         {"Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro"};
+    // Single source for preset application and read-back validation.
+    private static final String[] PRESET_THEMES =
+        {"oled", "oled", "light", "graphite", "oled"};
+    private static final String[] PRESET_ACCENTS =
+        {"blue", "purple", "blue", "blue", "orange"};
+    private static final boolean[] PRESET_GLOWS =
+        {false, true, false, true, false};
+    private static final int[] PRESET_RADII = {18, 26, 12, 26, 12};
+    private static final int[] PRESET_LAYOUTS = {0, 2, 1, 2, 1};
 
     /** Native Home structure: original 3x2, list 1x6, or two-column 2x3. */
     static int quickActionColumns(int layout) {
@@ -81,10 +90,15 @@ public final class P7VisualCatalog {
         SharedPreferences prefs = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         int value = prefs.getInt("p7_active_preset", -1);
         if (value < 0 || value >= PRESET_NAMES.length) return -1;
-        String[] themes = {"oled", "oled", "light", "graphite", "oled"};
-        String[] accents = {"blue", "purple", "blue", "blue", "orange"};
-        if (!themes[value].equals(prefs.getString("theme", "oled"))
-                || !accents[value].equals(prefs.getString("accent", "blue")))
+        int expectedLayout = PRESET_LAYOUTS[value];
+        // A remembered preset marker is not sufficient: the user may have
+        // manually changed glow, corners or density without changing colors.
+        if (!PRESET_THEMES[value].equals(prefs.getString("theme", "oled"))
+                || !PRESET_ACCENTS[value].equals(prefs.getString("accent", "blue"))
+                || PRESET_GLOWS[value] != prefs.getBoolean("studio_glow", true)
+                || PRESET_RADII[value] != prefs.getInt("card_radius", 18)
+                || expectedLayout != currentLayout(c)
+                || (expectedLayout == 1) != prefs.getBoolean("compact", false))
             return -1;
         return value;
     }
@@ -107,25 +121,25 @@ public final class P7VisualCatalog {
         a.recreate();
     }
 
-    /** All values are from the existing, validated V3 palette. */
-    public static void applyPreset(Activity a, int selected) {
+    /** Atomic appearance-only persistence, also used by Android round-trip tests. */
+    static void persistPreset(Context context, int selected) {
         if (selected < 0 || selected >= PRESET_NAMES.length)
             throw new IllegalArgumentException("Preset não reconhecido");
-        final String[] themes = {"oled", "oled", "light", "graphite", "oled"};
-        final String[] accents = {"blue", "purple", "blue", "blue", "orange"};
-        final boolean[] glows = {false, true, false, true, false};
-        final int[] radii = {18, 26, 12, 26, 12};
-        final int[] layouts = {0, 2, 1, 2, 1};
-        boolean ok = a.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("theme", themes[selected])
-            .putString("accent", accents[selected])
-            .putBoolean("studio_glow", glows[selected])
-            .putInt("card_radius", radii[selected])
-            .putInt("layout_variant", layouts[selected])
-            .putBoolean("compact", layouts[selected] == 1)
+        boolean ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("theme", PRESET_THEMES[selected])
+            .putString("accent", PRESET_ACCENTS[selected])
+            .putBoolean("studio_glow", PRESET_GLOWS[selected])
+            .putInt("card_radius", PRESET_RADII[selected])
+            .putInt("layout_variant", PRESET_LAYOUTS[selected])
+            .putBoolean("compact", PRESET_LAYOUTS[selected] == 1)
             .putInt("p7_active_preset", selected)
             .commit();
         if (!ok) throw new IllegalStateException("Não foi possível salvar o preset");
+    }
+
+    /** All values are from the existing, validated V3 palette. */
+    public static void applyPreset(Activity a, int selected) {
+        persistPreset(a, selected);
         a.recreate();
     }
 }

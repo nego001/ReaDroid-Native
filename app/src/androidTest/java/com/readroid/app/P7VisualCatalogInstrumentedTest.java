@@ -700,6 +700,96 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    private static void restorePresetPreferences(SharedPreferences prefs,
+            java.util.Map<String, ?> before) {
+        String[] keys = {"theme", "accent", "studio_glow", "card_radius",
+            "layout_variant", "compact", "p7_active_preset"};
+        SharedPreferences.Editor restore = prefs.edit();
+        for (String key : keys) {
+            if (!before.containsKey(key)) {
+                restore.remove(key);
+            } else {
+                Object value = before.get(key);
+                if (value instanceof String) restore.putString(key, (String) value);
+                else if (value instanceof Boolean) restore.putBoolean(key, (Boolean) value);
+                else if (value instanceof Integer) restore.putInt(key, (Integer) value);
+                else throw new AssertionError("Unexpected preset field " + key);
+            }
+        }
+        assertTrue(restore.commit());
+    }
+
+    @Test public void allFivePresetsRoundTripAgainstTheirWholeAppearanceState() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", Context.MODE_PRIVATE);
+        java.util.Map<String, ?> before = prefs.getAll();
+        try {
+            assertEquals(5, P7VisualCatalog.PRESET_NAMES.length);
+            for (int index = 0; index < P7VisualCatalog.PRESET_NAMES.length; index++) {
+                P7VisualCatalog.persistPreset(context, index);
+                assertEquals("Correctly applied preset must remain selected",
+                    index, P7VisualCatalog.currentPreset(context));
+                assertEquals(index, prefs.getInt("p7_active_preset", -1));
+            }
+            try {
+                P7VisualCatalog.persistPreset(context, 5);
+                fail("Missing preset must be rejected without modifying state");
+            } catch (IllegalArgumentException expected) {
+                assertEquals(4, P7VisualCatalog.currentPreset(context));
+            }
+        } finally {
+            restorePresetPreferences(prefs, before);
+        }
+    }
+
+    @Test public void manualChangesToAnyPresetSettingClearItsSelection() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", Context.MODE_PRIVATE);
+        java.util.Map<String, ?> before = prefs.getAll();
+        try {
+            for (int index = 0; index < P7VisualCatalog.PRESET_NAMES.length; index++) {
+                P7VisualCatalog.persistPreset(context, index);
+                assertEquals(index, P7VisualCatalog.currentPreset(context));
+
+                String theme = prefs.getString("theme", "");
+                assertTrue(prefs.edit().putString("theme",
+                    "oled".equals(theme) ? "light" : "oled").commit());
+                assertEquals(-1, P7VisualCatalog.currentPreset(context));
+                P7VisualCatalog.persistPreset(context, index);
+
+                String accent = prefs.getString("accent", "");
+                assertTrue(prefs.edit().putString("accent",
+                    "green".equals(accent) ? "purple" : "green").commit());
+                assertEquals(-1, P7VisualCatalog.currentPreset(context));
+                P7VisualCatalog.persistPreset(context, index);
+
+                assertTrue(prefs.edit().putBoolean("studio_glow",
+                    !prefs.getBoolean("studio_glow", true)).commit());
+                assertEquals(-1, P7VisualCatalog.currentPreset(context));
+                P7VisualCatalog.persistPreset(context, index);
+
+                assertTrue(prefs.edit().putInt("card_radius",
+                    prefs.getInt("card_radius", 18) == 12 ? 26 : 12).commit());
+                assertEquals(-1, P7VisualCatalog.currentPreset(context));
+                P7VisualCatalog.persistPreset(context, index);
+
+                assertTrue(prefs.edit().putInt("layout_variant", 5).commit());
+                assertEquals(-1, P7VisualCatalog.currentPreset(context));
+                P7VisualCatalog.persistPreset(context, index);
+
+                assertTrue(prefs.edit().putBoolean("compact",
+                    !prefs.getBoolean("compact", false)).commit());
+                assertEquals(-1, P7VisualCatalog.currentPreset(context));
+            }
+        } finally {
+            restorePresetPreferences(prefs, before);
+        }
+    }
+
     @Test public void presetWritesOnlyAppearanceAndRejectsOutOfRangeChoices() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

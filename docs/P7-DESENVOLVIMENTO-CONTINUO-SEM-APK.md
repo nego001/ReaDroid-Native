@@ -721,3 +721,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressão:** um novo teste instrumentado verifica papéis acessíveis dos seis botões, avisos apenas para os três atalhos informativos, rótulos idênticos, 48dp e preservação dos handlers. Meta **110 testes por API** (109 + 1), Source, OTA e ambos os emuladores; aguardando CI própria.
 
 **Pendente:** revisão prática com TalkBack no Galaxy A55, PNGs oficiais e comparação visual 1:1. PR #13 draft, sem merge, atualização OTA, APK distribuído ou versionCode novo.
+
+### P7.6 — impedir seleção fantasma dos presets de aparência (22/10/2026)
+
+**Base validada:** commit `5eca6812`, [CI Android 39849851010](https://github.com/nego001/ReaDroid-Native/actions/runs/39849851010), **110/110 testes instrumentados aprovados em Android 10/API29 e Android 15/API35**, Source e OTA aprovados e 13 capturas por API. `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+**Defeito identificado:** `P7VisualCatalog.currentPreset` verificava somente superfície e cor, embora `applyPreset` grave também brilho neon, cantos, layout e compactação. Uma modificação posterior dessas propriedades podia deixar incorretamente um preset marcado como ativo. Os cinco perfis agora usam uma única tabela interna para escrita e leitura, e a seleção só fica ativa quando os seis atributos reais coincidem com a configuração aplicada. A marcação persistida não é removida só para mascarar o problema: deixa de ser mostrada se a aparência não confere. A gravação foi isolada em `persistPreset` para permitir testes transacionais sem reiniciar a Activity; `applyPreset` continua usando o fluxo existente com `Activity.recreate()`.
+
+**Regressões novas:** dois testes instrumentados percorrem os cinco perfis, confirmam estado real, rejeição de índice inválido e invalidam a seleção ao mudar separadamente tema, cor, brilho, raio, layout ou compactação; restauram todas as preferências alteradas. Meta **112 testes por API** (110 + 2) e CI Android, Source/OTA no novo SHA.
+
+**Fronteiras:** só consistência de apresentação; não modifica projeto APK, edit plan, chaves, assinatura, versionCode, branch main, OTA ou distribuição. Fidelidade 1:1 sem referências oficiais e homologação física no Galaxy A55 ainda pendentes.
