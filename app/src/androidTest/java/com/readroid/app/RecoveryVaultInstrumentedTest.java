@@ -140,6 +140,25 @@ public final class RecoveryVaultInstrumentedTest {
         }
     }
 
+    @Test public void malformedUnicodeDoesNotOverwriteEncryptedCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> previous = example();
+            f.vault.save(f.original, previous);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] immutable = Files.readAllBytes(checkpoint.toPath());
+            Map<String, String> invalid = example();
+            invalid.put("assets/config.json", "abc" + (char) 0xD83D);
+            try {
+                f.vault.save(f.original, invalid);
+                fail("Malformed UTF-16 must not replace valid ciphertext");
+            } catch (IllegalArgumentException expected) {
+                assertArrayEquals(immutable, Files.readAllBytes(checkpoint.toPath()));
+                assertEquals(previous, f.vault.loadForSource(f.original));
+            }
+        }
+    }
+
     @Test public void deletionRemovesCheckpointButNotOriginal() throws Exception {
         try (Fixture f = new Fixture()) {
             f.vault.save(f.original, example());

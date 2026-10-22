@@ -99,6 +99,45 @@ public final class EditPlanStateInstrumentedTest {
         }
     }
 
+    @Test public void supplementaryUnicodeFitsExactUtf8Boundary() {
+        EditPlan plan = new EditPlan();
+        String emoji = new String(Character.toChars(0x1F9EA));
+        StringBuilder content = new StringBuilder(65536);
+        for (int i = 0; i < 32768; i++) content.append(emoji);
+        String atLimit = content.toString();
+        assertEquals(131072, atLimit.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+        plan.addTextReplacement(PATH, atLimit);
+        assertEquals(atLimit, plan.get(PATH));
+        try {
+            plan.addTextReplacement(PATH, atLimit + "a");
+            fail("Extra UTF-8 byte should be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(atLimit, plan.get(PATH));
+        }
+    }
+
+    @Test public void orphanSurrogatesCannotCorruptExistingEdit() {
+        EditPlan plan = new EditPlan();
+        plan.addTextReplacement(PATH, "edição íntegra");
+        String high = "abc" + (char) 0xD83D;
+        String low = "abc" + (char) 0xDE00;
+        for (String invalid : new String[]{high, low}) {
+            try {
+                plan.addTextReplacement(PATH, invalid);
+                fail("Orphan surrogate must never be silently encoded as '?'");
+            } catch (IllegalArgumentException expected) {
+                assertEquals("edição íntegra", plan.get(PATH));
+            }
+            try {
+                plan.applyTextEdit("assets/new.txt", invalid, invalid);
+                fail("Unchanged malformed text must be rejected too");
+            } catch (IllegalArgumentException expected) {
+                assertFalse(plan.contains("assets/new.txt"));
+            }
+        }
+        assertEquals(1, plan.size());
+    }
+
     @Test public void invalidPathCannotEnterPlanEvenIfTextIsUnchanged() {
         EditPlan plan = new EditPlan();
         try {

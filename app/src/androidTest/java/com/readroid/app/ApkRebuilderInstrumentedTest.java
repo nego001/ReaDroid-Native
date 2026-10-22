@@ -215,6 +215,53 @@ public final class ApkRebuilderInstrumentedTest {
         }
     }
 
+    @Test public void directMapCannotBypassUtf8ByteLimit() throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] immutable = Files.readAllBytes(original.toPath());
+            assertTrue(output.delete());
+            char[] chars = new char[44000];
+            java.util.Arrays.fill(chars, '界'); // 132000 UTF-8 bytes
+            Map<String, String> raw = Collections.singletonMap(
+                "assets/config.json", new String(chars));
+            try {
+                ApkRebuilder.rebuild(original, output, raw);
+                fail("Direct rebuild must obey EditPlan's byte budget");
+            } catch (IOException expected) {
+                assertFalse("Must reject before creating output", output.exists());
+            }
+            assertArrayEquals(immutable, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void directMapRejectsOrphanSurrogatesBeforeOutput() throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] immutable = Files.readAllBytes(original.toPath());
+            assertTrue(output.delete());
+            String malformed = "abc" + (char) 0xD83D;
+            Map<String, String> raw = Collections.singletonMap(
+                "assets/config.json", malformed);
+            try {
+                ApkRebuilder.rebuild(original, output, raw);
+                fail("Direct rebuild must not replace malformed Unicode with '?'");
+            } catch (IOException expected) {
+                assertFalse("Must reject before creating output", output.exists());
+            }
+            assertArrayEquals(immutable, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
     @Test public void cannotOverwriteSourceApk() throws Exception {
         File original = file(".apk");
         try {

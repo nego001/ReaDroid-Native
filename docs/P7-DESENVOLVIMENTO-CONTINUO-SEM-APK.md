@@ -463,3 +463,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Critério de homologação:** executar Android 10/API29 e Android 15/API35 com **55/55 testes esperados por API** (43 atuais + 7 testes de EditPlan, sendo 2 novos + 5 de RecoveryVault), Source checks, OTA e inventários PNG. Não anunciar sucesso enquanto CI no novo SHA não terminar. Se Android Keystore do emulador impedir os testes, registrar exatamente o problema em vez de ocultar a falha.
 
 **Fronteiras:** PR #13 segue draft, `main` intacta. Sem APK de distribuição, OTA publicada, `versionCode`, alterações P8/IA social. PNGs oficiais para aceite visual 1:1 e teste físico Galaxy A55 permanecem pendentes.
+
+### P7.6 — validação de ponta a ponta das edições Unicode (21/10/2026)
+
+**Verificação da rodada anterior:** commit `b5e02322`; [P7 Android 10/15](https://github.com/nego001/ReaDroid-Native/actions/runs/39710946893) aprovado, 55 instrumentações concluídas por API, 13 capturas e `P7_EVIDENCE_PASS` por API. [Source checks](https://github.com/nego001/ReaDroid-Native/actions/runs/39710946961) e [OTA](https://github.com/nego001/ReaDroid-Native/actions/runs/39710946928) aprovados. `references=BLOCKED` significa que ainda não existem referências PNG oficiais suficientes para atestar 1:1.
+
+**Falha adicional encontrada:** `ApkRebuilder.rebuild` aceitava um `Map` diretamente e não repetia a validação UTF-8/caminho do `EditPlan`; um chamador poderia reconstruir um APK com texto acima de 128 KiB sem passar pelo plano. Além disso, `String.getBytes(UTF_8)` substitui unidades UTF-16 surrogate sem par por `?`, podendo corromper silenciosamente o texto editado.
+
+**Alterações propostas neste commit:** (1) `EditPlan` valida pares surrogate bem-formados e bytes UTF-8; (2) `ApkRebuilder` revalida o mapa integral antes de abrir o destino; (3) regressões verificam emoji de quatro bytes na borda exata, surrogates isolados, chamadas diretas ao reconstrutor e preservação do ciphertext anterior no `RecoveryVault`; (4) `ApkRebuilderInstrumentedTest` passa a integrar a matriz da P7, em ambas as APIs.
+
+**Critério de aceite para este SHA:** 66 instrumentações por API (55 anteriores + 2 EditPlan + 2 ApkRebuilder novas + 1 RecoveryVault nova + 7 ApkRebuilder anteriores), checks Source e OTA verdes. Resultado deve ser verificado após CI, não presumido. Sem edição do APK original, publicação de instalador, aumento de versão, merge na `main` ou antecipação da P8.

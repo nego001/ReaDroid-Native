@@ -14,6 +14,15 @@ public final class ApkRebuilder {
             throw new IOException("APK e alterações são obrigatórios");
         if (original.getCanonicalPath().equals(destination.getCanonicalPath()))
             throw new IOException("Destino não pode ser o APK original");
+        // Revalidate untrusted direct Map callers before opening any output
+        // file. Never let a raw map bypass EditPlan's UTF-8/path constraints.
+        try {
+            EditPlan verified = new EditPlan();
+            for (Map.Entry<String, String> change : edits.entrySet())
+                verified.addTextReplacement(change.getKey(), change.getValue());
+        } catch (IllegalArgumentException invalid) {
+            throw new IOException("Plano de edição inválido", invalid);
+        }
         Set<String> applied = new HashSet<>();
         byte[] buffer = new byte[65536];
         boolean success = false;
