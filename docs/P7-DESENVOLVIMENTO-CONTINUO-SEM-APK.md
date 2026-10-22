@@ -483,3 +483,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** preservar exportação anterior em erro de caminho ausente e arquivo ZIP malicioso; impedir mapa inconsistente de alterar bytes após validação; interrupção não sobrescrever exportação prévia. Nova contagem esperada: **69 instrumentações por API** (67 anteriores + 2 casos novos). As duas instrumentações anteriores de falha de ZIP foram adaptadas à garantia de preservação do destino.
 
 **Restrições:** a reconstrução continua experimental e não assinada. Sem APK instalável de QA/distribuição, release, alteração de `versionCode`, merge na `main` ou trabalho P8. Confirmar os checks Android 10/15, Source e OTA no novo SHA antes de homologar.
+
+### P7.6 — vida útil de buffers criptográficos e chave perdida (22/10/2026)
+
+**Base homologada antes desta rodada:** commit `27aa0b85`, [matriz Android 39713033350](https://github.com/nego001/ReaDroid-Native/actions/runs/39713033350), **69/69 instrumentações aprovadas em API29 e API35**, `P7_EVIDENCE_PASS` com 13 capturas por API, mas referências visuais oficiais `BLOCKED`. Checks Source e OTA aprovados no mesmo SHA.
+
+**Riscos encontrados:** (1) no `RecoveryVault.save`, o buffer UTF-8 de texto plano era apagado somente depois de criar o arquivo temporário; exceções anteriores (limite de bytes, Keystore, cifra, diretório) deixavam o buffer sem limpeza explícita; (2) `loadForSource` usava uma rotina que criava uma chave nova quando a anterior não existia, gerando estado Keystore enganoso sem capacidade de descriptografar backup anterior; (3) uma implementação enganosa de `Map.size()` poderia contornar o teto de 100 alterações e produzir checkpoint irrecuperável.
+
+**Correções:** estender `try/finally` para toda a criptografia de gravação, limpar os arrays de plaintext, ciphertext e envelope temporário ao final; zerar arrays temporários também nas falhas de descriptografia/autenticação na leitura; separar obtenção de chave para leitura (somente chave existente) e gravação (criação permitida); reforçar a contagem no plano efetivamente validado, não somente no `Map.size()`.
+
+**Regressões adicionadas:** leitura após perda da chave falha sem criar outra e sem tocar no ciphertext; falha por armazenamento apontando a arquivo comum preserva backup anterior; `Map` que relata tamanho incorreto não ultrapassa o limite de 100 alterações. Os testes observam integridade e falhas funcionais, **não** prometem inspecionar o heap nem garantir apagamento forense de `String`/JSON imutáveis da JVM.
+
+**Critério de homologação:** **72 instrumentações esperadas por API** (69 anteriores + 3 novas) e checks Source/OTA verdes no SHA final. Não declarar sucesso antes da CI. P7/PR #13 permanece rascunho, `main` intacta, sem publicação ou build QA instalável.

@@ -74,30 +74,42 @@ public final class RecoveryVault {
         if (changes == null || changes.isEmpty() || changes.size() > MAX_CHANGES)
             throw new IllegalArgumentException("O plano deve ter de 1 a 100 alterações");
         EditPlan plan = new EditPlan();
-        for (Map.Entry<String, String> entry : changes.entrySet())
+        for (Map.Entry<String, String> entry : changes.entrySet()) {
             plan.addTextReplacement(entry.getKey(), entry.getValue());
+            // Do not trust a custom Map's size(): count validated entries.
+            if (plan.size() > MAX_CHANGES)
+                throw new IllegalArgumentException("O plano deve ter de 1 a 100 alterações");
+        }
+        if (plan.size() == 0)
+            throw new IllegalArgumentException("O plano não contém alterações");
         JSONObject payload = plan.toJson();
         payload.put("sourceSha256", fingerprint);
         byte[] plaintext = payload.toString().getBytes(StandardCharsets.UTF_8);
-        if (plaintext.length > MAX_PLAINTEXT)
-            throw new IllegalArgumentException("Plano excede o limite de 512 KiB");
-        SecretKey key = obtainKey();
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key);
-        cipher.updateAAD(AAD);
-        byte[] iv = cipher.getIV();
-        if (iv == null || iv.length != 12)
-            throw new IOException("Vetor criptográfico inesperado");
-        byte[] encrypted = cipher.doFinal(plaintext);
-        ByteBuffer buffer = ByteBuffer.allocate(MAGIC.length + 1 + iv.length + encrypted.length);
-        buffer.put(MAGIC).put(VERSION).put(iv).put(encrypted);
-        if (!storage.isDirectory() && !storage.mkdirs())
-            throw new IOException("Não foi possível criar o diretório privado");
-        File temporary = File.createTempFile("checkpoint-", ".tmp", storage);
+        byte[] encrypted = null;
+        byte[] encoded = null;
+        File temporary = null;
         boolean committed = false;
+        // This finally must cover oversize, Keystore/crypto, folder creation
+        // and atomic-move errors, not only the final file write.
         try {
+            if (plaintext.length > MAX_PLAINTEXT)
+                throw new IllegalArgumentException("Plano excede o limite de 512 KiB");
+            SecretKey key = obtainKey(true);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, key);
+            cipher.updateAAD(AAD);
+            byte[] iv = cipher.getIV();
+            if (iv == null || iv.length != 12)
+                throw new IOException("Vetor criptográfico inesperado");
+            encrypted = cipher.doFinal(plaintext);
+            ByteBuffer buffer = ByteBuffer.allocate(MAGIC.length + 1 + iv.length + encrypted.length);
+            buffer.put(MAGIC).put(VERSION).put(iv).put(encrypted);
+            encoded = buffer.array();
+            if (!storage.isDirectory() && !storage.mkdirs())
+                throw new IOException("Não foi possível criar o diretório privado");
+            temporary = File.createTempFile("checkpoint-", ".tmp", storage);
             try (FileOutputStream out = new FileOutputStream(temporary)) {
-                out.write(buffer.array());
+                out.write(encoded);
                 out.getFD().sync();
             }
             try {
@@ -108,8 +120,10 @@ public final class RecoveryVault {
             }
             committed = true;
         } finally {
-            if (!committed) temporary.delete();
+            if (!committed && temporary != null) temporary.delete();
             Arrays.fill(plaintext, (byte) 0);
+            if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
+            if (encoded != null) Arrays.fill(encoded, (byte) 0);
         }
     }
 
@@ -121,20 +135,29 @@ public final class RecoveryVault {
             || file.length() > MAX_FILE)
             throw new IOException("Cópia de recuperação ausente ou inválida");
         byte[] encoded = Files.readAllBytes(file.toPath());
-        ByteBuffer input = ByteBuffer.wrap(encoded);
-        for (byte b : MAGIC) {
-            if (input.get() != b) throw new IOException("Formato de cópia incompatível");
-        }
-        if (input.get() != VERSION) throw new IOException("Versão de cópia incompatível");
-        byte[] iv = new byte[12];
-        input.get(iv);
-        byte[] ciphertext = new byte[input.remaining()];
-        input.get(ciphertext);
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, obtainKey(), new GCMParameterSpec(128, iv));
-        cipher.updateAAD(AAD);
-        byte[] plaintext = cipher.doFinal(ciphertext); // rejects tampering before JSON parsing
+        byte[] iv = null;
+        byte[] ciphertext = null;
+        byte[] plaintext = null;
         try {
+            // Recheck after reading in case the file changed since length().
+            if (encoded.length < MAGIC.length + 1 + 12 + 16
+                || encoded.length > MAX_FILE)
+                throw new IOException("Tamanho da cópia de recuperação inválido");
+            ByteBuffer input = ByteBuffer.wrap(encoded);
+            for (byte b : MAGIC) {
+                if (input.get() != b) throw new IOException("Formato de cópia incompatível");
+            }
+            if (input.get() != VERSION) throw new IOException("Versão de cópia incompatível");
+            iv = new byte[12];
+            input.get(iv);
+            ciphertext = new byte[input.remaining()];
+            input.get(ciphertext);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            // Reading a backup must never generate a replacement Keystore key.
+            // If the original key was lost, fail without rewriting its identity.
+            cipher.init(Cipher.DECRYPT_MODE, obtainKey(false), new GCMParameterSpec(128, iv));
+            cipher.updateAAD(AAD);
+            plaintext = cipher.doFinal(ciphertext); // authenticates before JSON parsing
             if (plaintext.length > MAX_PLAINTEXT)
                 throw new IOException("Cópia excede limite de segurança");
             JSONObject payload = new JSONObject(new String(plaintext, StandardCharsets.UTF_8));
@@ -162,11 +185,14 @@ public final class RecoveryVault {
             }
             return parsed.snapshot();
         } finally {
-            Arrays.fill(plaintext, (byte) 0);
+            if (plaintext != null) Arrays.fill(plaintext, (byte) 0);
+            if (ciphertext != null) Arrays.fill(ciphertext, (byte) 0);
+            if (iv != null) Arrays.fill(iv, (byte) 0);
+            Arrays.fill(encoded, (byte) 0);
         }
     }
 
-    private SecretKey obtainKey() throws Exception {
+    private SecretKey obtainKey(boolean createIfMissing) throws Exception {
         KeyStore store = KeyStore.getInstance("AndroidKeyStore");
         store.load(null);
         java.security.Key existing = store.getKey(alias, null);
@@ -175,6 +201,8 @@ public final class RecoveryVault {
                 throw new SecurityException("Identidade criptográfica incompatível");
             return (SecretKey) existing;
         }
+        if (!createIfMissing)
+            throw new SecurityException("Chave de recuperação indisponível no Android Keystore");
         KeyGenerator generator = KeyGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
         generator.init(new KeyGenParameterSpec.Builder(alias,

@@ -159,6 +159,74 @@ public final class RecoveryVaultInstrumentedTest {
         }
     }
 
+    @Test public void missingKeystoreKeyIsNotSilentlyRegeneratedOnLoad()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] saved = Files.readAllBytes(checkpoint.toPath());
+            KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            assertTrue(store.containsAlias(f.alias));
+            store.deleteEntry(f.alias);
+            assertFalse(store.containsAlias(f.alias));
+            try {
+                f.vault.loadForSource(f.original);
+                fail("A lost key must not be silently replaced during restore");
+            } catch (SecurityException expected) {
+                assertTrue(expected.getMessage().contains("Keystore"));
+            }
+            store.load(null);
+            assertFalse("Loading must not mint an unrecoverable replacement key",
+                store.containsAlias(f.alias));
+            assertArrayEquals(saved, Files.readAllBytes(checkpoint.toPath()));
+        }
+    }
+
+    @Test public void storageFailureDoesNotChangePreviousEncryptedCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] saved = Files.readAllBytes(checkpoint.toPath());
+            File blockedStorage = new File(f.folder, "not_a_directory");
+            Files.write(blockedStorage.toPath(), new byte[]{1, 2, 3});
+            RecoveryVault blockedVault = new RecoveryVault(blockedStorage, f.alias);
+            try {
+                blockedVault.save(f.original, example());
+                fail("A file cannot be used as a recovery directory");
+            } catch (java.io.IOException expected) {
+                assertTrue(blockedStorage.isFile());
+                assertArrayEquals(saved, Files.readAllBytes(checkpoint.toPath()));
+                assertEquals(example(), f.vault.loadForSource(f.original));
+            } finally {
+                Files.deleteIfExists(blockedStorage.toPath());
+            }
+        }
+    }
+
+    @Test public void lyingMapSizeCannotSaveAnUnrecoverableCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] saved = Files.readAllBytes(checkpoint.toPath());
+            Map<String, String> deceptive = new LinkedHashMap<String, String>() {
+                @Override public int size() { return 1; }
+            };
+            for (int i = 0; i < 101; i++) {
+                deceptive.put("assets/change_" + i + ".txt", "safe");
+            }
+            try {
+                f.vault.save(f.original, deceptive);
+                fail("A deceptive Map must not bypass the 100-change limit");
+            } catch (IllegalArgumentException expected) {
+                assertArrayEquals(saved, Files.readAllBytes(checkpoint.toPath()));
+                assertEquals(example(), f.vault.loadForSource(f.original));
+            }
+        }
+    }
+
     @Test public void deletionRemovesCheckpointButNotOriginal() throws Exception {
         try (Fixture f = new Fixture()) {
             f.vault.save(f.original, example());
