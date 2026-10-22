@@ -50,6 +50,9 @@ public final class RecoveryVault {
     // than 24 hours qualify for bounded, best-effort cleanup.
     private static final long STALE_STAGE_MILLIS = 24L * 60 * 60 * 1000;
     private static final int MAX_STAGE_SCAN = 256;
+    // All vault instances share one application process and Keystore identity.
+    // Serialize full save/load/clear transactions, not just their file moves.
+    private static final Object IN_PROCESS_LOCK = new Object();
     private static final byte[] AAD = "NegrescoDroid:recovery:v1"
         .getBytes(StandardCharsets.US_ASCII);
 
@@ -81,16 +84,27 @@ public final class RecoveryVault {
     }
 
     public boolean hasCheckpoint() {
-        return new File(storage, FILE_NAME).isFile();
+        synchronized (IN_PROCESS_LOCK) {
+            return new File(storage, FILE_NAME).isFile();
+        }
     }
 
     public void clear() throws IOException {
-        File backup = new File(storage, FILE_NAME);
-        if (backup.exists() && !backup.delete())
-            throw new IOException("Não foi possível remover a cópia de recuperação");
+        synchronized (IN_PROCESS_LOCK) {
+            File backup = new File(storage, FILE_NAME);
+            if (backup.exists() && !backup.delete())
+                throw new IOException("Não foi possível remover a cópia de recuperação");
+        }
     }
 
     public void save(File sourceApk, Map<String, String> changes) throws Exception {
+        synchronized (IN_PROCESS_LOCK) {
+            saveSerialized(sourceApk, changes);
+        }
+    }
+
+    private void saveSerialized(File sourceApk, Map<String, String> changes)
+            throws Exception {
         String fingerprint = sha256(sourceApk);
         if (changes == null || changes.isEmpty() || changes.size() > MAX_CHANGES)
             throw new IllegalArgumentException("O plano deve ter de 1 a 100 alterações");
@@ -158,6 +172,12 @@ public final class RecoveryVault {
 
     /** Pure read/verification: caller must get consent before modifying live EditPlan. */
     public Map<String, String> loadForSource(File sourceApk) throws Exception {
+        synchronized (IN_PROCESS_LOCK) {
+            return loadSerialized(sourceApk);
+        }
+    }
+
+    private Map<String, String> loadSerialized(File sourceApk) throws Exception {
         String fingerprint = sha256(sourceApk);
         File file = new File(storage, FILE_NAME);
         if (!file.isFile() || file.length() < 4 + 1 + 12 + 16

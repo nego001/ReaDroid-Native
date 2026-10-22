@@ -14,6 +14,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.FileTime;
 import java.security.KeyStore;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -471,6 +477,116 @@ public final class RecoveryVaultInstrumentedTest {
             } finally {
                 Files.deleteIfExists(stale.toPath());
             }
+        }
+    }
+
+    private static RecoveryVault pausedBeforeCommit(Fixture f,
+            CountDownLatch written, CountDownLatch release) {
+        return new RecoveryVault(f.folder, f.alias, staged -> {
+            assertTrue(staged.length() > 0);
+            written.countDown();
+            try {
+                if (!release.await(45, TimeUnit.SECONDS))
+                    throw new IOException("Timeout waiting for test to release commit");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new java.io.InterruptedIOException("Gravação interrompida no teste");
+            }
+        });
+    }
+
+    @Test public void deleteWaitsForInFlightSaveThenRemovesCheckpoint()
+            throws Exception {
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        CountDownLatch written = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            RecoveryVault paused = pausedBeforeCommit(f, written, release);
+            Map<String, String> updated = new LinkedHashMap<>();
+            updated.put("assets/novo.txt", "salvamento na fila");
+            Future<Void> first = workers.submit(() -> {
+                paused.save(f.original, updated);
+                return null;
+            });
+            try {
+                assertTrue("Saving must reach the pre-commit seam",
+                    written.await(45, TimeUnit.SECONDS));
+                CountDownLatch deleteStarted = new CountDownLatch(1);
+                Future<Void> deletion = workers.submit(() -> {
+                    deleteStarted.countDown();
+                    f.vault.clear();
+                    return null;
+                });
+                assertTrue(deleteStarted.await(15, TimeUnit.SECONDS));
+                try {
+                    deletion.get(250, TimeUnit.MILLISECONDS);
+                    fail("Deletion cannot pass an in-flight checkpoint save");
+                } catch (TimeoutException expected) {
+                    // The second RecoveryVault instance shares the transaction lock.
+                } finally {
+                    release.countDown();
+                }
+                first.get(60, TimeUnit.SECONDS);
+                deletion.get(60, TimeUnit.SECONDS);
+                assertFalse("A user-requested deletion must remain the final action",
+                    f.vault.hasCheckpoint());
+                assertNoStagedCheckpoint(f);
+            } finally {
+                release.countDown();
+                first.get(60, TimeUnit.SECONDS);
+            }
+        } finally {
+            release.countDown();
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(60, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test public void laterConcurrentSaveWinsWithoutLostUpdates()
+            throws Exception {
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        CountDownLatch written = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (Fixture f = new Fixture()) {
+            RecoveryVault paused = pausedBeforeCommit(f, written, release);
+            Map<String, String> firstPlan = new LinkedHashMap<>();
+            firstPlan.put("assets/first.txt", "primeiro");
+            Map<String, String> secondPlan = new LinkedHashMap<>();
+            secondPlan.put("assets/second.txt", "segundo");
+            Future<Void> first = workers.submit(() -> {
+                paused.save(f.original, firstPlan);
+                return null;
+            });
+            try {
+                assertTrue(written.await(45, TimeUnit.SECONDS));
+                CountDownLatch secondStarted = new CountDownLatch(1);
+                Future<Void> second = workers.submit(() -> {
+                    secondStarted.countDown();
+                    f.vault.save(f.original, secondPlan);
+                    return null;
+                });
+                assertTrue(secondStarted.await(15, TimeUnit.SECONDS));
+                try {
+                    second.get(250, TimeUnit.MILLISECONDS);
+                    fail("Later save must wait for the first commit");
+                } catch (TimeoutException expected) {
+                    // The later operation must not write during first staging.
+                } finally {
+                    release.countDown();
+                }
+                first.get(60, TimeUnit.SECONDS);
+                second.get(60, TimeUnit.SECONDS);
+                assertEquals(secondPlan, f.vault.loadForSource(f.original));
+                assertNoStagedCheckpoint(f);
+            } finally {
+                release.countDown();
+                first.get(60, TimeUnit.SECONDS);
+            }
+        } finally {
+            release.countDown();
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(60, TimeUnit.SECONDS));
         }
     }
 

@@ -543,3 +543,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** teste de temporário velho versus recente, arquivo não relacionado e diretório correspondente ao padrão, preservando bytes e legibilidade do checkpoint real; teste do próximo salvamento remover temporário antigo, preservar o APK fonte e recuperar o mesmo plano. Esperado **81 instrumentações por API** (79 anteriores + 2). Não afirmar deleção forense segura: arquivos temporários já estão criptografados e a exclusão remove o nome do arquivo, não assegura sobrescrita física.
 
 **Fronteiras:** somente P7, sem modificar formato AES-GCM v1/Keystore, `main`, PR draft, OTA publicada, APK instalável ou versão. PNGs oficiais/Galaxy A55 seguem pendentes.
+
+### P7.6 — serializar operações concorrentes do RecoveryVault (22/10/2026)
+
+**Base:** commit `f9123a70`, CI Android da limpeza conservadora de temporários em acompanhamento; no último check ainda não havia conclusão da matriz no SHA anterior. Source e OTA daquele SHA aprovados.
+
+**Risco identificado:** o `MainActivity` usa um executor único para ações de recuperação, mas outras instâncias de `RecoveryVault` no mesmo processo poderiam acessar simultaneamente o mesmo checkpoint. Mesmo com escrita atômica, `save` e `clear` intercalados poderiam reintroduzir uma cópia após sua exclusão, ou dois `save` poderiam terminar fora de ordem. Uma `loadForSource` durante gravação também precisava ler um estado integral consistente.
+
+**Correção:** adicionar `IN_PROCESS_LOCK` estático privado, abrangendo a transação completa de `save` (incluindo hash/validação, cifragem, staging e commit), `clear` e `loadForSource`, além da observação `hasCheckpoint`. Isso mantém a ordem de aquisição do lock entre diferentes instâncias dentro do processo Android, sem alterar formato, alias, armazenamento nem criptografia. **Não equivale a um lock entre processos Android independentes.**
+
+**Regressões:** dois testes concorrentes com `CountDownLatch` e hook package-private pré-commit, usando instâncias distintas para garantir que a exclusão aguarde a gravação pendente (e seja definitiva) e que um segundo salvamento aguarde o primeiro, sendo o plano mais recente recuperado corretamente. Os threads são finalizados e os temporários testados após ambas as operações.
+
+**Critério:** **83 testes instrumentados previstos por API** (81 + 2), CI Source/OTA e matriz Android 10/API29, Android 15/API35; 13 capturas por API como antes. Não declarar aprovação antes do fim da matriz no SHA atualizado. PR #13 rascunho; `main`, APK instalável, OTA publicada, `versionCode`, P8 e aceite visual 1:1 fora de escopo.
