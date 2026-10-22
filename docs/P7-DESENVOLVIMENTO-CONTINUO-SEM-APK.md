@@ -689,3 +689,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** dois testes instrumentados novos verificam cada layout 7–11 na Activity (persistência, sequência de rótulos, hierarquia, tamanhos e seis ações clicáveis) e que as cinco miniaturas são visualmente diferentes. O teste de catálogo passa a esperar doze nomes. **Meta total:** 106 instrumentações por API (104 existentes + 2), Source e OTA. Não considerar os 12 layouts validados até concluir essa CI.
 
 **Escopo restante:** o marco de quantidade de layouts passa a estar implementado, mas a P7.5 e a P7 como um todo ainda requerem acabamento, fidelidade visual 1:1 e homologação física no Galaxy A55. A compatibilidade de acessibilidade sob fontes ampliadas e os recursos avançados de APK continuam pendentes. Manter PR #13 em draft, sem merge, APK de distribuição, versionCode ou publicação OTA.
+
+### P7.6 — grade adaptativa em largura estreita e fonte ampliada (22/10/2026)
+
+**Base homologada para desenvolvimento:** commit `a9c0b277`, [CI Android 39832534518](https://github.com/nego001/ReaDroid-Native/actions/runs/39832534518), **106/106 testes aprovados em Android 10/API29 e Android 15/API35**, Source e OTA concluídos; 13 capturas por API. As evidências continuam `references=BLOCKED`, `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED`.
+
+**Problema corrigido:** layouts com três cartões por linha podiam ficar excessivamente estreitos em celulares compactos e em fontes ampliadas pelo Android e/ou pelo ajuste interno do app. A reorganização não deve ser confundida com nova escolha salva pelo usuário.
+
+**Implementação:** `P7VisualCatalog.quickActionRowsForViewport` calcula as fileiras efetivas pelo `screenWidthDp` e pelo produto dos tamanhos de fonte do Android e do app. Largura inferior a 360dp ou escala efetiva >=1,20 gera no máximo duas colunas; abaixo de 320dp ou escala >=1,55 gera apenas uma. Se a seleção escolhida já está dentro desse limite (por exemplo, Lista e Destaques), sua geometria é preservada; quando não está, os seis cartões passam a fileiras uniformes 3×2 ou 6×1. `P7ActionGrid` reutiliza a mesma composição de cartões, ícones e seis callbacks da `MainActivity` sem alterar `layout_variant`, preferências, status das operações não implementadas, APK fonte ou plano de edições.
+
+**Testes:** duas novas instrumentações verificam faixas 280–600dp, escalas normais/aumentadas, preservação da ordem e dos seis itens para todos os 12 layouts, além de uma grade Android real com rótulos acessíveis e callbacks acionáveis. Meta **108 testes por API** (106 + 2); executar Source, OTA e emuladores neste novo SHA. Essa validação não substitui testes de aparelho físico, TalkBack humano nem pixel diff com as duas artes oficiais ausentes.
+
+**Política:** PR #13 draft, `main` sem alterações, sem `versionCode` novo, APK de distribuição, release, OTA publicada ou merge.

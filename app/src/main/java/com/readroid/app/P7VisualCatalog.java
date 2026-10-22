@@ -47,6 +47,30 @@ public final class P7VisualCatalog {
         return rows;
     }
 
+    /**
+     * Reflow the six Home actions only when the available viewport or
+     * effective text scale cannot safely support the selected row width.
+     * Never change the saved layout preference, labels, handler order or
+     * count. Use 2 columns for narrow/large-text, 1 for very constrained.
+     */
+    static int[] quickActionRowsForViewport(int layout, int widthDp,
+            float systemFontScale, float appFontScale) {
+        int[] preferred = quickActionRowSizes(layout);
+        if (widthDp <= 0) return preferred;
+        float fontScale = Math.max(0.75f, systemFontScale)
+            * Math.max(0.85f, appFontScale);
+        int safeColumns = widthDp < 320 || fontScale >= 1.55f ? 1
+            : widthDp < 360 || fontScale >= 1.20f ? 2 : 3;
+        boolean needsReflow = false;
+        for (int size : preferred)
+            if (size > safeColumns) needsReflow = true;
+        if (!needsReflow) return preferred;
+        // Uniform rows avoid ragged 2+1 splits of formerly 3-column rows.
+        int[] rows = new int[6 / safeColumns];
+        for (int i = 0; i < rows.length; i++) rows[i] = safeColumns;
+        return rows;
+    }
+
     public static int currentLayout(Context c) {
         int value = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt("layout_variant", 0);

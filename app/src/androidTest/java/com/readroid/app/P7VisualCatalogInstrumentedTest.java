@@ -525,6 +525,90 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    @Test public void narrowAndLargeTextReflowNeverDropsAnyAction() {
+        assertArrayEquals(new int[]{3, 3},
+            P7VisualCatalog.quickActionRowsForViewport(0, 393, 1f, 1f));
+        assertArrayEquals(new int[]{2, 2, 2},
+            P7VisualCatalog.quickActionRowsForViewport(0, 340, 1f, 1f));
+        assertArrayEquals(new int[]{1, 1, 1, 1, 1, 1},
+            P7VisualCatalog.quickActionRowsForViewport(0, 319, 1f, 1f));
+        assertArrayEquals(new int[]{2, 2, 2},
+            P7VisualCatalog.quickActionRowsForViewport(0, 393, 1.25f, 1f));
+        assertArrayEquals(new int[]{1, 1, 1, 1, 1, 1},
+            P7VisualCatalog.quickActionRowsForViewport(0, 393, 1.25f, 1.3f));
+        assertArrayEquals(new int[]{1, 1, 1, 1, 1, 1},
+            P7VisualCatalog.quickActionRowsForViewport(3, 340, 1f, 1f));
+        assertArrayEquals(new int[]{1, 1, 2, 2},
+            P7VisualCatalog.quickActionRowsForViewport(5, 350, 1f, 1f));
+        for (int layout = 0; layout < P7VisualCatalog.LAYOUT_NAMES.length; layout++) {
+            for (int width : new int[]{280, 319, 320, 340, 393, 600}) {
+                int[] rows = P7VisualCatalog.quickActionRowsForViewport(
+                    layout, width, 1.4f, 1.2f);
+                int actions = 0;
+                for (int columns : rows) {
+                    assertTrue(columns >= 1 && columns <= 3);
+                    actions += columns;
+                }
+                assertEquals("Reflow cannot drop or duplicate actions", 6, actions);
+            }
+        }
+    }
+
+    @Test public void nativeAdaptiveGridKeepsAllLabelsAndClickHandlers() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                String[] labels = {"Abrir APK", "Analisar", "Build APK",
+                    "Decompilar", "Editar Smali", "Assinar APK"};
+                int[] icons = {
+                    R.drawable.ic_p7_folder, R.drawable.ic_p7_search,
+                    R.drawable.ic_p7_wrench, R.drawable.ic_p7_code,
+                    R.drawable.ic_p7_file, R.drawable.ic_p7_shield
+                };
+                int[] clicked = new int[6];
+                android.view.View.OnClickListener[] actions =
+                    new android.view.View.OnClickListener[6];
+                for (int i = 0; i < actions.length; i++) {
+                    final int index = i;
+                    actions[i] = view -> clicked[index]++;
+                }
+                LinearLayout grid = new LinearLayout(activity);
+                grid.setOrientation(LinearLayout.VERTICAL);
+                P7ActionGrid.populate(activity, grid, labels, icons, actions,
+                    6, 340, 1f, 1f);
+                assertEquals(3, grid.getChildCount());
+                int at = 0;
+                for (int rowIndex = 0; rowIndex < grid.getChildCount(); rowIndex++) {
+                    LinearLayout row = (LinearLayout) grid.getChildAt(rowIndex);
+                    assertEquals(2, row.getChildCount());
+                    for (int col = 0; col < row.getChildCount(); col++) {
+                        android.view.View tile = row.getChildAt(col);
+                        assertEquals(labels[at], tile.getContentDescription().toString());
+                        assertTrue(tile.isClickable());
+                        assertTrue(tile.isFocusable());
+                        assertTrue("Existing actions must keep their callbacks",
+                            tile.performClick());
+                        at++;
+                    }
+                }
+                assertEquals(6, at);
+                for (int count : clicked) assertEquals(1, count);
+
+                // With larger text the exact same actions must stack vertically.
+                P7ActionGrid.populate(activity, grid, labels, icons, actions,
+                    6, 393, 1.25f, 1.3f);
+                assertEquals(6, grid.getChildCount());
+                for (int row = 0; row < 6; row++) {
+                    LinearLayout cell = (LinearLayout) grid.getChildAt(row);
+                    assertEquals(1, cell.getChildCount());
+                    assertEquals(-1, cell.getChildAt(0).getLayoutParams().width);
+                    assertEquals(labels[row],
+                        cell.getChildAt(0).getContentDescription().toString());
+                }
+            });
+        }
+    }
+
     @Test public void compactAndModernLayoutsPersistSafely() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

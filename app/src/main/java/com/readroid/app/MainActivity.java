@@ -818,28 +818,15 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Ver segurança", (d, w) -> showSection(2))
                 .setNegativeButton("Fechar", null).show()
         };
-        final int[] actionRows =
-            P7VisualCatalog.quickActionRowSizes(NegrescoTheme.LAYOUT_VARIANT);
-        int nextAction = 0;
-        for (int actionColumns : actionRows) {
-            LinearLayout actionRow = new LinearLayout(this);
-            actionRow.setOrientation(LinearLayout.HORIZONTAL);
-            quickGrid.addView(actionRow);
-            for (int col = 0; col < actionColumns; col++) {
-                int index = nextAction++;
-                LinearLayout tile = StudioDashboard.referenceAction(this,
-                    actionNames[index], actionGlyphs[index], actionHandlers[index]);
-                LinearLayout.LayoutParams params = actionColumns == 1
-                    ? new LinearLayout.LayoutParams(-1, -2)
-                    : new LinearLayout.LayoutParams(0, -2, 1f);
-                params.setMargins(actionColumns == 1 || col == 0
-                        ? 0 : NegrescoTheme.dp(this, 3), 0,
-                    actionColumns == 1 || col == actionColumns - 1
-                        ? 0 : NegrescoTheme.dp(this, 3),
-                    NegrescoTheme.dp(this, actionColumns == 1 ? 5 : 7));
-                actionRow.addView(tile, params);
-            }
-        }
+        // At regular width preserve the selected layout exactly. For narrow
+        // screens or enlarged fonts only the geometry reflows, not the saved
+        // layout, APK workspace or six original click handlers.
+        P7ActionGrid.populate(this, quickGrid,
+            actionNames, actionGlyphs, actionHandlers,
+            NegrescoTheme.LAYOUT_VARIANT,
+            getResources().getConfiguration().screenWidthDp,
+            getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
 
         TextView detailsTitle = new TextView(this);
         detailsTitle.setText("RELATÓRIO TÉCNICO");
