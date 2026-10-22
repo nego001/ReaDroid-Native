@@ -10,7 +10,9 @@ import android.content.SharedPreferences;
 public final class P7VisualCatalog {
     private P7VisualCatalog() {}
     private static final String PREFS = "v3_personalizacao";
-    public static final String[] LAYOUT_NAMES = {"Padrão", "Compacto", "Moderno", "Lista", "Duas colunas"};
+    public static final String[] LAYOUT_NAMES = {
+        "Padrão", "Compacto", "Moderno", "Lista", "Duas colunas", "Destaques"
+    };
     public static final String[] PRESET_NAMES =
         {"Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro"};
 
@@ -19,6 +21,18 @@ public final class P7VisualCatalog {
         if (layout == 3) return 1;
         if (layout == 4) return 2;
         return 3;
+    }
+
+    /**
+     * Actual six-action Home geometry. Featured mode keeps the two primary
+     * workflows full width, then displays the remaining four in pairs.
+     */
+    static int[] quickActionRowSizes(int layout) {
+        if (layout == 5) return new int[]{1, 1, 2, 2};
+        int columns = quickActionColumns(layout);
+        int[] rows = new int[6 / columns];
+        for (int i = 0; i < rows.length; i++) rows[i] = columns;
+        return rows;
     }
 
     public static int currentLayout(Context c) {

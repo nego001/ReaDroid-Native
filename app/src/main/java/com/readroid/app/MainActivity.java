@@ -818,15 +818,15 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Ver segurança", (d, w) -> showSection(2))
                 .setNegativeButton("Fechar", null).show()
         };
-        final int actionColumns =
-            P7VisualCatalog.quickActionColumns(NegrescoTheme.LAYOUT_VARIANT);
-        for (int rowIndex = 0; rowIndex < actionNames.length / actionColumns;
-                rowIndex++) {
+        final int[] actionRows =
+            P7VisualCatalog.quickActionRowSizes(NegrescoTheme.LAYOUT_VARIANT);
+        int nextAction = 0;
+        for (int actionColumns : actionRows) {
             LinearLayout actionRow = new LinearLayout(this);
             actionRow.setOrientation(LinearLayout.HORIZONTAL);
             quickGrid.addView(actionRow);
             for (int col = 0; col < actionColumns; col++) {
-                int index = rowIndex * actionColumns + col;
+                int index = nextAction++;
                 LinearLayout tile = StudioDashboard.referenceAction(this,
                     actionNames[index], actionGlyphs[index], actionHandlers[index]);
                 LinearLayout.LayoutParams params = actionColumns == 1

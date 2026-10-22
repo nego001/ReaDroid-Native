@@ -651,3 +651,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões novas:** validação instrumental da hierarquia 3×2, clicabilidade/igual distribuição dos cartões, retorno a 2×3 após recriação e 7 fileiras de personalização; renderização vetorial não idêntica ao padrão/lista. Atualizar teste anterior de limite inválido de índice 4 para 5. **Meta: 100 instrumentações por API** (98 + 2), Source e OTA. Não declarar homologação antes dos resultados deste SHA.
 
 **Fronteiras:** cinco layouts realmente aplicáveis dos doze previstos, sem inventar funções avançadas de APK (decompilação Smali, assinatura instalável). A comparação 1:1 ainda depende dos PNGs oficiais, homologação física no Galaxy A55 pendente. PR #13 draft, main, versionCode, publicação OTA e APK de distribuição inalterados.
+
+### P7.5 — sexto layout com ações principais em Destaques (22/10/2026)
+
+**Base confirmada:** commit `7fa51f30`, [CI Android 39819956269](https://github.com/nego001/ReaDroid-Native/actions/runs/39819956269), Source e OTA aprovados, **100/100** instrumentações em Android 10/API29 e Android 15/API35, 13 capturas por API. `references=BLOCKED`, `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED` mantidos.
+
+**Nova função:** sexto layout `Destaques`, índice 5, preservando Padrão/Compacto/Moderno, Lista e Duas colunas. Os primeiros dois workflows já existentes ("Abrir APK" e "Analisar") ocupam uma linha inteira cada, com os demais quatro em dois pares. Geometria real `[1,1,2,2]` definida em `P7VisualCatalog.quickActionRowSizes` e utilizada por `MainActivity` sem alterar handlers nem criar falsas funções de engenharia reversa/assinatura. Preserva a camada de persistência/confirmação de aparência, edit plans e arquivos do usuário. Prévia vetorial retrata cartões primários largos e pares inferiores.
+
+**Regressões:** dois testes instrumentados novos verificam a geometria [1,1,2,2], a identidade das duas ações principais, preservação dos seis botões clicáveis, restauração para 2×3 após `Activity.recreate`, recusa de índice 6 e miniatura visual distinta da Lista e de Duas colunas. Atualizar teste legado de limite e contagem para seis opções. Meta **102 testes por API** (100 + 2), Source, OTA e capturas após CI do SHA de integração, sem declarar aprovação antes dos resultados.
+
+**Limites:** 6 layouts implementados de 12 previstos; 24 combinações de tema. Sem os dois PNGs originais não existe prova de paridade 1:1, e a homologação física Galaxy A55 continua pendente. PR #13 draft, `main` intocada, sem distribuição APK, `versionCode` alterado ou OTA publicada.
