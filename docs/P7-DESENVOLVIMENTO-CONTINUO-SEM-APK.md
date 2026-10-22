@@ -679,3 +679,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção:** nas três regressões que validam o índice fora do catálogo, obter o primeiro índice inválido dinamicamente de `P7VisualCatalog.LAYOUT_NAMES.length`, em vez de usar números literais que se tornam válidos com novas adições. Nenhum arquivo de produção nem APK é modificado. Meta da nova CI continua **104 testes por API**; aguardar confirmação de API29 e API35.
 
 **Estado:** PR #13 draft, sem merge ou geração/publicação de APK e sem alteração em main.
+
+### P7.5 — cinco layouts novos em lote, 12 opções no catálogo (22/10/2026)
+
+**Base:** após a inclusão do layout Fluxo (índice 6), a CI anterior `39830804728` identificou regressão em teste legado de limite inválido; o commit `eaa4d3ce` corrigiu as três asserções usando o tamanho real do catálogo. A validação de 104 testes por API dessa correção foi iniciada na [CI 39831779915](https://github.com/nego001/ReaDroid-Native/actions/runs/39831779915). Se ela ainda não tiver resultado final, não afirmar aprovação.
+
+**Implementação:** ampliar de 7 para **12 layouts funcionalmente selecionáveis**, preservando índices 0–6 e o armazenamento das preferências. Adições: `Exploração` [1,3,2], `Central` [2,1,3], `Panorama` [2,3,1], `Escalonado` [3,1,2] e `Escalonado inverso` [3,2,1]. São **cinco distribuições diferentes de seis ações já existentes**, não cinco novos motores de layout nem novas capacidades de decompilação/assinatura. Ordem de leitura, seis callbacks, rótulos acessíveis e original APK continuam intactos. As miniaturas usam o mesmo `quickActionRowSizes` da Activity em vez de imitar uma arte estática falsa.
+
+**Regressões:** dois testes instrumentados novos verificam cada layout 7–11 na Activity (persistência, sequência de rótulos, hierarquia, tamanhos e seis ações clicáveis) e que as cinco miniaturas são visualmente diferentes. O teste de catálogo passa a esperar doze nomes. **Meta total:** 106 instrumentações por API (104 existentes + 2), Source e OTA. Não considerar os 12 layouts validados até concluir essa CI.
+
+**Escopo restante:** o marco de quantidade de layouts passa a estar implementado, mas a P7.5 e a P7 como um todo ainda requerem acabamento, fidelidade visual 1:1 e homologação física no Galaxy A55. A compatibilidade de acessibilidade sob fontes ampliadas e os recursos avançados de APK continuam pendentes. Manter PR #13 em draft, sem merge, APK de distribuição, versionCode ou publicação OTA.

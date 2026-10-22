@@ -99,6 +99,29 @@ public final class P7ThemePreviewView extends View {
     }
 
     private void drawLayout(Canvas c) {
+        if (themeSurface >= 7 && themeSurface < P7VisualCatalog.LAYOUT_NAMES.length) {
+            // The same row geometry used by MainActivity drives the vector
+            // thumbnail. No fake static previews with identical appearance.
+            block(c, 0xff07101d, 8, 7, 92, 93, 9);
+            outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
+            block(c, accent, 19, 18, 67, 24, 2);
+            int[] rows = P7VisualCatalog.quickActionRowSizes(themeSurface);
+            float step = 60f / rows.length;
+            for (int rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+                int columns = rows[rowIndex];
+                float cardGap = 4f;
+                float width = (64f - cardGap * (columns - 1)) / columns;
+                float top = 30f + rowIndex * step;
+                float bottom = top + step - 4f;
+                for (int column = 0; column < columns; column++) {
+                    float left = 18f + column * (width + cardGap);
+                    block(c, 0xff20364d, left, top, left + width, bottom, 3);
+                    block(c, accent, left + 3, top + 4,
+                        left + Math.min(width - 3, 13), top + 6, 1);
+                }
+            }
+            return;
+        }
         if (themeSurface == 6) {
             block(c, 0xff07101d, 8, 7, 92, 93, 9);
             outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);

@@ -28,7 +28,7 @@ public final class P7VisualCatalogInstrumentedTest {
         boolean hadPreset = p.contains("p7_active_preset");
         int wasPreset = p.getInt("p7_active_preset", -1);
         try {
-            assertEquals(7, P7VisualCatalog.LAYOUT_NAMES.length);
+            assertEquals(12, P7VisualCatalog.LAYOUT_NAMES.length);
             P7VisualCatalog.persistLayout(context, 3);
             assertEquals(3, P7VisualCatalog.currentLayout(context));
             assertFalse(p.getBoolean("compact", true));
@@ -417,6 +417,111 @@ public final class P7VisualCatalogInstrumentedTest {
             workflow.recycle();
             featured.recycle();
             columns.recycle();
+        }
+    }
+
+    @Test public void fiveAdditionalLayoutsHaveUniqueFunctionalRowGeometry() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", Context.MODE_PRIVATE);
+        boolean hadLayout = prefs.contains("layout_variant");
+        int originalLayout = prefs.getInt("layout_variant", 0);
+        boolean hadCompact = prefs.contains("compact");
+        boolean originalCompact = prefs.getBoolean("compact", false);
+        boolean hadRadius = prefs.contains("card_radius");
+        int originalRadius = prefs.getInt("card_radius", 18);
+        boolean hadPreset = prefs.contains("p7_active_preset");
+        int originalPreset = prefs.getInt("p7_active_preset", -1);
+        int[][] expectedRows = {
+            {1, 3, 2}, {2, 1, 3}, {2, 3, 1}, {3, 1, 2}, {3, 2, 1}
+        };
+        try {
+            assertEquals(12, P7VisualCatalog.LAYOUT_NAMES.length);
+            P7VisualCatalog.persistLayout(context, 7);
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                for (int i = 0; i < expectedRows.length; i++) {
+                    final int index = 7 + i;
+                    final int[] expected = expectedRows[i];
+                    if (i > 0) {
+                        P7VisualCatalog.persistLayout(context, index);
+                        scenario.recreate();
+                    }
+                    assertArrayEquals(expected,
+                        P7VisualCatalog.quickActionRowSizes(index));
+                    assertEquals(index, P7VisualCatalog.currentLayout(context));
+                    scenario.onActivity(activity -> {
+                        assertEquals(index, NegrescoTheme.LAYOUT_VARIANT);
+                        LinearLayout actions = activity.getWindow().getDecorView()
+                            .findViewWithTag("p7-quick-actions-grid");
+                        assertNotNull(actions);
+                        assertEquals(expected.length, actions.getChildCount());
+                        String[] labels = {"Abrir APK", "Analisar", "Build APK",
+                            "Decompilar", "Editar Smali", "Assinar APK"};
+                        int at = 0;
+                        for (int rowIndex = 0; rowIndex < expected.length; rowIndex++) {
+                            LinearLayout row = (LinearLayout) actions.getChildAt(rowIndex);
+                            assertEquals(expected[rowIndex], row.getChildCount());
+                            for (int col = 0; col < row.getChildCount(); col++) {
+                                android.view.View action = row.getChildAt(col);
+                                assertTrue(action.isClickable());
+                                assertTrue(action.isFocusable());
+                                assertEquals(labels[at++],
+                                    action.getContentDescription().toString());
+                                LinearLayout.LayoutParams lp =
+                                    (LinearLayout.LayoutParams) action.getLayoutParams();
+                                if (expected[rowIndex] == 1) assertEquals(-1, lp.width);
+                                else {
+                                    assertEquals(0, lp.width);
+                                    assertEquals(1f, lp.weight, 0.001f);
+                                }
+                            }
+                        }
+                        assertEquals(6, at);
+                    });
+                }
+            }
+            try {
+                P7VisualCatalog.persistLayout(context,
+                    P7VisualCatalog.LAYOUT_NAMES.length);
+                fail("An out-of-range layout must be rejected");
+            } catch (IllegalArgumentException expected) {
+                assertEquals(11, P7VisualCatalog.currentLayout(context));
+            }
+        } finally {
+            SharedPreferences.Editor restore = prefs.edit();
+            if (hadLayout) restore.putInt("layout_variant", originalLayout);
+            else restore.remove("layout_variant");
+            if (hadCompact) restore.putBoolean("compact", originalCompact);
+            else restore.remove("compact");
+            if (hadRadius) restore.putInt("card_radius", originalRadius);
+            else restore.remove("card_radius");
+            if (hadPreset) restore.putInt("p7_active_preset", originalPreset);
+            else restore.remove("p7_active_preset");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
+    @Test public void fiveAdditionalPreviewsAreActuallyDistinct() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        Bitmap[] image = new Bitmap[5];
+        try {
+            for (int i = 0; i < image.length; i++) {
+                image[i] = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+                P7ThemePreviewView preview = new P7ThemePreviewView(
+                    context, 0xff25bdd6, 1, 7 + i, false);
+                preview.layout(0, 0, 100, 100);
+                preview.draw(new Canvas(image[i]));
+                for (int earlier = 0; earlier < i; earlier++) {
+                    assertFalse("Different grid structures must look different",
+                        image[i].sameAs(image[earlier]));
+                }
+            }
+        } finally {
+            for (Bitmap bitmap : image) if (bitmap != null) bitmap.recycle();
         }
     }
 
