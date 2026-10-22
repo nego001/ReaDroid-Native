@@ -591,3 +591,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** três instrumentações novas `P7LogoSvgInstrumentedTest` validam análise real do XML, elementos vetoriais, transparência/fundo OLED, Unicode, escaping, rejeição de surrogates inválidos e destino não SAF. `P7LogoWorkshopInstrumentedTest` confirma o novo botão sem alterar o PNG. Meta **89 testes por API** (86 anteriores + 3). Source e OTA também precisam passar no SHA de integração.
 
 **Limites da entrega:** SVG é marca personalizada, não a arte original 1:1 ainda sem os PNGs oficiais; não gera assinatura de APK nem aplica identidade silenciosamente. P7.5, P7.6 e P7.7 permanecem abertas. Sem APK automático, merge, `versionCode` ou OTA publicada.
+
+### P7.5 — Criador de Ícones com SVG vetorial editável (22/10/2026)
+
+**Base validada:** `4675638e`, [CI Android 39729341171](https://github.com/nego001/ReaDroid-Native/actions/runs/39729341171), **89/89** instrumentações aprovadas em API29 e API35; Source e OTA aprovados, 13 capturas por API e `references=BLOCKED`. Logo Studio PNG e SVG já funcionam, assim como o Criador de Ícones PNG.
+
+**Nova entrega:** botão separado `Exportar SVG` no Criador de Ícones, preservando `Exportar PNG`. O SVG 512×512 usa as mesmas cinco cores, três molduras e quatro símbolos vetoriais da ferramenta Canvas: escudo e check, código, pasta e estrela, com caminhos SVG editáveis. Sem recursos externos, scripts, textos fornecidos pelo usuário ou rede. Reutiliza `P7IconWorkshop.Spec` validado e `ACTION_CREATE_DOCUMENT` com `image/svg+xml`, arquivo `NegrecoDroid-icone.svg`. Estado de exportação é preservado pelo mesmo fluxo de Activity do PNG. O documento é gerado localmente, sem modificar APK original, plano de edição, ícone instalado ou identidade armazenada.
+
+**Testes:** nova `P7IconSvgInstrumentedTest` com três casos de XML parseável, quatro símbolos e caminhos reais, variação de geometria e cores, índices inválidos e URI não SAF. Teste UI existente confirma botão SVG funcional. Meta **92 instrumentações por API** (89 anteriores + 3), Source e OTA; não chamar o novo SHA aprovado antes da CI. O SVG não é uma prova de correspondência visual pixel-exata com o PNG e não substitui os PNGs oficiais de referência ausentes.
+
+**Fronteiras:** PR #13 draft, `main` intocada, sem `versionCode` novo, APK de distribuição, release ou publicação OTA. A ampliação dos catálogos de temas/layouts e a homologação visual/física ainda são pendências da P7.

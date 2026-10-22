@@ -41,6 +41,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_EXPORT_P7_ICON = 43;
     private static final int REQUEST_EXPORT_P7_LOGO = 44;
     private static final int REQUEST_EXPORT_P7_LOGO_SVG = 45;
+    private static final int REQUEST_EXPORT_P7_ICON_SVG = 46;
     private P7IconWorkshop.Spec pendingIconExport;
     private P7LogoWorkshop.Spec pendingLogoExport;
     private JSONObject report;
@@ -1427,6 +1428,17 @@ public class MainActivity extends Activity {
         startActivityForResult(create, REQUEST_EXPORT_P7_ICON);
     }
 
+    /** SVG icon uses the same consent-driven SAF flow as PNG export. */
+    public void startP7IconSvgExport(P7IconWorkshop.Spec icon) {
+        if (icon == null) throw new IllegalArgumentException("Ícone vazio");
+        pendingIconExport = icon;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/svg+xml");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-icone.svg");
+        startActivityForResult(create, REQUEST_EXPORT_P7_ICON_SVG);
+    }
+
     /** Logo export uses the same explicit SAF consent as the icon workshop. */
     public void startP7LogoExport(P7LogoWorkshop.Spec logo) {
         pendingLogoExport = logo;
@@ -1474,17 +1486,21 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        if (request == REQUEST_EXPORT_P7_ICON) {
+        if (request == REQUEST_EXPORT_P7_ICON ||
+                request == REQUEST_EXPORT_P7_ICON_SVG) {
             P7IconWorkshop.Spec requested = pendingIconExport;
             pendingIconExport = null;
             if (result != RESULT_OK || data == null ||
                     data.getData() == null || requested == null) return;
             try {
-                P7IconWorkshop.export(this, requested, data.getData());
+                boolean svg = request == REQUEST_EXPORT_P7_ICON_SVG;
+                if (svg) P7IconSvg.export(this, requested, data.getData());
+                else P7IconWorkshop.export(this, requested, data.getData());
                 new android.app.AlertDialog.Builder(this)
                     .setTitle("Ícone exportado")
-                    .setMessage("PNG 512×512 salvo no destino escolhido. " +
-                        "O APK e a identidade instalada não foram alterados.")
+                    .setMessage((svg ? "SVG vetorial editável" : "PNG 512×512") +
+                        " salvo no destino escolhido. O APK e a identidade instalada " +
+                        "não foram alterados.")
                     .setPositiveButton("OK", null).show();
             } catch (Exception error) {
                 new android.app.AlertDialog.Builder(this)

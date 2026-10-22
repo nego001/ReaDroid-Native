@@ -145,11 +145,22 @@ public final class P7IconWorkshop {
         exportParams.topMargin = dp(a, 8);
         exportParams.bottomMargin = dp(a, 4);
         root.addView(exportButton, exportParams);
+        Button exportSvg = new Button(a);
+        exportSvg.setText("Exportar SVG");
+        exportSvg.setContentDescription("Exportar SVG vetorial 512×512");
+        exportSvg.setAllCaps(false);
+        exportSvg.setTextColor(Color.WHITE);
+        exportSvg.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        LinearLayout.LayoutParams svgParams = new LinearLayout.LayoutParams(
+            -1, dp(a, 48));
+        svgParams.bottomMargin = dp(a, 4);
+        root.addView(exportSvg, svgParams);
         choices(a, root, "Cor", PALETTES, initial.color, color::accept);
         choices(a, root, "Símbolo", SYMBOLS, initial.symbol, symbol::accept);
         choices(a, root, "Formato", SHAPES, initial.shape, shape::accept);
         TextView note = heading(a,
-            "Exporta PNG 512×512. Não altera o ícone instalado nem arquivos do APK.");
+            "Exporta PNG ou SVG vetorial 512×512. Não altera o ícone instalado nem arquivos do APK.");
         note.setTextSize(10 * NegrescoTheme.FONT_SCALE);
         root.addView(note);
         android.app.AlertDialog workshopDialog = new android.app.AlertDialog.Builder(a)
@@ -162,6 +173,11 @@ public final class P7IconWorkshop {
             // the dialog does not modify any saved preference or user APK.
             workshopDialog.dismiss();
             a.startP7IconExport(new Spec(state[0], state[1], state[2]));
+        });
+        exportSvg.setOnClickListener(v -> {
+            P7IconWorkshop.Spec spec = new Spec(state[0], state[1], state[2]);
+            workshopDialog.dismiss();
+            a.startP7IconSvgExport(spec);
         });
         workshopDialog.show();
         return workshopDialog;

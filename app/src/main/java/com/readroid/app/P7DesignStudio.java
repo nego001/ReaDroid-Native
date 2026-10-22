@@ -574,7 +574,7 @@ public final class P7DesignStudio {
             iconTemplateGallery();
             actionCard("Abrir criador de ícones",
                 "Escolher cores, símbolos e formato; exportar PNG 512×512", -4);
-            note("Ícones originais gerados localmente. Nenhum APK é alterado.");
+            note("Ícones locais em PNG ou SVG vetorial editável. Nenhum APK é alterado.");
 
         }else{
             heading("Logo Studio");

@@ -128,6 +128,11 @@ public final class P7IconWorkshopInstrumentedTest {
                 assertEquals("Export PNG dimensions must be accessible",
                     "Exportar PNG 512×512",
                     exportAction.getContentDescription().toString());
+                View exportSvg = byText(dialogRoot, "Exportar SVG");
+                assertNotNull("SVG vector export needs a real action", exportSvg);
+                assertTrue(exportSvg.isClickable());
+                assertEquals("Exportar SVG vetorial 512×512",
+                    exportSvg.getContentDescription().toString());
                 dialog.dismiss();
             });
         }

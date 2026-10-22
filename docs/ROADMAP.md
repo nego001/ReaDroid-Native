@@ -10,7 +10,7 @@
 - **Última base verificada:** commit `b7555ec2`, [CI Android 10 e 15](https://github.com/nego001/ReaDroid-Native/actions/runs/39723396590), 85/85 testes instrumentados por API, 13 capturas por API; Source e OTA aprovados. `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`. Outros commits precisam de validação própria.
 - **P7.0:** ainda faltam no GitHub os dois PNGs completos da arte de referência aprovada e seus recortes/medidas para o viewport de comparação 1:1.
 - **P7.1–P7.4:** implementações funcionais iniciais; falta conferir correspondência visual final da Home, Explorador, identidade e Design Studio.
-- **P7.5:** Icon Creator e Logo Studio já funcionam para PNG. A extensão SVG vetorial do Logo Studio está em validação de CI; faltam catálogo de 24 temas/12 layouts e funcionalidades criativas adicionais, sem representar previews como editores completos.
+- **P7.5:** Icon Creator e Logo Studio funcionam para PNG, e o Logo Studio já teve SVG validado na CI. O Criador de Ícones ganhou SVG vetorial em revisão; faltam catálogo de 24 temas/12 layouts e funcionalidades criativas adicionais, sem representar previews como editores completos.
 - **P7.6:** concluir diff visual real, qualidade em telas estreitas/fonte ampliada, TalkBack, desempenho e regressões finais.
 - **P7.7:** testar no Samsung Galaxy A55 físico e obter aprovação do proprietário antes de integrar a PR.
 - **Além da P7:** engenharia reversa/decompilação DEX/Smali, edição visual avançada de recursos, zip alignment, assinatura local v2/v3 e verificação de instalabilidade, assistente inteligente planejado, QA end-to-end e política de lançamento estável. A ordem e escopo devem ser confirmados quando cada fase começar.
