@@ -701,3 +701,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Testes:** duas novas instrumentações verificam faixas 280–600dp, escalas normais/aumentadas, preservação da ordem e dos seis itens para todos os 12 layouts, além de uma grade Android real com rótulos acessíveis e callbacks acionáveis. Meta **108 testes por API** (106 + 2); executar Source, OTA e emuladores neste novo SHA. Essa validação não substitui testes de aparelho físico, TalkBack humano nem pixel diff com as duas artes oficiais ausentes.
 
 **Política:** PR #13 draft, `main` sem alterações, sem `versionCode` novo, APK de distribuição, release, OTA publicada ou merge.
+
+### P7.6 — altura adaptativa da barra inferior e alvos acessíveis (22/10/2026)
+
+**Base validada:** commit `6600aa52`, [CI Android 39834227017](https://github.com/nego001/ReaDroid-Native/actions/runs/39834227017), **108/108** testes instrumentados em API29 e API35, Source e OTA aprovados, 13 capturas por API. A prova de equivalência 1:1 continua `references=BLOCKED`, `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED`.
+
+**Defeito tratado:** os cinco botões da navegação inferior possuíam altura rígida de 64dp enquanto rótulos de até duas linhas crescem segundo a escala de fonte do Android combinada com `font_percent` interno. Em escalas grandes, o espaço físico podia ser insuficiente. A função pura `MainActivity.navTabHeightDp` mantém os 64dp de proporção original em escala normal e quando os rótulos estão desativados. Somente com rótulos e fonte acima de 115% efetivos calcula altura de até 120dp, estimando duas linhas, sem esconder conteúdo acessível, alterar nomes dos botões ou os alvos de foco por DPAD/teclado.
+
+**Regressões:** um teste instrumentado verifica altura padrão, opção sem rótulos, escala ampliada e limite superior; abre `MainActivity` com 135% de fonte interna e confere que os cinco botões reais seguem presentes, clicáveis, focáveis, anunciáveis e com altura efetivamente ampliada. Restaura preferências após o teste. Meta **109 testes por API** (108 + 1); Source, OTA e ambos os emuladores precisam aprovar o SHA desta mudança.
+
+**Fronteiras:** ajuste visual e de acessibilidade, sem interferir no APK, no plano de edição, em projetos, assinatura, `main`, versionCode ou OTA. Ainda necessário validar manualmente TalkBack e Galaxy A55, além de medir paridade contra os PNGs oficiais ainda ausentes.

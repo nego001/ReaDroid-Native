@@ -107,6 +107,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Room for two-line bottom-navigation labels when both Android text
+     * scaling and in-app font scaling are enabled. Keeps the approved 64dp
+     * proportions for normal fonts and for icon-only navigation.
+     */
+    static int navTabHeightDp(int widthDp, float systemScale, float appScale,
+            boolean labelsVisible) {
+        if (!labelsVisible) return 64;
+        float effective = Math.max(0.85f, systemScale) * Math.max(0.85f, appScale);
+        if (effective <= 1.15f) return 64;
+        int labelSp = widthDp < 360 ? 9 : 10;
+        int estimatedText = (int) Math.ceil(labelSp * effective * 2.7f);
+        // Selected marker, spacer and icon total 34dp. Allow a little
+        // breathing room around two lines of enlarged text.
+        return Math.max(64, Math.min(120, 34 + estimatedText + 8));
+    }
+
     @Override public void onCreate(Bundle state) {
         NegrescoTheme.apply(this);
         String activeTheme = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
@@ -222,12 +239,16 @@ public class MainActivity extends Activity {
         navigationIcons = new NavGlyph[tabs.length];
         navigationIndicators = new View[tabs.length];
         navigationContainers = new LinearLayout[tabs.length];
+        final int tabHeightDp = navTabHeightDp(
+            getResources().getConfiguration().screenWidthDp,
+            getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE, showNavLabels);
         for (int index = 0; index < tabs.length; index++) {
             final int target = index;
             LinearLayout tabContainer = new LinearLayout(this);
             tabContainer.setOrientation(LinearLayout.VERTICAL);
             tabContainer.setGravity(android.view.Gravity.CENTER);
-            tabContainer.setMinimumHeight(NegrescoTheme.dp(this, 56));
+            tabContainer.setMinimumHeight(NegrescoTheme.dp(this, tabHeightDp));
             tabContainer.setFocusable(true);
             tabContainer.setClickable(true);
             // Stable IDs allow real DPAD left/right navigation between tabs.
@@ -242,7 +263,7 @@ public class MainActivity extends Activity {
             });
             navigationContainers[index] = tabContainer;
             LinearLayout.LayoutParams navParams =
-                new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 64), 1f);
+                new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, tabHeightDp), 1f);
             navParams.setMargins(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
             nav.addView(tabContainer, navParams);
             // A narrow electric-blue dash above the active icon matches the
