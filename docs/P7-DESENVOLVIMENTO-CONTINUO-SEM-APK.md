@@ -567,3 +567,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** exclusão explícita limpa temporários recentes e antigos, mas conserva arquivos privados com outros nomes, diretórios e o APK fonte; novo salvamento/restauração continuam disponíveis. Com 257 candidatos, a operação deve falhar e preservar checkpoint e dados. **85 instrumentações previstas por API** (83 anteriores + 2), além dos checks Source e OTA; aguardar CI deste SHA antes de declarar aprovação.
 
 **Limite informado:** exclusão do nome do arquivo não é apagamento físico forense; o bloqueio é entre instâncias no mesmo processo, não processos Android separados. Sem APK, merge, lançamento OTA, alteração de versão ou escopo P8; PR #13 segue draft, PNGs oficiais/Galaxy A55 ainda pendentes.
+
+### P7.6 — pré-verificação da limpeza e interrupção antes da exclusão (22/10/2026)
+
+**Base verificada:** commit `b7555ec2`; [GitHub Actions 39723396590](https://github.com/nego001/ReaDroid-Native/actions/runs/39723396590) aprovado com **85/85** instrumentações Android 10/API29 e Android 15/API35, Source checks e OTA aprovados, 13 capturas por API. `references=BLOCKED` e `visual_1to1=NOT_APPROVED` permanecem.
+
+**Falha de consistência:** a exclusão explícita verificava o teto de 256 temporários durante a mesma varredura em que os apagava. Com 257 arquivos, o checkpoint era preservado e o erro informado, mas até 256 temporários já poderiam ter sido removidos, gerando efeito parcial antes da rejeição por excesso.
+
+**Correção:** primeira varredura limitada, apenas de contagem e verificação de interrupção, antes de apagar qualquer arquivo. Se houver mais de 256 nomes correspondentes, recusar sem alterar temporários e preservar checkpoint. Segunda varredura apaga apenas os arquivos regulares diretos, sem seguir symlinks. Continua possível falha parcial de limpeza por I/O ou processo externo, mas nunca informar êxito se ocorrer erro; não declarar atomicidade total do filesystem.
+
+**Regressões:** reforçar o caso de 257 arquivos para conferir que todos permanecem após a rejeição; novo teste impede exclusão se já existe interrupção de thread, preservando checkpoint cifrado e temporário. Meta da matriz: **86 testes por API** (85 + 1). Nenhuma alteração em formatos de backup ou chaves Keystore.
+
+**Próximo bloco prioritário após CI:** sair do endurecimento pontual e concluir entregas P7.5/P7.6/P7.7 (editores criativos, referências PNG, comparação visual, acessibilidade e homologação no Samsung). Rebuild assinável, engenharia reversa e funcionalidades avançadas seguem em etapas funcionais futuras. Manter PR #13 draft e não gerar novo APK ou merge sem aprovação.

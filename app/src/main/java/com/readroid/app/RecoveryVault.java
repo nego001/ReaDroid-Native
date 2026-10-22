@@ -259,12 +259,24 @@ public final class RecoveryVault {
     private static void clearEncryptedStages(File directory) throws IOException {
         if (!Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS))
             return;
+        // Preflight the number of matching names without modifying anything.
+        // Previously the 257th candidate was detected only after up to 256
+        // earlier stages had already been deleted.
         int inspected = 0;
         try (DirectoryStream<Path> entries =
                 Files.newDirectoryStream(directory.toPath(), "checkpoint-*.tmp")) {
-            for (Path candidate : entries) {
+            for (Path ignored : entries) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Exclusão da recuperação interrompida");
                 if (++inspected > MAX_STAGE_SCAN)
                     throw new IOException("Arquivos temporários demais para exclusão segura");
+            }
+        } catch (DirectoryIteratorException failed) {
+            throw new IOException("Não foi possível contar os arquivos temporários", failed);
+        }
+        try (DirectoryStream<Path> entries =
+                Files.newDirectoryStream(directory.toPath(), "checkpoint-*.tmp")) {
+            for (Path candidate : entries) {
                 if (Thread.currentThread().isInterrupted())
                     throw new InterruptedIOException("Exclusão da recuperação interrompida");
                 if (!Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS))

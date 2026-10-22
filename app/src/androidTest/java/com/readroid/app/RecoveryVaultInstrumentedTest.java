@@ -647,12 +647,45 @@ public final class RecoveryVaultInstrumentedTest {
                 }
                 assertArrayEquals("Checkpoint must remain until full clear is possible",
                     before, Files.readAllBytes(checkpoint.toPath()));
+                for (File stage : stages)
+                    assertTrue("Preflight must not delete any stage if limit exceeded",
+                        stage.isFile());
                 assertEquals(previous, f.vault.loadForSource(f.original));
             } finally {
                 for (File stage : stages) Files.deleteIfExists(stage.toPath());
             }
             f.vault.clear();
             assertFalse(f.vault.hasCheckpoint());
+        }
+    }
+
+    @Test public void interruptedExplicitClearPreservesCheckpointAndStages()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> existing = example();
+            f.vault.save(f.original, existing);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] preserved = Files.readAllBytes(checkpoint.toPath());
+            File stage = File.createTempFile("checkpoint-", ".tmp", f.folder);
+            try {
+                Files.write(stage.toPath(), new byte[]{1, 2, 3});
+                Thread.currentThread().interrupt();
+                try {
+                    f.vault.clear();
+                    fail("Interrupted clear must refuse to delete the checkpoint");
+                } catch (java.io.InterruptedIOException expected) {
+                    assertTrue(expected.getMessage().contains("interrompida"));
+                } finally {
+                    Thread.interrupted(); // Clear only the flag set by the test.
+                }
+                assertArrayEquals(preserved, Files.readAllBytes(checkpoint.toPath()));
+                assertTrue("Interrupted clear must not start deleting stages",
+                    stage.isFile());
+                assertEquals(existing, f.vault.loadForSource(f.original));
+            } finally {
+                Thread.interrupted();
+                Files.deleteIfExists(stage.toPath());
+            }
         }
     }
 

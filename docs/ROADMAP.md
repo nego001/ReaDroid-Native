@@ -1,3 +1,30 @@
+# NegrecoDroid — panorama vigente em 22/10/2026
+
+> **Fonte de acompanhamento atual:** [PR P7 #13](https://github.com/nego001/ReaDroid-Native/pull/13), [issue visual #11](https://github.com/nego001/ReaDroid-Native/issues/11), e [changelog contínuo sem APK](P7-DESENVOLVIMENTO-CONTINUO-SEM-APK.md).
+> O quadro antigo abaixo documenta o planejamento inicial; seus checkboxes e o antigo “build blocker” **não representam o estado atual**.
+
+## Onde estamos
+
+**P7.6 em desenvolvimento**, com P7.5 funcional e P7.7 visual/física ainda pendentes. Há base nativa para Home, Explorador com índice e filtros, navegação de cinco abas, Design Studio inicial, histórico local verdadeiro, edição textual suportada, exportação de ZIP APK **sem assinatura**, verificação SHA-256 e recuperação criptografada. Isso **não** é um editor/decompilador completo de APK nem versão final.
+
+- **Última base verificada:** commit `b7555ec2`, [CI Android 10 e 15](https://github.com/nego001/ReaDroid-Native/actions/runs/39723396590), 85/85 testes instrumentados por API, 13 capturas por API; Source e OTA aprovados. `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`. Outros commits precisam de validação própria.
+- **P7.0:** ainda faltam no GitHub os dois PNGs completos da arte de referência aprovada e seus recortes/medidas para o viewport de comparação 1:1.
+- **P7.1–P7.4:** implementações funcionais iniciais; falta conferir correspondência visual final da Home, Explorador, identidade e Design Studio.
+- **P7.5:** finalizar Icon Creator, Logo Studio, a galeria planejada de 24 temas e as alternativas planejadas de 12 layouts (sem representar previews como editores funcionais).
+- **P7.6:** concluir diff visual real, qualidade em telas estreitas/fonte ampliada, TalkBack, desempenho e regressões finais.
+- **P7.7:** testar no Samsung Galaxy A55 físico e obter aprovação do proprietário antes de integrar a PR.
+- **Além da P7:** engenharia reversa/decompilação DEX/Smali, edição visual avançada de recursos, zip alignment, assinatura local v2/v3 e verificação de instalabilidade, assistente inteligente planejado, QA end-to-end e política de lançamento estável. A ordem e escopo devem ser confirmados quando cada fase começar.
+
+## Critério para encerrar
+
+Terminar a **P7** exige equivalência visual medida contra PNGs oficiais, comportamento funcional e acessível, CI final verde e aprovação física. Terminar o **app completo** exige também o motor avançado de edição/rebuild/decompilação/assinatura e suas validações. Não há percentual nem data tecnicamente confiáveis enquanto esses escopos permanecerem abertos.
+
+**Política atual:** PR #13 rascunho, `main` inalterada, sem `versionCode` novo nem geração/publicação de APK automático em commits menores. OTA não está habilitada para distribuição.
+
+---
+
+## Histórico de planejamento inicial (não atualizado)
+
 # ReaDroid Native roadmap
 
 ## P0: Core APK inspection
