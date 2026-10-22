@@ -609,6 +609,69 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    @Test public void allQuickActionsExposeButtonRoleAndUnavailableOnesGiveHints() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                String[] names = {"Abrir APK", "Analisar", "Build APK",
+                    "Decompilar", "Editar Smali", "Assinar APK"};
+                int[] icons = {
+                    R.drawable.ic_p7_folder, R.drawable.ic_p7_search,
+                    R.drawable.ic_p7_wrench, R.drawable.ic_p7_code,
+                    R.drawable.ic_p7_file, R.drawable.ic_p7_shield
+                };
+                int[] count = new int[6];
+                android.view.View.OnClickListener[] handlers =
+                    new android.view.View.OnClickListener[6];
+                for (int i = 0; i < handlers.length; i++) {
+                    final int id = i;
+                    handlers[i] = v -> count[id]++;
+                }
+                LinearLayout grid = new LinearLayout(activity);
+                grid.setOrientation(LinearLayout.VERTICAL);
+                P7ActionGrid.populate(activity, grid, names, icons, handlers,
+                    5, 393, 1f, 1f);
+                int at = 0;
+                for (int rowId = 0; rowId < grid.getChildCount(); rowId++) {
+                    LinearLayout row = (LinearLayout) grid.getChildAt(rowId);
+                    for (int col = 0; col < row.getChildCount(); col++) {
+                        android.view.View tile = row.getChildAt(col);
+                        assertEquals(names[at], tile.getContentDescription());
+                        assertTrue(tile.isClickable());
+                        assertTrue(tile.isFocusable());
+                        assertTrue(tile.getMinimumHeight()
+                            >= NegrescoTheme.dp(activity, 48));
+                        android.view.View.AccessibilityDelegate delegate =
+                            tile.getAccessibilityDelegate();
+                        assertNotNull("Action must have button semantics", delegate);
+                        android.view.accessibility.AccessibilityNodeInfo node =
+                            android.view.accessibility.AccessibilityNodeInfo.obtain();
+                        try {
+                            delegate.onInitializeAccessibilityNodeInfo(tile, node);
+                            assertEquals(android.widget.Button.class.getName(),
+                                node.getClassName());
+                            if (at >= 3) {
+                                assertNotNull("Unsupported shortcut needs TalkBack hint",
+                                    node.getHintText());
+                                assertTrue(node.getHintText().toString().contains(
+                                    "ainda não disponível"));
+                            } else {
+                                assertTrue(node.getHintText() == null ||
+                                    node.getHintText().length() == 0);
+                            }
+                        } finally {
+                            node.recycle();
+                        }
+                        assertTrue(tile.performClick());
+                        at++;
+                    }
+                }
+                assertEquals(6, at);
+                for (int clicks : count) assertEquals(1, clicks);
+            });
+        }
+    }
+
     @Test public void compactAndModernLayoutsPersistSafely() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

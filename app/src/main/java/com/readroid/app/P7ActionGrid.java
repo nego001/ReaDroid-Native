@@ -2,6 +2,8 @@ package com.readroid.app;
 
 import android.app.Activity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.Button;
 import android.widget.LinearLayout;
 
 /** Reusable native six-action grid with viewport-safe rows and real callbacks. */
@@ -27,6 +29,20 @@ final class P7ActionGrid {
                 int index = next++;
                 LinearLayout tile = StudioDashboard.referenceAction(activity,
                     titles[index], glyphs[index], handlers[index]);
+                final boolean guidanceOnly = index >= 3;
+                // TalkBack must not imply Smali decompilation, Smali editing,
+                // or installable APK signing are operational yet. The exact
+                // visible label and original explanatory click remain intact.
+                tile.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+                    @Override public void onInitializeAccessibilityNodeInfo(
+                            View host, AccessibilityNodeInfo info) {
+                        super.onInitializeAccessibilityNodeInfo(host, info);
+                        info.setClassName(Button.class.getName());
+                        if (guidanceOnly)
+                            info.setHintText("Recurso ainda não disponível. "
+                                + "Toque para ver a explicação.");
+                    }
+                });
                 LinearLayout.LayoutParams params = columns == 1
                     ? new LinearLayout.LayoutParams(-1, -2)
                     : new LinearLayout.LayoutParams(0, -2, 1f);

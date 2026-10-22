@@ -711,3 +711,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** um teste instrumentado verifica altura padrão, opção sem rótulos, escala ampliada e limite superior; abre `MainActivity` com 135% de fonte interna e confere que os cinco botões reais seguem presentes, clicáveis, focáveis, anunciáveis e com altura efetivamente ampliada. Restaura preferências após o teste. Meta **109 testes por API** (108 + 1); Source, OTA e ambos os emuladores precisam aprovar o SHA desta mudança.
 
 **Fronteiras:** ajuste visual e de acessibilidade, sem interferir no APK, no plano de edição, em projetos, assinatura, `main`, versionCode ou OTA. Ainda necessário validar manualmente TalkBack e Galaxy A55, além de medir paridade contra os PNGs oficiais ainda ausentes.
+
+### P7.6 — acessibilidade sem prometer capacidades inexistentes (22/10/2026)
+
+**Base sob análise:** commit `d5a73be4`, [CI 39835841004](https://github.com/nego001/ReaDroid-Native/actions/runs/39835841004), 109/109 testes e 13 capturas aprovados em API29; API35 apresentou interrupção do teste `bottomNavigationScalesWithoutClippingOrChangingLabels` e desconexão do emulador após 19 testes. O relatório XML contém falha vazia, sem asserção diagnóstica, e a limpeza acusa dispositivo perdido. Source e OTA passaram. Foi solicitada nova execução do job com falha para verificar intermitência; não declarar Android 15 aprovado sem confirmação.
+
+**Aprimoramento:** os seis cartões de ação `P7ActionGrid` passam a expor semântica nativa `Button` no nó de acessibilidade, sem alterar rótulos visíveis, conteúdo de `contentDescription`, hierarquia do grid, callbacks ou ordem. Para os três atalhos que apenas abrem esclarecimentos, `Decompilar`, `Editar Smali` e `Assinar APK`, disponibilizar `AccessibilityNodeInfo.setHintText` informando que a funcionalidade ainda não está disponível. Não se declara que executarão decompilação/edição/assinatura. Os seis alvos preservam altura mínima de 48dp e foco/click. Nenhum recurso do APK fonte, arquivos, planos de edição ou segurança é alterado.
+
+**Regressão:** um novo teste instrumentado verifica papéis acessíveis dos seis botões, avisos apenas para os três atalhos informativos, rótulos idênticos, 48dp e preservação dos handlers. Meta **110 testes por API** (109 + 1), Source, OTA e ambos os emuladores; aguardando CI própria.
+
+**Pendente:** revisão prática com TalkBack no Galaxy A55, PNGs oficiais e comparação visual 1:1. PR #13 draft, sem merge, atualização OTA, APK distribuído ou versionCode novo.
