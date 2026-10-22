@@ -863,6 +863,47 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    @Test public void thirteenPersonalizationCardsExposeButtonSemanticsForTalkBack() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                LinearLayout settings = activity.getWindow().getDecorView()
+                    .findViewWithTag("p7-personalization-options");
+                assertNotNull(settings);
+                int checked = 0;
+                for (int rowIndex = 0; rowIndex < settings.getChildCount(); rowIndex++) {
+                    LinearLayout row = (LinearLayout) settings.getChildAt(rowIndex);
+                    for (int column = 0; column < row.getChildCount(); column++) {
+                        android.view.View option = row.getChildAt(column);
+                        assertTrue(option.isClickable());
+                        assertTrue(option.isFocusable());
+                        assertTrue(option.getMinimumHeight()
+                            >= NegrescoTheme.dp(activity, 48));
+                        assertNotNull(option.getContentDescription());
+                        assertTrue("Each option must announce its name and purpose",
+                            option.getContentDescription().toString().contains(". "));
+                        android.view.View.AccessibilityDelegate delegate =
+                            option.getAccessibilityDelegate();
+                        assertNotNull("Personalization card needs a button role", delegate);
+                        android.view.accessibility.AccessibilityNodeInfo node =
+                            android.view.accessibility.AccessibilityNodeInfo.obtain();
+                        try {
+                            delegate.onInitializeAccessibilityNodeInfo(option, node);
+                            assertEquals(android.widget.Button.class.getName(),
+                                node.getClassName());
+                            assertTrue(node.isClickable());
+                        } finally {
+                            node.recycle();
+                        }
+                        checked++;
+                    }
+                }
+                assertEquals("All thirteen original controls remain accessible",
+                    13, checked);
+            });
+        }
+    }
+
     @Test public void presetWritesOnlyAppearanceAndRejectsOutOfRangeChoices() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

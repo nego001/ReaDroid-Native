@@ -10,6 +10,7 @@ import android.text.style.RelativeSizeSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ImageView;
@@ -143,6 +144,15 @@ public final class StudioDashboard {
         wrapper.setFocusable(true);
         wrapper.setContentDescription(action.getText().toString() + ". " + detail);
         wrapper.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        // A clickable LinearLayout must be announced as a button, not as an
+        // unlabeled generic group. Decorative glyphs stay outside TalkBack.
+        wrapper.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo node) {
+                super.onInitializeAccessibilityNodeInfo(host, node);
+                node.setClassName(Button.class.getName());
+            }
+        });
         header.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         name.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         description.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);

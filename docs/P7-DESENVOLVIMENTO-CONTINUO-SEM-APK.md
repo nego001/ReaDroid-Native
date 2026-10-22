@@ -741,3 +741,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Validação nova:** teste de política verifica layouts 0 a 11 e faixas de largura/escala; teste instrumentado abre `MainActivity` com fonte interna a 135% e confirma 13 controles presentes, focáveis, clicáveis, com descrição para TalkBack e largura total, além da preferência original preservada/restaurada. Meta **114 testes por API** (112 + 2); exigir Source, OTA, Android 10/API29 e Android 15/API35 no SHA desta alteração.
 
 **Fronteiras:** P7.6 ainda demanda inspeção manual TalkBack, desempenho, comparação pixel-a-pixel com PNGs oficiais e validação física Galaxy A55. PR #13 draft, sem merge, publicação OTA, artefato APK distribuído nem mudança de versionCode.
+
+### P7.6 — função dos 13 cartões anunciada corretamente no TalkBack (22/10/2026)
+
+**Base anterior:** commit `7dfb1f44`, [CI Android 39863163204](https://github.com/nego001/ReaDroid-Native/actions/runs/39863163204). Source e OTA aprovados; API29 concluiu **114/114** instrumentações e 13 capturas. API35 ainda não tinha conclusão no momento da preparação desta alteração. Não declarar aprovação de ambas as APIs antecipadamente.
+
+**Melhoria:** `StudioDashboard.option` já preservava foco, acionamento, nome, finalidade e a delegação do evento para o `Button` real, mas o wrapper `LinearLayout` podia ser anunciado como um grupo genérico pelo leitor de tela. Adicionada semântica `android.widget.Button` apenas ao nó de acessibilidade de cada cartão, mantendo o elemento visível, os 13 callbacks e a hierarquia de layouts responsivos inalterados. Ícones decorativos e texto redundante continuam excluídos do anúncio duplicado.
+
+**Teste novo:** `thirteenPersonalizationCardsExposeButtonSemanticsForTalkBack` percorre a árvore Android real e comprova que todos os 13 cartões continuam clicáveis, focáveis, com alvo de no mínimo 48dp, rótulo descritivo e papel `Button`. Meta: **115 testes por API** no novo SHA, além de Source/OTA. Teste automatizado de nó de acessibilidade **não equivale** à homologação manual com TalkBack no Galaxy A55.
+
+**Segurança de escopo:** PR #13 draft, sem merge na main, assinatura, alteração de APK do usuário, `versionCode`, geração de APK de distribuição nem publicação OTA. As artes oficiais para a comparação visual 1:1 seguem ausentes.

@@ -11,7 +11,7 @@
 - **P7.0:** ainda faltam no GitHub os dois PNGs completos da arte de referência aprovada e seus recortes/medidas para o viewport de comparação 1:1.
 - **P7.1–P7.4:** implementações funcionais iniciais; falta conferir correspondência visual final da Home, Explorador, identidade e Design Studio.
 - **P7.5:** Criador de Ícones e Logo Studio exportam PNG e SVG; 24 combinações de temas e 12 opções de layout implementadas, testadas em API29/API35 na base `a9c0b277`. O catálogo atingiu a meta de quantidade; não corresponde a 12 sistemas visuais inteiramente distintos. Ainda faltam referências PNG e avaliação 1:1.
-- **P7.6:** grade responsiva, papéis/avisos acessíveis da Home e consistência dos cinco presets validados. Responsividade dos 13 controles de personalização em teste Android; restam avaliação visual 1:1, revisão manual com TalkBack, desempenho e regressões finais.
+- **P7.6:** grade responsiva da Home e consistência dos presets validadas. Reflow dos 13 cartões de personalização testado na API29, aguardando API35; papéis semânticos desses controles em nova CI. Restam avaliação 1:1, TalkBack manual, desempenho e regressões finais.
 - **P7.7:** testar no Samsung Galaxy A55 físico e obter aprovação do proprietário antes de integrar a PR.
 - **Além da P7:** engenharia reversa/decompilação DEX/Smali, edição visual avançada de recursos, zip alignment, assinatura local v2/v3 e verificação de instalabilidade, assistente inteligente planejado, QA end-to-end e política de lançamento estável. A ordem e escopo devem ser confirmados quando cada fase começar.
 
