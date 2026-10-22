@@ -23,21 +23,19 @@ public final class P7DesignStudio {
     private final Button[] actions;
     private int activeTab = 0;
     private int selectedTheme = 0;
-    private static final String[] THEME_NAMES =
-        {"Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset"};
     private void restoreCurrentTheme() {
-        android.content.SharedPreferences prefs =
-            a.getSharedPreferences("v3_personalizacao", Activity.MODE_PRIVATE);
-        String theme = prefs.getString("theme", "oled");
-        String accent = prefs.getString("accent", "blue");
-        if ("graphite".equals(theme)) selectedTheme = 1;
-        else if ("green".equals(accent)) selectedTheme = 2;
-        else if ("orange".equals(accent)) selectedTheme = 3;
-        else selectedTheme = 0;
+        selectedTheme = P7ThemeCatalog.currentTheme(a);
     }
     private void applySelectedTheme() {
+        if (selectedTheme < 0 || selectedTheme >= P7ThemeCatalog.count()) {
+            new android.app.AlertDialog.Builder(a)
+                .setTitle("Selecione um tema")
+                .setMessage("Escolha uma opção do catálogo antes de aplicar.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
         new android.app.AlertDialog.Builder(a)
-            .setTitle("Aplicar " + THEME_NAMES[selectedTheme] + "?")
+            .setTitle("Aplicar " + P7ThemeCatalog.nameAt(selectedTheme) + "?")
             .setMessage("O tema será salvo e a interface reiniciada. "
                 + "O APK e o plano de edições serão preservados.")
             .setPositiveButton("Aplicar", (dialog, which) -> {
@@ -181,7 +179,7 @@ public final class P7DesignStudio {
 
     /** All preview families have a real chooser and explicit apply confirmation. */
     private void showCatalogDialog(int type) {
-        final String[] names = type == 0 ? THEME_NAMES :
+        final String[] names = type == 0 ? P7ThemeCatalog.names() :
             type == 1 ? P7VisualCatalog.LAYOUT_NAMES : P7VisualCatalog.PRESET_NAMES;
         int selected = type == 0 ? selectedTheme :
             type == 1 ? selectedLayout : selectedPreset;
@@ -205,6 +203,11 @@ public final class P7DesignStudio {
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
+        tile(name, subtitle, accent, selected, kind, 0, click);
+    }
+
+    private void tile(String name, String subtitle, int accent, boolean selected,
+                      int kind, int themeSurface, Runnable click) {
         final int width = kind == 2 ? 71 : (kind == 1 ? 100 : 100);
         // Preserve 48dp controls while keeping the three catalog families
         // visible above the fold at the canonical emulator viewport.
@@ -216,7 +219,8 @@ public final class P7DesignStudio {
 
         FrameLayout previewFrame = new FrameLayout(a);
         card.addView(previewFrame, new LinearLayout.LayoutParams(-1, dp(previewHeight)));
-        P7ThemePreviewView miniature = new P7ThemePreviewView(a, accent, kind);
+        P7ThemePreviewView miniature =
+            new P7ThemePreviewView(a, accent, kind, themeSurface);
         previewFrame.addView(miniature,
             new FrameLayout.LayoutParams(-1, -1));
         if (selected) {
@@ -512,13 +516,11 @@ public final class P7DesignStudio {
         if(activeTab==0){
             sectionHeader("Previews de Temas", () -> showCatalogDialog(0));
             startCards();
-            String[] themes={"Negreco Blue","Carbon Dark","Matrix Green","Sunset"};
-            String[] subtitles={"Profissional","Minimalista","Hacker Style","Vibrante"};
-            int[] colors={0xff29acff,0xffa8b3c0,0xff16d995,0xffff7080};
-            for(int i=0;i<themes.length;i++){
+            for(int i=0;i<P7ThemeCatalog.count();i++){
                 final int index=i;
-                tile(themes[i],subtitles[i],colors[i],selectedTheme==i,
-                    0, () -> {
+                tile(P7ThemeCatalog.nameAt(i), P7ThemeCatalog.subtitleAt(i),
+                    P7ThemeCatalog.previewAccentAt(i), selectedTheme==i,
+                    0, P7ThemeCatalog.surfaceAt(i), () -> {
                         selectedTheme = index;
                         render();
                         applySelectedTheme();

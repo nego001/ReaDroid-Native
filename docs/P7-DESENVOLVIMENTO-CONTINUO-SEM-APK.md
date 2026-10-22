@@ -601,3 +601,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Testes:** nova `P7IconSvgInstrumentedTest` com três casos de XML parseável, quatro símbolos e caminhos reais, variação de geometria e cores, índices inválidos e URI não SAF. Teste UI existente confirma botão SVG funcional. Meta **92 instrumentações por API** (89 anteriores + 3), Source e OTA; não chamar o novo SHA aprovado antes da CI. O SVG não é uma prova de correspondência visual pixel-exata com o PNG e não substitui os PNGs oficiais de referência ausentes.
 
 **Fronteiras:** PR #13 draft, `main` intocada, sem `versionCode` novo, APK de distribuição, release ou publicação OTA. A ampliação dos catálogos de temas/layouts e a homologação visual/física ainda são pendências da P7.
+
+### P7.5 — doze temas de aparência realmente aplicáveis (22/10/2026)
+
+**Base verificada:** commit `e0912301`, [CI Android 39789227114](https://github.com/nego001/ReaDroid-Native/actions/runs/39789227114), **92/92** testes em API29 e API35, Source e OTA aprovados; 13 capturas em cada API, `references=BLOCKED`.
+
+**Entrega:** ampliar a galeria nativa de **4 para 12 combinações efetivas** (superfícies OLED, grafite e clara × quatro cores de destaque suportadas pelo motor V3), mantendo os índices 0–3 legados. `P7ThemeCatalog` centraliza metadados, preview, nomes e persistência; a seleção do Design Studio é recalculada pelo par real `theme/accent`, sem rotular configurações personalizadas como catálogo. A aplicação ainda solicita confirmação e recria a Activity pela rotina estabelecida, mantendo as demais preferências e o plano de edições fora desta gravação.
+
+**Visual:** `P7ThemePreviewView` agora desenha as cores reais da superfície OLED, grafite e clara, em vez de representar opções claras como um telefone escuro. O componente preserva os modos anteriores de layout e preset.
+
+**Testes:** três novos testes instrumentados cobrem a ida e volta de 12 combinações únicas sem interferir no preset ativo indevidamente, rejeição de configurações customizadas e índice fora do catálogo, e amostragem real dos pixels dos três fundos. Meta **95 testes por API** (92 + 3), Source/OTA e capturas de UI. Não declarar aprovado antes da matriz no novo SHA.
+
+**Pendências:** 12 temas efetivos ainda não são os 24 do objetivo visual; 12 layouts completos continuam planejados (existem 3), além de incorporação dos PNGs oficiais, inspeção 1:1 e homologação no Galaxy A55. Sem APK de distribuição, merge, OTA ou mudança de `versionCode`.
