@@ -473,3 +473,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Alterações propostas neste commit:** (1) `EditPlan` valida pares surrogate bem-formados e bytes UTF-8; (2) `ApkRebuilder` revalida o mapa integral antes de abrir o destino; (3) regressões verificam emoji de quatro bytes na borda exata, surrogates isolados, chamadas diretas ao reconstrutor e preservação do ciphertext anterior no `RecoveryVault`; (4) `ApkRebuilderInstrumentedTest` passa a integrar a matriz da P7, em ambas as APIs.
 
 **Critério de aceite para este SHA:** 67 instrumentações por API (55 anteriores + 2 EditPlan + 2 ApkRebuilder novas + 1 RecoveryVault nova + 7 ApkRebuilder anteriores), checks Source e OTA verdes. Resultado deve ser verificado após CI, não presumido. Sem edição do APK original, publicação de instalador, aumento de versão, merge na `main` ou antecipação da P8.
+
+### P7.6 — reconstrução atômica e snapshot imutável do plano (21/10/2026)
+
+**Origem auditada:** o reconstrutor escrevia diretamente sobre o destino; ao falhar, apagava esse destino mesmo quando uma exportação anterior já existia. A validação de `Map` recém-adicionada também não garantia que o mesmo conteúdo validado seria o conteúdo escrito se o chamador entregasse um mapa mutável ou inconsistente.
+
+**Correção:** construir ZIP em arquivo temporário na pasta do destino e substituir o resultado somente depois de fechar o ZIP, com `Files.move(ATOMIC_MOVE, REPLACE_EXISTING)`. Sem suporte a troca atômica, retornar falha e preservar o arquivo anterior. Criar snapshot validado do `EditPlan` e usá-lo durante toda a escrita. Respeitar interrupções entre entradas, durante leituras longas e antes do commit. Em qualquer erro, apagar somente o temporário, nunca o destino nem a origem.
+
+**Regressões:** preservar exportação anterior em erro de caminho ausente e arquivo ZIP malicioso; impedir mapa inconsistente de alterar bytes após validação; interrupção não sobrescrever exportação prévia. Nova contagem esperada: **69 instrumentações por API** (67 anteriores + 2 casos novos). As duas instrumentações anteriores de falha de ZIP foram adaptadas à garantia de preservação do destino.
+
+**Restrições:** a reconstrução continua experimental e não assinada. Sem APK instalável de QA/distribuição, release, alteração de `versionCode`, merge na `main` ou trabalho P8. Confirmar os checks Android 10/15, Source e OTA no novo SHA antes de homologar.
