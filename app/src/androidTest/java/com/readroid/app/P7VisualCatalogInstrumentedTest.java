@@ -67,7 +67,8 @@ public final class P7VisualCatalogInstrumentedTest {
                 });
             }
             try {
-                P7VisualCatalog.persistLayout(context, 6);
+                P7VisualCatalog.persistLayout(context,
+                    P7VisualCatalog.LAYOUT_NAMES.length);
                 fail("Invalid layout was applied");
             } catch (IllegalArgumentException expected) {
                 assertEquals(0, P7VisualCatalog.currentLayout(context));
@@ -255,7 +256,8 @@ public final class P7VisualCatalogInstrumentedTest {
                 });
             }
             try {
-                P7VisualCatalog.persistLayout(context, 7);
+                P7VisualCatalog.persistLayout(context,
+                    P7VisualCatalog.LAYOUT_NAMES.length);
                 fail("Invalid layout index beyond catalogue should be rejected");
             } catch (IllegalArgumentException expected) {
                 assertEquals(0, P7VisualCatalog.currentLayout(context));
@@ -369,7 +371,8 @@ public final class P7VisualCatalogInstrumentedTest {
                 });
             }
             try {
-                P7VisualCatalog.persistLayout(context, 7);
+                P7VisualCatalog.persistLayout(context,
+                    P7VisualCatalog.LAYOUT_NAMES.length);
                 fail("Seventh-index nonexistent layout accepted");
             } catch (IllegalArgumentException expected) {
                 assertEquals(0, P7VisualCatalog.currentLayout(context));

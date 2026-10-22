@@ -671,3 +671,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** duas instrumentações novas de Android verificam estrutura efetiva de `Activity`, nomes e ordem dos seis botões, ações clicáveis, dimensões, retorno a 2×3 por recriação, rejeição do índice 7 e pixels distintos entre miniaturas dos layouts Fluxo, Destaques e Duas colunas. Meta **104 testes por API** (102 + 2) no próximo SHA; exigem aprovação Source, OTA e ambas as versões Android.
 
 **Status:** sétimo layout implementado, não homologado até CI. Restam cinco layouts para a meta de doze. Sem alterações em APK original, assinatura, `versionCode`, branch `main`, merge, release ou publicação OTA. `references=BLOCKED` e aprovação visual/física continuam pendentes.
+
+### P7.5 — correção de regressão do índice inválido no layout Fluxo (22/10/2026)
+
+**Falha confirmada:** o commit `3d45a56d` executou 104 instrumentações por emulador, mas ambos os jobs Android ([CI 39830804728](https://github.com/nego001/ReaDroid-Native/actions/runs/39830804728)) falharam em `P7VisualCatalogInstrumentedTest.listLayoutIsPersistedAndChangesRealHomeAndSettingsViews`: o teste legado continuava esperando que o índice **6** fosse inválido, mesmo após esse índice ter virado o layout Fluxo. Source checks e OTA passaram. Não declarar 104/104 aprovados nesse SHA.
+
+**Correção:** nas três regressões que validam o índice fora do catálogo, obter o primeiro índice inválido dinamicamente de `P7VisualCatalog.LAYOUT_NAMES.length`, em vez de usar números literais que se tornam válidos com novas adições. Nenhum arquivo de produção nem APK é modificado. Meta da nova CI continua **104 testes por API**; aguardar confirmação de API29 e API35.
+
+**Estado:** PR #13 draft, sem merge ou geração/publicação de APK e sem alteração em main.
