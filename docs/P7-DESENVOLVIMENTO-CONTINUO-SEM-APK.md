@@ -519,3 +519,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões adicionadas:** (1) simular perda da chave, impedir sobrescrita e criação automática, comprovar bytes antigos inalterados e permitir início explícito de nova cópia após limpar; (2) repetir salvamento com a chave existente, validar troca criptográfica e restaurar somente as alterações novas sem modificar APK original. **77 testes por API esperados** (75 + 2); Source/OTA e capturas P7 também precisam passar no novo SHA.
 
 **Fronteiras:** alteração restrita a P7.6, PR #13 draft; sem merge, alteração de `versionCode`, APK instalável, release OTA ou desenvolvimento P8. Avaliação 1:1/Galaxy A55 permanece pendente.
+
+### P7.6 — falha de gravação e cancelamento pré-commit (22/10/2026)
+
+**Base validada:** commit `834e1814`, [matriz Android 39720982730](https://github.com/nego001/ReaDroid-Native/actions/runs/39720982730), **77/77** testes instrumentados em Android 10/API29 e Android 15/API35, Source e OTA aprovados; 13 capturas por API, referências oficiais `BLOCKED`.
+
+**Lacuna de teste:** os testes anteriores verificavam arquivos corrompidos, limites, chaves perdidas e atualizações válidas; não provocavam erro após sincronizar os bytes cifrados no arquivo temporário, mas imediatamente antes de substituir o checkpoint. Uma falha nesse ponto não pode destruir um backup anterior.
+
+**Implementação:** adicionar uma interface package-private `BeforeCommit` injetada somente por construtor de teste, sem controle pela UI, e checar `Thread.currentThread().isInterrupted()` antes e depois do hook. O fluxo real usa um hook vazio; o arquivo temporário continua sendo criado dentro do armazenamento privado, sincronizado e substituído com `ATOMIC_MOVE`. Em falha ou interrupção pré-commit, o `finally` remove apenas o temporário. O formato do backup, criptografia e alias Keystore não mudam.
+
+**Novas regressões:** (1) falha simulada após o `FileDescriptor.sync()`: checkpoint anterior permanece byte-a-byte idêntico, recuperável; original preservado; temporário apagado; (2) interrupção no instante pré-commit: o mesmo comportamento, incluindo propagação de `InterruptedIOException`. A injeção demonstra comportamento diante de exceções **antes** do commit, não durabilidade absoluta em corte de energia após `rename` (que pode exigir sincronização adicional do diretório no filesystem).
+
+**Critério de aceite:** **79 testes por API** (77 + 2), Source e OTA verdes no mesmo SHA, capturas e status registrado. Sem merge, APK, versionCode, P8 ou mudança no aceite visual 1:1. PR #13 permanece draft.

@@ -354,6 +354,67 @@ public final class RecoveryVaultInstrumentedTest {
         }
     }
 
+    private static void assertNoStagedCheckpoint(Fixture f) {
+        File[] remains = f.folder.listFiles((dir, name) ->
+            name.startsWith("checkpoint-") && name.endsWith(".tmp"));
+        assertNotNull(remains);
+        assertEquals("No encrypted temporary checkpoint may remain", 0, remains.length);
+    }
+
+    @Test public void failedCommitAfterSyncKeepsOldEncryptedCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> previous = example();
+            f.vault.save(f.original, previous);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] encrypted = Files.readAllBytes(checkpoint.toPath());
+            byte[] originalApk = Files.readAllBytes(f.original.toPath());
+            RecoveryVault failing = new RecoveryVault(f.folder, f.alias, staged -> {
+                assertTrue("Staged checkpoint must have been written", staged.length() > 0);
+                throw new IOException("Falha simulada após sincronização");
+            });
+            Map<String, String> replacement = new LinkedHashMap<>();
+            replacement.put("assets/novo.txt", "não substituir cópia existente");
+            try {
+                failing.save(f.original, replacement);
+                fail("Simulated pre-commit failure must prevent replacement");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("simulada"));
+            }
+            assertArrayEquals(encrypted, Files.readAllBytes(checkpoint.toPath()));
+            assertEquals(previous, f.vault.loadForSource(f.original));
+            assertArrayEquals(originalApk, Files.readAllBytes(f.original.toPath()));
+            assertNoStagedCheckpoint(f);
+        }
+    }
+
+    @Test public void cancellationJustBeforeCommitKeepsOldCheckpoint()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> previous = example();
+            f.vault.save(f.original, previous);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] encrypted = Files.readAllBytes(checkpoint.toPath());
+            RecoveryVault interrupted = new RecoveryVault(f.folder, f.alias,
+                staged -> Thread.currentThread().interrupt());
+            Map<String, String> replacement = new LinkedHashMap<>();
+            replacement.put("assets/novo.txt", "nunca sobrescrever");
+            try {
+                interrupted.save(f.original, replacement);
+                fail("Cancelled write must not commit encrypted checkpoint");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("interrompida"));
+            } finally {
+                Thread.interrupted(); // reset only this test thread's flag
+            }
+            assertArrayEquals(encrypted, Files.readAllBytes(checkpoint.toPath()));
+            assertEquals(previous, f.vault.loadForSource(f.original));
+            assertNoStagedCheckpoint(f);
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
     @Test public void deletionRemovesCheckpointButNotOriginal() throws Exception {
         try (Fixture f = new Fixture()) {
             f.vault.save(f.original, example());

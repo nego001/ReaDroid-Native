@@ -46,6 +46,12 @@ public final class RecoveryVault {
 
     private final File storage;
     private final String alias;
+    private final BeforeCommit beforeCommit;
+
+    /** Failure injection for Android instrumented tests, never user-controlled. */
+    interface BeforeCommit {
+        void run(File staged) throws IOException;
+    }
 
     public RecoveryVault(Context context) {
         this(new File(context.getFilesDir(), "v3-private-recovery"), KEY_ALIAS);
@@ -53,10 +59,16 @@ public final class RecoveryVault {
 
     /** Isolated folder and key alias for instrumentation only. */
     RecoveryVault(File storage, String alias) {
-        if (storage == null || alias == null || alias.isEmpty())
+        this(storage, alias, staged -> {});
+    }
+
+    /** Test-only seam to simulate failure after durable write and before commit. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit) {
+        if (storage == null || alias == null || alias.isEmpty() || beforeCommit == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
+        this.beforeCommit = beforeCommit;
     }
 
     public boolean hasCheckpoint() {
@@ -112,6 +124,13 @@ public final class RecoveryVault {
                 out.write(encoded);
                 out.getFD().sync();
             }
+            // Once bytes are synced, a cancellation must not replace the
+            // previous checkpoint. The temporary is cleaned by finally.
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Gravação da recuperação interrompida");
+            beforeCommit.run(temporary);
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Gravação da recuperação interrompida");
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
