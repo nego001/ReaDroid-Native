@@ -343,7 +343,7 @@ public final class RecoveryVaultInstrumentedTest {
             File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
             byte[] before = Files.readAllBytes(checkpoint.toPath());
             Map<String, String> second = new LinkedHashMap<>();
-            second.put("assets/second.json", "{\\"ok\\":true}");
+            second.put("assets/second.json", "segundo plano válido");
             f.vault.save(f.original, second);
             byte[] after = Files.readAllBytes(checkpoint.toPath());
             assertFalse("Re-encrypted checkpoint must use a fresh GCM IV",
