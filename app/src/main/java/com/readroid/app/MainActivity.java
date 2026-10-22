@@ -40,6 +40,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_APPEARANCE = 42;
     private static final int REQUEST_EXPORT_P7_ICON = 43;
     private static final int REQUEST_EXPORT_P7_LOGO = 44;
+    private static final int REQUEST_EXPORT_P7_LOGO_SVG = 45;
     private P7IconWorkshop.Spec pendingIconExport;
     private P7LogoWorkshop.Spec pendingLogoExport;
     private JSONObject report;
@@ -1436,19 +1437,34 @@ public class MainActivity extends Activity {
         startActivityForResult(create, REQUEST_EXPORT_P7_LOGO);
     }
 
+    /** Editable SVG export uses the existing, validated logo specification. */
+    public void startP7LogoSvgExport(P7LogoWorkshop.Spec logo) {
+        if (logo == null) throw new IllegalArgumentException("Logo vazio");
+        pendingLogoExport = logo;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/svg+xml");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-logo.svg");
+        startActivityForResult(create, REQUEST_EXPORT_P7_LOGO_SVG);
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request == REQUEST_EXPORT_P7_LOGO) {
+        if (request == REQUEST_EXPORT_P7_LOGO ||
+                request == REQUEST_EXPORT_P7_LOGO_SVG) {
             P7LogoWorkshop.Spec requested = pendingLogoExport;
             pendingLogoExport = null;
             if (result != RESULT_OK || data == null ||
                     data.getData() == null || requested == null) return;
             try {
-                P7LogoWorkshop.export(this, requested, data.getData());
+                boolean svg = request == REQUEST_EXPORT_P7_LOGO_SVG;
+                if (svg) P7LogoSvg.export(this, requested, data.getData());
+                else P7LogoWorkshop.export(this, requested, data.getData());
                 new android.app.AlertDialog.Builder(this)
                     .setTitle("Logo exportado")
-                    .setMessage("PNG 1024×512 salvo no destino escolhido. " +
-                        "O APK e a identidade instalada não foram alterados.")
+                    .setMessage((svg ? "SVG vetorial editável" : "PNG 1024×512") +
+                        " salvo no destino escolhido. O APK e a identidade instalada " +
+                        "não foram alterados.")
                     .setPositiveButton("OK", null).show();
             } catch (Exception error) {
                 new android.app.AlertDialog.Builder(this)

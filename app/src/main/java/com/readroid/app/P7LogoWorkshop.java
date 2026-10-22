@@ -63,6 +63,12 @@ public final class P7LogoWorkshop {
 
     private P7LogoWorkshop() {}
 
+    /** Shared color mapping for PNG Canvas and editable SVG exports. */
+    static int accentColor(Spec spec) {
+        if (spec == null) throw new IllegalArgumentException("Logo vazio");
+        return ACCENTS[spec.color];
+    }
+
     private static boolean containsControl(String text) {
         for (int i = 0; i < text.length(); i++)
             if (Character.isISOControl(text.charAt(i))) return true;
@@ -187,7 +193,7 @@ public final class P7LogoWorkshop {
         ScrollView scroll = new ScrollView(activity);
         int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
         int scrollHeight = Math.min(dp(activity, 360),
-            Math.max(dp(activity, 180), screenHeight - dp(activity, 230)));
+            Math.max(dp(activity, 180), screenHeight - dp(activity, 290)));
         dialogBody.addView(scroll, new LinearLayout.LayoutParams(-1, scrollHeight));
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -257,6 +263,19 @@ public final class P7LogoWorkshop {
         buttonParams.rightMargin = dp(activity, 16);
         dialogBody.addView(export, buttonParams);
 
+        Button exportSvg = new Button(activity);
+        exportSvg.setText("Exportar logo SVG");
+        exportSvg.setAllCaps(false);
+        exportSvg.setContentDescription("Exportar logo SVG vetorial");
+        exportSvg.setTextColor(NegrescoTheme.ON_ACCENT);
+        exportSvg.setBackgroundTintList(ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        LinearLayout.LayoutParams svgParams = new LinearLayout.LayoutParams(
+            -1, dp(activity, 48));
+        svgParams.leftMargin = dp(activity, 16);
+        svgParams.rightMargin = dp(activity, 16);
+        svgParams.topMargin = dp(activity, 4);
+        dialogBody.addView(exportSvg, svgParams);
+
         TextView warning = caption(activity,
             "Exportação local. Não altera o nome salvo, o APK nem o ícone instalado.");
         warning.setTextColor(NegrescoTheme.MUTED);
@@ -276,6 +295,18 @@ public final class P7LogoWorkshop {
                 activity.startP7LogoExport(spec);
             } catch (IllegalArgumentException invalid) {
                 name.setError("Informe um nome válido para exportar");
+            }
+        });
+        exportSvg.setOnClickListener(v -> {
+            try {
+                Spec spec = new Spec(name.getText().toString(),
+                    subtitle.getText().toString(), selected[0], selected[1]);
+                // Fail before asking the user to create a file on invalid XML.
+                P7LogoSvg.build(spec);
+                dialog.dismiss();
+                activity.startP7LogoSvgExport(spec);
+            } catch (IllegalArgumentException invalid) {
+                name.setError("Texto incompatível com SVG");
             }
         });
         root.requestFocus();

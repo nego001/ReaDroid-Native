@@ -151,6 +151,8 @@ public final class P7LogoWorkshopInstrumentedTest {
                         "Exportar logo PNG 1024×512");
                     assertNotNull(exportButton);
                     assertTrue(exportButton.isClickable());
+                    assertNotNull("SVG vector export must have a real action",
+                        findDescription(dialogRoot, "Exportar logo SVG vetorial"));
                     assertNotNull(findDescription(dialogRoot, "Nome do logo"));
                     assertNotNull(findDescription(dialogRoot, "Subtítulo do logo"));
                 } finally {

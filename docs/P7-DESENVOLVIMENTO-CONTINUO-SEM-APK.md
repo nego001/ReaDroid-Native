@@ -579,3 +579,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** reforçar o caso de 257 arquivos para conferir que todos permanecem após a rejeição; novo teste impede exclusão se já existe interrupção de thread, preservando checkpoint cifrado e temporário. Meta da matriz: **86 testes por API** (85 + 1). Nenhuma alteração em formatos de backup ou chaves Keystore.
 
 **Próximo bloco prioritário após CI:** sair do endurecimento pontual e concluir entregas P7.5/P7.6/P7.7 (editores criativos, referências PNG, comparação visual, acessibilidade e homologação no Samsung). Rebuild assinável, engenharia reversa e funcionalidades avançadas seguem em etapas funcionais futuras. Manter PR #13 draft e não gerar novo APK ou merge sem aprovação.
+
+### P7.5 — Logo Studio: exportação SVG editável (22/10/2026)
+
+**Base verificada antes da extensão:** `b7555ec2` com 85/85 testes em API29/API35, capturas 13 por API, Source e OTA verdes. A correção `0f0f631a` está no ramo de P7.6 e deve manter sua validação independente.
+
+**Objetivo funcional:** ampliar o Logo Studio existente, que já exporta PNG 1024×512, com opção explícita de SVG vetorial editável. Não chamar a ferramenta de inédita nem substituir PNG. Exportar somente após confirmação SAF (`ACTION_CREATE_DOCUMENT`, `image/svg+xml`), sem armazenamento amplo, alteração do APK, identidade do app ou plano de edições.
+
+**Implementação:** `P7LogoSvg` produz XML/SVG 1024×512 composto por retângulos, texto editável e monograma, com cor/fundo derivados da especificação validada do Logo Studio. Escape correto de &, <, >, aspas e apóstrofos; rejeita Unicode/XML inválido, sem scripts, recursos remotos ou fontes externas. Reuso de `Spec`, cor do Canvas e estado de seleção na Activity; botão de exportação separado no editor. A tipografia SVG usa fontes disponíveis no programa que abrir o arquivo; **não afirmar resultado pixel-idêntico** ao Canvas Android.
+
+**Regressões:** três instrumentações novas `P7LogoSvgInstrumentedTest` validam análise real do XML, elementos vetoriais, transparência/fundo OLED, Unicode, escaping, rejeição de surrogates inválidos e destino não SAF. `P7LogoWorkshopInstrumentedTest` confirma o novo botão sem alterar o PNG. Meta **89 testes por API** (86 anteriores + 3). Source e OTA também precisam passar no SHA de integração.
+
+**Limites da entrega:** SVG é marca personalizada, não a arte original 1:1 ainda sem os PNGs oficiais; não gera assinatura de APK nem aplica identidade silenciosamente. P7.5, P7.6 e P7.7 permanecem abertas. Sem APK automático, merge, `versionCode` ou OTA publicada.

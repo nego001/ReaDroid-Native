@@ -580,6 +580,7 @@ public final class P7DesignStudio {
             heading("Logo Studio");
             liveLogoPreview();
             actionCard("Criar logo PNG", "Personalizar texto, cor e fundo; exportar PNG 1024×512", -5);
+            note("No Logo Studio, também é possível exportar SVG vetorial editável.");
             actionCard("Editar nome e subtítulo", "Atualizar a identidade exibida na Home", 6);
             actionCard("Prévia de aparência", "Conferir as preferências atuais", 7);
         }
