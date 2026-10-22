@@ -299,6 +299,73 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void layoutCardsKeepCompleteNamesAndNativeButtonRoleAtLargeFont() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean hadFont = prefs.contains("font_percent");
+        int previousFont = prefs.getInt("font_percent", 100);
+        try {
+            assertTrue(prefs.edit().putInt("font_percent", 135).commit());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    LinearLayout fixture = new LinearLayout(activity);
+                    fixture.setOrientation(LinearLayout.VERTICAL);
+                    activity.setContentView(fixture, new ViewGroup.LayoutParams(
+                        NegrescoTheme.dp(activity, 320), -1));
+                    new P7DesignStudio(activity, fixture, new Button[13], 1);
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    for (String name : P7VisualCatalog.LAYOUT_NAMES) {
+                        View card = byDescription(root, name + ",");
+                        assertNotNull("Layout option must be present: " + name, card);
+                        assertTrue(card.isFocusable());
+                        assertTrue(card.isClickable());
+                        assertTrue(card instanceof LinearLayout);
+                        LinearLayout tile = (LinearLayout) card;
+                        assertTrue("Large font needs wider layout cards",
+                            card.getLayoutParams().width >= NegrescoTheme.dp(activity, 140));
+                        TextView title = (TextView) tile.getChildAt(1);
+                        assertEquals(name, title.getText().toString());
+                        assertEquals(2, title.getMaxLines());
+                        assertNull("Layout titles must never be ellipsized",
+                            title.getEllipsize());
+                        assertNotNull(title.getLayout());
+                        for (int line = 0; line < title.getLayout().getLineCount(); line++)
+                            assertEquals("Full layout name must remain readable",
+                                0, title.getLayout().getEllipsisCount(line));
+                        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                            title.getImportantForAccessibility());
+                        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS,
+                            tile.getChildAt(0).getImportantForAccessibility());
+                        View.AccessibilityDelegate delegate =
+                            card.getAccessibilityDelegate();
+                        assertNotNull(delegate);
+                        android.view.accessibility.AccessibilityNodeInfo node =
+                            android.view.accessibility.AccessibilityNodeInfo.obtain();
+                        try {
+                            delegate.onInitializeAccessibilityNodeInfo(card, node);
+                            assertEquals(Button.class.getName(), node.getClassName());
+                            assertTrue(node.isClickable());
+                        } finally {
+                            node.recycle();
+                        }
+                    }
+                });
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadFont) restore.putInt("font_percent", previousFont);
+            else restore.remove("font_percent");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void logoStudioShowsSavedBrandInsteadOfAFakeExample() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

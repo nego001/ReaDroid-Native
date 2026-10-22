@@ -5,6 +5,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
 import android.widget.FrameLayout;
@@ -208,7 +209,12 @@ public final class P7DesignStudio {
 
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, int themeSurface, boolean themeGlow, Runnable click) {
-        final int width = kind == 2 ? 71 : (kind == 1 ? 100 : 100);
+        // Layout names such as "Escalonado inverso" require two lines,
+        // especially at enlarged text size. Horizontal scroll keeps the
+        // chooser usable without shrinking or truncating the title.
+        final int width = kind == 2 ? 71
+            : kind == 1 ? (NegrescoTheme.FONT_SCALE > 1.15f ? 140 : 110)
+            : 100;
         // Preserve 48dp controls while keeping the three catalog families
         // visible above the fold at the canonical emulator viewport.
         final int previewHeight = kind == 2 ? 46 : (kind == 1 ? 57 : 74);
@@ -239,8 +245,9 @@ public final class P7DesignStudio {
         }
         TextView title = label(name, kind == 2 ? 9 : 11,
             NegrescoTheme.TEXT, selected);
-        title.setMaxLines(1);
-        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setMaxLines(kind == 1 ? 2 : 1);
+        title.setEllipsize(kind == 1 ? null
+            : android.text.TextUtils.TruncateAt.END);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2);
         tp.topMargin = dp(3);
@@ -251,12 +258,26 @@ public final class P7DesignStudio {
             detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
             detail.setGravity(Gravity.CENTER_HORIZONTAL);
             card.addView(detail);
+            detail.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
         card.setClickable(true);
         card.setFocusable(true);
         card.setSelected(selected);
         card.setContentDescription(name +
             (selected ? ", prévia selecionada" : ", selecionar prévia"));
+        // The whole tile is the single interaction target. Tell TalkBack
+        // it is a button and hide duplicate miniature/label announcements.
+        card.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        card.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
+        previewFrame.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        title.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         card.setOnClickListener(v -> click.run());
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(width), -2);
         p.rightMargin = dp(kind == 2 ? 6 : 8);

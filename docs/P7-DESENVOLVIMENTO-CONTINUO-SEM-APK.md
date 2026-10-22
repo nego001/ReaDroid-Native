@@ -751,3 +751,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Teste novo:** `thirteenPersonalizationCardsExposeButtonSemanticsForTalkBack` percorre a árvore Android real e comprova que todos os 13 cartões continuam clicáveis, focáveis, com alvo de no mínimo 48dp, rótulo descritivo e papel `Button`. Meta: **115 testes por API** no novo SHA, além de Source/OTA. Teste automatizado de nó de acessibilidade **não equivale** à homologação manual com TalkBack no Galaxy A55.
 
 **Segurança de escopo:** PR #13 draft, sem merge na main, assinatura, alteração de APK do usuário, `versionCode`, geração de APK de distribuição nem publicação OTA. As artes oficiais para a comparação visual 1:1 seguem ausentes.
+
+### P7.6 — nomes completos dos 12 layouts e semântica dos cartões de prévia (22/10/2026)
+
+**Base validada:** commit `faff3682`, [CI Android 39864296503](https://github.com/nego001/ReaDroid-Native/actions/runs/39864296503), **115/115** testes instrumentados aprovados em API29 e API35, Source e OTA aprovados, 13 capturas por API, `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+**Falha visual/acessível:** `P7DesignStudio.tile` aplicava somente uma linha com reticências aos 12 nomes de layout, truncando títulos longos como `Escalonado inverso` principalmente sob fontes ampliadas. As prévias clicáveis eram `LinearLayout` com rótulo completo, mas sem papel explícito de botão, e os elementos decorativos podiam gerar anúncio redundante.
+
+**Implementação:** cards de layout passam a 110dp na fonte padrão e 140dp na fonte interna maior que 115%, com até duas linhas de título e sem truncamento. O carrossel horizontal já existente continua permitindo navegar por todas as opções. Todos os cartões do Design Studio ganham nó de acessibilidade como `Button` e mantêm o próprio `contentDescription`, estado selecionado e callback de confirmação; prévia vetorial, marcação decorativa e títulos/subtítulos internos são ocultados do TalkBack para evitar narração duplicada. Não altera a seleção/persistência, os 12 layouts, 24 combinações de temas, projetos abertos nem operações APK.
+
+**Regressão:** teste Android abre o catálogo Layout num viewport de 320dp e com fonte interna a 135%, percorre os 12 cartões reais e confere título completo com até duas linhas sem reticências, largura mínima, foco/clique, anúncio único e papel `Button`. Meta **116 testes por API** (115 + 1) com Source, OTA e evidências Android; nenhuma afirmação de homologação visual 1:1 sem os PNGs oficiais.
+
+**Restrições:** PR #13 draft, `main` intocada, sem APK distribuído, versão modificada, publicação OTA nem homologação física Galaxy A55.
