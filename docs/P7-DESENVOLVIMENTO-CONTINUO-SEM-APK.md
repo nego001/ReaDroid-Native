@@ -731,3 +731,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões novas:** dois testes instrumentados percorrem os cinco perfis, confirmam estado real, rejeição de índice inválido e invalidam a seleção ao mudar separadamente tema, cor, brilho, raio, layout ou compactação; restauram todas as preferências alteradas. Meta **112 testes por API** (110 + 2) e CI Android, Source/OTA no novo SHA.
 
 **Fronteiras:** só consistência de apresentação; não modifica projeto APK, edit plan, chaves, assinatura, versionCode, branch main, OTA ou distribuição. Fidelidade 1:1 sem referências oficiais e homologação física no Galaxy A55 ainda pendentes.
+
+### P7.6 — painel de personalização adaptativo sem perda de funções (22/10/2026)
+
+**Base:** commit `8d26fda3`, [CI Android 39851451846](https://github.com/nego001/ReaDroid-Native/actions/runs/39851451846), **112/112 testes aprovados em API29 e API35**, Source/OTA aprovados, 13 capturas por API. `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+**Defeito:** o painel com 13 controles de aparência ainda forçava duas colunas em qualquer layout exceto Lista, mesmo com tela estreita e/ou fonte aumentada pelo Android e aplicativo. Isso podia comprimir rótulos e descrições. `StudioDashboard.personalizationColumnsForViewport` escolhe 1 coluna quando `screenWidthDp < 360` ou a escala efetiva de fonte atinge 1,20; mantém duas colunas em telas de 393dp ou superiores com fonte padrão, e preserva a escolha 1 coluna do layout Lista. `buildOptions` usa essa regra sem modificar `layout_variant`, `font_percent`, qualquer preferência salva, os 13 callbacks ou o projeto APK em edição. A grade da Home continua independente e responsiva.
+
+**Validação nova:** teste de política verifica layouts 0 a 11 e faixas de largura/escala; teste instrumentado abre `MainActivity` com fonte interna a 135% e confirma 13 controles presentes, focáveis, clicáveis, com descrição para TalkBack e largura total, além da preferência original preservada/restaurada. Meta **114 testes por API** (112 + 2); exigir Source, OTA, Android 10/API29 e Android 15/API35 no SHA desta alteração.
+
+**Fronteiras:** P7.6 ainda demanda inspeção manual TalkBack, desempenho, comparação pixel-a-pixel com PNGs oficiais e validação física Galaxy A55. PR #13 draft, sem merge, publicação OTA, artefato APK distribuído nem mudança de versionCode.

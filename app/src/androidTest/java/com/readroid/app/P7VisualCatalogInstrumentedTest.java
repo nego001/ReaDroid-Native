@@ -790,6 +790,79 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    @Test public void personalizationColumnPolicyProtectsNarrowAndLargeTextLayouts() {
+        assertEquals(2,
+            StudioDashboard.personalizationColumnsForViewport(0, 393, 1f, 1f));
+        assertEquals(2,
+            StudioDashboard.personalizationColumnsForViewport(4, 600, 1f, 1f));
+        assertEquals(1,
+            StudioDashboard.personalizationColumnsForViewport(0, 359, 1f, 1f));
+        assertEquals(1,
+            StudioDashboard.personalizationColumnsForViewport(4, 393, 1.25f, 1f));
+        assertEquals(1,
+            StudioDashboard.personalizationColumnsForViewport(5, 393, 1f, 1.35f));
+        assertEquals(1,
+            StudioDashboard.personalizationColumnsForViewport(3, 600, 1f, 1f));
+        for (int index = 0; index < P7VisualCatalog.LAYOUT_NAMES.length; index++) {
+            int normal = StudioDashboard.personalizationColumnsForViewport(
+                index, 393, 1f, 1f);
+            assertEquals("Only list layout starts in one column",
+                index == 3 ? 1 : 2, normal);
+            assertEquals(1, StudioDashboard.personalizationColumnsForViewport(
+                index, 320, 1.3f, 1.35f));
+        }
+    }
+
+    @Test public void enlargedFontShowsAllThirteenPersonalizationControlsInOneColumn() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", Context.MODE_PRIVATE);
+        boolean hadFont = prefs.contains("font_percent");
+        int oldFont = prefs.getInt("font_percent", 100);
+        boolean hadLayout = prefs.contains("layout_variant");
+        int oldLayout = prefs.getInt("layout_variant", 0);
+        boolean hadCompact = prefs.contains("compact");
+        boolean oldCompact = prefs.getBoolean("compact", false);
+        try {
+            assertTrue(prefs.edit().putInt("font_percent", 135)
+                .putInt("layout_variant", 0)
+                .putBoolean("compact", false).commit());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    LinearLayout settings = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-personalization-options");
+                    assertNotNull(settings);
+                    assertEquals("All thirteen options must remain visible", 13,
+                        settings.getChildCount());
+                    for (int i = 0; i < settings.getChildCount(); i++) {
+                        LinearLayout row = (LinearLayout) settings.getChildAt(i);
+                        assertEquals("Large text requires one option per row", 1,
+                            row.getChildCount());
+                        android.view.View item = row.getChildAt(0);
+                        assertEquals(-1, item.getLayoutParams().width);
+                        assertTrue(item.isClickable());
+                        assertTrue(item.isFocusable());
+                        assertNotNull(item.getContentDescription());
+                    }
+                    assertEquals("A transient reflow cannot alter the saved layout",
+                        0, prefs.getInt("layout_variant", -1));
+                });
+            }
+        } finally {
+            SharedPreferences.Editor restore = prefs.edit();
+            if (hadFont) restore.putInt("font_percent", oldFont);
+            else restore.remove("font_percent");
+            if (hadLayout) restore.putInt("layout_variant", oldLayout);
+            else restore.remove("layout_variant");
+            if (hadCompact) restore.putBoolean("compact", oldCompact);
+            else restore.remove("compact");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void presetWritesOnlyAppearanceAndRejectsOutOfRangeChoices() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

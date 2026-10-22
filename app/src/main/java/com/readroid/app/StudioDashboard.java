@@ -150,6 +150,15 @@ public final class StudioDashboard {
         return wrapper;
     }
 
+    /** Keep every personalization control readable on narrow and large-text screens. */
+    static int personalizationColumnsForViewport(int layout, int widthDp,
+            float systemFontScale, float appFontScale) {
+        if (layout == 3) return 1;
+        float effective = Math.max(0.75f, systemFontScale)
+            * Math.max(0.85f, appFontScale);
+        return widthDp > 0 && (widthDp < 360 || effective >= 1.20f) ? 1 : 2;
+    }
+
     private static void buildOptions(Activity a, LinearLayout destination, Button[] actions) {
         String[] glyphs = {"◉", "◆", "Aa", "▦", "▤", "☆", "⌂", "◈", "↥", "↧", "✧", "▢", "↺"};
         String[] details = {
@@ -162,7 +171,11 @@ public final class StudioDashboard {
         };
         destination.removeAllViews();
         destination.setTag("p7-personalization-options");
-        final int columns = NegrescoTheme.LAYOUT_VARIANT == 3 ? 1 : 2;
+        final int columns = personalizationColumnsForViewport(
+            NegrescoTheme.LAYOUT_VARIANT,
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
         for (int index = 0; index < actions.length; index += columns) {
             LinearLayout row = new LinearLayout(a);
             row.setOrientation(LinearLayout.HORIZONTAL);
