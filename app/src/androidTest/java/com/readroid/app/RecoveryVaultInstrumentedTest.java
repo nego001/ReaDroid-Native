@@ -303,6 +303,57 @@ public final class RecoveryVaultInstrumentedTest {
         }
     }
 
+    @Test public void savingWithLostKeyCannotOverwriteExistingRecovery()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            Map<String, String> existing = example();
+            f.vault.save(f.original, existing);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] encrypted = Files.readAllBytes(checkpoint.toPath());
+            KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            assertTrue(store.containsAlias(f.alias));
+            store.deleteEntry(f.alias);
+            Map<String, String> replacement = new LinkedHashMap<>();
+            replacement.put("assets/new.txt", "second recovery");
+            try {
+                f.vault.save(f.original, replacement);
+                fail("Saving cannot discard a checkpoint with a lost Keystore identity");
+            } catch (SecurityException expected) {
+                assertTrue(expected.getMessage().contains("Cópia existente"));
+            }
+            store.load(null);
+            assertFalse(store.containsAlias(f.alias));
+            assertArrayEquals("Old encrypted checkpoint must remain intact",
+                encrypted, Files.readAllBytes(checkpoint.toPath()));
+            // Explicit deletion is a separate user action and is the only way
+            // to start over after losing the key. The old data is not recovered.
+            f.vault.clear();
+            f.vault.save(f.original, replacement);
+            assertEquals(replacement, f.vault.loadForSource(f.original));
+        }
+    }
+
+    @Test public void secondSaveWithOriginalKeystoreKeyReplacesCheckpointSafely()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            byte[] originalApk = Files.readAllBytes(f.original.toPath());
+            Map<String, String> first = example();
+            f.vault.save(f.original, first);
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] before = Files.readAllBytes(checkpoint.toPath());
+            Map<String, String> second = new LinkedHashMap<>();
+            second.put("assets/second.json", "{\\"ok\\":true}");
+            f.vault.save(f.original, second);
+            byte[] after = Files.readAllBytes(checkpoint.toPath());
+            assertFalse("Re-encrypted checkpoint must use a fresh GCM IV",
+                Arrays.equals(before, after));
+            RecoveryVault reopened = new RecoveryVault(f.folder, f.alias);
+            assertEquals(second, reopened.loadForSource(f.original));
+            assertArrayEquals(originalApk, Files.readAllBytes(f.original.toPath()));
+        }
+    }
+
     @Test public void deletionRemovesCheckpointButNotOriginal() throws Exception {
         try (Fixture f = new Fixture()) {
             f.vault.save(f.original, example());

@@ -507,3 +507,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** (1) stream com teto exato e mais um byte; (2) magic/version inválidos e ciphertext truncado, com recuperação íntegra após restauração dos bytes válidos; (3) checkpoint grande demais rejeitado antes do uso do Keystore e sem modificar o arquivo. Meta **75 testes por API** (72 anteriores + 3 novos), além de Source/OTA e inventários de screenshots. Não declarar o novo SHA aprovado até encerrar toda a matriz.
 
 **Fronteiras:** somente P7.6; PR #13 continua draft, `main` intacta, sem release, APK instalável ou alteração de versão. Aceite 1:1 e Galaxy A55 continuam pendentes.
+
+### P7.6 — não sobrescrever recuperação órfã de chave (22/10/2026)
+
+**Base validada:** commit `e13028cf`, [matriz Android 39719947634](https://github.com/nego001/ReaDroid-Native/actions/runs/39719947634), **75/75** instrumentações API29 e API35, Source e OTA aprovados. `P7_EVIDENCE_PASS` em 13 capturas por API; referências PNG oficiais ainda `BLOCKED`.
+
+**Falha identificada:** `loadForSource` já falhava quando faltava a chave Android Keystore, mas `save` ainda chamava `obtainKey(true)` e podia criar outra chave sob o mesmo alias, substituindo silenciosamente o checkpoint cifrado anterior. Isso impediria preservar uma cópia órfã em caso de perda transitória/recuperação futura da identidade criptográfica.
+
+**Correção:** se um checkpoint já existe e a chave correspondente está ausente, `obtainKey(true)` recusa gerar outra chave e não grava novo ciphertext. Um usuário pode remover explicitamente a cópia existente pela operação `clear`, após compreender que o backup antigo não poderá ser restaurado sem a chave. Quando a chave já existe, salvamentos repetidos continuam permitidos e geram nonce/IV novos em AES-GCM, preservando formato v1 e autenticação SHA-256 da origem.
+
+**Regressões adicionadas:** (1) simular perda da chave, impedir sobrescrita e criação automática, comprovar bytes antigos inalterados e permitir início explícito de nova cópia após limpar; (2) repetir salvamento com a chave existente, validar troca criptográfica e restaurar somente as alterações novas sem modificar APK original. **77 testes por API esperados** (75 + 2); Source/OTA e capturas P7 também precisam passar no novo SHA.
+
+**Fronteiras:** alteração restrita a P7.6, PR #13 draft; sem merge, alteração de `versionCode`, APK instalável, release OTA ou desenvolvimento P8. Avaliação 1:1/Galaxy A55 permanece pendente.

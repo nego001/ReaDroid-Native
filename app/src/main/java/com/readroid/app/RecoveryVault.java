@@ -240,6 +240,13 @@ public final class RecoveryVault {
         }
         if (!createIfMissing)
             throw new SecurityException("Chave de recuperação indisponível no Android Keystore");
+        // A stored checkpoint may still be recoverable if its Keystore identity
+        // comes back (for example during device state repair). Do not silently
+        // replace it with a new key merely because saving was requested.
+        // Users must explicitly clear the obsolete checkpoint first.
+        if (new File(storage, FILE_NAME).exists())
+            throw new SecurityException(
+                "Cópia existente sem chave de recuperação; remova a cópia explicitamente antes de criar outra");
         KeyGenerator generator = KeyGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
         generator.init(new KeyGenParameterSpec.Builder(alias,
