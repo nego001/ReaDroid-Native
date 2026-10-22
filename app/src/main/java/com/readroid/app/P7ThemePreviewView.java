@@ -99,6 +99,20 @@ public final class P7ThemePreviewView extends View {
     }
 
     private void drawLayout(Canvas c) {
+        if (themeSurface == 4) {
+            block(c, 0xff07101d, 8, 7, 92, 93, 9);
+            outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
+            block(c, accent, 19, 18, 67, 24, 2);
+            // Three rows, two actual action cards in each.
+            for (int row = 0; row < 3; row++) {
+                int top = 34 + row * 18;
+                block(c, 0xff20364d, 18, top, 47, top + 13, 3);
+                block(c, 0xff20364d, 53, top, 82, top + 13, 3);
+                block(c, accent, 22, top + 4, 28, top + 6, 1);
+                block(c, accent, 57, top + 4, 63, top + 6, 1);
+            }
+            return;
+        }
         if (themeSurface == 3) {
             block(c, 0xff07101d, 8, 7, 92, 93, 9);
             outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);

@@ -10,9 +10,16 @@ import android.content.SharedPreferences;
 public final class P7VisualCatalog {
     private P7VisualCatalog() {}
     private static final String PREFS = "v3_personalizacao";
-    public static final String[] LAYOUT_NAMES = {"Padrão", "Compacto", "Moderno", "Lista"};
+    public static final String[] LAYOUT_NAMES = {"Padrão", "Compacto", "Moderno", "Lista", "Duas colunas"};
     public static final String[] PRESET_NAMES =
         {"Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro"};
+
+    /** Native Home structure: original 3x2, list 1x6, or two-column 2x3. */
+    static int quickActionColumns(int layout) {
+        if (layout == 3) return 1;
+        if (layout == 4) return 2;
+        return 3;
+    }
 
     public static int currentLayout(Context c) {
         int value = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

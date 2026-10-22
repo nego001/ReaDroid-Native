@@ -3,6 +3,8 @@ package com.readroid.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.widget.LinearLayout;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Test;
@@ -26,7 +28,7 @@ public final class P7VisualCatalogInstrumentedTest {
         boolean hadPreset = p.contains("p7_active_preset");
         int wasPreset = p.getInt("p7_active_preset", -1);
         try {
-            assertEquals(4, P7VisualCatalog.LAYOUT_NAMES.length);
+            assertEquals(5, P7VisualCatalog.LAYOUT_NAMES.length);
             P7VisualCatalog.persistLayout(context, 3);
             assertEquals(3, P7VisualCatalog.currentLayout(context));
             assertFalse(p.getBoolean("compact", true));
@@ -65,7 +67,7 @@ public final class P7VisualCatalogInstrumentedTest {
                 });
             }
             try {
-                P7VisualCatalog.persistLayout(context, 4);
+                P7VisualCatalog.persistLayout(context, 5);
                 fail("Invalid layout was applied");
             } catch (IllegalArgumentException expected) {
                 assertEquals(0, P7VisualCatalog.currentLayout(context));
@@ -82,6 +84,103 @@ public final class P7VisualCatalogInstrumentedTest {
             else editor.remove("p7_active_preset");
             assertTrue(editor.commit());
             NegrescoTheme.apply(context);
+        }
+    }
+
+    @Test public void twoColumnLayoutActuallyReflowsSixActionCards() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", Context.MODE_PRIVATE);
+        boolean hadLayout = prefs.contains("layout_variant");
+        int previous = prefs.getInt("layout_variant", 0);
+        boolean hadCompact = prefs.contains("compact");
+        boolean compact = prefs.getBoolean("compact", false);
+        boolean hadRadius = prefs.contains("card_radius");
+        int radius = prefs.getInt("card_radius", 18);
+        boolean hadPreset = prefs.contains("p7_active_preset");
+        int preset = prefs.getInt("p7_active_preset", -1);
+        try {
+            assertEquals(3, P7VisualCatalog.quickActionColumns(0));
+            assertEquals(1, P7VisualCatalog.quickActionColumns(3));
+            assertEquals(2, P7VisualCatalog.quickActionColumns(4));
+            P7VisualCatalog.persistLayout(context, 4);
+            assertEquals(4, P7VisualCatalog.currentLayout(context));
+            assertFalse(prefs.getBoolean("compact", true));
+            NegrescoTheme.apply(context);
+            assertEquals(4, NegrescoTheme.LAYOUT_VARIANT);
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    LinearLayout quick = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-quick-actions-grid");
+                    assertNotNull(quick);
+                    assertEquals("Six actions in three rows", 3, quick.getChildCount());
+                    for (int rowIndex = 0; rowIndex < quick.getChildCount(); rowIndex++) {
+                        LinearLayout row = (LinearLayout) quick.getChildAt(rowIndex);
+                        assertEquals("Each row has two actions", 2, row.getChildCount());
+                        for (int col = 0; col < row.getChildCount(); col++) {
+                            android.view.View button = row.getChildAt(col);
+                            assertTrue(button.isClickable());
+                            assertTrue(button.isFocusable());
+                            LinearLayout.LayoutParams params =
+                                (LinearLayout.LayoutParams) button.getLayoutParams();
+                            assertEquals(0, params.width);
+                            assertEquals(1f, params.weight, 0.001f);
+                        }
+                    }
+                    LinearLayout options = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-personalization-options");
+                    assertNotNull(options);
+                    assertEquals("Personalization stays in the standard two columns",
+                        7, options.getChildCount());
+                });
+                P7VisualCatalog.persistLayout(context, 0);
+                scenario.recreate();
+                scenario.onActivity(activity -> {
+                    LinearLayout quick = activity.getWindow().getDecorView()
+                        .findViewWithTag("p7-quick-actions-grid");
+                    assertNotNull(quick);
+                    assertEquals(2, quick.getChildCount());
+                    for (int row = 0; row < quick.getChildCount(); row++)
+                        assertEquals(3, ((LinearLayout) quick.getChildAt(row)).getChildCount());
+                });
+            }
+        } finally {
+            SharedPreferences.Editor edit = prefs.edit();
+            if (hadLayout) edit.putInt("layout_variant", previous);
+            else edit.remove("layout_variant");
+            if (hadCompact) edit.putBoolean("compact", compact);
+            else edit.remove("compact");
+            if (hadRadius) edit.putInt("card_radius", radius);
+            else edit.remove("card_radius");
+            if (hadPreset) edit.putInt("p7_active_preset", preset);
+            else edit.remove("p7_active_preset");
+            assertTrue(edit.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
+    @Test public void twoColumnMiniatureDiffersFromListAndStandard() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        Bitmap[] images = new Bitmap[3];
+        try {
+            int[] variants = {0, 3, 4};
+            for (int i = 0; i < variants.length; i++) {
+                images[i] = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+                P7ThemePreviewView preview = new P7ThemePreviewView(
+                    context, 0xff9b6dff, 1, variants[i], false);
+                preview.layout(0, 0, 100, 100);
+                preview.draw(new Canvas(images[i]));
+            }
+            assertFalse("Two-column preview must not repeat standard preview",
+                images[2].sameAs(images[0]));
+            assertFalse("Two-column preview must not repeat list preview",
+                images[2].sameAs(images[1]));
+        } finally {
+            for (Bitmap image : images)
+                if (image != null) image.recycle();
         }
     }
 

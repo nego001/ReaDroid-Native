@@ -641,3 +641,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção:** adicionar a importação Android faltante no teste instrumentado, sem mudar a lógica de produção, layouts, APK original, preferências, assinatura ou formato de arquivo. Reexecutar a matriz de **98 testes por API** e inspecionar logs para distinguir falha de compilação de falha de asserção. Ainda não declarar o layout Lista homologado até ambas as APIs aprovarem.
 
 **Estado:** PR #13 continua draft e `main` preservada. Sem release, APK de distribuição, novo `versionCode` nem OTA publicada.
+
+### P7.5 — quinto layout nativo Duas colunas (22/10/2026)
+
+**Base validada:** commit `04f86a0b`, [CI Android 39818115825](https://github.com/nego001/ReaDroid-Native/actions/runs/39818115825), **98/98** testes em API29 e API35, Source/OTA aprovados e 13 screenshots por API. `references=BLOCKED`, `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED` ainda vigentes.
+
+**Funcionalidade:** quinto layout `Duas colunas` (`layout_variant=4`) usa os mesmos seis atalhos verdadeiros da Home e seus callbacks existentes, distribuídos agora em **3 linhas × 2 cartões**; Padrão/Compacto/Moderno preservam 2 linhas × 3, e Lista preserva 6 linhas × 1. O painel de personalização continua no padrão de duas colunas. A persistência de preferências continua restrita à aparência e o Design Studio mantém confirmação antes de aplicar. Miniatura vetorial própria mostra três pares de cartões, sem copiar o preview Lista. `NegrescoTheme` passa a aceitar o índice 4 sem alterar os demais índices ou presets.
+
+**Regressões novas:** validação instrumental da hierarquia 3×2, clicabilidade/igual distribuição dos cartões, retorno a 2×3 após recriação e 7 fileiras de personalização; renderização vetorial não idêntica ao padrão/lista. Atualizar teste anterior de limite inválido de índice 4 para 5. **Meta: 100 instrumentações por API** (98 + 2), Source e OTA. Não declarar homologação antes dos resultados deste SHA.
+
+**Fronteiras:** cinco layouts realmente aplicáveis dos doze previstos, sem inventar funções avançadas de APK (decompilação Smali, assinatura instalável). A comparação 1:1 ainda depende dos PNGs oficiais, homologação física no Galaxy A55 pendente. PR #13 draft, main, versionCode, publicação OTA e APK de distribuição inalterados.

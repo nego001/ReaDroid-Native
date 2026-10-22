@@ -818,7 +818,8 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Ver segurança", (d, w) -> showSection(2))
                 .setNegativeButton("Fechar", null).show()
         };
-        final int actionColumns = NegrescoTheme.LAYOUT_VARIANT == 3 ? 1 : 3;
+        final int actionColumns =
+            P7VisualCatalog.quickActionColumns(NegrescoTheme.LAYOUT_VARIANT);
         for (int rowIndex = 0; rowIndex < actionNames.length / actionColumns;
                 rowIndex++) {
             LinearLayout actionRow = new LinearLayout(this);

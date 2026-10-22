@@ -42,7 +42,8 @@ public final class NegrescoTheme {
         FONT_SCALE = Math.max(0.85f, Math.min(1.35f, prefs.getInt("font_percent", 100) / 100f));
         LAYOUT_VARIANT = prefs.getInt("layout_variant",
             prefs.getBoolean("compact", false) ? 1 : 0);
-        if (LAYOUT_VARIANT < 0 || LAYOUT_VARIANT > 3) LAYOUT_VARIANT = 0;
+        if (LAYOUT_VARIANT < 0 || LAYOUT_VARIANT >= P7VisualCatalog.LAYOUT_NAMES.length)
+            LAYOUT_VARIANT = 0;
         COMPACT = LAYOUT_VARIANT == 1;
         ACCENT = "purple".equals(accent) ? 0xff9b6dff
             : "green".equals(accent) ? 0xff27c99a
