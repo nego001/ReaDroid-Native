@@ -11,6 +11,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,9 +20,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import javax.crypto.Cipher;
@@ -134,7 +134,12 @@ public final class RecoveryVault {
         if (!file.isFile() || file.length() < 4 + 1 + 12 + 16
             || file.length() > MAX_FILE)
             throw new IOException("Cópia de recuperação ausente ou inválida");
-        byte[] encoded = Files.readAllBytes(file.toPath());
+        final byte[] encoded;
+        try (FileInputStream input = new FileInputStream(file)) {
+            // Never trust an earlier File.length() observation. The file
+            // might grow or be replaced while an untrusted checkpoint is read.
+            encoded = readBounded(input);
+        }
         byte[] iv = null;
         byte[] ciphertext = null;
         byte[] plaintext = null;
@@ -189,6 +194,38 @@ public final class RecoveryVault {
             if (ciphertext != null) Arrays.fill(ciphertext, (byte) 0);
             if (iv != null) Arrays.fill(iv, (byte) 0);
             Arrays.fill(encoded, (byte) 0);
+        }
+    }
+
+    /**
+     * Read a checkpoint with a hard allocation ceiling, including if it grows
+     * after the initial length check. Package-private for stream regressions.
+     * Wipe the staging array on both success and failure.
+     */
+    static byte[] readBounded(InputStream input) throws IOException {
+        byte[] staging = new byte[MAX_FILE + 1];
+        int count = 0;
+        try {
+            while (count < staging.length) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Leitura da recuperação interrompida");
+                int n = input.read(staging, count, staging.length - count);
+                if (n < 0) break;
+                if (n == 0) {
+                    int one = input.read();
+                    if (one < 0) break;
+                    staging[count++] = (byte) one;
+                } else {
+                    count += n;
+                }
+                if (count > MAX_FILE)
+                    throw new IOException("Cópia excede o limite de tamanho");
+            }
+            if (count > MAX_FILE)
+                throw new IOException("Cópia excede o limite de tamanho");
+            return Arrays.copyOf(staging, count);
+        } finally {
+            Arrays.fill(staging, (byte) 0);
         }
     }
 

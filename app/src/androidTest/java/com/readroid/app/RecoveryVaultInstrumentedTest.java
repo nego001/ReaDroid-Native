@@ -8,6 +8,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.KeyStore;
@@ -224,6 +226,80 @@ public final class RecoveryVaultInstrumentedTest {
                 assertArrayEquals(saved, Files.readAllBytes(checkpoint.toPath()));
                 assertEquals(example(), f.vault.loadForSource(f.original));
             }
+        }
+    }
+
+    @Test public void boundedReaderAllowsExactFileBudgetButRejectsOneExtraByte()
+            throws Exception {
+        // The stream check also protects against a size change after stat().
+        byte[] exact = new byte[512 * 1024 + 256];
+        exact[0] = 10;
+        exact[exact.length - 1] = 99;
+        assertArrayEquals(exact, RecoveryVault.readBounded(
+            new ByteArrayInputStream(exact)));
+        byte[] oversized = Arrays.copyOf(exact, exact.length + 1);
+        try {
+            RecoveryVault.readBounded(new ByteArrayInputStream(oversized));
+            fail("The reader must stop at MAX_FILE + 1 bytes");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("limite"));
+        }
+    }
+
+    @Test public void badEnvelopeAndTruncatedCiphertextAreRejectedWithoutMutation()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            File saved = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] valid = Files.readAllBytes(saved.toPath());
+            byte[] wrongMagic = valid.clone();
+            wrongMagic[0] ^= 1;
+            Files.write(saved.toPath(), wrongMagic);
+            try {
+                f.vault.loadForSource(f.original);
+                fail("Wrong magic must not be decrypted");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("Formato"));
+            }
+            byte[] wrongVersion = valid.clone();
+            wrongVersion[4] ^= 1;
+            Files.write(saved.toPath(), wrongVersion);
+            try {
+                f.vault.loadForSource(f.original);
+                fail("Unknown format version must be rejected");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("Versão"));
+            }
+            Files.write(saved.toPath(), Arrays.copyOf(valid, valid.length - 1));
+            try {
+                f.vault.loadForSource(f.original);
+                fail("Truncated ciphertext must fail authentication");
+            } catch (javax.crypto.AEADBadTagException expected) {
+                // No invalid plaintext or partial edits are returned.
+            }
+            Files.write(saved.toPath(), valid);
+            assertEquals(example(), f.vault.loadForSource(f.original));
+        }
+    }
+
+    @Test public void oversizedRecoveryFileIsRejectedWithoutCreatingKeystoreKey()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            File file = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] oversized = new byte[512 * 1024 + 257];
+            Files.write(file.toPath(), oversized);
+            KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            assertFalse(store.containsAlias(f.alias));
+            try {
+                f.vault.loadForSource(f.original);
+                fail("Oversized data must be rejected before Keystore use");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("inválida"));
+            }
+            store.load(null);
+            assertFalse(store.containsAlias(f.alias));
+            assertArrayEquals(oversized, Files.readAllBytes(file.toPath()));
         }
     }
 

@@ -495,3 +495,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões adicionadas:** leitura após perda da chave falha sem criar outra e sem tocar no ciphertext; falha por armazenamento apontando a arquivo comum preserva backup anterior; `Map` que relata tamanho incorreto não ultrapassa o limite de 100 alterações. Os testes observam integridade e falhas funcionais, **não** prometem inspecionar o heap nem garantir apagamento forense de `String`/JSON imutáveis da JVM.
 
 **Critério de homologação:** **72 instrumentações esperadas por API** (69 anteriores + 3 novas) e checks Source/OTA verdes no SHA final. Não declarar sucesso antes da CI. P7/PR #13 permanece rascunho, `main` intacta, sem publicação ou build QA instalável.
+
+### P7.6 — leitura limitada de checkpoint e rejeição de envelopes corrompidos (22/10/2026)
+
+**Base homologada:** commit `881a2d37`, [matriz Android 39717664322](https://github.com/nego001/ReaDroid-Native/actions/runs/39717664322), **72/72 instrumentações em API29 e API35**, Source e OTA aprovados; 13 capturas reais por API com referências oficiais ainda `BLOCKED`.
+
+**Risco encontrado:** `loadForSource` consultava `File.length()` antes de `Files.readAllBytes`; um arquivo adulterado, substituído ou aumentado no intervalo poderia ser alocado sem o limite de 512 KiB + envelope inicialmente observado. A autenticação criptográfica não substitui limites de memória durante a leitura.
+
+**Correção:** substituir a leitura integral por `readBounded(InputStream)`, limitada a `MAX_FILE + 1` bytes mesmo em caso de crescimento após a consulta inicial de tamanho, verificando interrupção, rejeitando excesso e zerando o buffer temporário ao sair. Formato do checkpoint, AES-GCM, vínculo SHA-256, limites de conteúdo e chave do Android Keystore não mudam.
+
+**Regressões:** (1) stream com teto exato e mais um byte; (2) magic/version inválidos e ciphertext truncado, com recuperação íntegra após restauração dos bytes válidos; (3) checkpoint grande demais rejeitado antes do uso do Keystore e sem modificar o arquivo. Meta **75 testes por API** (72 anteriores + 3 novos), além de Source/OTA e inventários de screenshots. Não declarar o novo SHA aprovado até encerrar toda a matriz.
+
+**Fronteiras:** somente P7.6; PR #13 continua draft, `main` intacta, sem release, APK instalável ou alteração de versão. Aceite 1:1 e Galaxy A55 continuam pendentes.
