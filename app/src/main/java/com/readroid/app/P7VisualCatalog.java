@@ -11,7 +11,8 @@ public final class P7VisualCatalog {
     private P7VisualCatalog() {}
     private static final String PREFS = "v3_personalizacao";
     public static final String[] LAYOUT_NAMES = {
-        "Padrão", "Compacto", "Moderno", "Lista", "Duas colunas", "Destaques"
+        "Padrão", "Compacto", "Moderno", "Lista", "Duas colunas", "Destaques",
+        "Fluxo"
     };
     public static final String[] PRESET_NAMES =
         {"Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro"};
@@ -29,6 +30,9 @@ public final class P7VisualCatalog {
      */
     static int[] quickActionRowSizes(int layout) {
         if (layout == 5) return new int[]{1, 1, 2, 2};
+        // Reading order: open APK first, analysis/build next, then three
+        // secondary operations. Actions remain in their original indexes.
+        if (layout == 6) return new int[]{1, 2, 3};
         int columns = quickActionColumns(layout);
         int[] rows = new int[6 / columns];
         for (int i = 0; i < rows.length; i++) rows[i] = columns;

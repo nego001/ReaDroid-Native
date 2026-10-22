@@ -661,3 +661,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** dois testes instrumentados novos verificam a geometria [1,1,2,2], a identidade das duas ações principais, preservação dos seis botões clicáveis, restauração para 2×3 após `Activity.recreate`, recusa de índice 6 e miniatura visual distinta da Lista e de Duas colunas. Atualizar teste legado de limite e contagem para seis opções. Meta **102 testes por API** (100 + 2), Source, OTA e capturas após CI do SHA de integração, sem declarar aprovação antes dos resultados.
 
 **Limites:** 6 layouts implementados de 12 previstos; 24 combinações de tema. Sem os dois PNGs originais não existe prova de paridade 1:1, e a homologação física Galaxy A55 continua pendente. PR #13 draft, `main` intocada, sem distribuição APK, `versionCode` alterado ou OTA publicada.
+
+### P7.5 — sétimo layout Fluxo (22/10/2026)
+
+**Base:** commit `b276cf0d` entregou o layout Destaques. Source e OTA passaram; executar e verificar a matriz Android da base antes de declarar seus 102 testes aprovados.
+
+**Funcionalidade:** novo layout real `Fluxo` (índice 6) distribui os seis comandos originais da Home em três faixas distintas, com a sequência `[1,2,3]`: Abrir APK em largura total; Analisar e Build APK em duas colunas; Decompilar, Editar Smali e Assinar APK em três colunas. Nenhum botão foi eliminado, renomeado para prometer capacidade inexistente ou teve callback modificado. A infraestrutura existente de organização por tamanho de linha foi reutilizada; a miniatura vetorial própria representa a composição exata. Layouts e índices 0–5 são preservados, bem como todas as preferências e os planos de edição do projeto.
+
+**Regressões:** duas instrumentações novas de Android verificam estrutura efetiva de `Activity`, nomes e ordem dos seis botões, ações clicáveis, dimensões, retorno a 2×3 por recriação, rejeição do índice 7 e pixels distintos entre miniaturas dos layouts Fluxo, Destaques e Duas colunas. Meta **104 testes por API** (102 + 2) no próximo SHA; exigem aprovação Source, OTA e ambas as versões Android.
+
+**Status:** sétimo layout implementado, não homologado até CI. Restam cinco layouts para a meta de doze. Sem alterações em APK original, assinatura, `versionCode`, branch `main`, merge, release ou publicação OTA. `references=BLOCKED` e aprovação visual/física continuam pendentes.

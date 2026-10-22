@@ -531,7 +531,7 @@ public final class P7DesignStudio {
             startCards();
             String[] layouts = P7VisualCatalog.LAYOUT_NAMES;
             int[] layoutColors={0xff29acff,0xff8d9cb1,0xff7acfff,
-                0xff27c99a,0xff9b6dff,0xffffa24a};
+                0xff27c99a,0xff9b6dff,0xffffa24a,0xff25bdd6};
             for(int i=0;i<layouts.length;i++){
                 final int index=i;
                 tile(layouts[i],"",layoutColors[i],selectedLayout==i,

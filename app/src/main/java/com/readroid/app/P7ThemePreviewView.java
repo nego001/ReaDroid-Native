@@ -99,6 +99,22 @@ public final class P7ThemePreviewView extends View {
     }
 
     private void drawLayout(Canvas c) {
+        if (themeSurface == 6) {
+            block(c, 0xff07101d, 8, 7, 92, 93, 9);
+            outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
+            block(c, accent, 19, 18, 67, 24, 2);
+            // One full-width card, a two-card row, then three small cards.
+            block(c, 0xff20364d, 18, 30, 82, 47, 3);
+            block(c, accent, 23, 36, 51, 39, 1);
+            block(c, 0xff20364d, 18, 51, 47, 69, 3);
+            block(c, 0xff20364d, 53, 51, 82, 69, 3);
+            for (int col = 0; col < 3; col++) {
+                int left = 18 + col * 22;
+                block(c, 0xff20364d, left, 73, left + 20, 89, 3);
+                block(c, accent, left + 4, 79, left + 10, 81, 1);
+            }
+            return;
+        }
         if (themeSurface == 5) {
             block(c, 0xff07101d, 8, 7, 92, 93, 9);
             outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
