@@ -1,9 +1,13 @@
 package com.readroid.app;
 
 import android.app.Activity;
+import android.content.res.ColorStateList;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
@@ -17,18 +21,28 @@ public final class P7HomeToolbar extends LinearLayout {
     private static ImageView action(Activity a, int resource, String description) {
         ImageView image = new ImageView(a);
         image.setImageResource(resource);
-        image.setPadding(dp(a, 9), dp(a, 9), dp(a, 9), dp(a, 9));
+        // Reference shows quiet line icons, not large outlined squares.
+        // The icon itself is 22dp within a still-clickable 48dp target.
+        image.setPadding(dp(a, 13), dp(a, 13), dp(a, 13), dp(a, 13));
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setContentDescription(description);
         image.setMinimumWidth(dp(a, 48));
         image.setMinimumHeight(dp(a, 48));
         image.setFocusable(true);
         image.setClickable(true);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xff070e17);
-        bg.setStroke(dp(a, 1), 0xff18314a);
-        bg.setCornerRadius(dp(a, 10));
-        image.setBackground(bg);
+        GradientDrawable touchMask = new GradientDrawable();
+        touchMask.setColor(0xffffffff);
+        touchMask.setCornerRadius(dp(a, 10));
+        image.setBackground(new RippleDrawable(
+            ColorStateList.valueOf(0x44219eff), null, touchMask));
+        image.setTooltipText(description);
+        image.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo node) {
+                super.onInitializeAccessibilityNodeInfo(host, node);
+                node.setClassName(Button.class.getName());
+            }
+        });
         return image;
     }
 

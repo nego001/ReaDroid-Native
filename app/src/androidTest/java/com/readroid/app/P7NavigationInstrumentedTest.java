@@ -1297,6 +1297,12 @@ public final class P7NavigationInstrumentedTest {
                 assertNotNull("Approved settings gear is missing", settings);
                 int minimum = NegrescoTheme.dp(activity, 48);
                 for (View target : new View[]{menu, settings}) {
+                    assertTrue("Reference toolbar must preserve 22dp glyphs",
+                        target.getPaddingLeft() == NegrescoTheme.dp(activity, 13)
+                        && target.getPaddingRight() == NegrescoTheme.dp(activity, 13));
+                    assertTrue("Toolbar should use a touch ripple, not a big frame",
+                        target.getBackground() instanceof
+                            android.graphics.drawable.RippleDrawable);
                     assertTrue("Home toolbar target too narrow",
                         target.getLayoutParams().width >= minimum);
                     assertTrue("Home toolbar target too short",
