@@ -126,3 +126,12 @@ Achado visual nas capturas P7.11 de `p7-compact-arquivos-android-35.png` (320dp/
 Teste instrumentado novo cobre matriz de larguras/escalas, orientação real, limites de linhas e ação nativa. Smokes reais de 320dp/130% e 200% exigem que o nome **“Nenhum APK selecionado”** esteja acima do chip de plano, sem recobrimento. Unidade Python simula bounds corretos e falhos. **Meta: 139 instrumentados por API**. Não homologar sem CI e PNGs do commit.
 
 Sem alterações de versão, OTA, `main`, referências binárias ausentes no repositório ou política do APK do usuário.
+
+
+### P7.12.1 — instrumentação de captura em fase isolada para Android 15
+
+Na [CI #39990100943](https://github.com/nego001/ReaDroid-Native/actions/runs/39990100943), o Android 10 passou **139/139** instrumentados e gerou as 14 PNGs; o Android 15 executou 139 testes em duas tentativas, mas **o único erro nas duas** foi `P7ExplorerPopulatedCaptureInstrumentedTest.captureRealActivityWithIndexedSyntheticApk`: `Explorer Activity lost foreground window focus`. Os outros 138 testes passaram. O risco da sobreposição de janela do sistema deve continuar sendo rejeitado, sem pular verificação de foco nem aceitar screenshots falsas.
+
+A workflow agora seleciona somente `P7ExplorerPopulatedCaptureInstrumentedTest#detectsSyntheticSystemOverlayBeforeEvidenceExport` na **suíte Gradle geral (138 testes)**; a captura real `#captureRealActivityWithIndexedSyntheticApk` continua executada pela fase **isolada** `tools/p7_capture_populated.sh` após reinstalação do app/teste. O teste isolado exige `OK (1 test)`, foco em primeiro plano, amostragem anti-ANR, PNG válido com SHA e dimensões. Assim **o total permanece 138 + 1 = 139 testes por API**, não 139 no relatório XML principal. Ambos os blocos precisam passar antes de gerar o inventário de 14 PNGs. Teste local de contrato garante os seletores e a fase separada.
+
+Esse isolamento reduz a disputa pelo foco na largada do emulador; **não garante** sucesso em todos os ambientes nem descarta problema real. Se o APK não ganhar foco na fase isolada, a CI deve falhar. Nova execução necessária antes de declarar aprovação. Sem alteração no aplicativo de produção, em arquivos APK, `main` ou OTA.

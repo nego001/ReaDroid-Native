@@ -75,6 +75,19 @@ class P7CaptureRunnerTests(unittest.TestCase):
                               env=self.env, capture_output=True, text=True,
                               timeout=20)
 
+    def test_workflow_keeps_overlay_test_in_suite_and_capture_isolated(self):
+        workflow = (ROOT / ".github/workflows/p7-brand-validation.yml"
+                    ).read_text(encoding="utf-8")
+        self.assertIn(
+            "P7ExplorerPopulatedCaptureInstrumentedTest"
+            "#detectsSyntheticSystemOverlayBeforeEvidenceExport", workflow)
+        self.assertIn("bash tools/p7_capture_populated.sh", workflow)
+        script = RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "P7ExplorerPopulatedCaptureInstrumentedTest"
+            "#captureRealActivityWithIndexedSyntheticApk", script)
+        self.assertIn("OK (1 test)", script)
+
     def test_valid_real_png_and_shell_state(self):
         result = self.execute()
         self.assertEqual(0, result.returncode, result.stderr)
