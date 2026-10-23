@@ -14,10 +14,12 @@ def chunk(tag, payload=b""):
             + struct.pack(">I", zlib.crc32(tag + payload) & 0xffffffff))
 
 
-def png(width, height):
+def png(width, height, seed=0):
     # Valid synthetic pixels only for a unit fixture, NEVER visual references.
+    # Distinct deterministic colors model 14 independent screenshots.
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    row = b"\x00" + b"\x00\x00\x00\xff" * width
+    pixel = bytes((seed % 256, (seed * 3) % 256, (seed * 7) % 256, 255))
+    row = b"\x00" + pixel * width
     return (capture.PNG_MAGIC + chunk(b"IHDR", ihdr)
             + chunk(b"IDAT", zlib.compress(row * height))
             + chunk(b"IEND"))
@@ -36,10 +38,11 @@ def png_with_stream(width, height, compressed, color=6, split=False):
 
 def populate(directory, api=29, size=(400, 800), density=160):
     compact = (320, 720)
-    for _, scenario, template in capture.SCREENS:
+    for index, (_, scenario, template) in enumerate(capture.SCREENS):
         width, height = (compact if scenario ==
                          "compact_320dp_font_130pct" else size)
-        (directory / template.format(api=api)).write_bytes(png(width, height))
+        (directory / template.format(api=api)).write_bytes(
+            png(width, height, seed=index + 1))
 
 
 class P7ScreenshotInventoryTests(unittest.TestCase):
@@ -72,6 +75,19 @@ class P7ScreenshotInventoryTests(unittest.TestCase):
             (root / "p7-logo-workshop-android-29.png").unlink()
             with self.assertRaisesRegex(
                     capture.ScreenshotEvidenceError, "missing"):
+                capture.build_manifest(
+                    root, 29, (400, 800), 160, reference_dir=root)
+
+    def test_copy_pasted_screenshot_is_rejected_even_with_valid_png(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            populate(root)
+            original = root / "p7-security-android-29.png"
+            copied = root / "p7-build-android-29.png"
+            copied.write_bytes(original.read_bytes())
+            with self.assertRaisesRegex(
+                    capture.ScreenshotEvidenceError,
+                    "Duplicate screenshot evidence.*p7-build.*p7-security"):
                 capture.build_manifest(
                     root, 29, (400, 800), 160, reference_dir=root)
 

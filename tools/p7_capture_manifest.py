@@ -166,6 +166,7 @@ def build_manifest(directory, api, viewport, density, reference_dir=None):
         raise ScreenshotEvidenceError("Invalid emulator geometry")
     compact_size = viewport_pixels(320, 720, density)
     samples = []
+    seen_digests = {}
     for section, scenario, template in SCREENS:
         filename = template.format(api=api)
         (actual_width, actual_height), digest, size = inspect_png(
@@ -176,6 +177,14 @@ def build_manifest(directory, api, viewport, density, reference_dir=None):
             raise ScreenshotEvidenceError(
                 f"{filename}: {actual_width}x{actual_height} PNG "
                 f"does not match {expected_width}x{expected_height} emulator")
+        # A valid PNG can be copied and renamed to impersonate another
+        # scene. Every one of the 14 required screenshots must be unique
+        # bytes, even when two pages use the same baseline dimensions.
+        if digest in seen_digests:
+            raise ScreenshotEvidenceError(
+                f"Duplicate screenshot evidence: {filename} "
+                f"is identical to {seen_digests[digest]}")
+        seen_digests[digest] = filename
         samples.append({
             "screen": section,
             "scenario": scenario,
@@ -192,7 +201,7 @@ def build_manifest(directory, api, viewport, density, reference_dir=None):
     return {
         "schema_version": 1,
         "source": "GitHub Actions / Android emulator / adb exec-out screencap",
-        "validation_scope": "PNG structure, deflate scanlines, dimensions and hashes only",
+        "validation_scope": "PNG structure, deflate scanlines, dimensions, hashes and unique screenshot evidence; not visual similarity",
         "pixel_perfect_approved": False,
         "physical_device_approved": False,
         "official_references": "VERIFIED" if refs_verified else "BLOCKED",
