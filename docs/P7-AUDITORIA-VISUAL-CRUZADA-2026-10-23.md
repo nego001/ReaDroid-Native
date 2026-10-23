@@ -72,3 +72,12 @@ A hierarquia de ações deixa o **PNG principal** em botão preenchido com degra
 Dois testes instrumentados novos conferem, nos **dois editores reais**, a cor efetiva de fundo do diálogo, o texto de fechamento, o contraste semântico dos botões, acessibilidade e os cliques disponíveis. **Meta após o commit:** 135 testes por API; não considerar validado até concluir matriz e screenshots.
 
 Não muda app id, versão, política de APK, assinatura, OTA nem `main`; fidelidade 1:1 e A55 físico continuam `NOT_APPROVED`.
+
+ 
+## P7.9 — captura do Explorer não pode conter ANR do Android
+
+A auditoria de capturas antigas detectou uma falha de qualidade em `p7-explorer-populated-android-35.png` do pacote P7.7: havia um modal claro de sistema **“Pixel Launcher isn't responding”** cobrindo as pastas, mesmo que o PNG, seu SHA e os testes funcionais fossem válidos. Na P7.8, a mesma captura foi obtida **sem o modal**, mas isso antes não era um requisito automatizado.
+
+A instrumentação de evidência `P7ExplorerPopulatedCaptureInstrumentedTest` agora verifica `UiAutomation.getRootInActiveWindow()` e exige que o dono da janela focada seja `com.readroid.app` antes e depois de `takeScreenshot()`. Também mede 35 amostras da área central, rejeitando o padrão de grande modal de sistema claro que ocorreu no tema escuro de QA. Teste sintético reproduz uma caixa clara central e exige rejeição, e a tela escura limpa é aceita.
+
+Este filtro é **focado no Explorador sintético no tema escuro da CI**, não substitui inspeção visual de todas as telas nem identifica todo tipo de modal. O objetivo é impedir que uma sobreposição conhecida do emulador passe por imagem limpa. Meta: **136 testes instrumentados por API**, captura populada limpa, inventário 28/28 e relatório cruzado; estado não aprovado até o workflow finalizar. Sem alteração do app de produção, OTA, `main` ou política de APK.

@@ -3,6 +3,9 @@ package com.readroid.app;
 import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.Canvas;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.View;
 import android.view.ViewGroup;
 import androidx.test.core.app.ActivityScenario;
@@ -94,6 +97,83 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
             .put("explorer", new JSONObject().put("files", files));
     }
 
+
+    /**
+     * A valid PNG may still contain an Android ANR modal over the real app.
+     * Keep this test screenshot honest: check the focused accessibility
+     * window AND a near-white centered rectangle characteristic of system
+     * ANR dialogs in our isolated, dark-theme fixture. This is not a general
+     * image classifier and does not certify visual fidelity.
+     */
+    private static void assertExplorerWindowInForeground() {
+        AccessibilityNodeInfo active = InstrumentationRegistry
+            .getInstrumentation().getUiAutomation().getRootInActiveWindow();
+        assertNotNull("No active accessibility window before capture", active);
+        try {
+            CharSequence owner = active.getPackageName();
+            assertEquals("A system window obscures the Explorer",
+                "com.readroid.app",
+                owner == null ? null : owner.toString());
+        } finally {
+            active.recycle();
+        }
+    }
+
+    private static void assertNoBrightSystemOverlay(Bitmap screenshot) {
+        assertNotNull(screenshot);
+        int paleSamples = 0;
+        int totalSamples = 0;
+        // Sample the center of the app without the OS status/navigation bars.
+        // A white system ANR dialog typically covers > 60% of this region.
+        for (int row = 0; row < 5; row++) {
+            for (int column = 0; column < 7; column++) {
+                int x = Math.round(screenshot.getWidth()
+                    * (0.28f + 0.44f * column / 6f));
+                int y = Math.round(screenshot.getHeight()
+                    * (0.40f + 0.20f * row / 4f));
+                int pixel = screenshot.getPixel(x, y);
+                int red = Color.red(pixel);
+                int green = Color.green(pixel);
+                int blue = Color.blue(pixel);
+                if (red > 212 && green > 212 && blue > 212
+                        && Math.max(red, Math.max(green, blue))
+                            - Math.min(red, Math.min(green, blue)) < 20) {
+                    paleSamples++;
+                }
+                totalSamples++;
+            }
+        }
+        assertTrue("Possible bright OS dialog over the dark QA Explorer: "
+                + paleSamples + "/" + totalSamples + " pale samples",
+            paleSamples < totalSamples * 0.60f);
+    }
+
+    @Test public void detectsSyntheticSystemOverlayBeforeEvidenceExport() {
+        // Pure pixel regression for the observed API35 Pixel Launcher ANR:
+        // a light modal covering the center must fail even with valid pixels.
+        Bitmap dark = Bitmap.createBitmap(300, 600, Bitmap.Config.ARGB_8888);
+        Bitmap blocked = Bitmap.createBitmap(300, 600, Bitmap.Config.ARGB_8888);
+        try {
+            dark.eraseColor(Color.BLACK);
+            blocked.eraseColor(Color.BLACK);
+            Canvas canvas = new Canvas(blocked);
+            android.graphics.Paint paint = new android.graphics.Paint();
+            paint.setColor(0xfff0eff5);
+            canvas.drawRoundRect(40, 195, 260, 405, 18, 18, paint);
+            assertNoBrightSystemOverlay(dark);
+            try {
+                assertNoBrightSystemOverlay(blocked);
+                fail("A centered system modal was mistakenly approved");
+            } catch (AssertionError expected) {
+                assertTrue(expected.getMessage()
+                    .contains("Possible bright OS dialog"));
+            }
+        } finally {
+            dark.recycle();
+            blocked.recycle();
+        }
+    }
+
     @Test public void captureRealActivityWithIndexedSyntheticApk() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File apk = File.createTempFile("p7_fixture_", ".apk", context.getCacheDir());
@@ -126,10 +206,20 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
                     }
                 });
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                // The real file rows must be visible, not hidden by an ANR,
+                // launcher/system modal or unexpected foreground application.
+                assertExplorerWindowInForeground();
                 Bitmap screenshot = InstrumentationRegistry.getInstrumentation()
                     .getUiAutomation().takeScreenshot();
                 assertNotNull("Emulator screenshot unavailable", screenshot);
                 assertTrue(screenshot.getWidth() > 0 && screenshot.getHeight() > 0);
+                try {
+                    assertExplorerWindowInForeground();
+                    assertNoBrightSystemOverlay(screenshot);
+                } catch (AssertionError blocked) {
+                    screenshot.recycle();
+                    throw blocked;
+                }
                 try (FileOutputStream out =
                         context.openFileOutput(SCREENSHOT, Context.MODE_PRIVATE)) {
                     assertTrue("PNG compression failed", screenshot.compress(
