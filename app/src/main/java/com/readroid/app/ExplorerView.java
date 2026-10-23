@@ -122,6 +122,19 @@ public final class ExplorerView {
         }
     }
 
+    /**
+     * Preserve the detailed search prompt for normal fonts while keeping
+     * the native EditText legible at 320dp and 200% accessibility scale.
+     * This changes hint text only; search terms and indexing are untouched.
+     */
+    static String searchHint(int widthDp, float systemFont, float appFont) {
+        float effective = Math.max(0.85f, systemFont)
+            * Math.max(0.85f, appFont);
+        if (effective >= 1.65f) return "Buscar no APK";
+        if (widthDp <= 360) return "Buscar no APK...";
+        return "Buscar arquivo pelo nome ou caminho";
+    }
+
     public ExplorerView(Activity activity, LinearLayout parent) {
         this.activity = activity;
         // Final search is initialized before the breadcrumb callback captures it.
@@ -139,8 +152,11 @@ public final class ExplorerView {
         // input bound, pasting a longer query looks like a broken SQLite
         // index and permanently downgrades the session to the partial JSON.
         search.setFilters(new InputFilter[]{new InputFilter.LengthFilter(256)});
-        boolean narrow = activity.getResources().getConfiguration().screenWidthDp <= 360;
-        search.setHint(narrow ? "Buscar no APK..." : "Buscar arquivo pelo nome ou caminho");
+        int screenWidthDp = activity.getResources().getConfiguration().screenWidthDp;
+        boolean narrow = screenWidthDp <= 360;
+        search.setHint(searchHint(screenWidthDp,
+            activity.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE));
         search.setTextSize((narrow ? 13 : 14) * NegrescoTheme.FONT_SCALE);
         search.setTextColor(NegrescoTheme.TEXT);
         search.setHintTextColor(NegrescoTheme.MUTED);

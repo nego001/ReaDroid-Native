@@ -271,6 +271,44 @@ public final class IndexedExplorerViewInstrumentedTest {
         }
     }
 
+    @Test public void searchHintAdaptsToLargeFontWithoutChangingIndexSearch()
+            throws Exception {
+        assertEquals("Buscar arquivo pelo nome ou caminho",
+            ExplorerView.searchHint(393, 1f, 1f));
+        assertEquals("Buscar no APK...",
+            ExplorerView.searchHint(320, 1.3f, 1f));
+        assertEquals("Buscar no APK",
+            ExplorerView.searchHint(393, 2f, 1f));
+        assertEquals("Buscar no APK",
+            ExplorerView.searchHint(320, 2f, 1f));
+        assertEquals("Buscar no APK",
+            ExplorerView.searchHint(393, 1.3f, 1.35f));
+        assertEquals("Buscar arquivo pelo nome ou caminho",
+            ExplorerView.searchHint(393, 1f, 1.35f));
+
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                LinearLayout root = new LinearLayout(activity);
+                activity.setContentView(root);
+                new ExplorerView(activity, root);
+                EditText field = input(root);
+                assertNotNull("Explorer search input must remain editable", field);
+                assertEquals(ExplorerView.searchHint(
+                    activity.getResources().getConfiguration().screenWidthDp,
+                    activity.getResources().getConfiguration().fontScale,
+                    NegrescoTheme.FONT_SCALE), field.getHint().toString());
+                assertTrue("Real search must accept keyboard input",
+                    field.isFocusable() && field.isEnabled());
+                char[] oversized = new char[300];
+                java.util.Arrays.fill(oversized, 'x');
+                field.setText(new String(oversized));
+                assertEquals("256-character index bound must stay effective",
+                    256, field.getText().length());
+            });
+        }
+    }
+
     @Test public void indexedPagesSearchAndEditPlanSurviveNavigation() throws Exception {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

@@ -135,3 +135,14 @@ Na [CI #39990100943](https://github.com/nego001/ReaDroid-Native/actions/runs/399
 A workflow agora seleciona somente `P7ExplorerPopulatedCaptureInstrumentedTest#detectsSyntheticSystemOverlayBeforeEvidenceExport` na **suíte Gradle geral (138 testes)**; a captura real `#captureRealActivityWithIndexedSyntheticApk` continua executada pela fase **isolada** `tools/p7_capture_populated.sh` após reinstalação do app/teste. O teste isolado exige `OK (1 test)`, foco em primeiro plano, amostragem anti-ANR, PNG válido com SHA e dimensões. Assim **o total permanece 138 + 1 = 139 testes por API**, não 139 no relatório XML principal. Ambos os blocos precisam passar antes de gerar o inventário de 14 PNGs. Teste local de contrato garante os seletores e a fase separada.
 
 Esse isolamento reduz a disputa pelo foco na largada do emulador; **não garante** sucesso em todos os ambientes nem descarta problema real. Se o APK não ganhar foco na fase isolada, a CI deve falhar. Nova execução necessária antes de declarar aprovação. Sem alteração no aplicativo de produção, em arquivos APK, `main` ou OTA.
+
+
+## P7.13 — busca responsiva do Explorador a 200% (23/10/2026)
+
+**Base aprovada:** [P7.12.1, CI 39993459761](https://github.com/nego001/ReaDroid-Native/actions/runs/39993459761) terminou verde em API29/35: **138 testes amplos + 1 captura instrumentada isolada** por API; inventário de 14 PNGs por API (28 ao todo) e painel cruzado aprovados. A captura isolada manteve verificação de foco e detector de overlay claro.
+
+**Achado das capturas reais:** na tela `p7-large-text-arquivos-android-35.png`, o hint do campo de busca exibido a 200% estava cortado horizontalmente porque a mensagem longa `Buscar arquivo pelo nome ou caminho` era escolhida apenas com base na largura dp. A busca em si funcionava.
+
+**Mudança P7.13:** `ExplorerView.searchHint(...)` preserva a mensagem completa em fontes normais de tela padrão, `Buscar no APK...` na tela de 320dp/130%, e usa `Buscar no APK` em escala de texto efetiva **≥ 165%**, independente da largura. Só muda o placeholder visual; `EditText`, entrada de teclado, filtros, pesquisa no índice SQLite e limite de 256 caracteres permanecem intactos. Novo teste instrumentado valida seis escalas/larguras, o hint realmente aplicado ao campo e o limite de 256 caracteres. Meta: **140 instrumentados por API**, incluindo a captura isolada; 28 screenshots. Aprovado apenas após CI e revisão visual do novo PNG.
+
+Sem mudanças de APK, OTA, `main`, dados reais do usuário ou homologação 1:1.
