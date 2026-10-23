@@ -86,3 +86,10 @@ Este filtro é **focado no Explorador sintético no tema escuro da CI**, não su
 ### P7.9.1 — seleção explícita do único método de captura
 
 A suíte integral inclui o novo teste de rejeição de modal claro mais o teste que gera o PNG, somando 136 testes por API. O script `tools/p7_capture_populated.sh`, entretanto, executa a instrumentação **isolada** após Gradle e exige `OK (1 test)`. Para impedir o conflito, ele agora passa `-e class com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#captureRealActivityWithIndexedSyntheticApk`; não roda o teste sintético puro uma segunda vez. O teste de shell simulado valida o nome completo do método invocado.
+
+ 
+### P7.9.2 — correção do contrato de janela acessível
+
+A [CI #39969080093](https://github.com/nego001/ReaDroid-Native/actions/runs/39969080093) revelou no Android 10 que `UiAutomation.getRootInActiveWindow()` retornou `null` no emulador, mesmo com o Explorador funcional, causando **uma falha dentre 136 testes instrumentados**. Isso significa que exigir sempre um nó de acessibilidade era uma premissa inválida.
+
+O teste mantém a exigência de janela em primeiro plano via `ActivityScenario.onActivity(... decor.hasWindowFocus())`. Quando a árvore de acessibilidade está disponível, a propriedade do pacote deve continuar sendo `com.readroid.app`. Quando ela está indisponível, o teste **não aprova simplesmente por falta de dados**: verifica obrigatoriamente foco real do aplicativo antes e depois, além da inspeção dos pixels da imagem capturada contra o modal claro de ANR conhecido. O teste de caixa clara sintética e a validação de SHA, PNG e todas as imagens permanecem ativos. API35 e API29 devem ser reexecutados antes de considerar P7.9 verde.

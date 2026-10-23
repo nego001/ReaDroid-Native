@@ -105,13 +105,23 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
      * ANR dialogs in our isolated, dark-theme fixture. This is not a general
      * image classifier and does not certify visual fidelity.
      */
-    private static void assertExplorerWindowInForeground() {
+    private static void assertExplorerWindowInForeground(
+            ActivityScenario<MainActivity> scenario) {
+        // getRootInActiveWindow() legitimately returns null on some emulator
+        // configurations without accessibility retrieval enabled. The
+        // resumed Activity must still own keyboard/window focus. An OS ANR
+        // overlay steals it, independently of accessibility availability.
+        scenario.onActivity(activity -> {
+            View decor = activity.getWindow().getDecorView();
+            assertTrue("Explorer Activity lost foreground window focus",
+                decor.hasWindowFocus());
+        });
         AccessibilityNodeInfo active = InstrumentationRegistry
             .getInstrumentation().getUiAutomation().getRootInActiveWindow();
-        assertNotNull("No active accessibility window before capture", active);
+        if (active == null) return; // focus + pixel checks remain mandatory
         try {
             CharSequence owner = active.getPackageName();
-            assertEquals("A system window obscures the Explorer",
+            assertEquals("An unrelated system window covers the Explorer",
                 "com.readroid.app",
                 owner == null ? null : owner.toString());
         } finally {
@@ -208,13 +218,13 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync();
                 // The real file rows must be visible, not hidden by an ANR,
                 // launcher/system modal or unexpected foreground application.
-                assertExplorerWindowInForeground();
+                assertExplorerWindowInForeground(scenario);
                 Bitmap screenshot = InstrumentationRegistry.getInstrumentation()
                     .getUiAutomation().takeScreenshot();
                 assertNotNull("Emulator screenshot unavailable", screenshot);
                 assertTrue(screenshot.getWidth() > 0 && screenshot.getHeight() > 0);
                 try {
-                    assertExplorerWindowInForeground();
+                    assertExplorerWindowInForeground(scenario);
                     assertNoBrightSystemOverlay(screenshot);
                 } catch (AssertionError blocked) {
                     screenshot.recycle();
