@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.graphics.Shader;
 import android.view.View;
 
@@ -19,6 +18,9 @@ public final class P7ThemePreviewView extends View {
     private final int mode;
     private final int themeSurface;
     private final boolean themeGlow;
+    // Retain the shader across frames; Canvas float-coordinate overloads
+    // avoid allocating temporary RectF objects during every redraw.
+    private final LinearGradient presetGradient;
 
     public P7ThemePreviewView(Context context, int accent) {
         this(context, accent, 0, 0, false);
@@ -41,6 +43,11 @@ public final class P7ThemePreviewView extends View {
         this.mode = mode;
         this.themeSurface = surface;
         this.themeGlow = glow;
+        presetGradient = mode == 2
+            ? new LinearGradient(14, 15, 90, 93,
+                new int[]{0xff081326, accent, 0xff13162b},
+                new float[]{0f, 0.72f, 1f}, Shader.TileMode.CLAMP)
+            : null;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
@@ -49,7 +56,7 @@ public final class P7ThemePreviewView extends View {
         paint.setShader(null);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(color);
-        c.drawRoundRect(new RectF(left, top, right, bottom), radius, radius, paint);
+        c.drawRoundRect(left, top, right, bottom, radius, radius, paint);
     }
 
     private void outline(Canvas c, int color, float left, float top,
@@ -58,7 +65,7 @@ public final class P7ThemePreviewView extends View {
         paint.setStrokeWidth(1.6f);
         paint.setShader(null);
         paint.setColor(color);
-        c.drawRoundRect(new RectF(left, top, right, bottom), radius, radius, paint);
+        c.drawRoundRect(left, top, right, bottom, radius, radius, paint);
         paint.setStyle(Paint.Style.FILL);
     }
 
@@ -190,11 +197,8 @@ public final class P7ThemePreviewView extends View {
     private void drawPreset(Canvas c) {
         block(c, 0xff07101c, 4, 5, 96, 95, 12);
         paint.setStyle(Paint.Style.FILL);
-        paint.setShader(new LinearGradient(
-            14, 15, 90, 93,
-            new int[]{0xff081326, accent, 0xff13162b},
-            new float[]{0f, 0.72f, 1f}, Shader.TileMode.CLAMP));
-        c.drawRoundRect(new RectF(13, 12, 87, 88), 12, 12, paint);
+        paint.setShader(presetGradient);
+        c.drawRoundRect(13, 12, 87, 88, 12, 12, paint);
         paint.setShader(null);
         block(c, 0xb5091322, 23, 23, 71, 32, 5);
         block(c, 0xa6081322, 23, 42, 80, 53, 5);

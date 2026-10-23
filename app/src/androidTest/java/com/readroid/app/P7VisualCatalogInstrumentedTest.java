@@ -672,6 +672,71 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    private static void assertRepeatablePreview(Context context, int accent,
+            int mode, int surface, boolean glow) {
+        P7ThemePreviewView thumbnail = new P7ThemePreviewView(
+            context, accent, mode, surface, glow);
+        thumbnail.layout(0, 0, 100, 100);
+        Bitmap expected = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+        Bitmap actual = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+        try {
+            thumbnail.draw(new Canvas(expected));
+            Canvas canvas = new Canvas(actual);
+            for (int iteration = 0; iteration < 8; iteration++) {
+                actual.eraseColor(android.graphics.Color.TRANSPARENT);
+                thumbnail.draw(canvas);
+                assertTrue("Visual preview must be deterministic after redraw; mode="
+                    + mode + ", surface=" + surface, expected.sameAs(actual));
+            }
+        } finally {
+            expected.recycle();
+            actual.recycle();
+        }
+    }
+
+    @Test public void allThemeLayoutAndPresetPreviewsStayVisuallyStableOnRedraw() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        int[] accents = {0xff29acff, 0xffab42ff, 0xff27c99a, 0xffffa24a};
+        for (int surface = 0; surface < 3; surface++)
+            for (int accent : accents)
+                for (boolean glow : new boolean[]{false, true})
+                    assertRepeatablePreview(context, accent, 0, surface, glow);
+        for (int layout = 0; layout < P7VisualCatalog.LAYOUT_NAMES.length; layout++)
+            assertRepeatablePreview(context, 0xff29acff, 1, layout, false);
+        for (int i = 0; i < P7VisualCatalog.PRESET_NAMES.length; i++)
+            assertRepeatablePreview(context, accents[i % accents.length], 2, 0, false);
+    }
+
+    @Test public void presetGradientIsCachedForEntireViewLifetime()
+            throws Exception {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        java.lang.reflect.Field shader = P7ThemePreviewView.class
+            .getDeclaredField("presetGradient");
+        shader.setAccessible(true);
+        P7ThemePreviewView preview = new P7ThemePreviewView(
+            context, 0xff29acff, 2, 0, false);
+        preview.layout(0, 0, 100, 100);
+        Object cached = shader.get(preview);
+        assertNotNull("Preset shader should be created exactly once", cached);
+        Bitmap bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+        try {
+            Canvas canvas = new Canvas(bitmap);
+            for (int pass = 0; pass < 30; pass++) {
+                preview.draw(canvas);
+                assertSame("Redraw must reuse the same gradient object",
+                    cached, shader.get(preview));
+            }
+            assertNull("Layout does not need a preset gradient",
+                shader.get(new P7ThemePreviewView(context, 0xff29acff, 1, 3, false)));
+            assertNull("Theme does not need a preset gradient",
+                shader.get(new P7ThemePreviewView(context, 0xff29acff, 0, 1, true)));
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
     @Test public void compactAndModernLayoutsPersistSafely() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

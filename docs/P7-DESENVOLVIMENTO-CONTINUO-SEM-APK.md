@@ -763,3 +763,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressão:** teste Android abre o catálogo Layout num viewport de 320dp e com fonte interna a 135%, percorre os 12 cartões reais e confere título completo com até duas linhas sem reticências, largura mínima, foco/clique, anúncio único e papel `Button`. Meta **116 testes por API** (115 + 1) com Source, OTA e evidências Android; nenhuma afirmação de homologação visual 1:1 sem os PNGs oficiais.
 
 **Restrições:** PR #13 draft, `main` intocada, sem APK distribuído, versão modificada, publicação OTA nem homologação física Galaxy A55.
+
+### P7.6 — miniaturas sem alocações repetitivas na rolagem (22/10/2026)
+
+**Base confirmada:** commit `38b0c8ac`, [CI Android 39871145875](https://github.com/nego001/ReaDroid-Native/actions/runs/39871145875), **116/116 testes aprovados nas APIs 29 e 35**, Source/OTA aprovados, 13 capturas por API. A homologação de fidelidade 1:1 e física seguem bloqueadas.
+
+**Desempenho:** `P7ThemePreviewView` criava dois objetos `RectF` por bloco/contorno desenhado e um novo `LinearGradient` com arrays a cada `onDraw` de preset, gerando pressão desnecessária de alocação e GC durante a rolagem do Design Studio. Os blocos, contornos e degradês continuam exatamente com as mesmas coordenadas, cores, raios e shaders, mas usam `Canvas.drawRoundRect(float...)` e um `LinearGradient` final criado apenas uma vez para miniaturas do tipo preset. O `Paint` existente continua reutilizado. O shader dos outros dois tipos permanece nulo.
+
+**Verificação:** dois novos testes instrumentados verificam pixels estáveis durante redesenhos sucessivos para 24 temas, 12 layouts e cinco presets, e identidade do shader durante 30 redesenhos de cada instância de preset. A CI precisa passar **118 testes por API** (116+2), Source e OTA. Isso é otimização comprovável por ausência de alocações no código de desenho, **não** benchmark FPS ou memória em aparelho real.
+
+**Fronteiras:** só renderização vetorial; sem tocar callbacks, aparência persistida, APK em análise/edição, chaves ou engenharia reversa. Referências PNG ausentes, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`; PR #13 draft, sem merge, APK distribuído ou OTA publicada.
