@@ -15,9 +15,11 @@ def chunk(tag, payload=b""):
             + struct.pack(">I", zlib.crc32(tag + payload) & 0xffffffff))
 
 
-def fake_png(width, height):
+def fake_png(width, height, seed=0):
     header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    row = b"\x00" + b"\x20\x40\x80\xff" * width
+    pixel = bytes(((32 + seed) % 256, (64 + 3 * seed) % 256,
+                   (128 + 7 * seed) % 256, 255))
+    row = b"\x00" + pixel * width
     return (capture.PNG_MAGIC + chunk(b"IHDR", header)
             + chunk(b"IDAT", zlib.compress(row * height))
             + chunk(b"IEND"))
@@ -25,10 +27,11 @@ def fake_png(width, height):
 
 def fixture(root, api, reference_dir):
     root.mkdir(parents=True, exist_ok=True)
-    for _, scenario, template in capture.SCREENS:
+    for index, (_, scenario, template) in enumerate(capture.SCREENS):
         dimensions = ((320, 720) if scenario ==
                       "compact_320dp_font_130pct" else (400, 800))
-        (root / template.format(api=api)).write_bytes(fake_png(*dimensions))
+        (root / template.format(api=api)).write_bytes(
+            fake_png(*dimensions, seed=index + 1 + (api - 29) * 14))
     evidence = capture.build_manifest(
         root, api, (400, 800), 160, reference_dir=reference_dir)
     (root / f"p7-evidence-android-{api}.json").write_text(

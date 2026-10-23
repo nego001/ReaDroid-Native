@@ -15,19 +15,22 @@ def chunk(name, data=b""):
             + struct.pack(">I", zlib.crc32(name + data) & 0xffffffff))
 
 
-def png(width, height):
+def png(width, height, seed=0):
     header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    row = b"\x00" + b"\x20\x40\x80\xff" * width
+    pixel = bytes(((32 + seed) % 256, (64 + 3 * seed) % 256,
+                   (128 + 7 * seed) % 256, 255))
+    row = b"\x00" + pixel * width
     return (capture.PNG_MAGIC + chunk(b"IHDR", header)
             + chunk(b"IDAT", zlib.compress(row * height))
             + chunk(b"IEND"))
 
 
 def fixture(root):
-    for _, scenario, template in capture.SCREENS:
+    for index, (_, scenario, template) in enumerate(capture.SCREENS):
         dims = ((320, 720) if scenario == "compact_320dp_font_130pct"
                 else (400, 800))
-        (root / template.format(api=29)).write_bytes(png(*dims))
+        (root / template.format(api=29)).write_bytes(
+            png(*dims, seed=index + 1))
     evidence = capture.build_manifest(root, 29, (400, 800), 160,
                                       reference_dir=root)
     manifest = root / "p7-evidence-android-29.json"
