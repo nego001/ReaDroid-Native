@@ -198,6 +198,57 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    private static void assertAccessibleButton(View control) {
+        assertNotNull(control);
+        assertTrue(control.isClickable());
+        assertTrue(control.isFocusable());
+        assertNotNull("Clickable text needs explicit button semantics",
+            control.getAccessibilityDelegate());
+        android.view.accessibility.AccessibilityNodeInfo node =
+            android.view.accessibility.AccessibilityNodeInfo.obtain();
+        try {
+            control.getAccessibilityDelegate()
+                .onInitializeAccessibilityNodeInfo(control, node);
+            assertEquals(Button.class.getName(), node.getClassName());
+            assertTrue(node.isClickable());
+            assertEquals(control.isSelected(), node.isSelected());
+            assertEquals(control.getContentDescription(), node.getContentDescription());
+        } finally {
+            node.recycle();
+        }
+    }
+
+    @Test public void designSubtabsAndAllCatalogOpenersAnnounceButtonRoles() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                int minimum = NegrescoTheme.dp(activity, 48);
+                for (String section : new String[]{
+                        "Previews de Temas", "Opções de Layout",
+                        "Presets de Aparência"}) {
+                    View opener = byDescription(root, "Ver todos: " + section);
+                    assertAccessibleButton(opener);
+                    assertTrue(opener.getMinimumHeight() >= minimum);
+                }
+                for (String name : new String[]{
+                        "Temas", "Layout", "Ícones", "Logotipo"}) {
+                    View tab = clickableText(root, name);
+                    assertAccessibleButton(tab);
+                    assertTrue(tab.getMinimumHeight() >= minimum);
+                    assertTrue("Subtab must respond to user activation",
+                        tab.performClick());
+                    assertTrue(tab.isSelected());
+                    assertAccessibleButton(tab);
+                    assertNotNull(byDescription(root, name + ", aba selecionada"));
+                }
+            });
+        }
+    }
+
     @Test public void designSubtabSurvivesRealActivityRecreation() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

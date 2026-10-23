@@ -67,6 +67,19 @@ public final class P7DesignStudio {
     private final TextView[] tabViews=new TextView[4];
 
     private int dp(int n) { return NegrescoTheme.dp(a,n); }
+
+    /** Expose clickable text navigation as real TalkBack button semantics. */
+    private static void exposeAsButton(View control) {
+        control.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        control.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
+    }
+
     private TextView label(String text,int size,int color,boolean bold) {
         TextView t=new TextView(a);t.setText(text);t.setTextSize(size*NegrescoTheme.FONT_SCALE);
         t.setTextColor(color);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
@@ -121,6 +134,7 @@ public final class P7DesignStudio {
             tab.setPadding(dp(10),0,dp(10),0);
             tab.setClickable(true);
             tab.setFocusable(true);
+            exposeAsButton(tab);
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(48));
             p.rightMargin=dp(5);tabs.addView(tab,p);
             tabViews[i]=tab;
@@ -173,6 +187,7 @@ public final class P7DesignStudio {
             viewAll.setClickable(true);
             viewAll.setFocusable(true);
             viewAll.setContentDescription("Ver todos: " + title);
+            exposeAsButton(viewAll);
             viewAll.setOnClickListener(v -> onViewAll.run());
             row.addView(viewAll);
         }

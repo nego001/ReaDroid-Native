@@ -799,3 +799,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** duas novas instrumentações verificam os dois criadores empilhados na Activity real sob fonte interna 135% e os quatro modelos de ícone, focáveis/clicáveis e com classe acessível `Button`, width/height responsivos, legenda intacta e sem duplicação na árvore. Meta **121 testes por API** (119 + 2) e checks Source/OTA. Isso não substitui uso manual com TalkBack ou medidas físicas de performance.
 
 **Pendências:** assets PNG oficiais, comparação 1:1 e Galaxy A55 físico. PR #13 permanece draft, sem merge, APK de distribuição, versionCode ou OTA publicada.
+
+### P7.6 — semântica de botão nas abas internas e nos atalhos “Ver todos” (22/10/2026)
+
+**Base aprovada:** commit `f2a878ee`, [CI Android 39883463819](https://github.com/nego001/ReaDroid-Native/actions/runs/39883463819), **121/121 testes instrumentados aprovados em API29 e API35**, Source/OTA verdes e 13 capturas por API. Comparação visual 1:1 e físico ainda bloqueados.
+
+**Problema de acessibilidade:** as quatro abas `Temas`, `Layout`, `Ícones`, `Logotipo` e os três atalhos `Ver todos` do Design Studio são `TextView` interativos com foco e descrição mas sem papel de botão exposto ao serviço assistivo. O método `exposeAsButton` define o papel `Button` no `AccessibilityNodeInfo` desses sete controles. Preserva texto, seleção real (inclusive após toque), área mínima de 48dp, callbacks, opções do catálogo e preferências atuais.
+
+**Regressão:** `designSubtabsAndAllCatalogOpenersAnnounceButtonRoles` abre a Activity real, testa a classe e descrição acessíveis dos três atalhos e das quatro abas e percorre mudanças de seleção sem perder os quatro controles. Nova meta **122 testes por API** (121+1), Source/OTA e matriz API29/API35.
+
+**Restrições:** testes automatizados de nós não substituem revisão humana com TalkBack; `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`. PR #13 draft, sem merge, versionCode, APK de distribuição ou OTA publicada.
