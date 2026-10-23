@@ -785,3 +785,17 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressão:** novo teste instrumentado com escala interna de 135%, substituição temporária do texto de descrição por texto longo, execução do layout real e verificação de aumento de altura, linhas completas sem truncamento, minHeight e restauração da preferência. **Meta 119 testes por API** e Source/OTA na próxima CI. Isso não é aprovação pixel-a-pixel 1:1: referências de design ainda não estão disponíveis e não houve teste físico Galaxy A55.
 
 **Política:** PR #13 rascunho, sem merge em main, versionCode, distribuição APK ou OTA publicada.
+
+### P7.6 — cartões criativos e galeria de ícones acessíveis com fontes grandes (22/10/2026)
+
+**Base CI:** commit `940024a9`, [CI Android 39879370467](https://github.com/nego001/ReaDroid-Native/actions/runs/39879370467), **119/119 testes aprovados em API29/API35**, Source/OTA aprovados e 13 capturas por API. Permanece `references=BLOCKED`, `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED`.
+
+**Defeitos e mudanças:**
+- Em `P7DesignStudio.creatorRow`, os botões `Criador de Ícones` e `Logo Studio` deixaram de ser forçados em duas colunas e 88dp de altura em viewports inferiores a 360dp ou escala efetiva de fontes >=1,20. Nessas condições, empilham em coluna única e usam altura mínima 88dp com `wrap_content`. Em espaço normal mantêm a composição lado a lado, sem mudar os callbacks.
+- Os dois cartões criativos recebem semântica `Button` e descrição única para TalkBack, ocultando ícone/textos decorativos redundantes da árvore acessível.
+- Em `iconTemplateGallery`, os quatro templates passam de altura fixa 124dp para altura expansível com mínimo 124dp e largura 136dp quando a fonte efetiva é grande. Em escala normal mantêm 106dp de largura; preview/legenda continuam visíveis mas o anúncio é feito uma única vez pelo botão acessível do cartão.
+- Nenhum template, exportação PNG/SVG, configuração salva ou APK é alterado.
+
+**Regressões:** duas novas instrumentações verificam os dois criadores empilhados na Activity real sob fonte interna 135% e os quatro modelos de ícone, focáveis/clicáveis e com classe acessível `Button`, width/height responsivos, legenda intacta e sem duplicação na árvore. Meta **121 testes por API** (119 + 2) e checks Source/OTA. Isso não substitui uso manual com TalkBack ou medidas físicas de performance.
+
+**Pendências:** assets PNG oficiais, comparação 1:1 e Galaxy A55 físico. PR #13 permanece draft, sem merge, APK de distribuição, versionCode ou OTA publicada.

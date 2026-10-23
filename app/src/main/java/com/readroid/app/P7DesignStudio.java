@@ -432,10 +432,21 @@ public final class P7DesignStudio {
         note("Prévia do cabeçalho atual. Não altera o ícone instalado nem assina APKs.");
     }
 
-    /** The two creative cards occupy one row as in the approved reference. */
+    /** Keep two creative actions side by side only when labels can fit. */
+    static boolean shouldStackCreators(int widthDp, float systemFontScale,
+            float appFontScale) {
+        float effective = Math.max(0.75f, systemFontScale)
+            * Math.max(0.85f, appFontScale);
+        return widthDp > 0 && (widthDp < 360 || effective >= 1.20f);
+    }
+
     private void creatorRow() {
         LinearLayout row = new LinearLayout(a);
-        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setOrientation(shouldStackCreators(
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE)
+            ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         body.addView(row);
         creator(row, "◉", "Criador de Ícones",
             "Criar e exportar PNG", -4, true);
@@ -449,8 +460,13 @@ public final class P7DesignStudio {
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(10), dp(12), dp(8), dp(12));
         card.setBackground(background(false));
-        LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, dp(88), 1f);
-        cell.setMargins(0, 0, first ? dp(4) : 0, 0);
+        boolean stacked = row.getOrientation() == LinearLayout.VERTICAL;
+        card.setMinimumHeight(dp(88));
+        LinearLayout.LayoutParams cell = stacked
+            ? new LinearLayout.LayoutParams(-1, -2)
+            : new LinearLayout.LayoutParams(0, -2, 1f);
+        cell.setMargins(0, 0, !stacked && first ? dp(4) : 0,
+            stacked && first ? dp(8) : 0);
         row.addView(card, cell);
         TextView logo = label(symbol, 27, NegrescoTheme.ACCENT, true);
         card.addView(logo);
@@ -465,6 +481,17 @@ public final class P7DesignStudio {
         card.setContentDescription(title + ": " + subtitle);
         card.setClickable(true);
         card.setFocusable(true);
+        card.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        card.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
+        logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        description.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         card.setOnClickListener(v -> open(actionIndex));
     }
 
@@ -495,12 +522,24 @@ public final class P7DesignStudio {
             tile.setClickable(true);
             tile.setFocusable(true);
             tile.setContentDescription("Personalizar ícone " + name);
+            tile.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            tile.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+                @Override public void onInitializeAccessibilityNodeInfo(
+                        View host, AccessibilityNodeInfo info) {
+                    super.onInitializeAccessibilityNodeInfo(host, info);
+                    info.setClassName(Button.class.getName());
+                }
+            });
             tile.setOnClickListener(v -> {
                 if (a instanceof MainActivity)
                     P7IconWorkshop.open((MainActivity) a, template);
             });
+            float effectiveScale = a.getResources().getConfiguration().fontScale
+                * NegrescoTheme.FONT_SCALE;
+            int tileWidth = effectiveScale >= 1.20f ? 136 : 106;
+            tile.setMinimumHeight(dp(124));
             LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
-                dp(106), dp(124));
+                dp(tileWidth), -2);
             tileParams.rightMargin = dp(7);
             row.addView(tile, tileParams);
             View preview = P7IconWorkshop.inlinePreview(a, template);
@@ -511,6 +550,7 @@ public final class P7DesignStudio {
             TextView caption = label(name, 10, NegrescoTheme.TEXT, true);
             caption.setGravity(Gravity.CENTER);
             caption.setMaxLines(2);
+            caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             LinearLayout.LayoutParams captionParams =
                 new LinearLayout.LayoutParams(-1, -2);
             captionParams.topMargin = dp(7);
