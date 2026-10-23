@@ -93,3 +93,12 @@ A suíte integral inclui o novo teste de rejeição de modal claro mais o teste 
 A [CI #39969080093](https://github.com/nego001/ReaDroid-Native/actions/runs/39969080093) revelou no Android 10 que `UiAutomation.getRootInActiveWindow()` retornou `null` no emulador, mesmo com o Explorador funcional, causando **uma falha dentre 136 testes instrumentados**. Isso significa que exigir sempre um nó de acessibilidade era uma premissa inválida.
 
 O teste mantém a exigência de janela em primeiro plano via `ActivityScenario.onActivity(... decor.hasWindowFocus())`. Quando a árvore de acessibilidade está disponível, a propriedade do pacote deve continuar sendo `com.readroid.app`. Quando ela está indisponível, o teste **não aprova simplesmente por falta de dados**: verifica obrigatoriamente foco real do aplicativo antes e depois, além da inspeção dos pixels da imagem capturada contra o modal claro de ANR conhecido. O teste de caixa clara sintética e a validação de SHA, PNG e todas as imagens permanecem ativos. API35 e API29 devem ser reexecutados antes de considerar P7.9 verde.
+
+ 
+## P7.10 — rótulos da barra inferior em fontes ampliadas (23/10/2026)
+
+**Ponto de partida:** CI [39970493729](https://github.com/nego001/ReaDroid-Native/actions/runs/39970493729) validou `136/136` testes nas APIs 29 e 35, 28 capturas e relatório cruzado. A inspeção visual das telas de **320 dp/130%** e **fonte 200%** revelou quebra de palavras na navegação inferior, especialmente `Seguranç/a` e `Arquiv/os`, embora os cinco controles permanecessem acessíveis.
+
+A barra inferior agora usa rótulos visuais curtos **somente em escalas problemáticas**: `Seg.` em 320 dp/130% ou escala efetiva ≥165%; `Arqs.` na escala ≥165%. Na resolução/fonte normal continua `Segurança` e `Arquivos`, como nas referências. Rótulos são sempre **uma linha com elipse como último recurso**, sem cortar palavras no meio. Nomes para TalkBack, navegação, foco e testes de toque continuam completos: `Seção Segurança, selecionada` etc. A altura reservada adapta-se à versão de uma linha sem reduzir o alvo mínimo.
+
+A instrumentação acrescenta um teste para oito cenários de escala e para as cinco labels completas dos controles clicáveis. Meta: **137 testes por API**, 28 screenshots e smoke nas escalas 320dp/130% e 200%. Não afirmar êxito antes da CI da alteração. Não modifica dados, assinatura, versão, APK/OTA ou branch principal.

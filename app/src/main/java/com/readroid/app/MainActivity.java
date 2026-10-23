@@ -55,6 +55,9 @@ public class MainActivity extends Activity {
     private LinearLayout aiSection;
     private LinearLayout designSection;
     private P7DesignStudio designStudio;
+    private static final String[] NAV_TITLES = {
+        "Início", "Arquivos", "Segurança", "Build", "Design"
+    };
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
     private View[] navigationIndicators;
@@ -108,9 +111,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Room for two-line bottom-navigation labels when both Android text
-     * scaling and in-app font scaling are enabled. Keeps the approved 64dp
-     * proportions for normal fonts and for icon-only navigation.
+     * Room for enlarged, single-line bottom-navigation labels when Android
+     * and app text scaling are enabled. Preserve normal 64dp proportions.
      */
     static int navTabHeightDp(int widthDp, float systemScale, float appScale,
             boolean labelsVisible) {
@@ -118,10 +120,28 @@ public class MainActivity extends Activity {
         float effective = Math.max(0.85f, systemScale) * Math.max(0.85f, appScale);
         if (effective <= 1.15f) return 64;
         int labelSp = widthDp < 360 ? 9 : 10;
-        int estimatedText = (int) Math.ceil(labelSp * effective * 2.7f);
-        // Selected marker, spacer and icon total 34dp. Allow a little
-        // breathing room around two lines of enlarged text.
+        int estimatedText = (int) Math.ceil(labelSp * effective * 1.8f);
+        // Selected marker, icon and spacing total 34dp. Reserve a complete
+        // single-line label with breathing room and no mid-word wrapping.
         return Math.max(64, Math.min(120, 34 + estimatedText + 8));
+    }
+
+    /**
+     * Only shorten the on-screen labels when scaling would split a word
+     * inside one of five equal-width tabs. The parent retains full TalkBack
+     * names and normal-sized layouts preserve the full approved labels.
+     */
+    static String navVisualLabel(String full, int widthDp, float systemScale,
+            float appScale) {
+        float effective = Math.max(0.85f, systemScale)
+            * Math.max(0.85f, appScale);
+        if ("Segurança".equals(full) && (effective >= 1.65f
+                || (widthDp < 360 && effective >= 1.2f))) {
+            return "Seg.";
+        }
+        if ("Arquivos".equals(full) && effective >= 1.65f)
+            return "Arqs.";
+        return full;
     }
 
     @Override public void onCreate(Bundle state) {
@@ -232,7 +252,7 @@ public class MainActivity extends Activity {
             v -> showHomeMenu(), v -> showSection(4));
         root.addView(homeToolbar);
         root.addView(brandRow);
-        String[] tabs = {"Início", "Arquivos", "Segurança", "Build", "Design"};
+        String[] tabs = NAV_TITLES;
         boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
             .getBoolean("nav_labels", true);
         navigationItems = new TextView[tabs.length];
@@ -286,11 +306,17 @@ public class MainActivity extends Activity {
             tabContainer.addView(glyph, new LinearLayout.LayoutParams(NegrescoTheme.dp(this, 27), NegrescoTheme.dp(this, 27)));
             navigationIcons[index] = glyph;
             TextView label = new TextView(this);
-            label.setText(tabs[index]);
+            int screenWidthDp = getResources().getConfiguration().screenWidthDp;
+            label.setText(navVisualLabel(tabs[index], screenWidthDp,
+                getResources().getConfiguration().fontScale,
+                NegrescoTheme.FONT_SCALE));
             label.setGravity(android.view.Gravity.CENTER);
-            boolean narrow = getResources().getConfiguration().screenWidthDp < 360;
+            boolean narrow = screenWidthDp < 360;
             label.setTextSize((narrow ? 9 : 10) * NegrescoTheme.FONT_SCALE);
-            label.setMaxLines(2);
+            // Accessibility enlargements must not break words vertically;
+            // a semantic short label is used only for extreme scales.
+            label.setSingleLine(true);
+            label.setMaxLines(1);
             label.setEllipsize(android.text.TextUtils.TruncateAt.END);
             label.setIncludeFontPadding(false);
             label.setPadding(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
@@ -1413,7 +1439,7 @@ public class MainActivity extends Activity {
             navigationContainers[i].setSelected(selected);
             navigationContainers[i].setActivated(selected);
             navigationContainers[i].setContentDescription(
-                "Seção " + navigationItems[i].getText()
+                "Seção " + NAV_TITLES[i]
                     + (selected ? ", selecionada" : ""));
             navigationItems[i].setTypeface(null,
                 selected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);

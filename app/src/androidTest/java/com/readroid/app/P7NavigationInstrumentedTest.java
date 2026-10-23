@@ -57,6 +57,48 @@ public final class P7NavigationInstrumentedTest {
         }
         return false;
     }
+    @Test public void navigationAbbreviationsPreserveFullAccessibleTabNames()
+            throws Exception {
+        assertEquals("Arquivos",
+            MainActivity.navVisualLabel("Arquivos", 393, 1f, 1f));
+        assertEquals("Segurança",
+            MainActivity.navVisualLabel("Segurança", 393, 1f, 1f));
+        assertEquals("Seg.",
+            MainActivity.navVisualLabel("Segurança", 320, 1.3f, 1f));
+        assertEquals("Arquivos",
+            MainActivity.navVisualLabel("Arquivos", 320, 1.3f, 1f));
+        assertEquals("Arqs.",
+            MainActivity.navVisualLabel("Arquivos", 393, 2f, 1f));
+        assertEquals("Seg.",
+            MainActivity.navVisualLabel("Segurança", 393, 2f, 1f));
+        assertEquals("Início",
+            MainActivity.navVisualLabel("Início", 393, 2f, 1f));
+        assertEquals("Build",
+            MainActivity.navVisualLabel("Build", 393, 2f, 1f));
+
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                for (String full : new String[]{
+                        "Início", "Arquivos", "Segurança", "Build", "Design"}) {
+                    View tab = byDescription(root, "Abrir seção " + full);
+                    assertNotNull("Full TalkBack tab name missing: " + full, tab);
+                    assertTrue(tab.performClick());
+                    assertTrue("Section should announce the full name",
+                        tab.getContentDescription().toString()
+                            .contains("Seção " + full));
+                    assertTrue(tab instanceof ViewGroup);
+                    // Marker, icon, then visible non-accessibility TextView.
+                    View label = ((ViewGroup) tab).getChildAt(2);
+                    assertTrue(label instanceof TextView);
+                    assertEquals("Visual tab names must not wrap mid-word",
+                        1, ((TextView) label).getMaxLines());
+                }
+            });
+        }
+    }
+
     @Test public void bottomNavigationScalesWithoutClippingOrChangingLabels() {
         assertEquals(64, MainActivity.navTabHeightDp(393, 1f, 1f, true));
         assertEquals(64, MainActivity.navTabHeightDp(310, 1f, 1f, true));
