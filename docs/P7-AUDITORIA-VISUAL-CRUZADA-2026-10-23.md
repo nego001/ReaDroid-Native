@@ -1,0 +1,41 @@
+# P7 — auditoria visual cruzada Android 10/15 (23/10/2026)
+
+**Estado do código:** commit `18a2dcd0` aprovado nos workflows [P7](https://github.com/nego001/ReaDroid-Native/actions/runs/39896431958), [Source](https://github.com/nego001/ReaDroid-Native/actions/runs/39896431971) e [OTA](https://github.com/nego001/ReaDroid-Native/actions/runs/39896431944). A instrumentação terminou com **132/132 testes** em cada API. Foram obtidas 13 capturas por emulador.
+
+## Referências e proveniência
+
+As duas artes originais da issue #11 foram recuperadas em uma cópia local da Biblioteca do proprietário e tiveram suas dimensões (1448×1086) e SHA-256 conferidos:
+
+- `negrecodroid_controle_total_de_apks.png`: `d0232e8a93d793c5cde3d564f90c8c5ecdd870bee497558db0442bf98326461b`
+- `identidade_negrecodroid_em_neon_azul.png`: `25f93465b1ad0da45398201d9718cc070f3ba7fce11f84bf81e973c0b06d2765`
+
+**Não foram incorporadas a esta branch.** As referências são VERIFICADAS na cópia local, mas seguem **BLOCKED no GitHub CI** até que os arquivos binários originais sejam versionados em `design/reference/p7/`. O painel não insere screenshots no lugar de referências. Não publicar status VERIFIED remotamente com base apenas nesta documentação.
+
+## Achados das capturas reais
+
+| Área | Observação concreta | Pendência de avaliação |
+|---|---|---|
+| Home | Saudação, quatro estatísticas, histórico, seis ações e navegação inferior são reais; o mascote e o cabeçalho parecem mais compactos que na prancha. | Medir geometria e tipografia no viewport canônico com a referência oficial. |
+| Explorer | Existe estado vazio honesto, busca, barra de filtros e plano de edição; as capturas de CI não carregaram APK. | Capturar com APK **sintético** e validar listagem e breadcrumb populados, sem imitar dados fictícios do conceito. |
+| Design | Quatro abas, galeria de temas, opções de layout, dois criadores e presets aparecem. | Conferir miniaturas, dimensões, espaçamento, ícones e comportamento em fontes grandes contra a referência. |
+| Icon/Logo Creator | Editores foram abertos e capturados no workflow. | Verificar aparência/legibilidade dos diálogos e resultado real de exportação em ensaio separado. |
+
+Não é apropriado calcular erro pixel a pixel da prancha de marketing com perspectiva de telefone. O critério 1:1 precisa primeiro de **recortes, medidas e viewport canônico aprovados**.
+
+## Novo fluxo de auditoria cruzada
+
+`tools/p7_cross_api_review.py` valida os manifestos e bytes de todas as **26** capturas, exibe imagens de Home/Explorer/Design das duas APIs no mesmo HTML offline e embute as duas referências originais **somente** quando `tools/p7_reference_assets.py` confirmar ambos os hashes. Estado visual e físico sempre permanecem NOT_APPROVED. O job de agregação executa **após** a matriz de emuladores e salva o painel como artefato de QA, sem APK.
+
+Uso local (com os dois artefatos já extraídos):
+
+```bash
+python3 tools/p7_cross_api_review.py \
+  --api29-dir artifacts/p7-brand-android-29 \
+  --api35-dir artifacts/p7-brand-android-35 \
+  --reference-dir design/reference/p7 \
+  --output p7-cross-api-review.html
+```
+
+Os testes unitários rejeitam manifesto com aprovação inventada ou captura ausente, além de exigirem o painel bloqueado quando faltam artes oficiais.
+
+**Restrições:** PR #13 permanece draft, sem merge na main, alteração de APK/assinatura, aumento de versão ou OTA. A homologação física Galaxy A55/TalkBack continua pendente.

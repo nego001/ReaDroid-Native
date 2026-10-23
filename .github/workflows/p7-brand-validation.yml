@@ -12,6 +12,8 @@ on:
       - 'tools/p7_large_text_smoke.py'
       - 'tools/p7_capture_manifest.py'
       - 'tools/p7_visual_review_board.py'
+      - 'tools/p7_cross_api_review.py'
+      - 'tests/test_p7_cross_api_review.py'
       - 'tests/test_p7_visual_review_board.py'
       - 'tests/test_p7_capture_manifest.py'
       - 'tests/test_p7_compact_smoke.py'
@@ -56,6 +58,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_p7_capture_manifest.py' -v
       - name: Verify P7 offline visual-review board builder
         run: python3 -m unittest discover -s tests -p 'test_p7_visual_review_board.py' -v
+      - name: Verify cross-API visual evidence contracts
+        run: python3 -m unittest discover -s tests -p 'test_p7_cross_api_review.py' -v
       - name: Guard recent-history updates behind a committed APK import
         run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
       - name: Enable hardware acceleration
@@ -127,3 +131,27 @@ jobs:
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
           if-no-files-found: warn
+
+  cross-api-visual-review:
+    needs: validate-brand
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p7-brand-android-*
+          path: artifacts
+      - name: Build offline Android 10 vs 15 evidence review
+        run: |
+          python3 tools/p7_cross_api_review.py \
+            --api29-dir artifacts/p7-brand-android-29 \
+            --api35-dir artifacts/p7-brand-android-35 \
+            --output p7-cross-api-review.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p7-cross-api-visual-review
+          path: p7-cross-api-review.html
+          if-no-files-found: error
