@@ -81,3 +81,8 @@ A auditoria de capturas antigas detectou uma falha de qualidade em `p7-explorer-
 A instrumentação de evidência `P7ExplorerPopulatedCaptureInstrumentedTest` agora verifica `UiAutomation.getRootInActiveWindow()` e exige que o dono da janela focada seja `com.readroid.app` antes e depois de `takeScreenshot()`. Também mede 35 amostras da área central, rejeitando o padrão de grande modal de sistema claro que ocorreu no tema escuro de QA. Teste sintético reproduz uma caixa clara central e exige rejeição, e a tela escura limpa é aceita.
 
 Este filtro é **focado no Explorador sintético no tema escuro da CI**, não substitui inspeção visual de todas as telas nem identifica todo tipo de modal. O objetivo é impedir que uma sobreposição conhecida do emulador passe por imagem limpa. Meta: **136 testes instrumentados por API**, captura populada limpa, inventário 28/28 e relatório cruzado; estado não aprovado até o workflow finalizar. Sem alteração do app de produção, OTA, `main` ou política de APK.
+
+
+### P7.9.1 — seleção explícita do único método de captura
+
+A suíte integral inclui o novo teste de rejeição de modal claro mais o teste que gera o PNG, somando 136 testes por API. O script `tools/p7_capture_populated.sh`, entretanto, executa a instrumentação **isolada** após Gradle e exige `OK (1 test)`. Para impedir o conflito, ele agora passa `-e class com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#captureRealActivityWithIndexedSyntheticApk`; não roda o teste sintético puro uma segunda vez. O teste de shell simulado valida o nome completo do método invocado.

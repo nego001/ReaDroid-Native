@@ -23,7 +23,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r "${test_apks[0]}"
 
 capture_output="$(adb shell am instrument -w -r \
-  -e class com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest \
+  -e class com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#captureRealActivityWithIndexedSyntheticApk \
   com.readroid.app.test/androidx.test.runner.AndroidJUnitRunner)"
 printf '%s\n' "$capture_output"
 if ! grep -Fq 'OK (1 test)' <<< "$capture_output"; then

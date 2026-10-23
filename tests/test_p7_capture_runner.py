@@ -84,6 +84,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         commands = self.log.read_text()
         self.assertEqual(2, commands.count("install -r "))
         self.assertIn("shell am instrument -w -r", commands)
+        self.assertIn("P7ExplorerPopulatedCaptureInstrumentedTest#captureRealActivityWithIndexedSyntheticApk", commands)
         self.assertIn("exec-out run-as com.readroid.app cat", commands)
 
     def test_invalid_api_rejected_without_adb(self):
