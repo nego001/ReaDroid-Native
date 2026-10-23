@@ -219,6 +219,8 @@ public final class StudioDashboard {
         mark.setSelectedState(true);
         top.addView(mark, new LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)));
         TextView heading = label(a, title, 21, NegrescoTheme.TEXT, true);
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            heading.setAccessibilityHeading(true);
         LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(-2, -2);
         headingParams.leftMargin = dp(a, 12);
         top.addView(heading, headingParams);
@@ -362,6 +364,8 @@ public final class StudioDashboard {
         // Quick actions, native icons, two-column layout on phones.
         shortcutsTitle.setText("Ações rápidas");
         shortcutsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            shortcutsTitle.setAccessibilityHeading(true);
         shortcutsTitle.setLetterSpacing(0.05f);
         shortcutsTitle.setPadding(0, dp(a, 2), 0, dp(a, 2));
         home.addView(shortcutsTitle);
@@ -378,6 +382,8 @@ public final class StudioDashboard {
         // options. Their original click handlers remain authoritative.
         LinearLayout settingsPanel = card(a, true);
         customizationTitle.setText("◉  PERSONALIZAÇÃO");
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            customizationTitle.setAccessibilityHeading(true);
         customizationTitle.setTextColor(NegrescoTheme.TEXT);
         customizationTitle.setTextSize(17 * NegrescoTheme.FONT_SCALE);
         customizationTitle.setPadding(0, 0, 0, dp(a, 4));
@@ -401,6 +407,8 @@ public final class StudioDashboard {
         // Actual OTA status is retained: no false claims about availability.
         LinearLayout updates = card(a, false);
         otaTitle.setText("↻  ATUALIZAÇÕES");
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            otaTitle.setAccessibilityHeading(true);
         otaTitle.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         otaTitle.setPadding(0, 0, 0, dp(a, 8));
         updates.addView(otaTitle);
@@ -414,6 +422,8 @@ public final class StudioDashboard {
         // The technical report remains selectable, with its existing buttons.
         LinearLayout technical = card(a, false);
         detailsTitle.setText("▥  RELATÓRIO TÉCNICO");
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            detailsTitle.setAccessibilityHeading(true);
         detailsTitle.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         detailsTitle.setPadding(0, 0, 0, dp(a, 8));
         technical.addView(detailsTitle);

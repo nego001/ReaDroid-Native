@@ -249,6 +249,68 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    private static TextView accessibleHeading(View node, String target) {
+        if (node instanceof TextView) {
+            TextView text = (TextView) node;
+            if (target.equals(text.getText().toString())
+                    && text.isAccessibilityHeading()) return text;
+        }
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView match = accessibleHeading(group.getChildAt(i), target);
+                if (match != null) return match;
+            }
+        }
+        return null;
+    }
+
+    @Test public void designStudioHasRealAccessibleHeadingsAcrossAllFourTabs() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                assertNotNull(accessibleHeading(root, "Design Studio"));
+                for (String title : new String[]{
+                        "Previews de Temas", "Opções de Layout",
+                        "Presets de Aparência", "Personalização existente"}) {
+                    TextView heading = accessibleHeading(root, title);
+                    assertNotNull("Missing heading navigation for " + title, heading);
+                    assertFalse("Section headings are not action buttons",
+                        heading.isClickable());
+                }
+                assertTrue(clickableText(root, "Ícones").performClick());
+                assertNotNull(accessibleHeading(root, "Criador de Ícones"));
+                assertNotNull(accessibleHeading(root, "Modelos de Ícones"));
+                assertNotNull(accessibleHeading(root, "Personalização existente"));
+                assertTrue(clickableText(root, "Logotipo").performClick());
+                assertNotNull(accessibleHeading(root, "Logo Studio"));
+                assertNotNull(accessibleHeading(root, "Personalização existente"));
+                assertTrue(clickableText(root, "Layout").performClick());
+                assertNotNull(accessibleHeading(root, "Opções de Layout"));
+            });
+        }
+    }
+
+    @Test public void homeAndFeatureTitlesExposeTalkBackHeadingNavigation() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertNotNull(accessibleHeading(root, "Ações rápidas"));
+                assertTrue(byDescription(root, "Abrir seção Segurança").performClick());
+                TextView title = accessibleHeading(root, "Segurança");
+                assertNotNull("Security section requires TalkBack heading", title);
+                assertFalse(title.isClickable());
+                assertTrue(byDescription(root, "Abrir seção Build").performClick());
+                assertNotNull(accessibleHeading(root, "Construir"));
+            });
+        }
+    }
+
     @Test public void designSubtabSurvivesRealActivityRecreation() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

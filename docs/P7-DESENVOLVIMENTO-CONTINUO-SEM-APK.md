@@ -809,3 +809,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressão:** `designSubtabsAndAllCatalogOpenersAnnounceButtonRoles` abre a Activity real, testa a classe e descrição acessíveis dos três atalhos e das quatro abas e percorre mudanças de seleção sem perder os quatro controles. Nova meta **122 testes por API** (121+1), Source/OTA e matriz API29/API35.
 
 **Restrições:** testes automatizados de nós não substituem revisão humana com TalkBack; `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`. PR #13 draft, sem merge, versionCode, APK de distribuição ou OTA publicada.
+
+### P7.6 — navegação por cabeçalhos acessíveis no Design Studio e áreas principais (22/10/2026)
+
+**Base comprovada:** commit `48fc6324`, [CI Android 39884453901](https://github.com/nego001/ReaDroid-Native/actions/runs/39884453901), **122/122 testes instrumentados por API29 e API35**, Source/OTA aprovados e 13 capturas por API. Permanecem `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+**Problema e correção:** as seções do Design Studio e títulos centrais do app eram apenas texto estilizado. Usuários de TalkBack não conseguiam navegar diretamente pelos cabeçalhos. Agora o título Design Studio, seus títulos de seção, os títulos principais da Home e os títulos das páginas funcionais via `StudioDashboard.featureHeader` anunciam `accessibilityHeading=true` no Android API28+, sem alterar o texto, o visual, a árvore de ações ou os layouts persistidos. Botões `Ver todos` continuam botões, sem receber indevidamente papel de título, e textos decorativos permanecem sem papel de cabeçalho.
+
+**Testes novos:** duas instrumentações abrem a Activity real e conferem presença e natureza não clicável dos cabeçalhos nas quatro abas do Design Studio e nas páginas de Home, Segurança e Build. Meta **124 testes por API** (122 + 2), além de Source, OTA e capturas; APIs anteriores a 28 não invocam o método por causa do guard explícito de SDK.
+
+**Escopo e limites:** melhoria de navegação assistiva não substitui revisão manual com TalkBack; não modifica navegação funcional, workspace APK, preferências, assinatura ou versionCode. Comparação visual 1:1 depende dos PNGs oficiais e a homologação Galaxy A55 permanece aberta. PR #13 segue draft, sem merge, distribuição de APK nem OTA publicada.

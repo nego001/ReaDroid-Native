@@ -112,7 +112,10 @@ public final class P7DesignStudio {
         LinearLayout titles=column();
         LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,-2);
         tp.leftMargin=dp(10);header.addView(titles,tp);
-        titles.addView(label("Design Studio",18,NegrescoTheme.TEXT,true));
+        TextView studioHeading = label("Design Studio",18,NegrescoTheme.TEXT,true);
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            studioHeading.setAccessibilityHeading(true);
+        titles.addView(studioHeading);
         titles.addView(label("Personalize a aparência do seu app",12,NegrescoTheme.MUTED,false));
         HorizontalScrollView scroll=new HorizontalScrollView(a);
         tabScroller = scroll;
@@ -177,6 +180,10 @@ public final class P7DesignStudio {
         rp.topMargin = dp(4);
         body.addView(row, rp);
         TextView label = label(title, 15, NegrescoTheme.TEXT, true);
+        // Android's heading navigation can jump between Design sections;
+        // decorative card captions and the "Ver todos" buttons are not headings.
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            label.setAccessibilityHeading(true);
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
         if (onViewAll != null) {
             TextView viewAll = label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
