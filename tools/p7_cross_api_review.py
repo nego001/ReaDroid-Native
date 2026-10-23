@@ -26,12 +26,16 @@ STYLE = """
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#07111b;
 color:#eef6ff}body{max-width:1450px;margin:auto;padding:24px}
 h1{font-size:clamp(24px,3vw,44px)}h2{margin-top:34px}
-.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 figure{margin:0;background:#102031;border:1px solid #32516b;
 padding:12px;border-radius:14px}img{max-width:100%;max-height:700px;
 display:block;margin:auto}figcaption{margin-top:10px;font-size:14px}
 .notice{border:1px solid #48586a;padding:14px;border-radius:12px}
-.small{color:#adc1d8;font-size:13px;line-height:1.6}
+.small{color:#adc1d8;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+nav{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0}
+nav a{border:1px solid #32516b;border-radius:8px;padding:8px 12px;
+color:#b6dcff;text-decoration:none}nav a:hover{background:#143455}
+section{scroll-margin-top:24px}
 @media(max-width:700px){.grid{grid-template-columns:1fr}}
 """
 
@@ -89,28 +93,49 @@ def render_review(api29_dir, api35_dir, reference_dir):
                          "Nenhuma imagem substituta foi usada.</p>")
         parts.append(f"<figcaption>{safe}</figcaption></figure>")
     parts.append("</div>")
-    normal_screens = {section: template for section, scenario, template
-                      in capture.SCREENS if scenario == "normal"}
-    for scene, title in SCENES:
-        parts.append(f"<h2>{html.escape(title)}</h2><div class='grid'>")
-        parts.append("<figure><p>Arte oficial completa disponível na seção "
-                     "de referências acima. Não há crop de viewport validado "
-                     "para este painel promocional.</p><figcaption>"
-                     "Composição aprovada, escala não alinhada</figcaption></figure>")
+    # The prior report checked all screenshots but rendered only four pairs.
+    # Present all 14 scenarios in manifest order, including accessibility states.
+    # There is no pixel-perfect auto-approval: the artwork is a composite.
+    index = {
+        api: {sample["filename"]: sample
+              for sample in manifests[api]["screenshots"]}
+        for api in (29, 35)
+    }
+    total_scenes = len(capture.SCREENS)
+    parts.append(
+        f"<p class='notice'>Exibindo {total_scenes * 2} de "
+        f"{total_scenes * 2} capturas verificadas, "
+        "com as duas APIs lado a lado. As diferenças são para revisão humana."
+        "</p>")
+    parts.append("<nav aria-label='Ir para uma comparação'>")
+    for number, (scene, scenario, _) in enumerate(capture.SCREENS, 1):
+        title = (board.SCENE_NAMES[scene] + " · " +
+                 board.SCENARIO_NAMES[scenario])
+        parts.append(f"<a href='#comparison-{number}'>"
+                     f"{number}. {html.escape(title)}</a>")
+    parts.append("</nav>")
+    for number, (scene, scenario, template) in enumerate(capture.SCREENS, 1):
+        title = (board.SCENE_NAMES[scene] + " · " +
+                 board.SCENARIO_NAMES[scenario])
+        parts.append(
+            f"<section id='comparison-{number}'>"
+            f"<h2>{number}. {html.escape(title)}</h2>"
+            "<div class='grid comparison'>")
         for api in (29, 35):
-            filename = normal_screens[scene].format(api=api)
-            expected = [sample for sample in manifests[api]["screenshots"]
-                        if sample["filename"] == filename]
-            if len(expected) != 1:
-                raise CrossApiReviewError("Missing baseline screenshot")
-            parts.append("<figure>"
-                         f"<img src='{_image(roots[api] / filename)}' "
-                         f"alt='{html.escape(title)} Android API {api}'>"
-                         f"<figcaption>Android API {api}: "
-                         f"{expected[0]['width_px']}×{expected[0]['height_px']}"
-                         f"<p class='small'>SHA-256: {expected[0]['sha256']}"
-                         "</p></figcaption></figure>")
-        parts.append("</div>")
+            filename = template.format(api=api)
+            sample = index[api].get(filename)
+            if sample is None:
+                raise CrossApiReviewError(
+                    f"Missing verified comparison screenshot: {filename}")
+            parts.append(
+                "<figure>"
+                f"<img loading='lazy' src='{_image(roots[api] / filename)}' "
+                f"alt='{html.escape(title)} Android API {api}'>"
+                f"<figcaption>Android API {api}: "
+                f"{sample['width_px']}×{sample['height_px']}"
+                f"<p class='small'>SHA-256: {sample['sha256']}"
+                "</p></figcaption></figure>")
+        parts.append("</div></section>")
     parts.extend([
         "<h2>Pontos de controle manual</h2>",
         "<div class='notice'><p>Compare a hierarquia visual, margens, tipografia, "

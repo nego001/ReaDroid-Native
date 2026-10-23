@@ -44,6 +44,16 @@ class CrossApiReviewTests(unittest.TestCase):
             fixture(b, 35, root)
             content, report = review.render_review(a, b, root)
             self.assertEqual(28, report["verified_screenshots"])
+            # Rendering coverage must match the 28 verified PNGs, not
+            # just report a high count while showing four pairs.
+            self.assertEqual(28, content.count("loading='lazy'"))
+            self.assertEqual(14, content.count("class='grid comparison'"))
+            self.assertEqual(14, content.count("<section id='comparison-"))
+            self.assertIn("Explorador com ZIP sintético de QA", content)
+            self.assertIn("Fonte ampliada para 200%", content)
+            self.assertIn("Tela compacta de 320 dp", content)
+            self.assertIn("Criador de logotipos", content)
+            self.assertIn("Exibindo 28 de 28 capturas", content)
             self.assertEqual("BLOCKED", report["references"])
             self.assertFalse(report["pixel_perfect_approved"])
             self.assertFalse(report["physical_device_approved"])

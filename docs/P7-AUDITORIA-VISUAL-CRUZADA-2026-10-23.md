@@ -48,3 +48,14 @@ A nova instrumentação `P7ExplorerPopulatedCaptureInstrumentedTest` gera ZIP **
 O workflow extrai apenas o PNG de captura via `adb run-as`, depois mantém os smokes anteriores. O manifesto passa a validar **14 capturas por API, 28 totais**, incluindo as duas situações distintas: Explorer vazio e Explorer de teste populado. Testes locais do inventário, painel e comparação foram atualizados para não permitir omissões silenciosas.
 
 Essa tela testa a renderização com conteúdo sintético, **não certifica o processo de importação SAF nem decodificação real de AndroidManifest.xml**. Fidelidade visual 1:1 e Galaxy A55 continuam bloqueados. Não fazer merge nem publicar novo APK/OTA até aceite.
+
+
+## P7.7 — auditoria de 28/28 telas realmente exibidas (23/10/2026)
+
+**CI anterior aprovada:** [39909205962](https://github.com/nego001/ReaDroid-Native/actions/runs/39909205962), com **133/133** instrumentados em API29 e API35, 14 capturas verificadas por API, relatório cruzado, Source e OTA verdes.
+
+A revisão anterior validava 28 arquivos, mas colocava apenas quatro pares de telas no relatório: Início, Explorador vazio, Explorador sintético e Design. Isso escondia do comparativo a Segurança, Construir, criadores, telas compactas (320 dp/130%) e fontes de 200%.
+
+**Correção:** o painel passa a apresentar **todos os 14 pares** em ordem, navegáveis por seção, com ambas as imagens originais incorporadas em HTML, dimensões, SHA-256 e rótulos por cenário. Os unit tests exigem 28 imagens renderizadas e 14 pares, falhando se uma tela desaparecer do comparativo. O painel continua estático e offline, com `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED`.
+
+O critério de aceitação visual continua sendo avaliação humana em viewport canônico, porque as referências aprovadas são artes promocionais em perspectiva. As PNGs oficiais permanecem ausentes do repositório até o upload dos binários com SHA original.
