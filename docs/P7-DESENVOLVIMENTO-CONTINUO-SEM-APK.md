@@ -873,3 +873,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Reparo:** atualizar somente a expectativa do teste de duas para três linhas, adicionando comentário que vincula o contrato ao novo comportamento. Não encobrir falhas de UI nem retirar verificações de acessibilidade. Matriz alvo: **131 testes por API** (mesmo total do commit anterior), além de Source/OTA e capturas. A base integralmente aprovada anteriormente permanece `34498d01` com 129 testes/API até nova CI verde.
 
 **Política:** não modificar aplicativo em produção, `main`, versão, assinatura, distribuição de APK ou OTA. Referências PNG e aprovação visual 1:1 ainda bloqueadas; homologação física Galaxy A55 pendente.
+
+### P7.6 — smoke de Design ajustado ao novo rótulo acessível (22/10/2026)
+
+**Diagnóstico preventivo:** a descrição dos cartões de tema agora acrescenta `Neon · ...` ou `Sem brilho · ...` ao nome e estado, de acordo com o catálogo real. Em `tools/p7_design_smoke.py` a seleção do cartão não selecionado ainda buscava igualdade exata com `Matrix Green, selecionar prévia` ou `Negreco Blue, selecionar prévia`. O teste instrumentado Android não executa este smoke até completar o Gradle; portanto o check ficaria incompatível com o novo contrato mesmo após reparar a expectativa de 3 linhas.
+
+**Correção:** buscar o prefixo exato `<nome>, selecionar prévia. ` e exigir que o sufixo anuncie `Neon · ` ou `Sem brilho · `, com elemento clicável e único. O smoke continua conferindo a confirmação real de aplicação e a restauração após Android Back. Não remover as exigências funcionais por uma mudança apenas de cópia acessível.
+
+**Verificação exigida:** rodar a matriz instrumental de **131 testes por API**, seguida do `P7_DESIGN_PASS` real em Android 10 e 15, dos outros smokes, Source e OTA. Não houve mudança em operação de projeto APK, release, assinatura, main ou OTA; PR #13 draft. Referências de artes e homologação física continuam bloqueadas.

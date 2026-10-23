@@ -55,9 +55,19 @@ def check():
                     ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset"))]
     assert len(selected) == 1, "A saved theme must be reflected in its preview"
     theme = "Matrix Green" if not selected[0].startswith("Matrix Green") else "Negreco Blue"
-    tile = next((n for n in before if n.attrib.get("content-desc") ==
-                 theme + ", selecionar prévia"), None)
-    assert tile is not None, "Unselected preview is not an interactive tile"
+    # The accessible label now includes the actual glow state and subtitle:
+    # "Matrix Green, selecionar prévia. Neon · Hacker Style".
+    # Match the exact card-name/state prefix, then REQUIRE that the spoken
+    # theme variant is present. Do not loosen the check to name-only.
+    spoken_prefix = theme + ", selecionar prévia. "
+    matches = [n for n in before
+               if n.attrib.get("content-desc", "").startswith(spoken_prefix)
+               and n.attrib.get("clickable") == "true"
+               and n.attrib.get("content-desc", "")[len(spoken_prefix):]
+                   .startswith(("Neon · ", "Sem brilho · "))]
+    assert len(matches) == 1, (
+        "Unselected theme must be uniquely clickable and describe its glow")
+    tile = matches[0]
     smoke.tap(tile)
     modal = {n.attrib.get("text", "") for n in smoke.visible_app_hierarchy()}
     assert "Aplicar " + theme + "?" in modal, (
