@@ -164,6 +164,52 @@ public final class NegrescoTheme {
         return d;
     }
 
+
+    /** Shared native workshop chrome; honors the selected dark/light palette. */
+    public static GradientDrawable studioDialogPanel(Context context) {
+        GradientDrawable panel = new GradientDrawable();
+        panel.setColor(SURFACE);
+        panel.setCornerRadius(dp(context, CARD_RADIUS));
+        panel.setStroke(dp(context, 1), mix(ACCENT, BORDER, 0.22f));
+        return panel;
+    }
+
+    /** Native AlertDialog with the same palette as the underlying Design page. */
+    public static void styleStudioDialog(android.app.AlertDialog dialog) {
+        if (dialog == null || !dialog.isShowing()) {
+            throw new IllegalArgumentException("Studio dialog must be showing");
+        }
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(studioDialogPanel(dialog.getContext()));
+        }
+        Button close = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
+        if (close != null) {
+            close.setAllCaps(false);
+            close.setTextColor(ACCENT);
+        }
+    }
+
+    /** Actual export buttons; SVG is secondary, but remains a real action. */
+    public static void styleWorkshopExport(Context context, Button button,
+            boolean primary) {
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(context, 12));
+        if (primary) {
+            background.setOrientation(GradientDrawable.Orientation.TL_BR);
+            background.setColors(new int[]{
+                ACCENT, mix(ACCENT, BACKGROUND, 0.16f)});
+        } else {
+            background.setColor(mix(SURFACE, BACKGROUND, 0.16f));
+            background.setStroke(dp(context, 1),
+                mix(ACCENT, BORDER, 0.27f));
+        }
+        button.setBackground(background);
+        button.setTextColor(primary ? ON_ACCENT : TEXT);
+        button.setAllCaps(false);
+        button.setPadding(dp(context, 12), 0, dp(context, 12), 0);
+    }
+
     public static TextView heading(Context context, String title, String subtitle) {
         TextView view = new TextView(context);
         view.setText(title + "\n" + subtitle);

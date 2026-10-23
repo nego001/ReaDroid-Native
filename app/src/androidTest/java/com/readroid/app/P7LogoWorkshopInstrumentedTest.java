@@ -165,4 +165,44 @@ public final class P7LogoWorkshopInstrumentedTest {
             });
         }
     }
+
+    @Test public void logoWorkshopUsesStudioPaletteAndDistinctExportStyles() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                android.app.AlertDialog dialog = P7LogoWorkshop.open(activity);
+                try {
+                    View decor = dialog.getWindow().getDecorView();
+                    assertTrue("Logo panel should use a native themed shape",
+                        decor.getBackground()
+                        instanceof android.graphics.drawable.GradientDrawable);
+                    android.graphics.drawable.GradientDrawable panel =
+                        (android.graphics.drawable.GradientDrawable)
+                            decor.getBackground();
+                    assertEquals(NegrescoTheme.SURFACE,
+                        panel.getColor().getDefaultColor());
+                    assertEquals(NegrescoTheme.ACCENT,
+                        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+                            .getCurrentTextColor());
+                    android.widget.Button png = (android.widget.Button)
+                        findDescription(decor, "Exportar logo PNG 1024×512");
+                    android.widget.Button svg = (android.widget.Button)
+                        findDescription(decor, "Exportar logo SVG vetorial");
+                    assertNotNull(png);
+                    assertNotNull(svg);
+                    assertTrue(png.isClickable());
+                    assertTrue(svg.isClickable());
+                    assertEquals(NegrescoTheme.ON_ACCENT, png.getCurrentTextColor());
+                    assertEquals(NegrescoTheme.TEXT, svg.getCurrentTextColor());
+                    assertTrue(png.getBackground()
+                        instanceof android.graphics.drawable.GradientDrawable);
+                    assertTrue(svg.getBackground()
+                        instanceof android.graphics.drawable.GradientDrawable);
+                } finally {
+                    dialog.dismiss();
+                }
+            });
+        }
+    }
+
 }

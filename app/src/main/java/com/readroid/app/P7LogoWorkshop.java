@@ -252,10 +252,8 @@ public final class P7LogoWorkshop {
 
         Button export = new Button(activity);
         export.setText("Exportar logo PNG");
-        export.setAllCaps(false);
         export.setContentDescription("Exportar logo PNG 1024×512");
-        export.setTextColor(NegrescoTheme.ON_ACCENT);
-        export.setBackgroundTintList(ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        NegrescoTheme.styleWorkshopExport(activity, export, true);
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
             -1, dp(activity, 48));
         buttonParams.topMargin = dp(activity, 12);
@@ -265,10 +263,8 @@ public final class P7LogoWorkshop {
 
         Button exportSvg = new Button(activity);
         exportSvg.setText("Exportar logo SVG");
-        exportSvg.setAllCaps(false);
         exportSvg.setContentDescription("Exportar logo SVG vetorial");
-        exportSvg.setTextColor(NegrescoTheme.ON_ACCENT);
-        exportSvg.setBackgroundTintList(ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        NegrescoTheme.styleWorkshopExport(activity, exportSvg, false);
         LinearLayout.LayoutParams svgParams = new LinearLayout.LayoutParams(
             -1, dp(activity, 48));
         svgParams.leftMargin = dp(activity, 16);
@@ -311,6 +307,7 @@ public final class P7LogoWorkshop {
         });
         root.requestFocus();
         dialog.show();
+        NegrescoTheme.styleStudioDialog(dialog);
         if (dialog.getWindow() != null)
             dialog.getWindow().setSoftInputMode(
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);

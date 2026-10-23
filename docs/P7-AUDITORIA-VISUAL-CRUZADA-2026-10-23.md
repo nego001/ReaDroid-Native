@@ -59,3 +59,16 @@ A revisão anterior validava 28 arquivos, mas colocava apenas quatro pares de te
 **Correção:** o painel passa a apresentar **todos os 14 pares** em ordem, navegáveis por seção, com ambas as imagens originais incorporadas em HTML, dimensões, SHA-256 e rótulos por cenário. Os unit tests exigem 28 imagens renderizadas e 14 pares, falhando se uma tela desaparecer do comparativo. O painel continua estático e offline, com `visual_1to1=NOT_APPROVED` e `physical=NOT_APPROVED`.
 
 O critério de aceitação visual continua sendo avaliação humana em viewport canônico, porque as referências aprovadas são artes promocionais em perspectiva. As PNGs oficiais permanecem ausentes do repositório até o upload dos binários com SHA original.
+
+
+## P7.8 — Criadores nativos com fundo temático (23/10/2026)
+
+**Ponto de partida:** [CI P7.7 #39963543711](https://github.com/nego001/ReaDroid-Native/actions/runs/39963543711) verde em API29/API35 e comparativo 28/28.
+
+Nas screenshots do Icon Creator e Logo Studio o Android aplicava um painel **cinza #424242**, incompatível com os cartões escuros do Design Studio. `NegrescoTheme.styleStudioDialog` agora aplica ao `AlertDialog` real o painel da paleta atual, borda fina e raio de canto; o botão Fechar respeita a cor de destaque configurada.
+
+A hierarquia de ações deixa o **PNG principal** em botão preenchido com degradê sutil e o **SVG secundário** em botão de contorno sobre o fundo da interface. Ambos continuam acessíveis, com alvos de 48 dp, labels e os mesmos callbacks para exportação via SAF; nenhuma exportação automática é feita. O tema claro, OLED e cores personalizadas utilizam os tokens de aparência existentes, sem gravar novas preferências.
+
+Dois testes instrumentados novos conferem, nos **dois editores reais**, a cor efetiva de fundo do diálogo, o texto de fechamento, o contraste semântico dos botões, acessibilidade e os cliques disponíveis. **Meta após o commit:** 135 testes por API; não considerar validado até concluir matriz e screenshots.
+
+Não muda app id, versão, política de APK, assinatura, OTA nem `main`; fidelidade 1:1 e A55 físico continuam `NOT_APPROVED`.

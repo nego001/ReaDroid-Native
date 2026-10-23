@@ -136,10 +136,7 @@ public final class P7IconWorkshop {
         Button exportButton = new Button(a);
         exportButton.setText("Exportar PNG");
         exportButton.setContentDescription("Exportar PNG 512×512");
-        exportButton.setAllCaps(false);
-        exportButton.setTextColor(Color.WHITE);
-        exportButton.setBackgroundTintList(
-            android.content.res.ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        NegrescoTheme.styleWorkshopExport(a, exportButton, true);
         LinearLayout.LayoutParams exportParams = new LinearLayout.LayoutParams(
             -1, dp(a, 48));
         exportParams.topMargin = dp(a, 8);
@@ -148,10 +145,7 @@ public final class P7IconWorkshop {
         Button exportSvg = new Button(a);
         exportSvg.setText("Exportar SVG");
         exportSvg.setContentDescription("Exportar SVG vetorial 512×512");
-        exportSvg.setAllCaps(false);
-        exportSvg.setTextColor(Color.WHITE);
-        exportSvg.setBackgroundTintList(
-            android.content.res.ColorStateList.valueOf(NegrescoTheme.ACCENT));
+        NegrescoTheme.styleWorkshopExport(a, exportSvg, false);
         LinearLayout.LayoutParams svgParams = new LinearLayout.LayoutParams(
             -1, dp(a, 48));
         svgParams.bottomMargin = dp(a, 4);
@@ -180,6 +174,7 @@ public final class P7IconWorkshop {
             a.startP7IconSvgExport(spec);
         });
         workshopDialog.show();
+        NegrescoTheme.styleStudioDialog(workshopDialog);
         return workshopDialog;
     }
 
