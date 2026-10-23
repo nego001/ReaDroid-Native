@@ -13,6 +13,8 @@ on:
       - 'tools/p7_capture_manifest.py'
       - 'tools/p7_visual_review_board.py'
       - 'tools/p7_cross_api_review.py'
+      - 'tools/p7_capture_populated.sh'
+      - 'tests/test_p7_capture_runner.py'
       - 'tests/test_p7_cross_api_review.py'
       - 'tests/test_p7_visual_review_board.py'
       - 'tests/test_p7_capture_manifest.py'
@@ -60,6 +62,10 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_p7_visual_review_board.py' -v
       - name: Verify cross-API visual evidence contracts
         run: python3 -m unittest discover -s tests -p 'test_p7_cross_api_review.py' -v
+      - name: Verify populated Explorer capture runner
+        run: |
+          bash -n tools/p7_capture_populated.sh
+          python3 -m unittest discover -s tests -p 'test_p7_capture_runner.py' -v
       - name: Guard recent-history updates behind a committed APK import
         run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
       - name: Enable hardware acceleration
@@ -80,25 +86,8 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest,com.readroid.app.P7IconWorkshopInstrumentedTest,com.readroid.app.P7IconSvgInstrumentedTest,com.readroid.app.P7LogoWorkshopInstrumentedTest,com.readroid.app.P7LogoSvgInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest
-            # Gradle's connectedAndroidTest uninstalls the target app on completion.
-            # Reinstall ONLY the debug target and its instrumentation to capture
-            # the synthetic Explorer viewport in an isolated, single-test run.
-            # This is not the separately-approved release/QA APK workflow.
-            test -s app/build/outputs/apk/debug/app-debug.apk
-            test_apk=$(find app/build/outputs/apk/androidTest -type f -name '*androidTest.apk' -print -quit)
-            test -n "$test_apk"
-            test -s "$test_apk"
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r "$test_apk"
-            capture_test_output=$(adb shell am instrument -w -r \
-              -e class com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest \
-              com.readroid.app.test/androidx.test.runner.AndroidJUnitRunner)
-            printf '%s\n' "$capture_test_output"
-            printf '%s\n' "$capture_test_output" | grep -Fq 'OK (1 test)'
-            # The target is still installed: read its own test-created PNG
-            # before any other smoke or clean-up can remove the private file.
-            adb exec-out run-as com.readroid.app cat files/p7-explorer-populated.png > p7-explorer-populated-android-${{ matrix.api }}.png
-            python3 -c 'from pathlib import Path; from tools.p7_capture_manifest import inspect_png; p=Path("p7-explorer-populated-android-${{ matrix.api }}.png"); print("P7_POPULATED_PNG_OK", inspect_png(p)[0])'
+            # One persistent Bash process: emulator-runner executes script lines separately.
+            bash tools/p7_capture_populated.sh ${{ matrix.api }}
             adb shell am start -W -n com.readroid.app/.MainActivity
             sleep 2
             python3 -c 'from tools.android_ui_smoke import visible_app_hierarchy, ensure_foreground; nodes = visible_app_hierarchy(); ensure_foreground(); assert any(n.attrib.get("text") == "Olá, Desenvolvedor" for n in nodes), "Home not visible before screenshot"'
