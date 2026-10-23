@@ -99,6 +99,41 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void designPagingControlAppearsOnlyWhenAccessibilityTextNeedsScroll()
+            throws Exception {
+        assertFalse(P7DesignStudio.needsTabPagingControl(393, 1f, 1f));
+        assertFalse(P7DesignStudio.needsTabPagingControl(320, 1.3f, 1f));
+        assertTrue(P7DesignStudio.needsTabPagingControl(393, 2f, 1f));
+        assertTrue(P7DesignStudio.needsTabPagingControl(320, 2f, 1f));
+        assertTrue(P7DesignStudio.needsTabPagingControl(393, 1.3f, 1.35f));
+        assertFalse(P7DesignStudio.needsTabPagingControl(393, 1f, 1.35f));
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                int width = activity.getResources().getConfiguration().screenWidthDp;
+                float font = activity.getResources().getConfiguration().fontScale;
+                boolean required = P7DesignStudio.needsTabPagingControl(
+                    width, font, NegrescoTheme.FONT_SCALE);
+                View pager = byDescription(root,
+                    "Percorrer abas do Design Studio");
+                if (required) {
+                    assertNotNull("Large text tab paging button missing", pager);
+                    assertTrue(pager.isClickable() && pager.isFocusable());
+                    assertTrue(pager.getMinimumWidth() >=
+                        NegrescoTheme.dp(activity, 48));
+                    assertTrue(pager.getMinimumHeight() >=
+                        NegrescoTheme.dp(activity, 48));
+                } else {
+                    assertNull("Normal Design view must not gain extra chrome", pager);
+                }
+            });
+        }
+    }
+
     @Test public void designCompactTabsFitFourDestinationsWithoutShrinkingTouchArea() {
         assertTrue(P7DesignStudio.fitsFourTabs(320, 1.3f, 1f));
         assertTrue(P7DesignStudio.fitsFourTabs(320, 1f, 1f));

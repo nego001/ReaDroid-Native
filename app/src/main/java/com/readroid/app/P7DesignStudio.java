@@ -130,6 +130,15 @@ public final class P7DesignStudio {
         return widthDp > 0 && widthDp < 360 && effective <= 1.40f;
     }
 
+    /** Enlarged fonts need a visible, operable affordance for the scrollable
+     * four-tab strip. Normal fonts keep the existing approved layout. */
+    static boolean needsTabPagingControl(int widthDp, float systemFont,
+            float appFont) {
+        float effective = Math.max(0.85f, systemFont)
+            * Math.max(0.85f, appFont);
+        return widthDp > 0 && effective >= 1.65f;
+    }
+
     public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions,
                           int restoredTab) {
         a=activity;root=container;actions=appearanceActions;
@@ -155,10 +164,46 @@ public final class P7DesignStudio {
         HorizontalScrollView scroll=new HorizontalScrollView(a);
         tabScroller = scroll;
         scroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));
-        sp.topMargin=dp(8);root.addView(scroll,sp);
-        LinearLayout tabs=new LinearLayout(a);tabs.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout tabs=new LinearLayout(a);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
         scroll.addView(tabs);
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));
+        sp.topMargin=dp(8);
+        boolean showPagingControl = needsTabPagingControl(
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
+        if (showPagingControl) {
+            LinearLayout strip = new LinearLayout(a);
+            strip.setGravity(Gravity.CENTER_VERTICAL);
+            strip.setOrientation(LinearLayout.HORIZONTAL);
+            root.addView(strip, sp);
+            strip.addView(scroll, new LinearLayout.LayoutParams(0, dp(52), 1f));
+            TextView pager = new TextView(a);
+            pager.setText("⇄");
+            // This is an icon, not content: the accessible text is in the
+            // explicit, fully spoken description, without font clipping.
+            pager.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 24);
+            pager.setTextColor(NegrescoTheme.ACCENT);
+            pager.setGravity(Gravity.CENTER);
+            pager.setMinimumWidth(dp(48));
+            pager.setMinimumHeight(dp(48));
+            pager.setContentDescription("Percorrer abas do Design Studio");
+            pager.setClickable(true);
+            pager.setFocusable(true);
+            exposeAsButton(pager);
+            pager.setBackground(background(false));
+            pager.setOnClickListener(view -> {
+                int limit = Math.max(0, tabs.getWidth() - scroll.getWidth());
+                if (limit <= 0) return;
+                int destination = scroll.getScrollX() <= limit / 2 ? limit : 0;
+                scroll.scrollTo(destination, 0);
+            });
+            strip.addView(pager,
+                new LinearLayout.LayoutParams(dp(48), dp(48)));
+        } else {
+            root.addView(scroll, sp);
+        }
         String[] names={"Temas","Layout","Ícones","Logotipo"};
         boolean fitCompact = fitsFourTabs(
             a.getResources().getConfiguration().screenWidthDp,

@@ -53,6 +53,23 @@ def check_screen(section, heading, viewport, density, api):
             raise AssertionError(f"{name}: navigation clipped at 200%: {bounds}")
     if section == "Arquivos":
         require_stacked_explorer_summary(nodes)
+    if section == "Design":
+        pager_name = "Percorrer abas do Design Studio"
+        require_accessible_target(nodes, pager_name, density, viewport)
+        pager = next(node for node in nodes
+                     if node.attrib.get("content-desc") == pager_name)
+        smoke.tap(pager)
+        end_nodes = smoke.visible_app_hierarchy()
+        require_accessible_target(end_nodes, "Logotipo, selecionar aba",
+                                  density, viewport)
+        # Restore the original selected Themes position for the canonical
+        # large-font screenshot. Do not select another editor or edit an APK.
+        pager = next(node for node in end_nodes
+                     if node.attrib.get("content-desc") == pager_name)
+        smoke.tap(pager)
+        nodes = smoke.visible_app_hierarchy()
+        require_accessible_target(nodes, "Temas, aba selecionada",
+                                  density, viewport)
     for description in REQUIRED_TARGETS[section]:
         require_accessible_target(nodes, description, density, viewport)
     # The history link is intentionally hidden when the history is empty.

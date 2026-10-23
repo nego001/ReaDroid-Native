@@ -146,3 +146,16 @@ Esse isolamento reduz a disputa pelo foco na largada do emulador; **não garante
 **Mudança P7.13:** `ExplorerView.searchHint(...)` preserva a mensagem completa em fontes normais de tela padrão, `Buscar no APK...` na tela de 320dp/130%, e usa `Buscar no APK` em escala de texto efetiva **≥ 165%**, independente da largura. Só muda o placeholder visual; `EditText`, entrada de teclado, filtros, pesquisa no índice SQLite e limite de 256 caracteres permanecem intactos. Novo teste instrumentado valida seis escalas/larguras, o hint realmente aplicado ao campo e o limite de 256 caracteres. Meta: **140 instrumentados por API**, incluindo a captura isolada; 28 screenshots. Aprovado apenas após CI e revisão visual do novo PNG.
 
 Sem mudanças de APK, OTA, `main`, dados reais do usuário ou homologação 1:1.
+
+
+## P7.14 — navegação explícita nas abas do Design Studio em fonte de 200%
+
+**Base verde:** [CI P7.13 #39996465979](https://github.com/nego001/ReaDroid-Native/actions/runs/39996465979), **139 testes instrumentados gerais + 1 captura isolada** em cada API29/35, 28 screenshots e cross-API verde, Source e OTA verdes.
+
+Na captura `p7-large-text-design-android-35.png` a quarta aba **Logotipo** fica parcialmente fora da faixa horizontal. A rolagem já existia e era intencional para não reduzir o texto, mas não havia sinal/ação explícita para revelar o final da faixa.
+
+`P7DesignStudio` passa a mostrar somente com escala efetiva ≥165% um botão quadrado de **48dp**, símbolo `⇄`, semântica TalkBack de botão e descrição **Percorrer abas do Design Studio**. Ele alterna a rolagem entre a primeira e a última região da faixa de quatro abas. O texto das abas não é reduzido; o comportamento existente `revealActiveTab` e a seleção real dos criadores continuam como antes. Em tela compacta 320dp/130% e no tamanho normal, o controle extra não aparece e o layout da P7.11 fica inalterado.
+
+Novo teste instrumentado valida seis combinações de escala e o controle real, focável e ≥48dp quando aplicável. O smoke em fonte 200% exige que o botão esteja acessível, o pressiona para revelar a aba Logotipo dentro dos limites do viewport e retorna à aba Temas antes da screenshot. A meta é **140 testes instrumentados gerais + 1 captura isolada por API (141)**, 28 screenshots e relatório cruzado. Ainda não aprovado antes da CI e inspeção dos PNGs.
+
+Não modifica estado de personalização ou APKs, arquivos do usuário, distribuição, versão nem OTA.
