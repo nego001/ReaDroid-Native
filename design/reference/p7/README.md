@@ -33,12 +33,21 @@ Além das capturas do emulador, a matriz P7 gera o arquivo
 python3 tools/p7_capture_manifest.py
 ```
 
-O manifesto exige treze screenshots por API: Home, Explorador, Segurança,
-Build, Design Studio,
-editor de ícones, editor de logotipo, três capturas a 320dp/fonte 130% e três
-a fonte 200%. Ele verifica a estrutura CRC/IHDR/IEND do PNG, dimensões reais,
-cenário e SHA-256 de cada arquivo e inclui os metadados de densidade/API
-obtidos por ADB. Qualquer captura ausente ou inválida faz o job falhar.
+O manifesto exige **14 capturas reais por API (28 nas APIs 29 e 35)**:
+oito no cenário normal (Início, Explorador vazio, Explorador com ZIP
+**sintético de QA**, Segurança, Build, Design Studio, criador de ícones e
+criador de logotipos), três em 320 dp/fonte 130% (Início, Explorador,
+Design) e três em fonte 200% (as mesmas seções). Nenhuma captura
+de um APK real do usuário é necessária para esse inventário.
+
+A captura do Explorador populado é gerada em instrumentação isolada
+após a suíte Android; ela valida o foco da Activity, a ausência da
+sobreposição clara de sistema conhecida e a integridade do PNG. Em
+conjunto, a suíte instrumentada e a captura isolada precisam passar.
+O manifesto valida a estrutura CRC/IHDR/IEND do PNG, os dados dos
+pixels, dimensões reais, cenário e SHA-256, com metadados de
+densidade/API obtidos por ADB. Capturas inválidas ou ausentes fazem
+o job falhar. Essa verificação **não** mede similaridade com as artes oficiais.
 
 **Cuidado:** esse JSON documenta evidências reais de execução do emulador,
 mas **NÃO aprova a fidelidade visual 1:1**, não substitui os dois PNGs aprovados
@@ -48,7 +57,7 @@ oficiais estiverem ausentes, o campo `official_references` será `BLOCKED`.
 ## Painel local de comparação humana
 
 Após o workflow, cada artefato `p7-brand-android-29` e `p7-brand-android-35`
-inclui, além das 13 capturas e seu JSON de integridade, o arquivo
+inclui, além das **14 capturas** e seu JSON de integridade, o arquivo
 `p7-visual-review-android-{api}.html`. Extraia o ZIP preservando os PNGs na
 mesma pasta e abra o HTML no navegador para inspecionar as imagens lado a lado
 por cenário. É uma ferramenta **offline, sem JavaScript e sem chamadas de rede**.
@@ -66,3 +75,24 @@ python3 tools/p7_visual_review_board.py
 
 A saída preserva os PNGs originais, não faz recortes automáticos ou inferência
 de alinhamento entre uma arte de 1448×1086 e uma captura vertical.
+
+## Resultado de aprovação e requisitos ainda abertos
+
+O fluxo verifica 14 PNGs por API e gera um **único relatório cruzado com
+28 imagens**. O painel offline é uma ferramenta para revisão humana e
+não transforma a captura sintética, nem uma aprovação de CI, em prova
+de fidelidade visual 1:1.
+
+Os critérios de liberação continuam separados:
+
+- **CI de Android**: testes instrumentados em API29/API35, captura
+  isolada obrigatória, inventário completo e relatório cruzado
+- **Artes oficiais**: incorporar somente os dois PNGs aprovados acima,
+  com dimensões e SHA-256 idênticos; enquanto faltarem, `BLOCKED`
+- **Aceite visual**: comparar manualmente as telas reais contra as
+  referências no mesmo viewport; `NOT_APPROVED` até homologação explícita
+- **Dispositivo físico**: executar e inspecionar no Galaxy A55; ainda
+  `NOT_APPROVED`
+
+Não confundir essas etapas com autorização de merge, distribuição
+de APK ou publicação de OTA. O pipeline de UI é de **QA**, não de release.

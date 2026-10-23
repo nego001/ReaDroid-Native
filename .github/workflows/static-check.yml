@@ -29,6 +29,8 @@ jobs:
           echo "Source layout and Python syntax checks passed"
       - name: Verify P7 reference validator with synthetic test PNGs
         run: python3 -m unittest discover -s tests -p 'test_p7_reference_assets.py' -v
+      - name: Guard P7 screenshot documentation against stale evidence counts
+        run: python3 -m unittest discover -s tests -p 'test_p7_reference_readme.py' -v
       - name: Verify committed-import history contract
         run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
       - name: Guard single-shell P7 screenshot capture
