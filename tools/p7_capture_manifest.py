@@ -44,6 +44,52 @@ class ScreenshotEvidenceError(ValueError):
     """Required genuine CI screenshot is absent or structurally invalid."""
 
 
+def _validate_png_pixels(compressed, width, height, color, filename):
+    """Validate bounded zlib scanlines, not visual similarity or provenance."""
+    scanline_bytes = 1 + width * (3 if color == 2 else 4)
+    required = scanline_bytes * height
+    observed = 0
+    offset = 0
+
+    def consume(block):
+        nonlocal observed, offset
+        if observed + len(block) > required:
+            raise ScreenshotEvidenceError(
+                f"PNG pixels exceed declared size: {filename}")
+        index = 0
+        while index < len(block):
+            if offset == 0 and block[index] > 4:
+                raise ScreenshotEvidenceError(
+                    f"Invalid PNG row filter: {filename}")
+            length = min(scanline_bytes - offset, len(block) - index)
+            offset = (offset + length) % scanline_bytes
+            index += length
+        observed += len(block)
+
+    decompressor = zlib.decompressobj()
+    try:
+        for position in range(0, len(compressed), 65536):
+            pending = compressed[position:position + 65536]
+            while pending:
+                block = decompressor.decompress(pending, 65536)
+                consume(block)
+                if decompressor.unused_data:
+                    raise ScreenshotEvidenceError(
+                        f"Trailing PNG compressed data: {filename}")
+                pending = decompressor.unconsumed_tail
+        while True:
+            block = decompressor.decompress(b"", 65536)
+            if not block:
+                break
+            consume(block)
+    except zlib.error as error:
+        raise ScreenshotEvidenceError(
+            f"Corrupted PNG pixels: {filename}") from error
+    if not decompressor.eof or observed != required or offset != 0:
+        raise ScreenshotEvidenceError(
+            f"Truncated PNG pixel data: {filename}")
+
+
 def inspect_png(path):
     """Verify PNG chunk framing/CRCs and return width, height and SHA-256.
 
@@ -61,6 +107,8 @@ def inspect_png(path):
     dimensions = None
     seen_image_data = False
     seen_end = False
+    idat_parts = []
+    idat_closed = False
     while position < len(data):
         if len(data) - position < 12:
             raise ScreenshotEvidenceError(f"Truncated PNG chunk: {path.name}")
@@ -87,9 +135,15 @@ def inspect_png(path):
         elif tag == b"IHDR":
             raise ScreenshotEvidenceError(f"Duplicate PNG IHDR: {path.name}")
         if tag == b"IDAT":
+            if idat_closed:
+                raise ScreenshotEvidenceError(
+                    f"Non-contiguous PNG IDAT: {path.name}")
             if length == 0:
                 raise ScreenshotEvidenceError(f"Empty PNG IDAT: {path.name}")
             seen_image_data = True
+            idat_parts.append(payload)
+        elif seen_image_data:
+            idat_closed = True
         position = end
         if tag == b"IEND":
             if length != 0 or position != len(data):
@@ -98,6 +152,7 @@ def inspect_png(path):
             break
     if not seen_image_data or not seen_end:
         raise ScreenshotEvidenceError(f"PNG missing data or IEND: {path.name}")
+    _validate_png_pixels(b"".join(idat_parts), width, height, color, path.name)
     return dimensions, hashlib.sha256(data).hexdigest(), size
 
 
@@ -136,7 +191,7 @@ def build_manifest(directory, api, viewport, density, reference_dir=None):
     return {
         "schema_version": 1,
         "source": "GitHub Actions / Android emulator / adb exec-out screencap",
-        "validation_scope": "PNG structure, dimensions and hashes only",
+        "validation_scope": "PNG structure, deflate scanlines, dimensions and hashes only",
         "pixel_perfect_approved": False,
         "physical_device_approved": False,
         "official_references": "VERIFIED" if refs_verified else "BLOCKED",

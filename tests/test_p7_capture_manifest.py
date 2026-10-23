@@ -23,6 +23,17 @@ def png(width, height):
             + chunk(b"IEND"))
 
 
+def png_with_stream(width, height, compressed, color=6, split=False):
+    """Valid chunk CRCs isolate bad pixel content from broken framing."""
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, color, 0, 0, 0)
+    pieces = ([compressed[:len(compressed) // 2],
+               compressed[len(compressed) // 2:]]
+              if split else [compressed])
+    return (capture.PNG_MAGIC + chunk(b"IHDR", ihdr)
+            + b"".join(chunk(b"IDAT", part) for part in pieces)
+            + chunk(b"IEND"))
+
+
 def populate(directory, api=29, size=(400, 800), density=160):
     compact = (320, 720)
     for _, scenario, template in capture.SCREENS:
@@ -98,6 +109,53 @@ class P7ScreenshotInventoryTests(unittest.TestCase):
                         capture.build_manifest(
                             Path(tmp), api, (400, 800), density,
                             reference_dir=Path(tmp))
+
+    def test_rgb_with_split_idat_decodes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rgb.png"
+            row = b"\x00" + b"\x10\x20\x30" * 2
+            path.write_bytes(png_with_stream(
+                2, 3, zlib.compress(row * 3), color=2, split=True))
+            dimensions, digest, size = capture.inspect_png(path)
+            self.assertEqual((2, 3), dimensions)
+            self.assertEqual(size, path.stat().st_size)
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),
+                             digest)
+
+    def test_crc_valid_but_unreadable_pixels_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "unreadable.png"
+            raw = (b"\x00" + b"\x11\x22\x33\x44" * 3) * 2
+            cases = {
+                "bad_zlib": b"\x78\x9cgarbage",
+                "truncated_zlib": zlib.compress(raw)[:-2],
+                "too_few_pixels": zlib.compress(raw[:-1]),
+                "too_many_pixels": zlib.compress(raw + b"\xff"),
+                "invalid_filter": zlib.compress(b"\x05" + raw[1:]),
+                "trailing_payload": zlib.compress(raw) + b"extra",
+            }
+            for label, stream in cases.items():
+                with self.subTest(label=label):
+                    path.write_bytes(png_with_stream(3, 2, stream))
+                    with self.assertRaises(capture.ScreenshotEvidenceError):
+                        capture.inspect_png(path)
+
+    def test_noncontiguous_idat_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "separated.png"
+            compressed = zlib.compress(
+                b"\x00" + b"\x01\x02\x03\x04" * 2)
+            middle = len(compressed) // 2
+            ihdr = struct.pack(">IIBBBBB", 2, 1, 8, 6, 0, 0, 0)
+            path.write_bytes(capture.PNG_MAGIC
+                + chunk(b"IHDR", ihdr)
+                + chunk(b"IDAT", compressed[:middle])
+                + chunk(b"tEXt", b"note\x00example")
+                + chunk(b"IDAT", compressed[middle:])
+                + chunk(b"IEND"))
+            with self.assertRaisesRegex(
+                    capture.ScreenshotEvidenceError, "Non-contiguous"):
+                capture.inspect_png(path)
 
 
 if __name__ == "__main__":
