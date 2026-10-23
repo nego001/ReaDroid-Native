@@ -54,20 +54,24 @@ def check_screen(section, heading, viewport, density, api):
     if section == "Arquivos":
         require_stacked_explorer_summary(nodes)
     if section == "Design":
-        pager_name = "Percorrer abas do Design Studio"
-        require_accessible_target(nodes, pager_name, density, viewport)
+        pager_start = "Mostrar abas finais do Design Studio"
+        pager_end = "Voltar às primeiras abas do Design Studio"
+        require_accessible_target(nodes, pager_start, density, viewport)
         pager = next(node for node in nodes
-                     if node.attrib.get("content-desc") == pager_name)
+                     if node.attrib.get("content-desc") == pager_start)
         smoke.tap(pager)
         end_nodes = smoke.visible_app_hierarchy()
         require_accessible_target(end_nodes, "Logotipo, selecionar aba",
                                   density, viewport)
+        require_accessible_target(end_nodes, pager_end,
+                                  density, viewport)
         # Restore the original selected Themes position for the canonical
         # large-font screenshot. Do not select another editor or edit an APK.
         pager = next(node for node in end_nodes
-                     if node.attrib.get("content-desc") == pager_name)
+                     if node.attrib.get("content-desc") == pager_end)
         smoke.tap(pager)
         nodes = smoke.visible_app_hierarchy()
+        require_accessible_target(nodes, pager_start, density, viewport)
         require_accessible_target(nodes, "Temas, aba selecionada",
                                   density, viewport)
     for description in REQUIRED_TARGETS[section]:

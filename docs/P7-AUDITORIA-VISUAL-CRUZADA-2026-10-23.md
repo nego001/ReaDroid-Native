@@ -168,3 +168,14 @@ A [CI P7.14 #40000389135](https://github.com/nego001/ReaDroid-Native/actions/run
 A instrumentação antes fazia uma **única amostragem imediata** após `waitForIdleSync`. Agora aguarda o foco **real** da janela por no máximo **8 segundos**, repetindo a avaliação a cada 200 ms no thread de teste. Não aceita `RESUMED` como substituto de foco, não fecha popups automaticamente e **falha se a janela não ganhar foco**. Quando ganha, continua exigindo identidade da janela de acessibilidade quando disponível e a inspeção anti-ANR dos pixels antes de salvar a captura. A verificação é executada antes e depois do screenshot. Assim nenhum PNG encoberto é aprovado só pelo decurso de tempo.
 
 Nenhum código da aplicação de produção foi modificado. Nova CI integral é necessária: 140 instrumentados gerais + 1 captura isolada por API, 28 PNGs, relatório cruzado, Source e OTA.
+
+
+## P7.15 — anúncio acessível de destino nas abas do Design Studio
+
+**Base:** [CI P7.14.1 #40001608771](https://github.com/nego001/ReaDroid-Native/actions/runs/40001608771) verde em API29 e API35, 140 testes da suíte ampla + 1 captura isolada por API, 28 PNGs e painel cross-API aprovados. Mantida a proteção de foco e a triagem anti-ANR.
+
+**Pendência identificada na captura P7.14:** o novo botão `⇄` em 200% possuía a mesma descrição `Percorrer abas do Design Studio` independentemente da posição. Para leitores de tela, isso não esclarecia o resultado do próximo acionamento.
+
+Agora o rótulo TalkBack é contextual: **“Mostrar abas finais do Design Studio”** no começo e **“Voltar às primeiras abas do Design Studio”** no fim. O rótulo acompanha rolagens por gesto, por toque no botão ou pela seleção de aba, via `HorizontalScrollView.setOnScrollChangeListener`. Nenhum texto de aba é reduzido e a ação original continua alternando o scroll. Teste Android novo verifica os dois destinos; o smoke de 200% exige os textos reais antes e depois de tocar, além de validar a visibilidade de Logotipo e retorno a Temas.
+
+**Meta:** 141 testes gerais + 1 captura isolada = **142 verificações por API**, 28 PNGs e cross-API. Não considerar concluído antes de CI. Sem mudanças em dados, APK, exportação, versão, `main` ou OTA.

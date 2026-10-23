@@ -119,7 +119,7 @@ public final class P7NavigationInstrumentedTest {
                 boolean required = P7DesignStudio.needsTabPagingControl(
                     width, font, NegrescoTheme.FONT_SCALE);
                 View pager = byDescription(root,
-                    "Percorrer abas do Design Studio");
+                    P7DesignStudio.tabPagingLabel(false));
                 if (required) {
                     assertNotNull("Large text tab paging button missing", pager);
                     assertTrue(pager.isClickable() && pager.isFocusable());
@@ -132,6 +132,16 @@ public final class P7NavigationInstrumentedTest {
                 }
             });
         }
+    }
+
+    @Test public void designPagingTalkBackDescribesNextDestination() {
+        assertEquals("Mostrar abas finais do Design Studio",
+            P7DesignStudio.tabPagingLabel(false));
+        assertEquals("Voltar às primeiras abas do Design Studio",
+            P7DesignStudio.tabPagingLabel(true));
+        assertNotEquals("Accessible paging actions must differ",
+            P7DesignStudio.tabPagingLabel(false),
+            P7DesignStudio.tabPagingLabel(true));
     }
 
     @Test public void designCompactTabsFitFourDestinationsWithoutShrinkingTouchArea() {

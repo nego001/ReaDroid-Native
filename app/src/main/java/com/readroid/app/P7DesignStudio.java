@@ -139,6 +139,13 @@ public final class P7DesignStudio {
         return widthDp > 0 && effective >= 1.65f;
     }
 
+    /** TalkBack says exactly where the paging button goes next. */
+    static String tabPagingLabel(boolean showingLast) {
+        return showingLast
+            ? "Voltar às primeiras abas do Design Studio"
+            : "Mostrar abas finais do Design Studio";
+    }
+
     public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions,
                           int restoredTab) {
         a=activity;root=container;actions=appearanceActions;
@@ -188,16 +195,24 @@ public final class P7DesignStudio {
             pager.setGravity(Gravity.CENTER);
             pager.setMinimumWidth(dp(48));
             pager.setMinimumHeight(dp(48));
-            pager.setContentDescription("Percorrer abas do Design Studio");
+            pager.setContentDescription(tabPagingLabel(false));
             pager.setClickable(true);
             pager.setFocusable(true);
             exposeAsButton(pager);
             pager.setBackground(background(false));
+            // Keep the spoken destination correct for BOTH button taps and
+            // manual horizontal swipes; do not infer it from the selected tab.
+            scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
+                int limit = Math.max(0, tabs.getWidth() - scroll.getWidth());
+                pager.setContentDescription(tabPagingLabel(
+                    limit > 0 && x > limit / 2));
+            });
             pager.setOnClickListener(view -> {
                 int limit = Math.max(0, tabs.getWidth() - scroll.getWidth());
                 if (limit <= 0) return;
                 int destination = scroll.getScrollX() <= limit / 2 ? limit : 0;
                 scroll.scrollTo(destination, 0);
+                pager.setContentDescription(tabPagingLabel(destination > 0));
             });
             strip.addView(pager,
                 new LinearLayout.LayoutParams(dp(48), dp(48)));
