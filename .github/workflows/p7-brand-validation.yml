@@ -94,7 +94,7 @@ jobs:
               -e class com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest \
               com.readroid.app.test/androidx.test.runner.AndroidJUnitRunner)
             printf '%s\n' "$capture_test_output"
-            printf '%s\n' "$capture_test_output" | grep -Eq 'OK \\(1 test\\)'
+            printf '%s\n' "$capture_test_output" | grep -Fq 'OK (1 test)'
             # The target is still installed: read its own test-created PNG
             # before any other smoke or clean-up can remove the private file.
             adb exec-out run-as com.readroid.app cat files/p7-explorer-populated.png > p7-explorer-populated-android-${{ matrix.api }}.png
