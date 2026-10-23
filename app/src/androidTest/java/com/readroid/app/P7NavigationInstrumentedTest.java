@@ -311,6 +311,44 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void actionCardsKeepFullLabelsAndNativeButtonRolesOnEveryDesignTab() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertTrue(byDescription(root, "Abrir seção Design").performClick());
+                int minHeight = NegrescoTheme.dp(activity, 48);
+                String[][] cards = {
+                    {"Cores e tons", "Exportar aparência", "Importar aparência"},
+                    {"Aplicar layout selecionado", "Componentes e navegação",
+                        "Bordas dos cartões", "Cores e tons", "Exportar aparência",
+                        "Importar aparência"},
+                    {"Abrir criador de ícones", "Cores e tons",
+                        "Exportar aparência", "Importar aparência"},
+                    {"Criar logo PNG", "Editar nome e subtítulo",
+                        "Prévia de aparência", "Cores e tons",
+                        "Exportar aparência", "Importar aparência"}
+                };
+                String[] sections = {"Temas", "Layout", "Ícones", "Logotipo"};
+                for (int i = 0; i < sections.length; i++) {
+                    View tab = clickableText(root, sections[i]);
+                    assertNotNull(tab);
+                    assertTrue(tab.performClick());
+                    for (String card : cards[i]) {
+                        View action = byDescription(root, card + ". ");
+                        assertNotNull("Missing accessible Design action " + card,
+                            action);
+                        assertTrue("Design action needs 48dp minimum target",
+                            action.getMinimumHeight() >= minHeight);
+                        assertAccessibleButton(action);
+                        assertTrue(action.getContentDescription().toString()
+                            .startsWith(card + ". "));
+                    }
+                }
+            });
+        }
+    }
+
     @Test public void designSubtabSurvivesRealActivityRecreation() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

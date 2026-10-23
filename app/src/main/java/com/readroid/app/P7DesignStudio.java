@@ -330,7 +330,12 @@ public final class P7DesignStudio {
         TextView button=label(name+"  ↗\n"+subtitle,13,NegrescoTheme.TEXT,true);
         button.setPadding(dp(14),dp(12),dp(12),dp(12));
         button.setBackground(background(false));
-        button.setMinHeight(dp(60));button.setClickable(true);button.setFocusable(true);
+        button.setMinHeight(dp(60));
+        button.setMinimumHeight(dp(60));
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setContentDescription(name + ". " + subtitle);
+        exposeAsButton(button);
         button.setOnClickListener(v->{
             if (actionIndex == -1) applySelectedTheme();
             else if (actionIndex == -2) confirmLayout();

@@ -819,3 +819,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Testes novos:** duas instrumentações abrem a Activity real e conferem presença e natureza não clicável dos cabeçalhos nas quatro abas do Design Studio e nas páginas de Home, Segurança e Build. Meta **124 testes por API** (122 + 2), além de Source, OTA e capturas; APIs anteriores a 28 não invocam o método por causa do guard explícito de SDK.
 
 **Escopo e limites:** melhoria de navegação assistiva não substitui revisão manual com TalkBack; não modifica navegação funcional, workspace APK, preferências, assinatura ou versionCode. Comparação visual 1:1 depende dos PNGs oficiais e a homologação Galaxy A55 permanece aberta. PR #13 segue draft, sem merge, distribuição de APK nem OTA publicada.
+
+### P7.6 — cartões de ação do Design Studio anunciados corretamente (22/10/2026)
+
+**Última base totalmente verde antes desta revisão:** commit `48fc6324`, [CI Android 39884453901](https://github.com/nego001/ReaDroid-Native/actions/runs/39884453901), **122/122** testes por API29/API35, Source/OTA verdes e 13 capturas. O commit `2ab139a3` adicionou cabeçalhos acessíveis (meta 124/API), mas a conclusão da respectiva CI ainda não estava confirmada no momento de preparar esta mudança.
+
+**Correção:** `P7DesignStudio.actionCard` gerava ações operacionais como `Cores e tons`, `Exportar aparência`, `Criar logo PNG` e `Aplicar layout selecionado` usando um `TextView` clicável. Era navegável pelo foco, porém não anunciava `Button` ao TalkBack, e o mínimo vinha somente de `TextView.setMinHeight` (não o contrato de alvo `View.setMinimumHeight`). Adicionados papel nativo de `Button` por `exposeAsButton`, descrição única `nome. finalidade` e altura mínima verificável de 60dp. O texto visível com símbolo `↗`, a disposição e os callbacks continuam iguais.
+
+**Teste de regressão:** um novo teste Android percorre as quatro abas reais de Design, verifica os cartões de ação operacionais de cada aba, seus nomes completos, semântica `Button`, foco/clique e alvos de 48dp ou mais, sem invocar exportações nem modificar projetos. Meta **125 testes por API** (124+1), requer CI Android 10/API29, Android 15/API35, Source e OTA neste commit.
+
+**Pendências:** revisão manual TalkBack, benchmark físico, PNGs oficiais para medição 1:1 e homologação Samsung A55. Manter `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`, PR #13 draft e nenhuma distribuição de APK ou publicação OTA.
