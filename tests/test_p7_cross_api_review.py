@@ -43,7 +43,7 @@ class CrossApiReviewTests(unittest.TestCase):
             fixture(a, 29, root)
             fixture(b, 35, root)
             content, report = review.render_review(a, b, root)
-            self.assertEqual(26, report["verified_screenshots"])
+            self.assertEqual(28, report["verified_screenshots"])
             self.assertEqual("BLOCKED", report["references"])
             self.assertFalse(report["pixel_perfect_approved"])
             self.assertFalse(report["physical_device_approved"])

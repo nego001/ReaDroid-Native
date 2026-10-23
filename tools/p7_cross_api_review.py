@@ -19,7 +19,8 @@ except ImportError:
     import p7_reference_assets as references
     import p7_visual_review_board as board
 
-SCENES = (("home", "Início"), ("explorer", "Explorador"),
+SCENES = (("home", "Início"), ("explorer", "Explorador vazio"),
+          ("explorer_populated", "Explorador com ZIP sintético"),
           ("design", "Design Studio"))
 STYLE = """
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#07111b;
@@ -73,7 +74,7 @@ def render_review(api29_dir, api35_dir, reference_dir):
         + ("VERIFICADAS" if references_ok else "BLOQUEADAS") + "</strong>. "
         "<strong>Fidelidade visual 1:1: NÃO APROVADA.</strong> "
         "<strong>Galaxy A55 físico: NÃO HOMOLOGADO.</strong> "
-        "Há 13 screenshots verificadas em cada API. "
+        "Há 14 screenshots verificadas em cada API. "
         "Integridade de PNG não prova semelhança visual.</div>",
         "<h2>Imagens oficiais da referência</h2><div class='grid'>",
     ]
@@ -114,7 +115,7 @@ def render_review(api29_dir, api35_dir, reference_dir):
         "<h2>Pontos de controle manual</h2>",
         "<div class='notice'><p>Compare a hierarquia visual, margens, tipografia, "
         "arte do mascote, cor, estados reais, navegação e alvos de toque. "
-        "O Explorador pode aparecer vazio quando não há APK carregado. "
+        "O Explorer vazio não contém dados; o populado usa um ZIP sintético de QA. "
         "Não criar dados fictícios para imitar a prancha.</p>"
         "<p>Valide também os cenários 320 dp/130% e fonte 200% nos manifestos "
         "de cada API; execute a homologação física e TalkBack separadamente. "

@@ -39,3 +39,12 @@ python3 tools/p7_cross_api_review.py \
 Os testes unitários rejeitam manifesto com aprovação inventada ou captura ausente, além de exigirem o painel bloqueado quando faltam artes oficiais.
 
 **Restrições:** PR #13 permanece draft, sem merge na main, alteração de APK/assinatura, aumento de versão ou OTA. A homologação física Galaxy A55/TalkBack continua pendente.
+
+
+## P7.6.1 — Captura do Explorador com APK sintético (23/10/2026)
+
+A nova instrumentação `P7ExplorerPopulatedCaptureInstrumentedTest` gera ZIP **sintético** em cache, indexa-o via `ApkDiskIndex` (SQLite) e carrega seu relatório de teste no `MainActivity` real. Abre a aba Arquivos, exige pastas `assets/`, `res/` e arquivo `AndroidManifest.xml` e obtém um screenshot verdadeiro do sistema Android. O cabeçalho anuncia **APK sintético de QA**; nenhum arquivo pessoal é analisado, instalado, assinado ou exportado. A prova compara os bytes do ZIP antes/depois e exclui a cópia de teste no fim.
+
+O workflow extrai apenas o PNG de captura via `adb run-as`, depois mantém os smokes anteriores. O manifesto passa a validar **14 capturas por API, 28 totais**, incluindo as duas situações distintas: Explorer vazio e Explorer de teste populado. Testes locais do inventário, painel e comparação foram atualizados para não permitir omissões silenciosas.
+
+Essa tela testa a renderização com conteúdo sintético, **não certifica o processo de importação SAF nem decodificação real de AndroidManifest.xml**. Fidelidade visual 1:1 e Galaxy A55 continuam bloqueados. Não fazer merge nem publicar novo APK/OTA até aceite.
