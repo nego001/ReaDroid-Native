@@ -23,6 +23,7 @@ on:
       - 'tools/p7_design_smoke.py'
       - 'tools/p7_home_smoke.py'
       - 'tests/test_p7_import_history_contract.py'
+      - 'design/reference/p7/**'
       - '.github/workflows/p7-brand-validation.yml'
   workflow_dispatch:
 # A new PR commit supersedes old emulator runs. Don't burn GitHub Actions
@@ -50,6 +51,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Verify byte-identical official P7 artwork
+        run: python3 tools/p7_reference_assets.py
       - name: Verify ANR recovery regression contracts
         run: python3 -m unittest discover -s tests -p 'test_android_ui_recovery.py' -v
       - name: Check compact viewport helper with unit tests

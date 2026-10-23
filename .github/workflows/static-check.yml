@@ -31,6 +31,9 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_p7_brand_identity_contract.py' -v
       - name: Verify P7 reference validator with synthetic test PNGs
         run: python3 -m unittest discover -s tests -p 'test_p7_reference_assets.py' -v
+      - name: Verify committed official P7 PNG references
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-') }}
+        run: python3 tools/p7_reference_assets.py
       - name: Guard P7 screenshot documentation against stale evidence counts
         run: python3 -m unittest discover -s tests -p 'test_p7_reference_readme.py' -v
       - name: Verify committed-import history contract

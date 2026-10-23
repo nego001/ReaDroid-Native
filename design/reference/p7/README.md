@@ -1,10 +1,10 @@
 # Referências oficiais P7 — NegrecoDroid
 
-Os PNGs aprovados pelo proprietário **ainda não estão versionados**.
-Não incluir imagens geradas de novo, capturas do emulador, thumbnails ou
-imagens modificadas no lugar das referências oficiais.
+Os dois PNGs aprovados pelo proprietário estão **versionados como binários
+originais** nesta pasta, sem recompressão, recorte ou reinterpretação.
+Não substituir por imagens geradas, capturas do emulador ou thumbnails.
 
-Copiar, quando disponíveis, exatamente estes dois arquivos para esta pasta:
+Os arquivos incorporados, com sua integridade obrigatória, são:
 
 | Arquivo | Dimensões | SHA-256 |
 | --- | --- | --- |
@@ -19,10 +19,14 @@ python3 tools/p7_reference_assets.py
 
 **Um resultado PASS só é possível com os dois arquivos originais.**
 Qualquer ausência, dimensão, CRC ou hash divergente bloqueia P7.0; não
-substituir hashes automaticamente. A verificação do script em CI usa PNGs
-sintéticos gerados apenas nos testes, não aceita mockups ausentes como
-referências válidas. Depois da incorporação, executar comparação manual
-de screenshots reais vs. os recortes oficiais no viewport definido na issue #11.
+substituir hashes automaticamente. Os testes unitários usam PNGs sintéticos
+somente como fixtures. Além disso, o CI da branch P7 executa a checagem dos
+**binários reais versionados**, sem aceitar substitutos nem arquivos ausentes.
+
+**P7.0: binários oficiais incorporados e verificados.** Isso destrava a
+comparação humana lado a lado. O status `references=VERIFIED` **não
+significa** `visual_1to1=APPROVED` nem teste físico aprovado.
+O aceite das telas em viewport canônico permanece na issue #11.
 
 ## Evidências automatizadas da matriz Android
 
@@ -96,3 +100,18 @@ Os critérios de liberação continuam separados:
 
 Não confundir essas etapas com autorização de merge, distribuição
 de APK ou publicação de OTA. O pipeline de UI é de **QA**, não de release.
+
+### Proveniência do commit binário (P7.20)
+
+As duas imagens vieram dos arquivos da conversa do proprietário, previamente
+conferidos por SHA-256 e dimensões **1448×1086**. Seus objetos Git de arquivo
+(`git hash-object`) são, respectivamente:
+
+- `negrecodroid_controle_total_de_apks.png`: `fc849a4574821827328d0335d226fdc305106b63`;
+- `identidade_negrecodroid_em_neon_azul.png`: `5b0aaef38c81fd333a504d32e2c16f3f4f7e508b`.
+
+O upload dos objetos foi conferido contra esses IDs **antes** de registrar
+os arquivos na branch. Use `python3 tools/p7_reference_assets.py` para
+validar novamente SHA-256, IHDR, CRC e fechamento PNG. O binário oficial
+fica nesta pasta de referência, **não** é incorporado como fundo estático da
+interface Android. Ações do usuário e dados reais permanecem funcionais.
