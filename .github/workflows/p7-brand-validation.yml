@@ -82,8 +82,9 @@ jobs:
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest,com.readroid.app.P7IconWorkshopInstrumentedTest,com.readroid.app.P7IconSvgInstrumentedTest,com.readroid.app.P7LogoWorkshopInstrumentedTest,com.readroid.app.P7LogoSvgInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest
             # Instrumented tests compile a debug target as needed, but we do
             # not build or publish any installable QA release on every commit.
-            # Export only the test-created screenshot from the debuggable app sandbox.
-            adb exec-out run-as com.readroid.app cat files/p7-explorer-populated.png > p7-explorer-populated-android-${{ matrix.api }}.png
+            # The test created the PNG in emulator Download; Gradle uninstalls
+            # the debug app after instrumentation, clearing its private sandbox.
+            adb exec-out cat /sdcard/Download/p7-explorer-populated.png > p7-explorer-populated-android-${{ matrix.api }}.png
             test -s p7-explorer-populated-android-${{ matrix.api }}.png
             test -s app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/debug/app-debug.apk

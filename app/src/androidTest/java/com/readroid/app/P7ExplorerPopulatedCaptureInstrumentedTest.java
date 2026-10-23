@@ -3,6 +3,9 @@ package com.readroid.app;
 import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
+import android.os.ParcelFileDescriptor;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import android.view.View;
 import android.view.ViewGroup;
 import androidx.test.core.app.ActivityScenario;
@@ -139,6 +142,21 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
                 }
                 assertTrue("Saved screenshot missing",
                     new File(context.getFilesDir(), SCREENSHOT).length() > 1024);
+                // Gradle removes the debug app after instrumentation, wiping
+                // its private files. Persist a second real Android capture in
+                // emulator Download via the test-only shell identity.
+                // No app permission or public-device data is accessed.
+                ParcelFileDescriptor pipe = InstrumentationRegistry
+                    .getInstrumentation().getUiAutomation().executeShellCommand(
+                        "sh -c 'mkdir -p /sdcard/Download && screencap -p " +
+                        "/sdcard/Download/p7-explorer-populated.png'");
+                assertNotNull("Shell screenshot pipe unavailable", pipe);
+                try (ParcelFileDescriptor descriptor = pipe;
+                        InputStream result = new FileInputStream(
+                            descriptor.getFileDescriptor())) {
+                    byte[] buffer = new byte[1024];
+                    while (result.read(buffer) != -1) { /* wait for shell exit */ }
+                }
                 assertArrayEquals("Source ZIP changed after capture", original,
                     Files.readAllBytes(apk.toPath()));
             }
