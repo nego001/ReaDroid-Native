@@ -27,6 +27,8 @@ jobs:
             if [ -f "$script" ]; then python3 -m py_compile "$script"; fi
           done
           echo "Source layout and Python syntax checks passed"
+      - name: Guard native NegrecoDroid mark and official studio wording
+        run: python3 -m unittest discover -s tests -p 'test_p7_brand_identity_contract.py' -v
       - name: Verify P7 reference validator with synthetic test PNGs
         run: python3 -m unittest discover -s tests -p 'test_p7_reference_assets.py' -v
       - name: Guard P7 screenshot documentation against stale evidence counts

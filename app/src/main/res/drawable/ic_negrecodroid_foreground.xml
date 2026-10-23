@@ -4,7 +4,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- P7 first-pass vector. Refine against the approved original artwork. -->
+    <!-- P7.18 vector refinement from the official two-PNG visual audit.
+         This is a native editable asset, NOT a pixel-perfect approval. -->
     <!-- Six-sided protective outline: N + electronic circuit nodes. -->
     <path android:fillColor="#06172B"
         android:pathData="M54,11 L91,30 L91,72 L54,99 L17,72 L17,30 Z"/>
@@ -12,10 +13,24 @@
         android:strokeColor="#158EFF" android:strokeWidth="4.5"
         android:strokeLineJoin="round"
         android:pathData="M54,11 L91,30 L91,72 L54,99 L17,72 L17,30 Z"/>
+    <!-- Metallic upper cap, cyan side rim and silver lower bevel mirror
+         the material hierarchy of the official NegrecoDroid shield. -->
+    <path android:fillColor="#EBF5FF"
+        android:pathData="M54,11 L91,30 L85,35 L54,19 L39,27 L33,22 Z"/>
+    <path android:fillColor="#00C7FA"
+        android:pathData="M17,30 L22,28 L22,71 L36,83 L36,89 L17,72 Z"/>
+    <path android:fillColor="#AFCBE9"
+        android:pathData="M32,64 L38,70 L38,81 L52,92 L52,98 L32,81 Z"/>
     <path android:fillColor="@android:color/transparent"
         android:strokeColor="#9EDAFF" android:strokeWidth="1.4"
         android:pathData="M54,17 L85,34"/>
-    <!-- Angular N monogram: blue ascending ribbon and silver upright. -->
+    <!-- Layered bright ribbon and darker lower bevel: native vector,
+         never a flattened promotional image. -->
+    <path android:fillColor="#0640A8"
+        android:pathData="M34,34 L76,72 L76,80 L34,43 Z"/>
+    <path android:fillColor="#00D2FA"
+        android:pathData="M34,34 L76,71 L71,74 L34,41 Z"/>
+    <!-- Angular N monogram: blue descending ribbon and silver upright. -->
     <path android:fillColor="@android:color/transparent"
         android:strokeColor="#D9E9FF"
         android:strokeWidth="10"
@@ -34,6 +49,8 @@
         android:strokeLineCap="square"
         android:strokeLineJoin="miter"
         android:pathData="M76,72 L76,38"/>
+    <path android:fillColor="#F1F9FF"
+        android:pathData="M29,51 L34,46 L34,70 L41,77 L41,84 L29,73 Z"/>
     <!-- Circuit connectors kept separate from the monogram for legibility. -->
     <path android:fillColor="@android:color/transparent"
         android:strokeColor="#56D9FF" android:strokeWidth="2.4"
