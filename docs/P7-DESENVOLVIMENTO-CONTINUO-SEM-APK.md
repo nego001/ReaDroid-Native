@@ -773,3 +773,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Verificação:** dois novos testes instrumentados verificam pixels estáveis durante redesenhos sucessivos para 24 temas, 12 layouts e cinco presets, e identidade do shader durante 30 redesenhos de cada instância de preset. A CI precisa passar **118 testes por API** (116+2), Source e OTA. Isso é otimização comprovável por ausência de alocações no código de desenho, **não** benchmark FPS ou memória em aparelho real.
 
 **Fronteiras:** só renderização vetorial; sem tocar callbacks, aparência persistida, APK em análise/edição, chaves ou engenharia reversa. Referências PNG ausentes, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`; PR #13 draft, sem merge, APK distribuído ou OTA publicada.
+
+### P7.6 — cartão de boas-vindas expansível com fonte Android ampliada (22/10/2026)
+
+**Base aprovada:** commit `fb8e6b9b`, [CI Android 39877046002](https://github.com/nego001/ReaDroid-Native/actions/runs/39877046002), **118/118 testes por API29 e API35**, Source/OTA aprovados e 13 capturas por API; `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+**Problema corrigido:** `StudioDashboard.compose` fixava a altura do cartão superior em 101dp ou 133dp e usava altura MATCH_PARENT no bloco de texto. Mensagens que envolvessem várias linhas, fontes ampliadas pelo Android ou traduções maiores podiam ser cortadas pela geometria da Home. Além disso, só `NegrescoTheme.FONT_SCALE` era levado em conta para escolher a variação ampliada, ignorando `Configuration.fontScale` do sistema.
+
+**Alteração:** preservar mínimos originais (101/133dp), sobreposição e dimensões do mascote nas condições comuns, mas permitir `wrap_content` no stage, cartão e coluna textual, com gravidade vertical centralizada e cálculo de ampliação considerando sistema × app. Etiquetas internas `p7-welcome-stage` e `p7-welcome-text` auxiliam apenas a inspeção Android. O cartão cresce quando conteúdo exige; o layout não modifica preferencias nem APK em edição.
+
+**Regressão:** novo teste instrumentado com escala interna de 135%, substituição temporária do texto de descrição por texto longo, execução do layout real e verificação de aumento de altura, linhas completas sem truncamento, minHeight e restauração da preferência. **Meta 119 testes por API** e Source/OTA na próxima CI. Isso não é aprovação pixel-a-pixel 1:1: referências de design ainda não estão disponíveis e não houve teste físico Galaxy A55.
+
+**Política:** PR #13 rascunho, sem merge em main, versionCode, distribuição APK ou OTA publicada.

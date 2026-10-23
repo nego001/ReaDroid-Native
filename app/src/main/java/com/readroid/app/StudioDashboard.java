@@ -276,24 +276,34 @@ public final class StudioDashboard {
         // Reproduce the reference composition: a short welcome card, with
         // the original mascot crossing up into the header. No extra tall
         // illustration card pushing the statistics and recent files away.
-        boolean enlarged = NegrescoTheme.FONT_SCALE > 1.15f;
+        // Both the Android accessibility font scale and in-app scaling can
+        // enlarge the welcome description. Do not judge only the app setting.
+        float effectiveScale = a.getResources().getConfiguration().fontScale
+            * NegrescoTheme.FONT_SCALE;
+        boolean enlarged = effectiveScale > 1.15f;
         boolean narrow = a.getResources().getConfiguration().screenWidthDp < 360;
         final int stageHeight = enlarged ? 133 : 101;
         final int mascotWidth = narrow ? 103 : 124;
         final int mascotHeight = enlarged ? 137 : 160;
         final int topOverlap = enlarged ? 17 : 59;
         FrameLayout welcomeStage = new FrameLayout(a);
+        welcomeStage.setTag("p7-welcome-stage");
         welcomeStage.setClipChildren(false);
         welcomeStage.setClipToPadding(false);
         LinearLayout welcome = card(a, false);
+        welcome.setMinimumHeight(dp(a, stageHeight));
+        welcome.setGravity(Gravity.CENTER_VERTICAL);
         welcome.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+        // The minimum reproduces the normal approved mockup, but wrap_content
+        // expands when a larger font or longer translation needs more space.
         FrameLayout.LayoutParams welcomeParams = new FrameLayout.LayoutParams(
-            -1, dp(a, stageHeight));
+            -1, -2);
         welcomeStage.addView(welcome, welcomeParams);
         LinearLayout welcomeText = column(a);
+        welcomeText.setTag("p7-welcome-text");
         welcomeText.setGravity(Gravity.CENTER_VERTICAL);
         welcomeText.setPadding(0, 0, dp(a, mascotWidth + 6), 0);
-        welcome.addView(welcomeText, new LinearLayout.LayoutParams(-1, -1));
+        welcome.addView(welcomeText, new LinearLayout.LayoutParams(-1, -2));
         welcomeText.addView(label(a, "Olá, Desenvolvedor", 15,
             NegrescoTheme.TEXT, true));
         gap(a, welcomeText, 4);
@@ -311,8 +321,7 @@ public final class StudioDashboard {
         art.topMargin = -dp(a, topOverlap);
         art.rightMargin = dp(a, 2);
         welcomeStage.addView(mascot, art);
-        home.addView(welcomeStage, new LinearLayout.LayoutParams(
-            -1, dp(a, stageHeight)));
+        home.addView(welcomeStage, new LinearLayout.LayoutParams(-1, -2));
         gap(a, home, 7);
 
         // Main project area with the live report-bound text views and real picker.
