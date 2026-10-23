@@ -171,32 +171,52 @@ public final class P7DesignStudio {
         sectionHeader(title, null);
     }
 
-    /** Compact section heading replaces the old full-width apply buttons. */
+    /** Short headings stay compact; enlarged text can use their natural height. */
+    static boolean needsExpandedSectionHeader(int widthDp, float systemFontScale,
+            float appFontScale) {
+        float effective = Math.max(0.75f, systemFontScale)
+            * Math.max(0.85f, appFontScale);
+        return (widthDp > 0 && widthDp < 360) || effective >= 1.20f;
+    }
+
     private void sectionHeader(String title, Runnable onViewAll) {
+        boolean expanded = needsExpandedSectionHeader(
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
+        boolean stacked = expanded && onViewAll != null;
         LinearLayout row = new LinearLayout(a);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, dp(48));
+        row.setOrientation(stacked
+            ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        row.setMinimumHeight(dp(48));
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+            -1, expanded ? -2 : dp(48));
         rp.topMargin = dp(4);
         body.addView(row, rp);
         TextView label = label(title, 15, NegrescoTheme.TEXT, true);
-        // Android's heading navigation can jump between Design sections;
-        // decorative card captions and the "Ver todos" buttons are not headings.
+        // Keep the full heading legible and navigable with TalkBack.
         if (android.os.Build.VERSION.SDK_INT >= 28)
             label.setAccessibilityHeading(true);
-        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(label, stacked
+            ? new LinearLayout.LayoutParams(-1, -2)
+            : new LinearLayout.LayoutParams(0, -2, 1f));
         if (onViewAll != null) {
             TextView viewAll = label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
             viewAll.setGravity(Gravity.CENTER);
             viewAll.setMinHeight(dp(48));
             viewAll.setMinimumHeight(dp(48));
+            viewAll.setMinimumWidth(dp(48));
             viewAll.setPadding(dp(8), 0, dp(3), 0);
             viewAll.setClickable(true);
             viewAll.setFocusable(true);
             viewAll.setContentDescription("Ver todos: " + title);
             exposeAsButton(viewAll);
             viewAll.setOnClickListener(v -> onViewAll.run());
-            row.addView(viewAll);
+            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                -2, -2);
+            if (stacked) actionParams.gravity = Gravity.END;
+            row.addView(viewAll, actionParams);
         }
     }
 

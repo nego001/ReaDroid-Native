@@ -349,6 +349,69 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void catalogHeadingLayoutPolicyHandlesNarrowAndLargeText() {
+        assertFalse(P7DesignStudio.needsExpandedSectionHeader(393, 1f, 1f));
+        assertFalse(P7DesignStudio.needsExpandedSectionHeader(600, 1f, 1f));
+        assertTrue(P7DesignStudio.needsExpandedSectionHeader(359, 1f, 1f));
+        assertTrue(P7DesignStudio.needsExpandedSectionHeader(393, 1.25f, 1f));
+        assertTrue(P7DesignStudio.needsExpandedSectionHeader(393, 1f, 1.35f));
+        assertTrue(P7DesignStudio.needsExpandedSectionHeader(320, 1.25f, 1.35f));
+    }
+
+    @Test public void largeTextReflowsAllCatalogHeadingsAndViewAllButtons() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean had = prefs.contains("font_percent");
+        int previous = prefs.getInt("font_percent", 100);
+        try {
+            assertTrue(prefs.edit().putInt("font_percent", 135).commit());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> assertTrue(byDescription(
+                    activity.getWindow().getDecorView(), "Abrir seção Design")
+                    .performClick()));
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    int minTarget = NegrescoTheme.dp(activity, 48);
+                    for (String title : new String[]{
+                            "Previews de Temas", "Opções de Layout",
+                            "Presets de Aparência"}) {
+                        View action = byDescription(root, "Ver todos: " + title);
+                        assertAccessibleButton(action);
+                        LinearLayout row = (LinearLayout) action.getParent();
+                        assertEquals("Large fonts require stacked header actions",
+                            LinearLayout.VERTICAL, row.getOrientation());
+                        assertEquals(-2, row.getLayoutParams().height);
+                        assertTrue(row.getMinimumHeight() >= minTarget);
+                        TextView heading = (TextView) row.getChildAt(0);
+                        assertEquals(title, heading.getText().toString());
+                        assertTrue(heading.isAccessibilityHeading());
+                        assertFalse(heading.isClickable());
+                        assertEquals(-1, heading.getLayoutParams().width);
+                        assertEquals("Catalog chooser remains at least 48dp",
+                            true, action.getMinimumHeight() >= minTarget);
+                        assertTrue(action.getMinimumWidth() >= minTarget);
+                        assertTrue("Heading and action need room without overlap",
+                            row.getHeight() >= heading.getHeight() + action.getHeight());
+                        assertNotNull(heading.getLayout());
+                        for (int line = 0; line < heading.getLayout().getLineCount();
+                                line++)
+                            assertEquals(0, heading.getLayout().getEllipsisCount(line));
+                    }
+                });
+            }
+        } finally {
+            android.content.SharedPreferences.Editor editor = prefs.edit();
+            if (had) editor.putInt("font_percent", previous);
+            else editor.remove("font_percent");
+            assertTrue(editor.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void designSubtabSurvivesRealActivityRecreation() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

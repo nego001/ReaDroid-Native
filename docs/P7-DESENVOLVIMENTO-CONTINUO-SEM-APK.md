@@ -829,3 +829,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Teste de regressão:** um novo teste Android percorre as quatro abas reais de Design, verifica os cartões de ação operacionais de cada aba, seus nomes completos, semântica `Button`, foco/clique e alvos de 48dp ou mais, sem invocar exportações nem modificar projetos. Meta **125 testes por API** (124+1), requer CI Android 10/API29, Android 15/API35, Source e OTA neste commit.
 
 **Pendências:** revisão manual TalkBack, benchmark físico, PNGs oficiais para medição 1:1 e homologação Samsung A55. Manter `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`, PR #13 draft e nenhuma distribuição de APK ou publicação OTA.
+
+### P7.6 — cabeçalhos de catálogo expansíveis para texto grande (22/10/2026)
+
+**Base integralmente validada:** commit `c8c256fa`, [CI Android 39886475925](https://github.com/nego001/ReaDroid-Native/actions/runs/39886475925), **125/125 testes instrumentados aprovados em API29 e API35**, Source e OTA aprovados, 13 capturas por API. A imagem de revisão preserva `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+**Problema:** `P7DesignStudio.sectionHeader` sempre colocava cabeçalhos longos e o atalho `Ver todos` na mesma linha de altura fixa 48dp. Em telas estreitas ou com fontes maiores pelo sistema/app, isso podia comprimir o texto, cortar o título ou sobrepor os dois elementos.
+
+**Alteração:** `needsExpandedSectionHeader` usa largura `<360dp` ou escala efetiva do texto `>=1,20` para escolher altura adaptativa. Quando há atalho, empilha título e `Ver todos` num grupo vertical `wrap_content` com o botão alinhado à direita, mínimo de 48dp de altura e largura; cabeçalhos sem atalho crescem naturalmente quando necessário. Largura/fonte normal mantém faixa horizontal de 48dp. Preservados textos, ações, estado selecionado, rolagem e semânticas `Button` e `accessibilityHeading`.
+
+**Regressões:** teste unitário instrumentado para limites de largura e escala, mais teste Android com `font_percent=135` que percorre os três cabeçalhos do catálogo em tela real, conferindo layout empilhado, ausência de sobreposição, texto completo e botões acessíveis; prefere-se assertivas sobre dimensões/semântica, nunca pixel-diff sem referência. Meta **127 testes por API** (125+2) e Source/OTA.
+
+**Fronteiras:** sem alterações de preferências persistentes, projeto APK, versão, assinatura, merge ou OTA de distribuição. TalkBack manual, referências oficiais e homologação física Galaxy A55 continuam pendentes.
