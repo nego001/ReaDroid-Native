@@ -853,3 +853,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** teste Android de contraste dos cartões em 3 temas × 5 acentos (incluindo acento personalizado branco), garantindo texto com razão mínima de 4,5:1 e manutenção dos fundos originais no OLED/grafite; teste de tela real com tema claro confere as cores concretas dos `GradientDrawable` nas abas, legibilidade, seleção e troca de aba. Preferências temporárias são restauradas. Meta **129 testes por API** (127+2), além de Source/OTA e capturas.
 
 **Pendente:** inspeção física com TalkBack, benchmark Galaxy A55 e correspondência 1:1 com os PNGs oficiais. PR #13 draft, sem merge, aumento de versionCode, APK de distribuição nem OTA publicada.
+
+### P7.6 — catálogo completo de temas falado pelo TalkBack e rótulos expandidos (22/10/2026)
+
+**Base anterior aprovada:** commit `34498d01`, [CI de contraste Android 39889608537](https://github.com/nego001/ReaDroid-Native/actions/runs/39889608537), **129/129 testes instrumentados aprovados em Android 10/API29 e Android 15/API35**, Source e OTA aprovados, 13 capturas em cada API. Fidelidade visual 1:1 e aparelho físico ainda não homologados.
+
+**Problema encontrado:** as 24 opções do catálogo incluem diferenças reais de `studio_glow`, mas `P7DesignStudio.tile` falava apenas o nome e o estado do cartão. O subtítulo `Neon · ...`/`Sem brilho · ...` estava explicitamente oculto do TalkBack, impedindo quem usa leitor de tela de conhecer a diferença completa. Além disso, temas e presets mantinham títulos limitados a uma linha, reticências e largura fixa mesmo sob fonte ampliada pelo sistema e pelo app.
+
+**Mudança:** para `kind=0` (temas), acrescentar o subtítulo ao final da única descrição acessível do cartão preservando prefixo nome/estado e papel Button; manter o subtítulo interno oculto para evitar leitura duplicada. Com escala efetiva de texto >1,15, larguras dos cartões crescem para 144dp (temas), 140dp (layouts, como antes com fonte interna grande) e 120dp (presets), títulos aceitam 3 linhas sem elipse e subtítulos de temas até 3 linhas, mantendo a navegação horizontal do catálogo. Fonte normal preserva dimensões e forma originais; callback e preferências não mudam.
+
+**Regressões:** dois novos testes instrumentados percorrem os 24 temas para validar descrição com `glowAt` e subtítulo real, estado de seleção, papel nativo Button, e depois com fonte interna 135% testam título/subtítulo completos, três linhas possíveis, ausência de elipse e largura responsiva de 24 temas e cinco presets. Meta **131 testes por API** (129+2), Source, OTA e evidências da matriz Android.
+
+**Limites:** `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`. Ainda depende de TalkBack manual, PNGs oficiais para comparar 1:1 e Galaxy A55. PR #13 draft, main intocada, sem merge, publicação de APK, versionCode ou OTA.
