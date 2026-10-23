@@ -35,7 +35,7 @@ public final class P7NavigationInstrumentedTest {
     /** Informative views carry TalkBack descriptions without being buttons. */
     private static View describedView(View view, String label) {
         CharSequence description = view.getContentDescription();
-        if (description != null && label.equals(description.toString()))
+        if (description != null && description.toString().startsWith(label))
             return view;
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -973,9 +973,74 @@ public final class P7NavigationInstrumentedTest {
                 assertTrue(hasText(window, "Logo Studio"));
                 assertTrue("The user-saved brand must be shown in its preview",
                     hasText(window, saved));
-                assertNotNull("A prévia precisa ser acessível ao TalkBack",
-                    describedView(window, "Prévia da identidade visual atual"));
+                View preview = describedView(window,
+                    "Prévia da identidade visual atual. Nome: ");
+                assertNotNull("A prévia precisa ser acessível ao TalkBack", preview);
+                assertTrue("Spoken preview must contain the saved name",
+                    preview.getContentDescription().toString().contains("Nome: " + saved));
             });
+        }
+    }
+
+    @Test public void logoPreviewAnnouncesSavedNameAndSubtitleWithoutDuplicateNodes() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean hadName = prefs.contains("display_name");
+        String previousName = prefs.getString("display_name", "NegrecoDroid");
+        boolean hadSubtitle = prefs.contains("display_subtitle");
+        String previousSubtitle = prefs.getString(
+            "display_subtitle", "APK ENGINEERING STUDIO");
+        boolean hadFont = prefs.contains("font_percent");
+        int previousFont = prefs.getInt("font_percent", 100);
+        String testName = "NegrecoDroid Laboratório Mobile";
+        String testSubtitle = "Análise e personalização de aplicativos Android";
+        try {
+            assertTrue(prefs.edit().putString("display_name", testName)
+                .putString("display_subtitle", testSubtitle)
+                .putInt("font_percent", 135).commit());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    assertTrue(byDescription(root, "Abrir seção Design").performClick());
+                    View tab = clickableText(root, "Logotipo");
+                    assertNotNull(tab);
+                    assertTrue(tab.performClick());
+                    View preview = describedView(root,
+                        "Prévia da identidade visual atual. Nome: ");
+                    assertNotNull(preview);
+                    assertEquals("Prévia da identidade visual atual. Nome: "
+                        + testName + ". Subtítulo: " + testSubtitle,
+                        preview.getContentDescription().toString());
+                    assertFalse("Identity preview is information, not a button",
+                        preview.isClickable());
+                    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_YES,
+                        preview.getImportantForAccessibility());
+                    LinearLayout row = (LinearLayout) preview;
+                    LinearLayout names = (LinearLayout) row.getChildAt(1);
+                    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS,
+                        names.getImportantForAccessibility());
+                    TextView brand = (TextView) names.getChildAt(0);
+                    TextView subtitle = (TextView) names.getChildAt(1);
+                    assertEquals(testName, brand.getText().toString());
+                    assertEquals(testSubtitle, subtitle.getText().toString());
+                    assertEquals(Integer.MAX_VALUE, brand.getMaxLines());
+                    assertEquals(Integer.MAX_VALUE, subtitle.getMaxLines());
+                    assertEquals(-2, names.getLayoutParams().height);
+                });
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadName) restore.putString("display_name", previousName);
+            else restore.remove("display_name");
+            if (hadSubtitle) restore.putString("display_subtitle", previousSubtitle);
+            else restore.remove("display_subtitle");
+            if (hadFont) restore.putInt("font_percent", previousFont);
+            else restore.remove("font_percent");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
         }
     }
 

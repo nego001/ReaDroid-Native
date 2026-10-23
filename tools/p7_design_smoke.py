@@ -11,6 +11,21 @@ except ImportError:
     import android_ui_smoke as smoke
 
 
+def saved_identity_preview(nodes):
+    """Require exactly one real, informative and non-interactive saved-brand preview."""
+    prefix = "Prévia da identidade visual atual. Nome: "
+    matching = [node for node in nodes
+                if node.attrib.get("content-desc", "").startswith(prefix)]
+    assert len(matching) == 1, "Saved identity preview must be unique"
+    description = matching[0].attrib["content-desc"]
+    name, separator, subtitle = description[len(prefix):].partition(". Subtítulo: ")
+    assert separator and name.strip() and subtitle.strip(), (
+        "Saved identity must announce both nonempty name and subtitle")
+    assert matching[0].attrib.get("clickable") != "true", (
+        "Saved identity preview is informative, never an action")
+    return description
+
+
 def check():
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
     time.sleep(2)
@@ -124,9 +139,7 @@ def check():
     assert len(logo_tabs) == 1, "Logo Studio tab missing"
     smoke.tap(logo_tabs[0])
     logo_page = smoke.visible_app_hierarchy()
-    assert any(n.attrib.get("content-desc") ==
-               "Prévia da identidade visual atual"
-               for n in logo_page), "Real saved-brand preview missing"
+    spoken_identity = saved_identity_preview(logo_page)
     logo_create = [n for n in logo_page if n.attrib.get("text", "").startswith(
                    "Criar logo PNG  ↗") and n.attrib.get("clickable") == "true"]
     assert len(logo_create) == 1, "Real logo editor entry missing"
@@ -145,9 +158,8 @@ def check():
             ["adb", "exec-out", "screencap", "-p"], timeout=45))
     smoke.adb("shell", "input", "keyevent", "4")
     smoke.ensure_foreground()
-    assert any(n.attrib.get("content-desc") == "Prévia da identidade visual atual"
-               for n in smoke.visible_app_hierarchy()), (
-        "Canceling logo edit must return to saved identity")
+    assert saved_identity_preview(smoke.visible_app_hierarchy()) == spoken_identity, (
+        "Canceling logo edit must return to the unchanged saved identity")
     print(f"P7_DESIGN_PASS api={api} screenshot={target} "
           "apply_cancel=ok icon_workshop=ok saved_logo=ok", flush=True)
 

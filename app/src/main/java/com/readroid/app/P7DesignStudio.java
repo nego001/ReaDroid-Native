@@ -482,7 +482,11 @@ public final class P7DesignStudio {
         preview.setGravity(Gravity.CENTER_VERTICAL);
         preview.setPadding(dp(15), dp(16), dp(15), dp(16));
         preview.setBackground(background(false));
-        preview.setContentDescription("Prévia da identidade visual atual");
+        // A preview must announce the actual saved identity, not only its type.
+        // One accessible group avoids duplicate readings of the visible texts.
+        preview.setContentDescription("Prévia da identidade visual atual. Nome: "
+            + name + ". Subtítulo: " + subtitle);
+        preview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         LinearLayout.LayoutParams outer = new LinearLayout.LayoutParams(-1, -2);
         outer.bottomMargin = dp(10);
         body.addView(preview, outer);
@@ -496,6 +500,8 @@ public final class P7DesignStudio {
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, -2, 1f);
         textParams.leftMargin = dp(12);
         preview.addView(names, textParams);
+        names.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
 
         TextView brand = label("", 20, NegrescoTheme.TEXT, true);
         SpannableString style = new SpannableString(name);
@@ -503,11 +509,13 @@ public final class P7DesignStudio {
         if (blue >= 0) style.setSpan(new ForegroundColorSpan(NegrescoTheme.ACCENT),
             blue, blue + 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         brand.setText(style);
-        brand.setMaxLines(2);
+        boolean largeText = a.getResources().getConfiguration().fontScale
+            * NegrescoTheme.FONT_SCALE >= 1.20f;
+        brand.setMaxLines(largeText ? Integer.MAX_VALUE : 2);
         names.addView(brand);
 
         TextView secondary = label(subtitle, 9, NegrescoTheme.MUTED, false);
-        secondary.setMaxLines(2);
+        secondary.setMaxLines(largeText ? Integer.MAX_VALUE : 2);
         secondary.setLetterSpacing(0.12f);
         names.addView(secondary);
         note("Prévia do cabeçalho atual. Não altera o ícone instalado nem assina APKs.");

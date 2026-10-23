@@ -881,3 +881,13 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Correção:** buscar o prefixo exato `<nome>, selecionar prévia. ` e exigir que o sufixo anuncie `Neon · ` ou `Sem brilho · `, com elemento clicável e único. O smoke continua conferindo a confirmação real de aplicação e a restauração após Android Back. Não remover as exigências funcionais por uma mudança apenas de cópia acessível.
 
 **Verificação exigida:** rodar a matriz instrumental de **131 testes por API**, seguida do `P7_DESIGN_PASS` real em Android 10 e 15, dos outros smokes, Source e OTA. Não houve mudança em operação de projeto APK, release, assinatura, main ou OTA; PR #13 draft. Referências de artes e homologação física continuam bloqueadas.
+
+### P7.6 — prévia do Logo Studio lê identidade real e não duplica anúncios (22/10/2026)
+
+**Base verificada:** commit `d8f70a2f`, [CI Android 39891669987](https://github.com/nego001/ReaDroid-Native/actions/runs/39891669987), **131/131 testes instrumentados em Android 10/API29 e Android 15/API35**; Source, OTA e smoke `P7_DESIGN_PASS` completos em ambos, com 13 capturas por API. As referências visuais oficiais e a homologação física continuam pendentes.
+
+**Problema corrigido:** a prévia do logo mostrava o nome e o subtítulo de fato salvos no aparelho, mas seu rótulo para TalkBack era apenas genérico. Agora o agrupamento informativo anuncia ambos, sem duplicar o anúncio dos textos filhos. A prévia segue não clicável, o ícone decorativo segue oculto para leitor de tela, e as linhas de nome/subtítulo não são artificialmente limitadas quando a escala combinada de fonte Android e app chega a 120%. Fontes comuns continuam com máximo de duas linhas, preservando o design anterior.
+
+**Cobertura:** um novo teste instrumentado grava identidade longa e fonte interna de 135% temporariamente, verifica a semântica e o texto real, e restaura as preferências. O smoke de Design passa a exigir identidade não vazia, única e não clicável, e compara a mesma descrição depois de cancelar o editor de logos. Três testes unitários de contrato para o parser de hierarquia (nome ausente/vazio, duplicatas, botão indevido), incluídos no workflow. Meta **132 testes instrumentados por API** (131+1), além de Source/OTA, unit tests e smokes.
+
+**Fronteiras:** não altera nome real, branding persistido, projeto APK, PNG/SVG exportado, assinatura, `versionCode`, `main` ou release. `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`; PR #13 rascunho sem merge nem OTA.
