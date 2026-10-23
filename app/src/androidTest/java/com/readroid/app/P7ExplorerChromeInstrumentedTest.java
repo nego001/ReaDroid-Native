@@ -56,6 +56,42 @@ public final class P7ExplorerChromeInstrumentedTest {
         return null;
     }
 
+    @Test public void explorerProjectSummaryPreservesFullNameAtHighFontSizes() {
+        assertTrue(P7ExplorerChrome.stackProjectSummary(320, 1.3f, 1f));
+        assertTrue(P7ExplorerChrome.stackProjectSummary(320, 1f, 1f));
+        assertTrue(P7ExplorerChrome.stackProjectSummary(393, 2f, 1f));
+        assertTrue(P7ExplorerChrome.stackProjectSummary(393, 1.3f, 1.35f));
+        assertFalse(P7ExplorerChrome.stackProjectSummary(393, 1f, 1f));
+
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                LinearLayout root = new LinearLayout(activity);
+                activity.setContentView(root);
+                new ExplorerView(activity, root);
+                TextView name = find(root, "Nenhum APK selecionado");
+                TextView description = find(root,
+                    "Abra um APK para explorar os arquivos.");
+                View edits = byDescription(root, "Abrir plano de edição");
+                assertNotNull(name);
+                assertNotNull(description);
+                assertNotNull(edits);
+                boolean stacked = P7ExplorerChrome.stackProjectSummary(
+                    activity.getResources().getConfiguration().screenWidthDp,
+                    activity.getResources().getConfiguration().fontScale,
+                    NegrescoTheme.FONT_SCALE);
+                assertEquals(stacked ? 2 : 1, name.getMaxLines());
+                assertEquals(stacked ? 2 : 1, description.getMaxLines());
+                LinearLayout parent = (LinearLayout) edits.getParent();
+                assertEquals(stacked ? LinearLayout.VERTICAL :
+                    LinearLayout.HORIZONTAL, parent.getOrientation());
+                assertTrue(edits.getMinimumHeight() >=
+                    NegrescoTheme.dp(activity, 48));
+                assertTrue(edits.isClickable() && edits.isFocusable());
+            });
+        }
+    }
+
     @Test public void projectCardChipsAndBreadcrumbsRespectRealBrowserState() throws Exception {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

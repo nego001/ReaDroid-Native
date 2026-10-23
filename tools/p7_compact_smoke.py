@@ -75,6 +75,29 @@ def require_accessible_target(nodes, description, density, viewport):
             f"required {minimum}px at density {density}")
 
 
+def require_stacked_explorer_summary(nodes):
+    """At 320dp the full project name must sit ABOVE the real edit-plan chip."""
+    names = [node for node in nodes
+             if node.attrib.get("text") == "Nenhum APK selecionado"]
+    actions = [node for node in nodes
+               if node.attrib.get("content-desc") == "Abrir plano de edição"]
+    if len(names) != 1 or len(actions) != 1:
+        raise AssertionError("Compact Explorer summary/action missing")
+    bounds = []
+    for node in (names[0], actions[0]):
+        match = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            node.attrib.get("bounds", ""))
+        if not match:
+            raise AssertionError("Explorer summary bounds missing")
+        bounds.append(tuple(map(int, match.groups())))
+    title, action = bounds
+    if action[1] < title[3]:
+        raise AssertionError(
+            f"Explorer edit-plan chip obscures truncated APK name: "
+            f"title={title} action={action}")
+
+
 def check_screen(name, required_text, width_px, height_px, api, density):
     smoke.tap(smoke.find_tab(smoke.visible_app_hierarchy(), name))
     smoke.ensure_foreground()
@@ -102,6 +125,7 @@ def check_screen(name, required_text, width_px, height_px, api, density):
         print(f"P7_COMPACT_HOME_A11Y_PASS api={api} 48dp targets=2",
               flush=True)
     if name == "Arquivos":
+        require_stacked_explorer_summary(nodes)
         for description in ("Ir à raiz do APK",
                             "Abrir plano de edição"):
             require_accessible_target(

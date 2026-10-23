@@ -2,7 +2,8 @@
 import unittest
 import xml.etree.ElementTree as ET
 from tools.p7_compact_smoke import (
-    parse_wm, viewport_pixels, require_accessible_target)
+    parse_wm, viewport_pixels, require_accessible_target,
+    require_stacked_explorer_summary)
 
 
 class P7CompactViewportTests(unittest.TestCase):
@@ -63,6 +64,26 @@ class P7CompactViewportTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             require_accessible_target([offscreen], names[-1],
                                       440, (width, 1980))
+
+    def test_important_apk_name_cannot_be_obscured_by_plan_chip(self):
+        def item(text=None, desc=None, bounds="[0,0][100,100]"):
+            fields = {"bounds": bounds}
+            if text is not None:
+                fields["text"] = text
+            if desc is not None:
+                fields["content-desc"] = desc
+            return ET.Element("node", fields)
+        good = [
+            item(text="Nenhum APK selecionado", bounds="[15,80][280,145]"),
+            item(desc="Abrir plano de edição", bounds="[15,150][290,210]"),
+        ]
+        require_stacked_explorer_summary(good)
+        with self.assertRaises(AssertionError):
+            require_stacked_explorer_summary([
+                good[0], item(desc="Abrir plano de edição",
+                              bounds="[190,80][290,145]")])
+        with self.assertRaises(AssertionError):
+            require_stacked_explorer_summary(good[:1])
 
     def test_missing_or_malformed_display_info_fails_closed(self):
         for output in ("", "Override size: 880x1980", "Physical size: 1080",

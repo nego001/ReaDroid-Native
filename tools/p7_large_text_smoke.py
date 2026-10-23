@@ -10,10 +10,13 @@ import subprocess
 try:
     from tools import android_ui_smoke as smoke
     from tools.p7_compact_smoke import (
-        launch, parse_wm, require_accessible_target)
+        launch, parse_wm, require_accessible_target,
+        require_stacked_explorer_summary)
 except ImportError:
     import android_ui_smoke as smoke
-    from p7_compact_smoke import launch, parse_wm, require_accessible_target
+    from p7_compact_smoke import (
+        launch, parse_wm, require_accessible_target,
+        require_stacked_explorer_summary)
 
 HEADINGS = (
     ("Início", "Olá, Desenvolvedor"),
@@ -48,6 +51,8 @@ def check_screen(section, heading, viewport, density, api):
         x1, y1, x2, y2 = map(int, match.groups())
         if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
             raise AssertionError(f"{name}: navigation clipped at 200%: {bounds}")
+    if section == "Arquivos":
+        require_stacked_explorer_summary(nodes)
     for description in REQUIRED_TARGETS[section]:
         require_accessible_target(nodes, description, density, viewport)
     # The history link is intentionally hidden when the history is empty.

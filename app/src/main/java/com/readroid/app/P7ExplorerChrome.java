@@ -39,6 +39,15 @@ public final class P7ExplorerChrome extends LinearLayout {
         return item;
     }
 
+    /** Make the native APK title readable instead of sharing 1 row with
+     *  a fixed 113dp action in a 320dp or 200% accessibility viewport. */
+    static boolean stackProjectSummary(int widthDp, float systemFont,
+            float appFont) {
+        float effective = Math.max(0.85f, systemFont)
+            * Math.max(0.85f, appFont);
+        return widthDp > 0 && (widthDp < 360 || effective >= 1.65f);
+    }
+
     public P7ExplorerChrome(Activity activity, LinearLayout parent,
             FolderNavigator navigator) {
         super(activity);
@@ -92,8 +101,12 @@ public final class P7ExplorerChrome extends LinearLayout {
         titleRow.addView(overflow,
             new LinearLayout.LayoutParams(dp(48), dp(48)));
 
+        boolean stacked = stackProjectSummary(
+            activity.getResources().getConfiguration().screenWidthDp,
+            activity.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
         LinearLayout projectCard = new LinearLayout(activity);
-        projectCard.setOrientation(HORIZONTAL);
+        projectCard.setOrientation(stacked ? VERTICAL : HORIZONTAL);
         projectCard.setGravity(Gravity.CENTER_VERTICAL);
         projectCard.setPadding(dp(10), dp(9), dp(10), dp(9));
         projectCard.setBackground(NegrescoTheme.studioCard(activity, false));
@@ -101,10 +114,19 @@ public final class P7ExplorerChrome extends LinearLayout {
         projectParams.topMargin = dp(9);
         addView(projectCard, projectParams);
 
+        LinearLayout summaryRow = projectCard;
+        if (stacked) {
+            summaryRow = new LinearLayout(activity);
+            summaryRow.setOrientation(HORIZONTAL);
+            summaryRow.setGravity(Gravity.CENTER_VERTICAL);
+            projectCard.addView(summaryRow,
+                new LinearLayout.LayoutParams(-1, -2));
+        }
+
         ImageView apkIcon = new ImageView(activity);
         apkIcon.setImageResource(R.drawable.ic_p7_file);
         apkIcon.setContentDescription("Ícone do APK selecionado");
-        projectCard.addView(apkIcon,
+        summaryRow.addView(apkIcon,
             new LinearLayout.LayoutParams(dp(35), dp(35)));
         LinearLayout detail = new LinearLayout(activity);
         detail.setOrientation(VERTICAL);
@@ -112,14 +134,14 @@ public final class P7ExplorerChrome extends LinearLayout {
             0, -2, 1);
         detailParams.leftMargin = dp(9);
         detailParams.rightMargin = dp(6);
-        projectCard.addView(detail, detailParams);
+        summaryRow.addView(detail, detailParams);
         projectName = text("Nenhum APK selecionado", 13, NegrescoTheme.TEXT, true);
-        projectName.setMaxLines(1);
+        projectName.setMaxLines(stacked ? 2 : 1);
         projectName.setEllipsize(TextUtils.TruncateAt.END);
         detail.addView(projectName);
         projectDescription = text("Abra um APK para explorar os arquivos.", 10,
             NegrescoTheme.MUTED, false);
-        projectDescription.setMaxLines(1);
+        projectDescription.setMaxLines(stacked ? 2 : 1);
         projectDescription.setEllipsize(TextUtils.TruncateAt.END);
         detail.addView(projectDescription);
 
@@ -136,8 +158,10 @@ public final class P7ExplorerChrome extends LinearLayout {
             if (onReviewPlan != null) onReviewPlan.run();
         });
         editCounter.setPadding(dp(7), dp(7), dp(7), dp(7));
-        projectCard.addView(editCounter,
-            new LinearLayout.LayoutParams(dp(113), -2));
+        LinearLayout.LayoutParams editsParams =
+            new LinearLayout.LayoutParams(stacked ? -1 : dp(113), -2);
+        if (stacked) editsParams.topMargin = dp(8);
+        projectCard.addView(editCounter, editsParams);
 
         HorizontalScrollView breadcrumbs = new HorizontalScrollView(activity);
         breadcrumbs.setHorizontalScrollBarEnabled(false);

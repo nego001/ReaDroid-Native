@@ -113,3 +113,16 @@ Auditoria visual da captura `p7-compact-design-android-35.png`: a aba **Logotipo
 Ajuste responsivo conservador em `P7DesignStudio`: somente abaixo de 360dp e com escala efetiva ≤140%, reduzir o mínimo visual para **66dp**, padding para **4dp** e separação para **3dp**; preservar **48dp** de altura mínima, labels integrais e papéis de botão no TalkBack. Com escala de 200% ou escala combinada elevada, **manter a rolagem horizontal** e o `revealActiveTab()`, evitando comprimir texto legível.
 
 O smoke real em 320dp/130% exige agora os **quatro** destinos visíveis e dentro dos limites da tela, além do botão Ver todos, total de 5 alvos de pelo menos 48dp. Novos testes de regressão verificam a seleção da grade compacta e rejeitam a última aba fora do viewport. Meta: **138 testes instrumentados por API** com screenshots 28/28; nenhuma homologação antes da CI. Não altera exportação, APK, OTA, assinatura ou `main`.
+
+
+## P7.12 — cartão do Explorador não deve truncar o nome do APK
+
+**Base verde:** [CI P7.11 #39981407261](https://github.com/nego001/ReaDroid-Native/actions/runs/39981407261), **138/138** instrumentados por API29 e API35, 28 PNGs e cross-API verde.
+
+Achado visual nas capturas P7.11 de `p7-compact-arquivos-android-35.png` (320dp/130%) e `p7-large-text-arquivos-android-35.png` (200%): o cartão de projeto mostra **“Nenhum AP...”** e corta também a descrição. A causa é o chip de plano de edições com largura fixa **113dp** disputando a mesma linha com o nome do APK.
+
+`P7ExplorerChrome` agora empilha **resumo do APK na linha superior** e **botão de plano de edições abaixo, largura inteira** quando `screenWidthDp < 360` ou escala de fonte combinada `≥ 165%`. Nome e descrição podem ocupar duas linhas nessas condições, com elipse somente para strings muito grandes. A aparência normal permanece horizontal como na referência; a ação `Abrir plano de edição` mantém seu callback, botão focável e altura mínima 48dp. Não cria APK fictício nem altera estado, indexação, exportação ou assinaturas.
+
+Teste instrumentado novo cobre matriz de larguras/escalas, orientação real, limites de linhas e ação nativa. Smokes reais de 320dp/130% e 200% exigem que o nome **“Nenhum APK selecionado”** esteja acima do chip de plano, sem recobrimento. Unidade Python simula bounds corretos e falhos. **Meta: 139 instrumentados por API**. Não homologar sem CI e PNGs do commit.
+
+Sem alterações de versão, OTA, `main`, referências binárias ausentes no repositório ou política do APK do usuário.
