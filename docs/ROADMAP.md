@@ -3,6 +3,10 @@
 > **Fonte de acompanhamento atual:** [PR P7 #13](https://github.com/nego001/ReaDroid-Native/pull/13), [issue visual #11](https://github.com/nego001/ReaDroid-Native/issues/11), e [changelog contínuo sem APK](P7-DESENVOLVIMENTO-CONTINUO-SEM-APK.md).
 > O quadro antigo abaixo documenta o planejamento inicial; seus checkboxes e o antigo “build blocker” **não representam o estado atual**.
 
+## Visão futura do produto (planejamento, não implementada)
+
+A [issue #17](https://github.com/nego001/ReaDroid-Native/issues/17) registra o objetivo de evoluir o NegrecoDroid para uma **plataforma modular, multiplataforma e multiagente** que automatiza estudos autorizados de executáveis e produz **ZIPs verificáveis, utilizáveis por qualquer IA**. A arquitetura detalhada está em [visão do produto](NEGRECODROID-VISAO-PLATAFORMA-MULTIAGENTE.md) e [RFC de agentes/plugins](NEGRECODROID-RFC-MODULOS-EVIDENCIAS.md). **Não substituir a etapa P7 corrente nem declarar essas capacidades prontas.**
+
 ## Onde estamos
 
 **P7.6 em desenvolvimento**, com P7.5 funcional e P7.7 visual/física ainda pendentes. Há base nativa para Home, Explorador com índice e filtros, navegação de cinco abas, Design Studio inicial, histórico local verdadeiro, edição textual suportada, exportação de ZIP APK **sem assinatura**, verificação SHA-256 e recuperação criptografada. Isso **não** é um editor/decompilador completo de APK nem versão final.
