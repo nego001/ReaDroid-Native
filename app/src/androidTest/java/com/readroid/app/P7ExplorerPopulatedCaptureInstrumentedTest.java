@@ -144,18 +144,26 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
                     new File(context.getFilesDir(), SCREENSHOT).length() > 1024);
                 // Gradle removes the debug app after instrumentation, wiping
                 // its private files. Persist a second real Android capture in
-                // emulator Download via the test-only shell identity.
+                // emulator /data/local/tmp via the test-only shell identity.
                 // No app permission or public-device data is accessed.
                 ParcelFileDescriptor pipe = InstrumentationRegistry
                     .getInstrumentation().getUiAutomation().executeShellCommand(
-                        "sh -c 'mkdir -p /sdcard/Download && screencap -p " +
-                        "/sdcard/Download/p7-explorer-populated.png'");
+                        "screencap -p /data/local/tmp/p7-explorer-populated.png " +
+                        "&& test -s /data/local/tmp/p7-explorer-populated.png " +
+                        "&& echo P7_SHELL_PNG_OK");
                 assertNotNull("Shell screenshot pipe unavailable", pipe);
                 try (ParcelFileDescriptor descriptor = pipe;
                         InputStream result = new FileInputStream(
                             descriptor.getFileDescriptor())) {
                     byte[] buffer = new byte[1024];
-                    while (result.read(buffer) != -1) { /* wait for shell exit */ }
+                    StringBuilder response = new StringBuilder();
+                    int length;
+                    while ((length = result.read(buffer)) != -1) {
+                        response.append(new String(
+                            buffer, 0, length, StandardCharsets.UTF_8));
+                    }
+                    assertEquals("Device shell screenshot was not created",
+                        "P7_SHELL_PNG_OK", response.toString().trim());
                 }
                 assertArrayEquals("Source ZIP changed after capture", original,
                     Files.readAllBytes(apk.toPath()));
