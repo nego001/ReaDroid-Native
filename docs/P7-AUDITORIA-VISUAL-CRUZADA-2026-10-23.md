@@ -159,3 +159,12 @@ Na captura `p7-large-text-design-android-35.png` a quarta aba **Logotipo** fica 
 Novo teste instrumentado valida seis combinações de escala e o controle real, focável e ≥48dp quando aplicável. O smoke em fonte 200% exige que o botão esteja acessível, o pressiona para revelar a aba Logotipo dentro dos limites do viewport e retorna à aba Temas antes da screenshot. A meta é **140 testes instrumentados gerais + 1 captura isolada por API (141)**, 28 screenshots e relatório cruzado. Ainda não aprovado antes da CI e inspeção dos PNGs.
 
 Não modifica estado de personalização ou APKs, arquivos do usuário, distribuição, versão nem OTA.
+
+
+### P7.14.1 — janela de captura: aguardar foco real antes de falhar
+
+A [CI P7.14 #40000389135](https://github.com/nego001/ReaDroid-Native/actions/runs/40000389135) executou **140/140** casos da suíte Android 15/API35 com sucesso, mas a captura isolada falhou **3,6 segundos após iniciar a instrumentação**, especificamente porque `decor.hasWindowFocus()` ainda era falso. Na API29 o job completo foi aprovado. O resultado da API35 não autoriza aprovação visual da P7.14.
+
+A instrumentação antes fazia uma **única amostragem imediata** após `waitForIdleSync`. Agora aguarda o foco **real** da janela por no máximo **8 segundos**, repetindo a avaliação a cada 200 ms no thread de teste. Não aceita `RESUMED` como substituto de foco, não fecha popups automaticamente e **falha se a janela não ganhar foco**. Quando ganha, continua exigindo identidade da janela de acessibilidade quando disponível e a inspeção anti-ANR dos pixels antes de salvar a captura. A verificação é executada antes e depois do screenshot. Assim nenhum PNG encoberto é aprovado só pelo decurso de tempo.
+
+Nenhum código da aplicação de produção foi modificado. Nova CI integral é necessária: 140 instrumentados gerais + 1 captura isolada por API, 28 PNGs, relatório cruzado, Source e OTA.

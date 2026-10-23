@@ -111,11 +111,24 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
         // configurations without accessibility retrieval enabled. The
         // resumed Activity must still own keyboard/window focus. An OS ANR
         // overlay steals it, independently of accessibility availability.
-        scenario.onActivity(activity -> {
-            View decor = activity.getWindow().getDecorView();
-            assertTrue("Explorer Activity lost foreground window focus",
-                decor.hasWindowFocus());
-        });
+        // Android 15's headless Pixel launcher can briefly own focus even
+        // after ActivityScenario has reached RESUMED. Wait for actual window
+        // ownership (never infer it from lifecycle state alone); fail closed
+        // if an ANR or system overlay continues to obstruct this session.
+        boolean[] hasFocus = {false};
+        long deadline = android.os.SystemClock.uptimeMillis() + 8000L;
+        do {
+            scenario.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                hasFocus[0] = decor.hasWindowFocus()
+                    && !activity.isFinishing()
+                    && !activity.isDestroyed();
+            });
+            if (hasFocus[0]) break;
+            android.os.SystemClock.sleep(200L);
+        } while (android.os.SystemClock.uptimeMillis() < deadline);
+        assertTrue("Explorer Activity lost foreground window focus "
+            + "after bounded 8s recovery", hasFocus[0]);
         AccessibilityNodeInfo active = InstrumentationRegistry
             .getInstrumentation().getUiAutomation().getRootInActiveWindow();
         if (active == null) return; // focus + pixel checks remain mandatory
