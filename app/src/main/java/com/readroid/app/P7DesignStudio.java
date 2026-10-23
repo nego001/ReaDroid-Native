@@ -88,11 +88,35 @@ public final class P7DesignStudio {
     private LinearLayout column() {
         LinearLayout l=new LinearLayout(a);l.setOrientation(LinearLayout.VERTICAL);return l;
     }
+    /** Dark mockup colors stay intact; light palettes need light card surfaces. */
+    private static boolean lightDesignPalette() {
+        return NegrescoTheme.contrastRatio(NegrescoTheme.TEXT, 0xff10171f) < 4.5;
+    }
+
+    static int cardFillColor(boolean selected) {
+        if (!lightDesignPalette()) return selected ? 0xff07294b : 0xff10171f;
+        return selected ? 0xffe6f0fc : NegrescoTheme.SURFACE;
+    }
+
+    static int cardOutlineColor(boolean selected) {
+        if (!lightDesignPalette()) return selected ? NegrescoTheme.ACCENT : 0xff283846;
+        if (!selected) return NegrescoTheme.BORDER;
+        return NegrescoTheme.contrastRatio(NegrescoTheme.ACCENT, cardFillColor(true)) >= 3
+            ? NegrescoTheme.ACCENT : 0xff346aa4;
+    }
+
+    static int tabLabelColor(boolean selected) {
+        // On a light palette, bright custom accents do not meet text contrast.
+        // A selected card retains its accented outline and spoken selected state.
+        return selected && !lightDesignPalette()
+            ? NegrescoTheme.ACCENT : NegrescoTheme.TEXT;
+    }
+
     private GradientDrawable background(boolean selected) {
-        GradientDrawable d=new GradientDrawable();
-        d.setColor(selected ? 0xff07294b : 0xff10171f);
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(cardFillColor(selected));
         d.setCornerRadius(dp(12));
-        d.setStroke(dp(1),selected?NegrescoTheme.ACCENT:0xff283846);
+        d.setStroke(dp(1), cardOutlineColor(selected));
         return d;
     }
     public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions,
@@ -611,7 +635,7 @@ public final class P7DesignStudio {
             if(tabViews[i]==null)continue;
             boolean selected=i==activeTab;
             tabViews[i].setBackground(background(selected));
-            tabViews[i].setTextColor(selected?NegrescoTheme.ACCENT:NegrescoTheme.TEXT);
+            tabViews[i].setTextColor(tabLabelColor(selected));
             tabViews[i].setSelected(selected);
             // Expose the real selection state to TalkBack instead of relying
             // only on blue text and a border.

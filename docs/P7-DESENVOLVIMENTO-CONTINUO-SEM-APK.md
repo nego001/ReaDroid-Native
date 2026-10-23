@@ -841,3 +841,15 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** teste unitário instrumentado para limites de largura e escala, mais teste Android com `font_percent=135` que percorre os três cabeçalhos do catálogo em tela real, conferindo layout empilhado, ausência de sobreposição, texto completo e botões acessíveis; prefere-se assertivas sobre dimensões/semântica, nunca pixel-diff sem referência. Meta **127 testes por API** (125+2) e Source/OTA.
 
 **Fronteiras:** sem alterações de preferências persistentes, projeto APK, versão, assinatura, merge ou OTA de distribuição. TalkBack manual, referências oficiais e homologação física Galaxy A55 continuam pendentes.
+
+### P7.6 — contraste legível do Design Studio no tema claro (22/10/2026)
+
+**Base totalmente validada:** commit `2299ac35`, [CI Android 39887493796](https://github.com/nego001/ReaDroid-Native/actions/runs/39887493796), **127/127 testes por API29 e API35**, Source/OTA aprovados e 13 capturas por API. As condições `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED` continuam.
+
+**Defeito constatado no código:** `P7DesignStudio.background` usava sempre superfícies escuras `#10171F`/`#07294B` independentemente do tema. Quando `theme=light`, a cor global de texto passa a `#152238`, tornando o texto escuro sobre cartão escuro inadequado para leitura. Nas abas selecionadas, os acentos claros também podem ter contraste insuficiente no tema claro.
+
+**Correção:** usar as mesmas superfícies e cores de borda da referência OLED quando o texto é claro, preservando os temas escuros; no tema claro utilizar `NegrescoTheme.SURFACE` como superfície comum, seleção `#E6F0FC` e contorno contrastante com fallback para `#346AA4` quando o acento escolhido não se destaca. As abas selecionadas no tema claro usam `NegrescoTheme.TEXT` para os títulos, sem depender apenas da cor para comunicar seleção; estado `selected`, borda e acessibilidade permanecem. Só tokens de desenho, sem mudanças nos dados ou ações.
+
+**Regressões:** teste Android de contraste dos cartões em 3 temas × 5 acentos (incluindo acento personalizado branco), garantindo texto com razão mínima de 4,5:1 e manutenção dos fundos originais no OLED/grafite; teste de tela real com tema claro confere as cores concretas dos `GradientDrawable` nas abas, legibilidade, seleção e troca de aba. Preferências temporárias são restauradas. Meta **129 testes por API** (127+2), além de Source/OTA e capturas.
+
+**Pendente:** inspeção física com TalkBack, benchmark Galaxy A55 e correspondência 1:1 com os PNGs oficiais. PR #13 draft, sem merge, aumento de versionCode, APK de distribuição nem OTA publicada.

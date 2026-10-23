@@ -412,6 +412,108 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void studioCardsRespectReadableContrastAcrossAllThemesAndAccents() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean hadTheme = prefs.contains("theme");
+        String previousTheme = prefs.getString("theme", "oled");
+        boolean hadAccent = prefs.contains("accent");
+        String previousAccent = prefs.getString("accent", "blue");
+        boolean hadCustom = prefs.contains("custom_accent");
+        String previousCustom = prefs.getString("custom_accent", "#1688FF");
+        try {
+            for (String theme : new String[]{"oled", "graphite", "light"}) {
+                for (String accent : new String[]{
+                        "blue", "purple", "green", "orange", "custom"}) {
+                    assertTrue(prefs.edit().putString("theme", theme)
+                        .putString("accent", accent)
+                        .putString("custom_accent", "#FFFFFF").commit());
+                    NegrescoTheme.apply(context);
+                    int normal = P7DesignStudio.cardFillColor(false);
+                    int selected = P7DesignStudio.cardFillColor(true);
+                    assertTrue("Normal label must be readable in " + theme + "/" + accent,
+                        NegrescoTheme.contrastRatio(NegrescoTheme.TEXT, normal) >= 4.5);
+                    assertTrue("Selected label must be readable in " + theme + "/" + accent,
+                        NegrescoTheme.contrastRatio(NegrescoTheme.TEXT, selected) >= 4.5);
+                    assertTrue("Selected button outline must remain visible",
+                        NegrescoTheme.contrastRatio(
+                            P7DesignStudio.cardOutlineColor(true), selected) >= 2.8);
+                    if ("light".equals(theme)) {
+                        assertEquals(NegrescoTheme.SURFACE, normal);
+                        assertEquals(NegrescoTheme.TEXT,
+                            P7DesignStudio.tabLabelColor(true));
+                        assertTrue(NegrescoTheme.contrastRatio(
+                            P7DesignStudio.tabLabelColor(true), selected) >= 4.5);
+                    } else {
+                        assertEquals(0xff10171f, normal);
+                        assertEquals(0xff07294b, selected);
+                        assertEquals(NegrescoTheme.ACCENT,
+                            P7DesignStudio.tabLabelColor(true));
+                    }
+                }
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadTheme) restore.putString("theme", previousTheme);
+            else restore.remove("theme");
+            if (hadAccent) restore.putString("accent", previousAccent);
+            else restore.remove("accent");
+            if (hadCustom) restore.putString("custom_accent", previousCustom);
+            else restore.remove("custom_accent");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
+    @Test public void lightThemeDesignNavigationUsesReadableRealCardSurfaces() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean hadTheme = prefs.contains("theme");
+        String previousTheme = prefs.getString("theme", "oled");
+        try {
+            assertTrue(prefs.edit().putString("theme", "light").commit());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    TextView active = (TextView) clickableText(root, "Temas");
+                    TextView inactive = (TextView) clickableText(root, "Layout");
+                    assertNotNull(active);
+                    assertNotNull(inactive);
+                    assertTrue(active.isSelected());
+                    assertFalse(inactive.isSelected());
+                    for (TextView tab : new TextView[]{active, inactive}) {
+                        android.graphics.drawable.GradientDrawable surface =
+                            (android.graphics.drawable.GradientDrawable)
+                                tab.getBackground();
+                        assertNotNull(surface.getColor());
+                        int expected = P7DesignStudio.cardFillColor(tab.isSelected());
+                        assertEquals(expected, surface.getColor().getDefaultColor());
+                        assertTrue(NegrescoTheme.contrastRatio(
+                            tab.getCurrentTextColor(), expected) >= 4.5);
+                    }
+                    assertTrue(inactive.performClick());
+                    assertTrue(inactive.isSelected());
+                    assertEquals(NegrescoTheme.TEXT, inactive.getCurrentTextColor());
+                    assertNotNull(byDescription(root, "Layout, aba selecionada"));
+                });
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadTheme) restore.putString("theme", previousTheme);
+            else restore.remove("theme");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void designSubtabSurvivesRealActivityRecreation() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
