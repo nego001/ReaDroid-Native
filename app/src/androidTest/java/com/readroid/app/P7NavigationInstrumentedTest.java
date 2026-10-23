@@ -99,6 +99,17 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void designCompactTabsFitFourDestinationsWithoutShrinkingTouchArea() {
+        assertTrue(P7DesignStudio.fitsFourTabs(320, 1.3f, 1f));
+        assertTrue(P7DesignStudio.fitsFourTabs(320, 1f, 1f));
+        assertFalse("Normal-width mockup keeps the full-sized tabs",
+            P7DesignStudio.fitsFourTabs(393, 1.3f, 1f));
+        assertFalse("200% should scroll instead of shrinking real text",
+            P7DesignStudio.fitsFourTabs(320, 2f, 1f));
+        assertFalse("Combined accessibility scaling needs scrolling",
+            P7DesignStudio.fitsFourTabs(320, 1.3f, 1.35f));
+    }
+
     @Test public void bottomNavigationScalesWithoutClippingOrChangingLabels() {
         assertEquals(64, MainActivity.navTabHeightDp(393, 1f, 1f, true));
         assertEquals(64, MainActivity.navTabHeightDp(310, 1f, 1f, true));

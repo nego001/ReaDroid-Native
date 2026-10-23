@@ -109,14 +109,17 @@ def check_screen(name, required_text, width_px, height_px, api, density):
         print(f"P7_COMPACT_EXPLORER_A11Y_PASS api={api} 48dp targets=2",
               flush=True)
     if name == "Design":
-        # The first two tabs must fit without horizontal scrolling on a
-        # 320dp screen. The catalog action is independent of tab selection.
+        # All four real Design subtabs must fit simultaneously in the 320dp
+        # viewport at 130% system text. No offscreen-only "Logotipo" action.
+        # Each tab still needs a full 48dp target, and no APK is touched.
         for description in ("Temas, aba selecionada",
                             "Layout, selecionar aba",
+                            "Ícones, selecionar aba",
+                            "Logotipo, selecionar aba",
                             "Ver todos: Previews de Temas"):
             require_accessible_target(
                 nodes, description, density, (width_px, height_px))
-        print(f"P7_COMPACT_DESIGN_A11Y_PASS api={api} 48dp targets=3",
+        print(f"P7_COMPACT_DESIGN_A11Y_PASS api={api} 48dp targets=5",
               flush=True)
     filename = f"p7-compact-{name.lower().replace('í', 'i')}-android-{api}.png"
     with open(filename, "wb") as screenshot:

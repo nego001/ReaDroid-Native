@@ -119,6 +119,17 @@ public final class P7DesignStudio {
         d.setStroke(dp(1), cardOutlineColor(selected));
         return d;
     }
+    /**
+     * At 320dp with 130% font, use compact tab chrome so all four real
+     * editors are visible. At 200% font allow horizontal scrolling, keeping
+     * the label readable instead of shrinking or cutting the touch target.
+     */
+    static boolean fitsFourTabs(int widthDp, float systemFont, float appFont) {
+        float effective = Math.max(0.85f, systemFont)
+            * Math.max(0.85f, appFont);
+        return widthDp > 0 && widthDp < 360 && effective <= 1.40f;
+    }
+
     public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions,
                           int restoredTab) {
         a=activity;root=container;actions=appearanceActions;
@@ -149,21 +160,29 @@ public final class P7DesignStudio {
         LinearLayout tabs=new LinearLayout(a);tabs.setOrientation(LinearLayout.HORIZONTAL);
         scroll.addView(tabs);
         String[] names={"Temas","Layout","Ícones","Logotipo"};
+        boolean fitCompact = fitsFourTabs(
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
         for(int i=0;i<names.length;i++) {
             final int index=i;
             TextView tab=label(names[i],11,NegrescoTheme.TEXT,false);
             tab.setGravity(Gravity.CENTER);
-            tab.setMinWidth(dp(79));tab.setMinHeight(dp(48));
+            tab.setMinWidth(dp(fitCompact ? 66 : 79));
+            tab.setMinimumWidth(dp(fitCompact ? 66 : 79));
+            tab.setMinHeight(dp(48));
             // TextView.setMinHeight affects text layout. View's minimum
             // property is separate and is required by accessibility
             // measurement and touch-target contracts on Android 10/15.
             tab.setMinimumHeight(dp(48));
-            tab.setPadding(dp(10),0,dp(10),0);
+            tab.setPadding(dp(fitCompact ? 4 : 10),0,
+                dp(fitCompact ? 4 : 10),0);
             tab.setClickable(true);
             tab.setFocusable(true);
             exposeAsButton(tab);
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(48));
-            p.rightMargin=dp(5);tabs.addView(tab,p);
+            p.rightMargin=dp(fitCompact ? 3 : 5);
+            tabs.addView(tab,p);
             tabViews[i]=tab;
             tab.setOnClickListener(v->{activeTab=index;render();});
             tab.setTag(index);

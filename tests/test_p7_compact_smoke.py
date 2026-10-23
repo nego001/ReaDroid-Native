@@ -44,6 +44,26 @@ class P7CompactViewportTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             require_accessible_target([], label, 440, (880, 1980))
 
+    def test_all_four_design_subtabs_must_be_fully_on_screen(self):
+        # A fourth subtab outside the 320dp viewport is not a valid
+        # accessibility workaround, even if horizontal scroll exists.
+        names = ("Temas, aba selecionada", "Layout, selecionar aba",
+                 "Ícones, selecionar aba", "Logotipo, selecionar aba")
+        bounds = ("[0,0][145,140]", "[145,0][290,140]",
+                  "[290,0][435,140]", "[435,0][580,140]")
+        width = 880
+        for title, bound in zip(names, bounds):
+            node = ET.Element("node", {
+                "content-desc": title, "clickable": "true",
+                "bounds": bound})
+            require_accessible_target([node], title, 440, (width, 1980))
+        offscreen = ET.Element("node", {
+            "content-desc": names[-1], "clickable": "true",
+            "bounds": "[810,0][910,140]"})
+        with self.assertRaises(AssertionError):
+            require_accessible_target([offscreen], names[-1],
+                                      440, (width, 1980))
+
     def test_missing_or_malformed_display_info_fails_closed(self):
         for output in ("", "Override size: 880x1980", "Physical size: 1080",
                        "Physical density: unknown"):

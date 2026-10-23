@@ -102,3 +102,14 @@ O teste mantém a exigência de janela em primeiro plano via `ActivityScenario.o
 A barra inferior agora usa rótulos visuais curtos **somente em escalas problemáticas**: `Seg.` em 320 dp/130% ou escala efetiva ≥165%; `Arqs.` na escala ≥165%. Na resolução/fonte normal continua `Segurança` e `Arquivos`, como nas referências. Rótulos são sempre **uma linha com elipse como último recurso**, sem cortar palavras no meio. Nomes para TalkBack, navegação, foco e testes de toque continuam completos: `Seção Segurança, selecionada` etc. A altura reservada adapta-se à versão de uma linha sem reduzir o alvo mínimo.
 
 A instrumentação acrescenta um teste para oito cenários de escala e para as cinco labels completas dos controles clicáveis. Meta: **137 testes por API**, 28 screenshots e smoke nas escalas 320dp/130% e 200%. Não afirmar êxito antes da CI da alteração. Não modifica dados, assinatura, versão, APK/OTA ou branch principal.
+
+
+## P7.11 — as quatro abas do Design Studio visíveis em 320dp/130%
+
+**Base aprovada:** [P7.10, CI #39977864175](https://github.com/nego001/ReaDroid-Native/actions/runs/39977864175), tentativa 2, 137/137 testes por API, inventário 28/28 e auditoria cruzada verde.
+
+Auditoria visual da captura `p7-compact-design-android-35.png`: a aba **Logotipo** aparece truncada no lado direito porque 4 abas com largura mínima de 79dp e espaçamento fixo somam mais que a região útil da tela de 320dp. O scrolling permite alcançá-la, porém o usuário não vê as quatro áreas do Studio de imediato.
+
+Ajuste responsivo conservador em `P7DesignStudio`: somente abaixo de 360dp e com escala efetiva ≤140%, reduzir o mínimo visual para **66dp**, padding para **4dp** e separação para **3dp**; preservar **48dp** de altura mínima, labels integrais e papéis de botão no TalkBack. Com escala de 200% ou escala combinada elevada, **manter a rolagem horizontal** e o `revealActiveTab()`, evitando comprimir texto legível.
+
+O smoke real em 320dp/130% exige agora os **quatro** destinos visíveis e dentro dos limites da tela, além do botão Ver todos, total de 5 alvos de pelo menos 48dp. Novos testes de regressão verificam a seleção da grade compacta e rejeitam a última aba fora do viewport. Meta: **138 testes instrumentados por API** com screenshots 28/28; nenhuma homologação antes da CI. Não altera exportação, APK, OTA, assinatura ou `main`.
