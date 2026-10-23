@@ -865,3 +865,11 @@ O workflow [Source checks 39548519373](https://github.com/nego001/ReaDroid-Nativ
 **Regressões:** dois novos testes instrumentados percorrem os 24 temas para validar descrição com `glowAt` e subtítulo real, estado de seleção, papel nativo Button, e depois com fonte interna 135% testam título/subtítulo completos, três linhas possíveis, ausência de elipse e largura responsiva de 24 temas e cinco presets. Meta **131 testes por API** (129+2), Source, OTA e evidências da matriz Android.
 
 **Limites:** `references=BLOCKED`, `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`. Ainda depende de TalkBack manual, PNGs oficiais para comparar 1:1 e Galaxy A55. PR #13 draft, main intocada, sem merge, publicação de APK, versionCode ou OTA.
+
+### P7.6 — reparo da regressão de teste ao expandir rótulos (22/10/2026)
+
+**Resultado da CI observada:** [commit `2726f875`, Android 39890654043](https://github.com/nego001/ReaDroid-Native/actions/runs/39890654043): Android 10/API29 encontrou falha em `P7NavigationInstrumentedTest.layoutCardsKeepCompleteNamesAndNativeButtonRoleAtLargeFont` com `expected:<2> but was:<3>`. O código do catálogo agora permite três linhas para títulos sob fonte ampliada; o teste antigo mantinha expectativa de duas. Outros asserts de nome integral, ausência de elipse, papel acessível e layout responsivo permanecem. Android 15 e estado integral da CI devem ser verificados independentemente.
+
+**Reparo:** atualizar somente a expectativa do teste de duas para três linhas, adicionando comentário que vincula o contrato ao novo comportamento. Não encobrir falhas de UI nem retirar verificações de acessibilidade. Matriz alvo: **131 testes por API** (mesmo total do commit anterior), além de Source/OTA e capturas. A base integralmente aprovada anteriormente permanece `34498d01` com 129 testes/API até nova CI verde.
+
+**Política:** não modificar aplicativo em produção, `main`, versão, assinatura, distribuição de APK ou OTA. Referências PNG e aprovação visual 1:1 ainda bloqueadas; homologação física Galaxy A55 pendente.

@@ -731,7 +731,9 @@ public final class P7NavigationInstrumentedTest {
                             card.getLayoutParams().width >= NegrescoTheme.dp(activity, 140));
                         TextView title = (TextView) tile.getChildAt(1);
                         assertEquals(name, title.getText().toString());
-                        assertEquals(2, title.getMaxLines());
+                        // Enlarged catalog labels intentionally allow three
+                        // lines in all preview families, including layouts.
+                        assertEquals(3, title.getMaxLines());
                         assertNull("Layout titles must never be ellipsized",
                             title.getEllipsize());
                         assertNotNull(title.getLayout());
