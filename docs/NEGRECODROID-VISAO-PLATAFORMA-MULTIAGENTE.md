@@ -72,6 +72,10 @@ O coordenador não precisa ser uma IA: ele deve operar com tarefas e regras de d
 
 Cada agente recebe **entrada limitada, escopo, orçamento, permissão, versão do analisador e critérios de saída**, e devolve evidências e erros. Agentes não podem modificar o material original ou conceder permissões uns aos outros por conta própria.
 
+### Leitura distribuída em equipe
+
+**Ideia do proprietário:** vários leitores **trabalham em paralelo sobre partes diferentes e estruturais de um mesmo arquivo**, em vez de um leitor monolítico processar tudo numa sequência. Um planejador organiza `shards` com dependências, um índice compartilhado evita retrabalho, a store de evidências recebe resultados e o revisor cruza contradições antes do ZIP. O desktop executa trabalhos pesados; mobile acompanha sem sobrecarga. Contrato técnico e testes planejados: [RFC de leitura distribuída](NEGRECODROID-RFC-LEITURA-DISTRIBUIDA.md). **Ainda não implementado.**
+
 ## 6. O ZIP é um produto de primeira classe
 
 Um ZIP de estudo deve ser autocontido e auditável, sem exigir abrir uma interface proprietária. Estrutura inicial proposta:

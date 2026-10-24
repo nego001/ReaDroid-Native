@@ -61,6 +61,10 @@ Coordenador decide o que rodar conforme custo, risco e plataforma. Revisor receb
 
 Tarefas de custo elevado só são despachadas ao desktop/worker selecionado pelo usuário; celular pode enfileirar pedido e receber resultados. **Conectividade ausente não autoriza ações fora do consentimento.**
 
+### Subetapa de distribuição da leitura (proposta)
+
+A etapa de `Analysis` não é um único analisador monolítico: após identificação e indexação, o coordenador **particiona semanticamente** o input em unidades de trabalho e despacha leitores independentes em paralelo com limitação de recursos. A integração resolve referências entre unidades e um revisor procura conflitos e lacunas. Ver [RFC de leitura distribuída](NEGRECODROID-RFC-LEITURA-DISTRIBUIDA.md) para regras de divisão por formato, cache, proveniência, cobertura e testes serial/paralelo. **Conceito, não recurso do aplicativo atual.**
+
 ## 4. Identidade de achado e confiança
 
 Cada achado estruturado deve registrar, no mínimo:
