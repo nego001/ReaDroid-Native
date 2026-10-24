@@ -69,6 +69,31 @@ public final class P7ThemePreviewView extends View {
         paint.setStyle(Paint.Style.FILL);
     }
 
+    /**
+     * Build miniature app chrome from theme tokens. These shapes are a
+     * visual preview only: they never represent user projects, file totals
+     * or an APK analysis result. Reusing Paint avoids per-frame allocations.
+     */
+    private void drawThemeChrome(Canvas c, int background, int border, int line) {
+        // Miniature toolbar: brand mark on the left, status/action group right.
+        block(c, background, 20, 11, 24, 14, 1);
+        block(c, line, 54, 10, 66, 12, 1);
+        block(c, line, 72, 10, 82, 12, 1);
+        // Actual two-card visual rhythm, with secondary metadata/detail.
+        outline(c, border, 16, 32, 47, 52, 4);
+        outline(c, border, 53, 32, 84, 52, 4);
+        block(c, line, 21, 35, 36, 37, 1);
+        block(c, line, 58, 35, 73, 37, 1);
+        block(c, border, 21, 46, 42, 48, 1);
+        block(c, border, 58, 46, 79, 48, 1);
+        // Small file-row hints and a three-item bottom navigation strip.
+        block(c, line, 31, 62, 68, 64, 1);
+        block(c, line, 31, 74, 63, 76, 1);
+        block(c, border, 19, 87, 22, 92, 1);
+        block(c, line, 49, 88, 52, 92, 1);
+        block(c, border, 77, 87, 80, 92, 1);
+    }
+
     private void drawTheme(Canvas c) {
         // Mirror the actual V3 background/surface colors, not a dark-only
         // thumbnail that falsely previews light and graphite variants.
@@ -95,6 +120,7 @@ public final class P7ThemePreviewView extends View {
         block(c, accent, 21, 74, 26, 77, 1);
         block(c, surface, 16, 85, 84, 96, 3);
         block(c, accent, 24, 89, 37, 91, 1);
+        drawThemeChrome(c, background, border, line);
         if (themeGlow) {
             // Real V3 studioSurface applies accent-tinted gradients/borders
             // when studio_glow=true. These restrained strokes communicate the
