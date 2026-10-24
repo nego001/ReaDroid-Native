@@ -336,6 +336,131 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void catalogSelectionsRequireNativeConfirmationBeforeSaving() {
+        final String[] groups = {
+            "Previews de Temas", "Opções de Layout", "Presets de Aparência"
+        };
+        final String[][] choices = {
+            P7ThemeCatalog.names(),
+            P7VisualCatalog.LAYOUT_NAMES,
+            P7VisualCatalog.PRESET_NAMES
+        };
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            latest = new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> saved =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    assertTrue(byDescription(activity.getWindow().getDecorView(),
+                        "Abrir seção Design").performClick());
+                    saved.set(new java.util.HashMap<>(activity
+                        .getSharedPreferences("v3_personalizacao", 0).getAll()));
+                });
+                for (int type = 0; type < groups.length; type++) {
+                    final int kind = type;
+                    scenario.onActivity(activity -> {
+                        View root = activity.getWindow().getDecorView();
+                        View opener = byDescription(
+                            root, "Ver todos: " + groups[kind]);
+                        assertAccessibleButton(opener);
+                        assertTrue(opener.performClick());
+                        P7DesignStudio studio;
+                        try {
+                            java.lang.reflect.Field field =
+                                MainActivity.class.getDeclaredField("designStudio");
+                            field.setAccessible(true);
+                            studio = (P7DesignStudio) field.get(activity);
+                        } catch (ReflectiveOperationException error) {
+                            throw new AssertionError("Studio unavailable", error);
+                        }
+                        assertNotNull(studio);
+                        android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                        latest.set(chooser);
+                        assertNotNull(chooser);
+                        assertTrue(chooser.isShowing());
+                        android.widget.ListView list = chooser.getListView();
+                        assertNotNull(list);
+                        assertEquals("Chooser must expose all catalog options",
+                            choices[kind].length, list.getAdapter().getCount());
+                        int committed = kind == 0
+                            ? P7ThemeCatalog.currentTheme(activity)
+                            : kind == 1 ? P7VisualCatalog.currentLayout(activity)
+                            : P7VisualCatalog.currentPreset(activity);
+                        int alternative = committed == 0 ? 1 : 0;
+                        assertTrue("Every catalog must have alternate choices",
+                            alternative < choices[kind].length);
+                        int child = alternative - list.getFirstVisiblePosition();
+                        assertTrue("Test must activate a visible genuine choice",
+                            child >= 0 && child < list.getChildCount());
+                        assertTrue("List selection opens an Apply confirmation",
+                            list.performItemClick(list.getChildAt(child),
+                                alternative,
+                                list.getAdapter().getItemId(alternative)));
+                        assertFalse("Choosing item must close native catalog chooser",
+                            chooser.isShowing());
+                        android.app.AlertDialog confirmation = kind == 0
+                            ? studio.activeThemeConfirmation()
+                            : kind == 1 ? studio.activeLayoutConfirmation()
+                            : studio.activePresetConfirmation();
+                        latest.set(confirmation);
+                        assertNotNull("Choice opens actual native Apply confirmation",
+                            confirmation);
+                        assertTrue(confirmation.isShowing());
+                        assertNotNull(confirmation.getWindow());
+                        String title = kind == 1
+                            ? "Aplicar layout " + choices[kind][alternative] + "?"
+                            : "Aplicar " + choices[kind][alternative] + "?";
+                        assertTrue("Confirmation must match selected catalog option",
+                            hasText(confirmation.getWindow().getDecorView(), title));
+                        assertEquals("Selecting option cannot persist without Apply",
+                            saved.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                        android.widget.Button cancel = confirmation.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE);
+                        assertNotNull(cancel);
+                        assertEquals("Cancelar", cancel.getText().toString());
+                        assertTrue(cancel.performClick());
+                    });
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        assertNotNull(latest.get());
+                        assertFalse("Cancel must dismiss confirmation",
+                            latest.get().isShowing());
+                        P7DesignStudio studio;
+                        try {
+                            java.lang.reflect.Field field =
+                                MainActivity.class.getDeclaredField("designStudio");
+                            field.setAccessible(true);
+                            studio = (P7DesignStudio) field.get(activity);
+                        } catch (ReflectiveOperationException error) {
+                            throw new AssertionError("Studio unavailable", error);
+                        }
+                        assertNull("Chooser must release its handle",
+                            studio.activeCatalogChooser());
+                        assertNull("Theme confirmation must be closed",
+                            studio.activeThemeConfirmation());
+                        assertNull("Layout confirmation must be closed",
+                            studio.activeLayoutConfirmation());
+                        assertNull("Preset confirmation must be closed",
+                            studio.activePresetConfirmation());
+                        assertEquals("Cancel preserves complete appearance state",
+                            saved.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                    });
+                    latest.set(null);
+                }
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = latest.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void repeatedViewAllNeverStacksNativeCatalogChoosers() {
         final String[] sections = {
             "Previews de Temas", "Opções de Layout", "Presets de Aparência"
