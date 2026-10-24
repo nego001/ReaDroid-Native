@@ -925,6 +925,64 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void designTabsShareOneRailWithoutGapsOrLostActions() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                View themes = byDescription(root, "Temas, aba selecionada");
+                assertNotNull("Selected Design tab missing", themes);
+                assertTrue(themes.getParent() instanceof LinearLayout);
+                LinearLayout rail = (LinearLayout) themes.getParent();
+                assertEquals("p7-design-segmented-tabs", rail.getTag());
+                assertTrue("Segmented rail must have one shared background",
+                    rail.getBackground() instanceof
+                        android.graphics.drawable.GradientDrawable);
+                assertEquals("All four Design tabs must remain accessible",
+                    4, rail.getChildCount());
+                String[] names = {"Temas", "Layout", "Ícones", "Logotipo"};
+                for (int i = 0; i < rail.getChildCount(); i++) {
+                    View entry = rail.getChildAt(i);
+                    assertTrue(entry instanceof TextView);
+                    assertEquals(names[i], ((TextView) entry).getText().toString());
+                    assertTrue(entry.isClickable() && entry.isFocusable());
+                    assertTrue(entry.getMinimumHeight()
+                        >= NegrescoTheme.dp(activity, 48));
+                    assertEquals("No floating-card gap inside a segmented rail",
+                        0, ((LinearLayout.LayoutParams)
+                            entry.getLayoutParams()).rightMargin);
+                    assertEquals("Only the first tab starts selected",
+                        i == 0, entry.isSelected());
+                    assertTrue(entry.getBackground() instanceof
+                        android.graphics.drawable.GradientDrawable);
+                    android.graphics.drawable.GradientDrawable fill =
+                        (android.graphics.drawable.GradientDrawable)
+                            entry.getBackground();
+                    assertNotNull(fill.getColor());
+                    if (i > 0) assertEquals(
+                        "Inactive tabs must share their parent surface",
+                        android.graphics.Color.TRANSPARENT,
+                        fill.getColor().getDefaultColor());
+                }
+                View layout = rail.getChildAt(1);
+                assertTrue("Layout must remain a working tab", layout.performClick());
+                assertTrue(layout.isSelected());
+                assertFalse(themes.isSelected());
+                assertEquals("Layout, aba selecionada",
+                    layout.getContentDescription().toString());
+                assertTrue(rail.getChildAt(2).performClick());
+                assertTrue(rail.getChildAt(2).isSelected());
+                assertTrue(rail.getChildAt(3).performClick());
+                assertTrue(rail.getChildAt(3).isSelected());
+                assertTrue(themes.performClick());
+                assertTrue(themes.isSelected());
+            });
+        }
+    }
+
     @Test public void creatorCardsUseRealVectorArtworkInsteadOfTextSymbols() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
