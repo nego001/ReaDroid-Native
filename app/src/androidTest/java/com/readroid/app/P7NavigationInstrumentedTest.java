@@ -947,6 +947,60 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void cancellingDifferentPresetRestoresCommittedAppearance() {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> original =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final int[] choice = {-1};
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                android.content.SharedPreferences prefs =
+                    activity.getSharedPreferences("v3_personalizacao", 0);
+                original.set(new java.util.HashMap<>(prefs.getAll()));
+                int applied = P7VisualCatalog.currentPreset(activity);
+                choice[0] = applied == 4 ? 3 : 4;
+                String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
+                View pending = byDescription(root, name + ",");
+                assertAccessibleButton(pending);
+                assertTrue("Selecting a different preset must open confirmation",
+                    pending.performClick());
+                View updated = byDescription(
+                    activity.getWindow().getDecorView(), name + ",");
+                assertNotNull(updated);
+                assertTrue("Pending preset must not claim to be applied",
+                    updated.getContentDescription().toString().startsWith(
+                        name + ", prévia escolhida, ainda não aplicada"));
+                ViewGroup preview = (ViewGroup) ((ViewGroup) updated).getChildAt(0);
+                assertEquals("Pending preset must have no committed check mark",
+                    1, preview.getChildCount());
+                assertEquals("Previewing must not persist any preference",
+                    original.get(), prefs.getAll());
+            });
+            // Leave the native confirmation without pressing Apply. Hardware
+            // back must be equivalent to the existing cancel listener.
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
+                android.view.KeyEvent.KEYCODE_BACK);
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
+                View restored = byDescription(root, name + ",");
+                assertNotNull("Cancel must restore the previously saved state",
+                    restored);
+                assertTrue(restored.getContentDescription().toString().startsWith(
+                    name + ", selecionar prévia"));
+                assertEquals("Cancel must not save a partial preset",
+                    original.get(),
+                    activity.getSharedPreferences("v3_personalizacao", 0)
+                        .getAll());
+            });
+        }
+    }
+
     @Test public void presetAppliedIndicatorTracksCommittedValuesOnly() {
         assertEquals(", preset aplicado", P7DesignStudio.presetTileState(true, true));
         assertEquals(", preset aplicado", P7DesignStudio.presetTileState(false, true));
