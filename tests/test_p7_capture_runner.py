@@ -98,19 +98,22 @@ class P7CaptureRunnerTests(unittest.TestCase):
             r"gradle --no-daemon :app:connectedDebugAndroidTest "
             r"-Pandroid\.testInstrumentationRunnerArguments\.class=([^\s]+)",
             workflow)
-        self.assertEqual(3, len(commands))
+        self.assertEqual(4, len(commands))
         selections = [name for cmd in commands for name in cmd.split(",")]
-        self.assertEqual(22, len(selections))
-        self.assertEqual(22, len(set(selections)))
+        self.assertEqual(23, len(selections))
+        self.assertEqual(23, len(set(selections)))
         self.assertIn("ram-size: 3072M", workflow)
         self.assertIn("free -m", workflow)
         self.assertEqual(
             ["com.readroid.app.P7BottomNavigationLargeFontInstrumentedTest"],
             commands[0].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            ["com.readroid.app.P7WelcomeLargeFontInstrumentedTest"],
             commands[1].split(","))
-        self.assertEqual(20, len(commands[2].split(",")))
+        self.assertEqual(
+            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            commands[2].split(","))
+        self.assertEqual(20, len(commands[3].split(",")))
         # Reboot API35 only after full instrumented coverage and ordinary
         # Design/Icon/Logo evidence, BEFORE the compact viewport resize.
         # This must never skip a single screenshot or a failed reboot.
@@ -142,11 +145,21 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(36, navigation.count("@Test"))
+        self.assertEqual(35, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
         self.assertIn("navTabHeightDp(310, 3f, 1.35f, true)", isolated)
         self.assertIn("NegrescoTheme.apply(context)", isolated)
         self.assertIn("Navigation row must reserve enlarged text", isolated)
+        welcome = (ROOT / "app/src/androidTest/java/com/readroid/app/"
+                   "P7WelcomeLargeFontInstrumentedTest.java").read_text(
+                       encoding="utf-8")
+        self.assertEqual(1, welcome.count("@Test"))
+        self.assertIn("void welcomeCardGrowsWithLongTextInsteadOfClippingIt()", welcome)
+        self.assertNotIn("void welcomeCardGrowsWithLongTextInsteadOfClippingIt()",
+                         navigation)
+        self.assertIn("No hidden ellipsized lines", welcome)
+        self.assertIn("description.getLayout().getLineCount() >= 10", welcome)
+        self.assertIn("NegrescoTheme.apply(context)", welcome)
         self.assertIn(
             "com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest"
             "#detectsSyntheticSystemOverlayBeforeEvidenceExport", selections)
