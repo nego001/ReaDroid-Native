@@ -114,28 +114,31 @@ class P7CaptureRunnerTests(unittest.TestCase):
             ["com.readroid.app.P7NavigationInstrumentedTest"],
             commands[2].split(","))
         self.assertEqual(20, len(commands[3].split(",")))
-        # Reboot API35 only after full instrumented coverage and ordinary
-        # Design/Icon/Logo evidence, BEFORE the compact viewport resize.
-        # This must never skip a single screenshot or a failed reboot.
-        marker = 'if [ "${{ matrix.api }}" = "35" ]; then'
+        # The runner launches each workflow line as a separate shell.
+        # Run the conditional reboot in one guarded executable script.
+        marker = "bash tools/p7_api35_reboot.sh ${{ matrix.api }}"
         reboot = workflow.index(marker)
-        reboot_command = workflow.index("adb reboot", reboot)
-        boot_guard = workflow.index(
-            'test "$(adb shell getprop sys.boot_completed', reboot)
-        app_guard = workflow.index(
-            "adb shell pm path com.readroid.app | grep -Fq 'package:'",
-            reboot)
         compact = workflow.index("python3 tools/p7_compact_smoke.py", reboot)
         ordinary = workflow.index(
             "test -s p7-logo-workshop-android-", regression)
         self.assertLess(ordinary, reboot)
-        self.assertLess(reboot, reboot_command)
-        self.assertLess(reboot_command, boot_guard)
-        self.assertLess(boot_guard, app_guard)
-        self.assertLess(app_guard, compact)
-        self.assertIn("timeout 150s adb wait-for-device", workflow)
-        self.assertEqual(1, workflow.count("adb reboot"))
+        self.assertLess(reboot, compact)
+        self.assertEqual(1, workflow.count(marker))
+        self.assertIn("bash -n tools/p7_api35_reboot.sh", workflow)
         self.assertEqual(1, workflow.count("python3 tools/p7_compact_smoke.py"))
+        self.assertNotIn('if [ "${{ matrix.api }}" = "35" ]; then', workflow)
+        guard = (ROOT / "tools/p7_api35_reboot.sh").read_text(
+            encoding="utf-8")
+        self.assertIn("set -euo pipefail", guard)
+        self.assertIn("29)", guard)
+        self.assertIn("35)", guard)
+        self.assertIn("adb reboot", guard)
+        self.assertIn("timeout 150s adb wait-for-device", guard)
+        self.assertIn("getprop sys.boot_completed", guard)
+        self.assertIn('if [ "$booted" != "1" ]; then', guard)
+        self.assertIn("adb shell pm path com.readroid.app", guard)
+        self.assertIn("adb shell wm size", guard)
+        self.assertIn("adb shell wm density", guard)
         navigation = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                       "P7NavigationInstrumentedTest.java").read_text(
                           encoding="utf-8")
@@ -184,7 +187,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertLess(package_check, launched)
         # The original package check follows instrumentation. API35 has a
         # second mandatory package check after its verified AVD reboot.
-        self.assertEqual(2, workflow.count(
+        self.assertEqual(1, workflow.count(
             "adb shell pm path com.readroid.app | grep -Fq 'package:'"))
         script = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
