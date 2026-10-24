@@ -142,6 +142,38 @@ public final class P7ThemeCatalogInstrumentedTest {
         }
     }
 
+    @Test public void miniatureThemeChromeUsesActualSurfacePalette() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        final int[] expectedToolbar = {
+            0xff93a6be, 0xffa1a6b7, 0xff53657c
+        };
+        Bitmap[] images = new Bitmap[3];
+        try {
+            for (int surface = 0; surface < 3; surface++) {
+                images[surface] = Bitmap.createBitmap(
+                    100, 100, Bitmap.Config.ARGB_8888);
+                P7ThemePreviewView view = new P7ThemePreviewView(
+                    context, 0xff1688ff, 0, surface, false);
+                view.layout(0, 0, 100, 100);
+                view.draw(new Canvas(images[surface]));
+                // The same preview really uses the current OLED/graphite/light
+                // palette for its mini toolbar. Never show a fake project count.
+                assertEquals("Mini action chrome must match current palette",
+                    expectedToolbar[surface], images[surface].getPixel(76, 11));
+                assertEquals("Accent highlights remain real for each theme",
+                    0xff1688ff, images[surface].getPixel(29, 12));
+            }
+            assertFalse("OLED and graphite miniatures cannot be identical",
+                images[0].sameAs(images[1]));
+            assertFalse("OLED and light miniatures cannot be identical",
+                images[0].sameAs(images[2]));
+        } finally {
+            for (Bitmap bitmap : images)
+                if (bitmap != null) bitmap.recycle();
+        }
+    }
+
     @Test public void neonAndCleanPreviewsHaveDifferentPixels() {
         Context context = androidx.test.platform.app.InstrumentationRegistry
             .getInstrumentation().getTargetContext();
