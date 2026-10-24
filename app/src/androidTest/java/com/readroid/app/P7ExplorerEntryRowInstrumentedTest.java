@@ -62,6 +62,13 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     "assets/", "Pasta", true, false,
                     v -> opened.incrementAndGet(),
                     v -> optionsOpened.incrementAndGet());
+                // An accessibility node queried from a detached View does not
+                // necessarily include its content description (Android 10).
+                // Attach both QA rows to a real Activity window first.
+                LinearLayout host = new LinearLayout(activity);
+                host.setOrientation(LinearLayout.VERTICAL);
+                activity.setContentView(host);
+                host.addView(folder);
 
                 assertEquals(LinearLayout.HORIZONTAL, folder.getOrientation());
                 assertTrue("Explorer entries must use bottom dividers instead of outlined cards",
@@ -89,11 +96,15 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     NegrescoTheme.dp(activity, 48), options.getLayoutParams().width);
                 assertEquals("File menu height must be at least 48dp",
                     NegrescoTheme.dp(activity, 48), options.getLayoutParams().height);
+                assertEquals("Opções de assets/", options.getContentDescription());
                 AccessibilityNodeInfo optionsNode = options.createAccessibilityNodeInfo();
-                assertNotNull(optionsNode);
+                assertNotNull("Attached overflow must create an accessibility node",
+                    optionsNode);
                 assertEquals("Overflow must be announced as a native button",
                     android.widget.Button.class.getName(),
                     optionsNode.getClassName().toString());
+                assertNotNull("Attached overflow must speak its own description",
+                    optionsNode.getContentDescription());
                 assertEquals("Opções de assets/",
                     optionsNode.getContentDescription().toString());
                 assertTrue("Overflow must be a separate clickable action",
@@ -108,6 +119,7 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     "AndroidManifest.xml", "XML • 1.5 KB • ALTERADO",
                     false, true, v -> opened.incrementAndGet(),
                     v -> optionsOpened.incrementAndGet());
+                host.addView(edited);
                 assertEquals("Abrir arquivo AndroidManifest.xml, alterado",
                     edited.getContentDescription());
                 assertTrue(edited.getChildAt(1) instanceof LinearLayout);
@@ -118,9 +130,16 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     .getText().toString().contains("ALTERADO"));
                 View fileOptions = descendant(edited, "Opções de AndroidManifest.xml");
                 assertNotNull("Edited file also needs an independent overflow", fileOptions);
+                assertEquals("Opções de AndroidManifest.xml",
+                    fileOptions.getContentDescription());
                 AccessibilityNodeInfo fileNode = fileOptions.createAccessibilityNodeInfo();
+                assertNotNull(fileNode);
                 assertEquals(android.widget.Button.class.getName(),
                     fileNode.getClassName().toString());
+                assertNotNull("Attached file menu must have spoken label",
+                    fileNode.getContentDescription());
+                assertEquals("Opções de AndroidManifest.xml",
+                    fileNode.getContentDescription().toString());
                 assertTrue(fileNode.isClickable());
                 fileNode.recycle();
                 assertTrue(fileOptions.performClick());
