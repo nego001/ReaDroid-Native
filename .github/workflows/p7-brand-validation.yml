@@ -88,14 +88,17 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#detectsSyntheticSystemOverlayBeforeEvidenceExport,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest,com.readroid.app.P7IconWorkshopInstrumentedTest,com.readroid.app.P7IconSvgInstrumentedTest,com.readroid.app.P7LogoWorkshopInstrumentedTest,com.readroid.app.P7LogoSvgInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest
-            # The 138-case Gradle suite includes the synthetic overlay regression,
-            # but not the real screenshot capture. The separate instrumentation
-            # below exercises that capture as a 139th checked test after reinstall.
-            # This avoids an early Android 15 launcher focus race without
-            # weakening the fail-closed foreground/PNG checks.
-            # One persistent Bash process: emulator-runner executes script lines separately.
+            # Capture the real, synthetic-only Explorer on a fresh emulator.
+            # Running it after the full test suite can leave Android 15's
+            # Pixel Launcher holding window focus; fail-closed checks stay on.
+            gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
             bash tools/p7_capture_populated.sh ${{ matrix.api }}
+            # Run the full regression suite only after the capture. Gradle may
+            # reinstall debug APKs, but the screenshot is already on the host.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#detectsSyntheticSystemOverlayBeforeEvidenceExport,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7NavigationInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest,com.readroid.app.P7IconWorkshopInstrumentedTest,com.readroid.app.P7IconSvgInstrumentedTest,com.readroid.app.P7LogoWorkshopInstrumentedTest,com.readroid.app.P7LogoSvgInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest
+            # The comprehensive Android regression suite excludes only the
+            # screenshot-export method, already run in isolation above.
+            # Both stages must succeed before generating screenshot inventory.
             adb shell am start -W -n com.readroid.app/.MainActivity
             sleep 2
             python3 -c 'from tools.android_ui_smoke import visible_app_hierarchy, ensure_foreground; nodes = visible_app_hierarchy(); ensure_foreground(); assert any(n.attrib.get("text") == "Olá, Desenvolvedor" for n in nodes), "Home not visible before screenshot"'
