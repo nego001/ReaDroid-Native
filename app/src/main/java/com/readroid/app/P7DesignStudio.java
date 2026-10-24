@@ -616,13 +616,13 @@ public final class P7DesignStudio {
             NegrescoTheme.FONT_SCALE)
             ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         body.addView(row);
-        creator(row, "◉", "Criador de Ícones",
+        creator(row, R.drawable.ic_p7_icon_creator, "Criador de Ícones",
             "Criar e exportar PNG", -4, true);
-        creator(row, "N", "Logo Studio",
+        creator(row, R.drawable.ic_negrecodroid_foreground, "Logo Studio",
             "Criar e exportar logo PNG", -5, false);
     }
 
-    private void creator(LinearLayout row, String symbol, String title,
+    private void creator(LinearLayout row, int emblemRes, String title,
             String subtitle, int actionIndex, boolean first) {
         LinearLayout card = new LinearLayout(a);
         card.setGravity(Gravity.CENTER_VERTICAL);
@@ -636,8 +636,15 @@ public final class P7DesignStudio {
         cell.setMargins(0, 0, !stacked && first ? dp(4) : 0,
             stacked && first ? dp(8) : 0);
         row.addView(card, cell);
-        TextView logo = label(symbol, 27, NegrescoTheme.ACCENT, true);
-        card.addView(logo);
+        // The approved board shows designed artwork, not a plain Unicode
+        // circle or the letter "N". Reuse local vector drawables and keep
+        // the card's real action and its one accessible label unchanged.
+        ImageView emblem = new ImageView(a);
+        emblem.setImageResource(emblemRes);
+        emblem.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        emblem.setTag(emblemRes);
+        emblem.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        card.addView(emblem, new LinearLayout.LayoutParams(dp(42), dp(42)));
         LinearLayout description = column();
         LinearLayout.LayoutParams info = new LinearLayout.LayoutParams(0, -2, 1);
         info.leftMargin = dp(6);
@@ -657,7 +664,6 @@ public final class P7DesignStudio {
                 info.setClassName(Button.class.getName());
             }
         });
-        logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         description.setImportantForAccessibility(
             View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         card.setOnClickListener(v -> open(actionIndex));
