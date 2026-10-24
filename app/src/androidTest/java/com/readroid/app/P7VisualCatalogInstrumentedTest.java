@@ -739,6 +739,29 @@ public final class P7VisualCatalogInstrumentedTest {
             assertRepeatablePreview(context, accents[i % accents.length], 2, 0, false);
     }
 
+    @Test public void presetDescriptionsNameExactlyWhatWillBePersisted() {
+        String[] expected = {
+            "tema OLED, acento azul, brilho neon desligado, layout Padrão, cantos 18dp",
+            "tema OLED, acento roxo, brilho neon ligado, layout Moderno, cantos 26dp",
+            "tema claro, acento azul, brilho neon desligado, layout Compacto, cantos 12dp",
+            "tema grafite, acento azul, brilho neon ligado, layout Moderno, cantos 26dp",
+            "tema OLED, acento laranja, brilho neon desligado, layout Compacto, cantos 12dp"
+        };
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(P7VisualCatalog.PRESET_NAMES[i],
+                expected[i], P7VisualCatalog.presetSummary(i));
+        }
+        for (int invalid : new int[]{-1, expected.length}) {
+            try {
+                P7VisualCatalog.presetSummary(invalid);
+                fail("Invalid preset index accepted");
+            } catch (IllegalArgumentException expectedError) {
+                assertEquals("Preset não reconhecido",
+                    expectedError.getMessage());
+            }
+        }
+    }
+
     @Test public void presetThumbnailsMatchPersistedThemeAndAccentTokens() {
         Context context = androidx.test.platform.app.InstrumentationRegistry
             .getInstrumentation().getTargetContext();

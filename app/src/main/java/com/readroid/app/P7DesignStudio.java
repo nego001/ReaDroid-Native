@@ -465,7 +465,8 @@ public final class P7DesignStudio {
         // Keep its existing name/selection prefix for navigation compatibility.
         card.setContentDescription(name +
             (selected ? ", prévia selecionada" : ", selecionar prévia") +
-            (kind == 0 && !subtitle.isEmpty() ? ". " + subtitle : ""));
+            (kind == 0 && !subtitle.isEmpty() ? ". " + subtitle : "") +
+            (kind == 2 ? ". " + P7VisualCatalog.presetSummary(themeSurface) : ""));
         // The whole tile is the single interaction target. Tell TalkBack
         // it is a button and hide duplicate miniature/label announcements.
         card.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -563,7 +564,8 @@ public final class P7DesignStudio {
         final int choice = selectedPreset;
         new android.app.AlertDialog.Builder(a)
             .setTitle("Aplicar " + P7VisualCatalog.PRESET_NAMES[choice] + "?")
-            .setMessage("Cores, efeito neon e densidade serão salvos. " +
+            .setMessage("Será aplicado: " +
+                P7VisualCatalog.presetSummary(choice) + ". " +
                 "O aplicativo reiniciará mantendo o projeto atual.")
             .setPositiveButton("Aplicar", (d, w) -> {
                 try { P7VisualCatalog.applyPreset(a, choice); }

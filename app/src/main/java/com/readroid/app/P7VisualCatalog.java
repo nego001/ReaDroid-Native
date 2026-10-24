@@ -66,6 +66,25 @@ public final class P7VisualCatalog {
         return PRESET_GLOWS[index];
     }
 
+    /** Spoken and confirmation description is derived from actual saved
+     * preset tokens, not another hand-maintained set of marketing labels.
+     */
+    static String presetSummary(int index) {
+        requirePreset(index);
+        String theme = PRESET_THEMES[index];
+        String themeLabel = "light".equals(theme) ? "claro"
+            : "graphite".equals(theme) ? "grafite" : "OLED";
+        String accent = PRESET_ACCENTS[index];
+        String accentLabel = "purple".equals(accent) ? "roxo"
+            : "orange".equals(accent) ? "laranja"
+            : "green".equals(accent) ? "verde" : "azul";
+        return "tema " + themeLabel + ", acento " + accentLabel
+            + (PRESET_GLOWS[index] ? ", brilho neon ligado"
+                : ", brilho neon desligado")
+            + ", layout " + LAYOUT_NAMES[PRESET_LAYOUTS[index]]
+            + ", cantos " + PRESET_RADII[index] + "dp";
+    }
+
     /** Native Home structure: original 3x2, list 1x6, or two-column 2x3. */
     static int quickActionColumns(int layout) {
         if (layout == 3) return 1;
