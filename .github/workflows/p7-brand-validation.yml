@@ -136,6 +136,27 @@ jobs:
             test -s p7-design-android-${{ matrix.api }}.png
             test -s p7-icon-workshop-android-${{ matrix.api }}.png
             test -s p7-logo-workshop-android-${{ matrix.api }}.png
+            # API35 passed all 153 instrumentation tests, then occasionally
+            # lost ADB while resizing the viewport for compact screenshots.
+            # Start compact QA on a freshly booted Android userspace while
+            # keeping the same AVD, same APK and all earlier screenshot gates.
+            # This is NOT a retry: reboot/boot/app verification must pass,
+            # or the job fails closed before taking any compact screenshot.
+            if [ "${{ matrix.api }}" = "35" ]; then
+              adb reboot
+              timeout 150s adb wait-for-device
+              for attempt in $(seq 1 60); do
+                if [ "$(adb shell getprop sys.boot_completed | tr -d '\\r')" = "1" ]; then
+                  break
+                fi
+                sleep 2
+              done
+              test "$(adb shell getprop sys.boot_completed | tr -d '\\r')" = "1"
+              adb shell pm path com.readroid.app | grep -Fq 'package:'
+              adb shell wm size | grep -Fq 'Physical size:'
+              adb shell wm density | grep -Fq 'Physical density:'
+              echo "P7_API35_REBOOT_VERIFIED before compact viewport smoke"
+            fi
             python3 tools/p7_compact_smoke.py
             test -s p7-compact-inicio-android-${{ matrix.api }}.png
             test -s p7-compact-arquivos-android-${{ matrix.api }}.png

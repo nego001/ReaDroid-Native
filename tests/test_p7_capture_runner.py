@@ -111,6 +111,28 @@ class P7CaptureRunnerTests(unittest.TestCase):
             ["com.readroid.app.P7NavigationInstrumentedTest"],
             commands[1].split(","))
         self.assertEqual(20, len(commands[2].split(",")))
+        # Reboot API35 only after full instrumented coverage and ordinary
+        # Design/Icon/Logo evidence, BEFORE the compact viewport resize.
+        # This must never skip a single screenshot or a failed reboot.
+        marker = 'if [ "${{ matrix.api }}" = "35" ]; then'
+        reboot = workflow.index(marker)
+        reboot_command = workflow.index("adb reboot", reboot)
+        boot_guard = workflow.index(
+            'test "$(adb shell getprop sys.boot_completed', reboot)
+        app_guard = workflow.index(
+            "adb shell pm path com.readroid.app | grep -Fq 'package:'",
+            reboot)
+        compact = workflow.index("python3 tools/p7_compact_smoke.py", reboot)
+        ordinary = workflow.index(
+            "test -s p7-logo-workshop-android-", regression)
+        self.assertLess(ordinary, reboot)
+        self.assertLess(reboot, reboot_command)
+        self.assertLess(reboot_command, boot_guard)
+        self.assertLess(boot_guard, app_guard)
+        self.assertLess(app_guard, compact)
+        self.assertIn("timeout 150s adb wait-for-device", workflow)
+        self.assertEqual(1, workflow.count("adb reboot"))
+        self.assertEqual(1, workflow.count("python3 tools/p7_compact_smoke.py"))
         navigation = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                       "P7NavigationInstrumentedTest.java").read_text(
                           encoding="utf-8")
