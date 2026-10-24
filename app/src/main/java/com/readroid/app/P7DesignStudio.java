@@ -553,9 +553,18 @@ public final class P7DesignStudio {
         text.setPadding(0,dp(7),0,dp(1));
         body.addView(text);
     }
+    // A rapid second tap must not place a new dialog behind the first one.
+    private android.app.AlertDialog layoutConfirmation;
+
+    /** Test-only package visibility for the actual layout AlertDialog. */
+    android.app.AlertDialog activeLayoutConfirmation() {
+        return layoutConfirmation;
+    }
+
     private void confirmLayout() {
+        if (layoutConfirmation != null && layoutConfirmation.isShowing()) return;
         final int choice = selectedLayout;
-        new android.app.AlertDialog.Builder(a)
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(a)
             .setTitle("Aplicar layout " + P7VisualCatalog.LAYOUT_NAMES[choice] + "?")
             .setMessage("O visual será atualizado sem modificar o APK aberto ou o plano de edições.")
             .setPositiveButton("Aplicar", (d, w) -> {
@@ -566,14 +575,19 @@ public final class P7DesignStudio {
                     showError(error);
                 }
             })
-            .setNegativeButton("Cancelar", (dialog, which) -> {
+            .setNegativeButton("Cancelar", (ignored, which) -> {
                 selectedLayout = P7VisualCatalog.currentLayout(a);
                 render();
             })
-            .setOnCancelListener(dialog -> {
+            .setOnCancelListener(cancelled -> {
                 selectedLayout = P7VisualCatalog.currentLayout(a);
                 render();
-            }).show();
+            }).create();
+        dialog.setOnDismissListener(dismissed -> {
+            if (layoutConfirmation == dialog) layoutConfirmation = null;
+        });
+        layoutConfirmation = dialog;
+        dialog.show();
     }
 
     private void confirmPreset() {

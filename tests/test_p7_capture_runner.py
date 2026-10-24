@@ -158,7 +158,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(35, navigation.count("@Test"))
+        self.assertEqual(36, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
         icon_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                          "P7IconTemplatesLargeFontInstrumentedTest.java").read_text(
@@ -169,6 +169,15 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(1, icon_isolated.count("@Test"))
         self.assertIn("Icon label must fit in tile height", icon_isolated)
         self.assertIn("NegrescoTheme.apply(context)", icon_isolated)
+        self.assertEqual(1, navigation.count(
+            "void repeatedLayoutTapNeverStacksNativeConfirmations()"))
+        self.assertIn("Rapid layout taps must preserve one native dialog", navigation)
+        self.assertIn("Cancelled repeated layout taps cannot save any setting", navigation)
+        studio = (ROOT / "app/src/main/java/com/readroid/app/"
+                  "P7DesignStudio.java").read_text(encoding="utf-8")
+        self.assertIn("activeLayoutConfirmation()", studio)
+        self.assertIn("if (layoutConfirmation != null && layoutConfirmation.isShowing()) return;", studio)
+        self.assertIn("if (layoutConfirmation == dialog) layoutConfirmation = null;", studio)
         self.assertEqual(1, navigation.count(
             "void repeatedPresetTapNeverStacksNativeConfirmations()"))
         self.assertIn("No second dialog may replace the first", navigation)
