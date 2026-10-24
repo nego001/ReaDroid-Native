@@ -989,8 +989,30 @@ public final class P7NavigationInstrumentedTest {
                 assertEquals("Previewing must not persist any preference",
                     original.get(), prefs.getAll());
             });
-            // Leave the native confirmation without pressing Apply. Hardware
-            // back must be equivalent to the existing cancel listener.
+            // Wait for the actual confirmation window to become the
+            // accessibility-active window BEFORE injecting Back. Sending
+            // Back in the same instant as AlertDialog.show() can dispatch
+            // to the Activity beneath it rather than cancelling the dialog.
+            androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation().waitForIdleSync();
+            android.app.UiAutomation automation =
+                InstrumentationRegistry.getInstrumentation().getUiAutomation();
+            android.view.accessibility.AccessibilityNodeInfo focused =
+                automation.getRootInActiveWindow();
+            String dialogTitle = "Aplicar "
+                + P7VisualCatalog.PRESET_NAMES[choice[0]] + "?";
+            try {
+                assertNotNull("Native confirmation must own active window "
+                    + "before Back: " + dialogTitle, focused);
+                assertFalse("Back requires focused native confirmation: "
+                    + dialogTitle,
+                    focused.findAccessibilityNodeInfosByText(dialogTitle).isEmpty());
+            } finally {
+                if (focused != null) focused.recycle();
+            }
+            // Leave the confirmed native dialog without pressing Apply.
+            // Back must trigger the existing cancel listener, then restore
+            // the committed state and leave SharedPreferences unchanged.
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
                 android.view.KeyEvent.KEYCODE_BACK);
             // AlertDialog cancellation can enqueue its OnCancelListener after
