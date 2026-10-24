@@ -182,6 +182,10 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "P7DesignStudio.java").read_text(encoding="utf-8")
         self.assertIn("private boolean appearanceDialogShowing()", all_dialogs)
         self.assertIn("if (appearanceDialogShowing()) {", all_dialogs)
+        self.assertEqual(3, all_dialogs.count("if (appearanceDialogShowing()) {"))
+        for guard in ("themeConfirmation", "layoutConfirmation",
+                      "presetConfirmation", "catalogChooser"):
+            self.assertIn(guard + " != null && " + guard + ".isShowing()", all_dialogs)
         self.assertIn("selectedLayout = P7VisualCatalog.currentLayout(a);", all_dialogs)
         self.assertIn("selectedPreset = P7VisualCatalog.currentPreset(a);", all_dialogs)
         self.assertEqual(1, navigation.count(
