@@ -964,6 +964,7 @@ public final class P7NavigationInstrumentedTest {
             confirmation = new java.util.concurrent.atomic.AtomicReference<>();
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
+            try {
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 View design = byDescription(root, "Abrir seção Design");
@@ -1009,6 +1010,10 @@ public final class P7NavigationInstrumentedTest {
                     assertNotNull("Click must open a real AlertDialog", dialog);
                     assertTrue("Real confirmation must be visible before Back",
                         dialog.isShowing());
+                    assertNotNull("Native dialog must have its own window",
+                        dialog.getWindow());
+                    assertTrue("Native dialog must be attached before Back",
+                        dialog.getWindow().getDecorView().isAttachedToWindow());
                     assertEquals("Confirmation must offer Cancelar",
                         "Cancelar", dialog.getButton(
                             android.app.AlertDialog.BUTTON_NEGATIVE).getText().toString());
@@ -1025,7 +1030,6 @@ public final class P7NavigationInstrumentedTest {
             // the Back key is dispatched. Compare the post-cancel UI only
             // when the main looper has processed that callback and re-render.
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            try {
             assertFalse("Back must actually dismiss the native dialog",
                 confirmation.get().isShowing());
             scenario.onActivity(activity -> {
