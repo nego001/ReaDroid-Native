@@ -13,6 +13,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import android.os.ParcelFileDescriptor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -152,6 +155,59 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
         }
     }
 
+    /**
+     * Android 15 may identify the known Pixel Launcher ANR by its process name
+     * while accessibility text is localized. Confirm BOTH focused window and
+     * focused Activity before allowing the existing Android close button.
+     * This alone NEVER dismisses a modal or approves any screenshot.
+     */
+    private static boolean isExactLauncherAnrWindow(String windowDump) {
+        boolean exactAnrWindow = false;
+        boolean exactFocusedApp = false;
+        for (String row : windowDump.split("\n")) {
+            String line = row.trim();
+            if (line.startsWith("mCurrentFocus=Window{")
+                    && line.contains("Application Not Responding: "
+                        + "com.google.android.apps.nexuslauncher}"))
+                exactAnrWindow = true;
+            if (line.startsWith("mFocusedApp=ActivityRecord{")
+                    && line.contains("com.google.android.apps.nexuslauncher/"
+                        + ".NexusLauncherActivity"))
+                exactFocusedApp = true;
+        }
+        return exactAnrWindow && exactFocusedApp;
+    }
+
+    private static boolean isExactLauncherAnrFocusedBySystem() {
+        ParcelFileDescriptor pipe = null;
+        try {
+            pipe = InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                .executeShellCommand("dumpsys window | grep -E "
+                    + "'mCurrentFocus=|mFocusedApp='");
+            if (pipe == null) return false;
+            try (BufferedReader stream = new BufferedReader(
+                    new InputStreamReader(
+                        new ParcelFileDescriptor.AutoCloseInputStream(pipe),
+                        StandardCharsets.UTF_8))) {
+                pipe = null; // the reader now owns/terminates the descriptor
+                StringBuilder output = new StringBuilder(1024);
+                String line;
+                while ((line = stream.readLine()) != null) {
+                    if (output.length() + line.length() > 4096) return false;
+                    output.append(line).append('\n');
+                }
+                return isExactLauncherAnrWindow(output.toString());
+            }
+        } catch (Exception unavailable) {
+            // Failure to inspect the OS means no recovery, never an approval.
+            return false;
+        } finally {
+            if (pipe != null) {
+                try { pipe.close(); } catch (java.io.IOException ignored) { }
+            }
+        }
+    }
+
     private static boolean dismissKnownLauncherAnrOnce() {
         AccessibilityNodeInfo active = InstrumentationRegistry
             .getInstrumentation().getUiAutomation().getRootInActiveWindow();
@@ -161,8 +217,13 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
             collectOverlay(active, scan);
             // Never dismiss our own ANR. Require one unambiguous system
             // close action before touching anything outside the app.
-            if (scan.appAnr || !scan.launcherAnr || scan.closeCount != 1
+            if (scan.appAnr || scan.closeCount != 1
                     || scan.closeNode == null) return false;
+            // First use the existing precise accessibility label. Only if it
+            // is absent, demand the Android window AND Activity both identify
+            // the exact Pixel Launcher ANR before clicking the one OS control.
+            if (!scan.launcherAnr && !isExactLauncherAnrFocusedBySystem())
+                return false;
             return scan.closeNode.performAction(
                 AccessibilityNodeInfo.ACTION_CLICK);
         } finally {
@@ -266,6 +327,34 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
                 close.setPackageName("android");
                 close.setViewIdResourceName("android:id/aerr_close");
                 close.setClickable(true);
+                // A real failed CI capture reported this exact OS focus.
+                String exact = "mCurrentFocus=Window{ec8b92d u0 "
+                    + "Application Not Responding: "
+                    + "com.google.android.apps.nexuslauncher}\n"
+                    + "mFocusedApp=ActivityRecord{153e7 u0 "
+                    + "com.google.android.apps.nexuslauncher/"
+                    + ".NexusLauncherActivity t7}";
+                assertTrue("Exact external-launcher ANR may be recognized",
+                    isExactLauncherAnrWindow(exact));
+                assertFalse("Unrelated modal cannot be dismissed",
+                    isExactLauncherAnrWindow(exact.replace(
+                        "Application Not Responding: "
+                            + "com.google.android.apps.nexuslauncher}",
+                        "Application Not Responding: com.readroid.app}")));
+                assertFalse("App ANR cannot be dismissed",
+                    isExactLauncherAnrWindow(exact.replace(
+                        "com.google.android.apps.nexuslauncher}",
+                        "com.readroid.app}")));
+                assertFalse("Launcher must actually own focused Activity",
+                    isExactLauncherAnrWindow(exact.replace(
+                        "com.google.android.apps.nexuslauncher/"
+                            + ".NexusLauncherActivity",
+                        "com.readroid.app/.MainActivity")));
+                assertFalse("Focus evidence may not be incomplete",
+                    isExactLauncherAnrWindow(
+                        "mCurrentFocus=Window{ec8b92d u0 Application "
+                            + "Not Responding: com.google.android.apps."
+                            + "nexuslauncher}"));
                 assertTrue(isLauncherAnrNode(launcher));
                 assertFalse(isLauncherAnrNode(appAnr));
                 assertFalse(isLauncherAnrNode(unrelated));

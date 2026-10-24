@@ -221,6 +221,18 @@ class P7CaptureRunnerTests(unittest.TestCase):
     def test_valid_real_png_and_shell_state(self):
         result = self.execute()
         self.assertEqual(0, result.returncode, result.stderr)
+        source = (ROOT / "app/src/androidTest/java/com/readroid/app/"
+                  "P7ExplorerPopulatedCaptureInstrumentedTest.java").read_text(
+                      encoding="utf-8")
+        self.assertIn("isExactLauncherAnrWindow(String windowDump)", source)
+        self.assertIn("com.google.android.apps.nexuslauncher", source)
+        self.assertIn("scan.closeCount != 1", source)
+        self.assertIn("scan.appAnr", source)
+        self.assertIn("if (!scan.launcherAnr && !isExactLauncherAnrFocusedBySystem())",
+                      source)
+        self.assertIn("isExactLauncherAnrWindow(exact.replace(", source)
+        self.assertNotIn("am force-stop", source)
+        self.assertNotIn("input keyevent", source)
         self.assertIn("P7_POPULATED_PNG_OK", result.stdout)
         self.assertFalse((self.cwd / "p7-capture-diagnostics-android-29.txt").exists())
         self.assertTrue((self.cwd /
