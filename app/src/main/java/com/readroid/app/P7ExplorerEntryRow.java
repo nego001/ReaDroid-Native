@@ -2,7 +2,9 @@ package com.readroid.app;
 
 import android.app.Activity;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -49,10 +51,14 @@ public final class P7ExplorerEntryRow extends LinearLayout {
         setPadding(dp(activity, 9), dp(activity, 7),
             dp(activity, 4), dp(activity, 7));
         setMinimumHeight(dp(activity, 58));
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(NegrescoTheme.BACKGROUND);
-        background.setStroke(dp(activity, 1), NegrescoTheme.BORDER);
-        background.setCornerRadius(dp(activity, 4));
+        // The approved Explorer uses a continuous file list with fine separators,
+        // not individually outlined file cards. Draw the rule at the bottom only.
+        LayerDrawable background = new LayerDrawable(new Drawable[] {
+            new ColorDrawable(NegrescoTheme.BACKGROUND),
+            new ColorDrawable(NegrescoTheme.BORDER)
+        });
+        background.setLayerGravity(1, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL);
+        background.setLayerHeight(1, dp(activity, 1));
         setBackground(background);
 
         ImageView glyph = new ImageView(activity);
@@ -109,7 +115,7 @@ public final class P7ExplorerEntryRow extends LinearLayout {
         setOnClickListener(open);
 
         LayoutParams rowParams = new LayoutParams(-1, -2);
-        rowParams.bottomMargin = dp(activity, 2);
+        rowParams.bottomMargin = 0;
         setLayoutParams(rowParams);
     }
 }
