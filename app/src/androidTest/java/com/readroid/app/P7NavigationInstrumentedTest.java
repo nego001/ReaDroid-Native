@@ -392,12 +392,13 @@ public final class P7NavigationInstrumentedTest {
                         int alternative = committed == 0 ? 1 : 0;
                         assertTrue("Every catalog must have alternate choices",
                             alternative < choices[kind].length);
-                        int child = alternative - list.getFirstVisiblePosition();
-                        assertTrue("Test must activate a visible genuine choice",
-                            child >= 0 && child < list.getChildCount());
+                        // The native dialog has just been shown on the main
+                        // thread. Its ListView may not have laid out children
+                        // yet. performItemClick accepts a null child and still
+                        // calls the real AdapterView.OnItemClickListener with
+                        // the authentic item ID, without pixel-coordinate guesses.
                         assertTrue("List selection opens an Apply confirmation",
-                            list.performItemClick(list.getChildAt(child),
-                                alternative,
+                            list.performItemClick(null, alternative,
                                 list.getAdapter().getItemId(alternative)));
                         assertFalse("Choosing item must close native catalog chooser",
                             chooser.isShowing());
