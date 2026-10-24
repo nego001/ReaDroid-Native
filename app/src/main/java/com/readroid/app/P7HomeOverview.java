@@ -33,7 +33,11 @@ public final class P7HomeOverview extends LinearLayout {
     private View.OnClickListener showAll;
     /** MainActivity serializes history removal with pending import writes. */
     private java.util.function.Consumer<Uri> historyRemover;
+    private static final String[] STAT_LABELS = {
+        "Projetos", "Arquivos", "APKs Builds", "Ameaças"
+    };
     private final TextView[] values = new TextView[4];
+    private final LinearLayout[] statCards = new LinearLayout[4];
     private final LinearLayout recentCard;
     private final TextView seeAll;
     private final List<P7ProjectHistory.Entry> recent = new ArrayList<>();
@@ -69,13 +73,24 @@ public final class P7HomeOverview extends LinearLayout {
         });
     }
 
+    /**
+     * Speak each real statistic once as a label/value pair. Unknown is not
+     * zero: build and threat counts have no verified source yet.
+     */
+    private void updateAccessibleStats() {
+        for (int i = 0; i < values.length; i++) {
+            String value = values[i].getText().toString();
+            statCards[i].setContentDescription(STAT_LABELS[i] + ": "
+                + ("—".equals(value) ? "não disponível" : value));
+        }
+    }
+
     public P7HomeOverview(Activity activity, View.OnClickListener openFiles) {
         super(activity);
         this.activity = activity;
         this.openFiles = openFiles;
         setOrientation(VERTICAL);
 
-        String[] names = {"Projetos", "Arquivos", "APKs Builds", "Ameaças"};
         for (int row = 0; row < 2; row++) {
             LinearLayout line = new LinearLayout(activity);
             line.setOrientation(HORIZONTAL);
@@ -90,6 +105,9 @@ public final class P7HomeOverview extends LinearLayout {
                 cell.setMinimumHeight(dp(62));
                 cell.setPadding(dp(10), dp(7), dp(8), dp(7));
                 cell.setBackground(NegrescoTheme.studioCard(activity, false));
+                cell.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+                cell.setFocusable(true);
+                statCards[i] = cell;
                 LayoutParams lp = new LayoutParams(0, -2, 1);
                 lp.setMargins(column == 0 ? 0 : dp(5), 0,
                     column == 0 ? dp(5) : 0, dp(7));
@@ -115,8 +133,10 @@ public final class P7HomeOverview extends LinearLayout {
                 cell.addView(metrics, metricsLp);
                 values[i] = text("—", 18, NegrescoTheme.TEXT, true);
                 values[i].setIncludeFontPadding(false);
+                values[i].setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
                 metrics.addView(values[i]);
-                TextView caption = text(names[i], 10, NegrescoTheme.MUTED, false);
+                TextView caption = text(STAT_LABELS[i], 10, NegrescoTheme.MUTED, false);
+                caption.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
                 caption.setMaxLines(1);
                 caption.setEllipsize(TextUtils.TruncateAt.END);
                 metrics.addView(caption);
@@ -324,6 +344,7 @@ public final class P7HomeOverview extends LinearLayout {
                 11, NegrescoTheme.MUTED, false));
         }
         values[0].setText(String.valueOf(total));
+        updateAccessibleStats();
         boolean canViewAll = !recent.isEmpty();
         seeAll.setVisibility(canViewAll ? View.VISIBLE : View.GONE);
         seeAll.setClickable(canViewAll);
