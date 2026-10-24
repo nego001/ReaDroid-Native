@@ -92,6 +92,23 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertLess(built, captured)
         self.assertLess(captured, regression)
         self.assertEqual(1, workflow.count("bash tools/p7_capture_populated.sh"))
+        # Gradle removes the tested target package when instrumented tests
+        # finish. The visual capture must reinstall the exact debug target,
+        # verify the real installed package and only then launch the Activity.
+        restored = workflow.index(
+            "adb install -r app/build/outputs/apk/debug/app-debug.apk",
+            regression)
+        package_check = workflow.index(
+            "adb shell pm path com.readroid.app | grep -Fq 'package:'",
+            restored)
+        launched = workflow.index(
+            "adb shell am start -W -n com.readroid.app/.MainActivity",
+            package_check)
+        self.assertLess(regression, restored)
+        self.assertLess(restored, package_check)
+        self.assertLess(package_check, launched)
+        self.assertEqual(1, workflow.count(
+            "adb shell pm path com.readroid.app | grep -Fq 'package:'"))
         script = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
             "P7ExplorerPopulatedCaptureInstrumentedTest"
