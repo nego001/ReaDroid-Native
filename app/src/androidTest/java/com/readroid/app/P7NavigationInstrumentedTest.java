@@ -841,6 +841,103 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void originalThemeConfirmationAppliesPinnedChoiceAfterOtherTap() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs =
+            context.getSharedPreferences("v3_personalizacao", 0);
+        java.util.Map<String, ?> original =
+            new java.util.HashMap<>(prefs.getAll());
+        final int[] intended = {-1};
+        final int[] other = {-1};
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            opened = new java.util.concurrent.atomic.AtomicReference<>();
+        try {
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    int savedTheme = P7ThemeCatalog.currentTheme(activity);
+                    intended[0] = savedTheme == 0 ? 1 : 0;
+                    other[0] = intended[0] == 0 ? 2 : 0;
+                    String intendedName = P7ThemeCatalog.nameAt(intended[0]);
+                    String otherName = P7ThemeCatalog.nameAt(other[0]);
+                    View firstCard = byDescription(root, intendedName + ",");
+                    View secondCard = byDescription(root, otherName + ",");
+                    assertAccessibleButton(firstCard);
+                    assertAccessibleButton(secondCard);
+                    assertTrue("First theme tap must open native confirmation",
+                        firstCard.performClick());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNotNull(studio);
+                        android.app.AlertDialog dialog =
+                            studio.activeThemeConfirmation();
+                        opened.set(dialog);
+                        assertNotNull("Theme confirmation must exist", dialog);
+                        assertTrue(dialog.isShowing());
+                        assertNotNull(dialog.getWindow());
+                        assertTrue("Confirmation must show original theme name",
+                            hasText(dialog.getWindow().getDecorView(),
+                                "Aplicar " + intendedName + "?"));
+                        // The second card is intentionally the stale, detached
+                        // view from before render(), simulating a queued tap.
+                        assertTrue("Queued alternate theme click is handled",
+                            secondCard.performClick());
+                        assertSame("Alternate theme cannot replace dialog",
+                            dialog, studio.activeThemeConfirmation());
+                        assertTrue("Original theme dialog still visible",
+                            dialog.isShowing());
+                        assertEquals("A second pending selection cannot persist",
+                            original, prefs.getAll());
+                        android.widget.Button apply = dialog.getButton(
+                            android.app.AlertDialog.BUTTON_POSITIVE);
+                        assertNotNull(apply);
+                        assertEquals("Aplicar", apply.getText().toString());
+                        assertTrue("Original confirmation must be actionable",
+                            apply.performClick());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Cannot inspect actual theme confirmation", error);
+                    }
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertEquals("Apply must commit the theme from the visible dialog, "
+                        + "not the subsequently tapped alternative",
+                    intended[0], P7ThemeCatalog.currentTheme(context));
+                assertNotEquals("The queued alternate theme must never be saved",
+                    other[0], P7ThemeCatalog.currentTheme(context));
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            for (String key : new String[] {
+                    "theme", "accent", "studio_glow", "p7_active_preset" }) {
+                if (!original.containsKey(key)) {
+                    restore.remove(key);
+                } else {
+                    Object value = original.get(key);
+                    if (value instanceof String) restore.putString(key, (String) value);
+                    else if (value instanceof Boolean)
+                        restore.putBoolean(key, (Boolean) value);
+                    else if (value instanceof Integer)
+                        restore.putInt(key, (Integer) value);
+                    else throw new AssertionError("Unexpected preference type: " + key);
+                }
+            }
+            assertTrue("Theme test must restore all original preferences",
+                restore.commit());
+            NegrescoTheme.apply(context);
+            assertEquals("Theme round-trip must not contaminate other tests",
+                original, prefs.getAll());
+        }
+    }
+
     @Test public void repeatedThemeTapNeverStacksOrChangesConfirmedChoice() {
         final java.util.concurrent.atomic.AtomicReference<
             java.util.Map<String, ?>> saved =
