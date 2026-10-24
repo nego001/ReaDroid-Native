@@ -131,7 +131,53 @@ public final class P7ThemePreviewView extends View {
         }
     }
 
+    /**
+     * Layouts 0, 1 and 2 all use the same real 3x2 action order.
+     * They differ in spacing, compact density and card corner radius;
+     * showing invented row arrangements would misrepresent the setting.
+     */
+    private void drawPrimaryLayout(Canvas c) {
+        final boolean compact = themeSurface == 1;
+        final boolean modern = themeSurface == 2;
+        block(c, 0xff07101d, 8, 7, 92, 93, 9);
+        outline(c, 0xff4c6a87, 8, 7, 92, 93, 9);
+        block(c, accent, 19, 18, 65, 23, 2);
+        block(c, 0xff71889d, 19, 26, compact ? 57 : 72, 28, 1);
+        int[] rows = P7VisualCatalog.quickActionRowSizes(themeSurface);
+        float gap = compact ? 2f : modern ? 5f : 4f;
+        float radius = compact ? 1.5f : modern ? 6f : 3f;
+        float height = compact ? 16f : modern ? 20f : 18f;
+        float top = compact ? 30f : modern ? 33f : 32f;
+        float rowStep = compact ? 21f : modern ? 26f : 24f;
+        for (int row = 0; row < rows.length; row++) {
+            int columns = rows[row];
+            float width = (64f - gap * (columns - 1)) / columns;
+            float y = top + row * rowStep;
+            for (int column = 0; column < columns; column++) {
+                float x = 18f + column * (width + gap);
+                block(c, 0xff20364d, x, y, x + width, y + height, radius);
+                block(c, accent, x + 3, y + 5,
+                    x + Math.min(width - 3, compact ? 9f : 11f),
+                    y + 7, 1);
+                block(c, 0xff71889d, x + 3, y + height - 5,
+                    x + width - 3, y + height - 3, 1);
+            }
+        }
+        // Compact shows more information in the same viewport; Modern
+        // prioritizes whitespace and visibly larger rounded action cards.
+        if (compact) {
+            block(c, 0xff20364d, 18, 74, 82, 79, 1);
+            block(c, 0xff20364d, 18, 82, 82, 87, 1);
+        } else if (!modern) {
+            block(c, 0xff20364d, 18, 82, 82, 87, 2);
+        }
+    }
+
     private void drawLayout(Canvas c) {
+        if (themeSurface >= 0 && themeSurface <= 2) {
+            drawPrimaryLayout(c);
+            return;
+        }
         if (themeSurface >= 7 && themeSurface < P7VisualCatalog.LAYOUT_NAMES.length) {
             // The same row geometry used by MainActivity drives the vector
             // thumbnail. No fake static previews with identical appearance.
