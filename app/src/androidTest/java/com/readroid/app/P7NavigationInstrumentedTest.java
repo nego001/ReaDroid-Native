@@ -993,14 +993,20 @@ public final class P7NavigationInstrumentedTest {
             // back must be equivalent to the existing cancel listener.
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
                 android.view.KeyEvent.KEYCODE_BACK);
+            // AlertDialog cancellation can enqueue its OnCancelListener after
+            // the Back key is dispatched. Compare the post-cancel UI only
+            // when the main looper has processed that callback and re-render.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
                 View restored = byDescription(root, name + ",");
                 assertNotNull("Cancel must restore the previously saved state",
                     restored);
-                assertTrue(restored.getContentDescription().toString().startsWith(
-                    name + ", selecionar prévia"));
+                String announced = restored.getContentDescription().toString();
+                assertTrue("Back must restore the unselected card; heard: "
+                    + announced, announced.startsWith(
+                        name + ", selecionar prévia"));
                 assertEquals("Cancel must not save a partial preset",
                     original.get(),
                     activity.getSharedPreferences("v3_personalizacao", 0)
