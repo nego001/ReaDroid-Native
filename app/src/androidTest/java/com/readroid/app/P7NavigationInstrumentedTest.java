@@ -879,11 +879,10 @@ public final class P7NavigationInstrumentedTest {
                         assertNotNull("Theme confirmation must exist", dialog);
                         assertTrue(dialog.isShowing());
                         String expectedTitle = "Aplicar " + name + "?";
-                        assertEquals("Dialog names the pending theme",
-                            expectedTitle, dialog.getWindow() == null ? null
-                                : ((android.widget.TextView) dialog.findViewById(
-                                    activity.getResources().getIdentifier(
-                                        "alertTitle", "id", "android"))).getText().toString());
+                        assertNotNull("Native dialog must own a real window",
+                            dialog.getWindow());
+                        assertTrue("Dialog must name exactly the pending theme",
+                            hasText(dialog.getWindow().getDecorView(), expectedTitle));
                         assertTrue("Second queued tap still handled",
                             card.performClick());
                         assertSame("No second theme dialog may replace the first",
