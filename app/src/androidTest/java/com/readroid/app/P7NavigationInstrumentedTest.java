@@ -587,15 +587,32 @@ public final class P7NavigationInstrumentedTest {
                     assertNotNull(inactive);
                     assertTrue(active.isSelected());
                     assertFalse(inactive.isSelected());
+                    assertSame("Both tabs must share one segmented rail",
+                        active.getParent(), inactive.getParent());
+                    LinearLayout rail = (LinearLayout) active.getParent();
+                    android.graphics.drawable.GradientDrawable shared =
+                        (android.graphics.drawable.GradientDrawable)
+                            rail.getBackground();
+                    assertNotNull("Shared rail must define light-mode color",
+                        shared.getColor());
+                    assertEquals(P7DesignStudio.cardFillColor(false),
+                        shared.getColor().getDefaultColor());
                     for (TextView tab : new TextView[]{active, inactive}) {
                         android.graphics.drawable.GradientDrawable surface =
                             (android.graphics.drawable.GradientDrawable)
                                 tab.getBackground();
                         assertNotNull(surface.getColor());
-                        int expected = P7DesignStudio.cardFillColor(tab.isSelected());
-                        assertEquals(expected, surface.getColor().getDefaultColor());
-                        assertTrue(NegrescoTheme.contrastRatio(
-                            tab.getCurrentTextColor(), expected) >= 4.5);
+                        int expectedFill = tab.isSelected()
+                            ? P7DesignStudio.cardFillColor(true)
+                            : android.graphics.Color.TRANSPARENT;
+                        assertEquals("Inactive segments must not draw cards",
+                            expectedFill, surface.getColor().getDefaultColor());
+                        int effectiveSurface = tab.isSelected()
+                            ? P7DesignStudio.cardFillColor(true)
+                            : shared.getColor().getDefaultColor();
+                        assertTrue("Text contrast must use the actual rail surface",
+                            NegrescoTheme.contrastRatio(
+                                tab.getCurrentTextColor(), effectiveSurface) >= 4.5);
                     }
                     assertTrue(inactive.performClick());
                     assertTrue(inactive.isSelected());
@@ -793,6 +810,11 @@ public final class P7NavigationInstrumentedTest {
                 assertEquals("Returning to Themes must expose first tab",
                     0, scroll.getScrollX());
                 assertNotNull(byDescription(root, "Temas, aba selecionada"));
+                // P7.28's one-pixel rail padding must never keep horizontal
+                // scrolling offset after returning to the first destination.
+                assertTrue("Themes must remain a full touch action",
+                    clickableText(root, "Temas").getMinimumHeight()
+                        >= NegrescoTheme.dp(activity, 48));
             });
         }
     }
