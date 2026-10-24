@@ -955,6 +955,98 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void negativePresetButtonRestoresPreferencesAndReleasesDialog() {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> original =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            opened = new java.util.concurrent.atomic.AtomicReference<>();
+        final int[] choice = {-1};
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    original.set(new java.util.HashMap<>(prefs.getAll()));
+                    int applied = P7VisualCatalog.currentPreset(activity);
+                    choice[0] = applied == 0 ? 1 : 0;
+                    String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
+                    View card = byDescription(root, name + ",");
+                    assertAccessibleButton(card);
+                    assertTrue("Preset tile must open native confirmation",
+                        card.performClick());
+                    assertTrue("Pending preset must not claim applied state",
+                        byDescription(root, name + ",")
+                            .getContentDescription().toString().startsWith(
+                                name + ", prévia escolhida, ainda não aplicada"));
+                    assertEquals("Choosing is not saving",
+                        original.get(), prefs.getAll());
+
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNotNull(studio);
+                        android.app.AlertDialog dialog =
+                            studio.activePresetConfirmation();
+                        opened.set(dialog);
+                        assertNotNull("Preset must open a real dialog", dialog);
+                        assertTrue(dialog.isShowing());
+                        android.widget.Button cancel = dialog.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE);
+                        assertNotNull("Native Cancelar button must exist", cancel);
+                        assertEquals("Cancelar", cancel.getText().toString());
+                        assertTrue("Cancel must be actionable", cancel.performClick());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Could not inspect MainActivity Design Studio", error);
+                    }
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull("Cancel must follow an opened confirmation",
+                        opened.get());
+                    assertFalse("Cancelar must dismiss its AlertDialog",
+                        opened.get().isShowing());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNull("Dismiss must release the dialog reference",
+                            studio.activePresetConfirmation());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Could not inspect Studio after Cancelar", error);
+                    }
+                    String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
+                    View restored = byDescription(
+                        activity.getWindow().getDecorView(), name + ",");
+                    assertNotNull("Cancelled preset must remain in catalog", restored);
+                    String spoken = restored.getContentDescription().toString();
+                    assertTrue("Cancelar must restore the previously committed "
+                        + "selection, got: " + spoken,
+                        spoken.startsWith(name + ", selecionar prévia"));
+                    assertEquals("Cancelar must not alter ANY appearance setting",
+                        original.get(),
+                        activity.getSharedPreferences("v3_personalizacao", 0)
+                            .getAll());
+                });
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = opened.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void cancellingDifferentPresetRestoresCommittedAppearance() {
         final java.util.concurrent.atomic.AtomicReference<
             java.util.Map<String, ?>> original =
