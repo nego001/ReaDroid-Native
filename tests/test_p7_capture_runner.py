@@ -229,9 +229,19 @@ class P7CaptureRunnerTests(unittest.TestCase):
         theme_source = (ROOT /
             "app/src/main/java/com/readroid/app/P7DesignStudio.java"
             ).read_text(encoding="utf-8")
-        self.assertIn("if (themeConfirmation != null && themeConfirmation.isShowing()) return;", theme_source)
+        theme_apply = theme_source.split("private void applySelectedTheme()", 1)[1]
+        theme_apply = theme_apply.split("private int selectedLayout", 1)[0]
+        self.assertIn("if (appearanceDialogShowing()) {", theme_apply)
+        self.assertIn("restoreCurrentTheme();", theme_apply)
+        self.assertIn("render();", theme_apply)
         self.assertIn("P7ThemeCatalog.apply(a, choice)", theme_source)
         self.assertIn("if (themeConfirmation == dialog) themeConfirmation = null;", theme_source)
+        preset_apply = theme_source.split("private void confirmPreset()", 1)[1]
+        preset_apply = preset_apply.split("private void showError(", 1)[0]
+        self.assertIn("if (appearanceDialogShowing()) {", preset_apply)
+        self.assertIn("selectedPreset = P7VisualCatalog.currentPreset(a);",
+            preset_apply)
+        self.assertIn("render();", preset_apply)
         self.assertEqual(1, navigation.count(
             "void repeatedLayoutTapNeverStacksNativeConfirmations()"))
         self.assertIn("Rapid layout taps must preserve one native dialog", navigation)
@@ -239,7 +249,12 @@ class P7CaptureRunnerTests(unittest.TestCase):
         studio = (ROOT / "app/src/main/java/com/readroid/app/"
                   "P7DesignStudio.java").read_text(encoding="utf-8")
         self.assertIn("activeLayoutConfirmation()", studio)
-        self.assertIn("if (layoutConfirmation != null && layoutConfirmation.isShowing()) return;", studio)
+        layout_apply = studio.split("private void confirmLayout()", 1)[1]
+        layout_apply = layout_apply.split("private void confirmPreset()", 1)[0]
+        self.assertIn("if (appearanceDialogShowing()) {", layout_apply)
+        self.assertIn("selectedLayout = P7VisualCatalog.currentLayout(a);",
+            layout_apply)
+        self.assertIn("render();", layout_apply)
         self.assertIn("if (layoutConfirmation == dialog) layoutConfirmation = null;", studio)
         self.assertEqual(1, navigation.count(
             "void repeatedPresetTapNeverStacksNativeConfirmations()"))
