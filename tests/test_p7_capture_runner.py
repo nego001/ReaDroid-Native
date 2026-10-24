@@ -98,10 +98,10 @@ class P7CaptureRunnerTests(unittest.TestCase):
             r"gradle --no-daemon :app:connectedDebugAndroidTest "
             r"-Pandroid\.testInstrumentationRunnerArguments\.class=([^\s]+)",
             workflow)
-        self.assertEqual(4, len(commands))
+        self.assertEqual(5, len(commands))
         selections = [name for cmd in commands for name in cmd.split(",")]
-        self.assertEqual(23, len(selections))
-        self.assertEqual(23, len(set(selections)))
+        self.assertEqual(24, len(selections))
+        self.assertEqual(24, len(set(selections)))
         self.assertIn("ram-size: 3072M", workflow)
         self.assertIn("free -m", workflow)
         self.assertEqual(
@@ -111,9 +111,12 @@ class P7CaptureRunnerTests(unittest.TestCase):
             ["com.readroid.app.P7WelcomeLargeFontInstrumentedTest"],
             commands[1].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            ["com.readroid.app.P7IconTemplatesLargeFontInstrumentedTest"],
             commands[2].split(","))
-        self.assertEqual(20, len(commands[3].split(",")))
+        self.assertEqual(
+            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            commands[3].split(","))
+        self.assertEqual(20, len(commands[4].split(",")))
         # The runner launches each workflow line as a separate shell.
         # Run the conditional reboot in one guarded executable script.
         marker = "bash tools/p7_api35_reboot.sh ${{ matrix.api }}"
@@ -148,8 +151,17 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(36, navigation.count("@Test"))
+        self.assertEqual(35, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
+        icon_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
+                         "P7IconTemplatesLargeFontInstrumentedTest.java").read_text(
+                             encoding="utf-8")
+        icon_method = "void fourIconTemplatesGrowWithLargeTextAndAnnounceSingleButtons()"
+        self.assertNotIn(icon_method, navigation)
+        self.assertEqual(1, icon_isolated.count(icon_method))
+        self.assertEqual(1, icon_isolated.count("@Test"))
+        self.assertIn("Icon label must fit in tile height", icon_isolated)
+        self.assertIn("NegrescoTheme.apply(context)", icon_isolated)
         self.assertEqual(1, navigation.count(
             "void repeatedPresetTapNeverStacksNativeConfirmations()"))
         self.assertIn("No second dialog may replace the first", navigation)

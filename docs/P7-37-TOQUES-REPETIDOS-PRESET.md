@@ -16,7 +16,7 @@ O teste não presume que um segundo toque físico atravessa o diálogo. Verifica
 ## Gates obrigatórios
 - [ ] Integrar somente após a conclusão e análise da matriz P7.36.4.
 - [ ] Source checks e OTA na P7.37.
-- [ ] Sessões API29 e API35: 1 teste de barra inferior, 1 de cartão de boas-vindas, 36 de navegação e 116 demais; **154 por API**, sem falhas.
+- [ ] Sessões API29 e API35: 1 teste de barra inferior, 1 de cartão de boas-vindas, 1 de ícones com fonte ampliada, 35 de navegação e 116 demais; **154 por API**, sem falhas.
 - [ ] 14 capturas reais por API e cross-review 28/28.
 - [ ] Inspeção humana Galaxy A55/TalkBack e aceite 1:1 separados.
 
