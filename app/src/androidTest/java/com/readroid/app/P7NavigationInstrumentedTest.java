@@ -947,6 +947,28 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void presetCardsExplainSavedSettingsAsOneAccessibleAction() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                for (int i = 0; i < P7VisualCatalog.PRESET_NAMES.length; i++) {
+                    String name = P7VisualCatalog.PRESET_NAMES[i];
+                    View tile = byDescription(root, name + ",");
+                    assertNotNull("Preset must remain a real button: " + name, tile);
+                    assertAccessibleButton(tile);
+                    String spoken = tile.getContentDescription().toString();
+                    assertTrue("Preset must speak exact saved choices: " + name,
+                        spoken.contains(P7VisualCatalog.presetSummary(i)));
+                    assertTrue(spoken.startsWith(name + ","));
+                }
+            });
+        }
+    }
+
     @Test public void designTabGlyphsAppearOnlyWhenLabelsHaveRoom() {
         assertTrue("Normal viewport can show four graphic labels",
             P7DesignStudio.showTabGlyphs(393, 1f, 1f));
