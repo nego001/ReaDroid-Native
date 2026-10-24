@@ -841,6 +841,97 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void repeatedLayoutTapNeverStacksNativeConfirmations() {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> saved =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            opened = new java.util.concurrent.atomic.AtomicReference<>();
+        final String[] layoutName = {null};
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    saved.set(new java.util.HashMap<>(prefs.getAll()));
+                    int applied = P7VisualCatalog.currentLayout(activity);
+                    int choice = applied == 0 ? 1 : 0;
+                    String name = P7VisualCatalog.LAYOUT_NAMES[choice];
+                    layoutName[0] = name;
+                    View card = byDescription(root, name + ",");
+                    assertAccessibleButton(card);
+                    assertTrue("Layout tap opens native confirmation",
+                        card.performClick());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNotNull(studio);
+                        android.app.AlertDialog dialog =
+                            studio.activeLayoutConfirmation();
+                        opened.set(dialog);
+                        assertNotNull("Layout confirmation must exist", dialog);
+                        assertTrue(dialog.isShowing());
+                        assertTrue("Second queued layout click handled",
+                            card.performClick());
+                        assertSame("Rapid layout taps must preserve one native dialog",
+                            dialog, studio.activeLayoutConfirmation());
+                        assertTrue("Original layout confirmation still visible",
+                            dialog.isShowing());
+                        assertEquals("Unconfirmed layout cannot persist preferences",
+                            saved.get(), prefs.getAll());
+                        android.widget.Button cancel = dialog.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE);
+                        assertNotNull(cancel);
+                        assertEquals("Cancelar", cancel.getText().toString());
+                        assertTrue("Cancelar must be clickable",
+                            cancel.performClick());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Cannot inspect real layout confirmation", error);
+                    }
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull(opened.get());
+                    assertFalse("Cancel must close single layout dialog",
+                        opened.get().isShowing());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNull("Dismiss must release layout confirmation handle",
+                            studio.activeLayoutConfirmation());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Cannot verify layout dialog cleanup", error);
+                    }
+                    View restored = byDescription(
+                        activity.getWindow().getDecorView(), layoutName[0] + ",");
+                    assertNotNull("Cancelled layout stays available", restored);
+                    assertTrue("Cancelled layout preview must return to unselected",
+                        restored.getContentDescription().toString().startsWith(
+                            layoutName[0] + ", selecionar prévia"));
+                    assertEquals("Cancelled repeated layout taps cannot save any setting",
+                        saved.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                });
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = opened.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void repeatedPresetTapNeverStacksNativeConfirmations() {
         final java.util.concurrent.atomic.AtomicReference<
             java.util.Map<String, ?>> original =
