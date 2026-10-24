@@ -96,7 +96,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         import re
         commands = re.findall(
             r"gradle --no-daemon :app:connectedDebugAndroidTest "
-            r"-Pandroid\\.testInstrumentationRunnerArguments\\.class=([^\\s]+)",
+            r"-Pandroid\.testInstrumentationRunnerArguments\.class=([^\s]+)",
             workflow)
         self.assertEqual(2, len(commands))
         selections = [name for cmd in commands for name in cmd.split(",")]
