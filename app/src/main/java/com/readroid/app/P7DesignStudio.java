@@ -653,6 +653,22 @@ public final class P7DesignStudio {
         TextView hint = label(subtitle, 9, NegrescoTheme.MUTED, false);
         hint.setMaxLines(3);
         description.addView(hint);
+        // The official reference ends each creative card with a small blue
+        // circular action arrow. Keep it decorative: no nested touch target,
+        // no duplicate TalkBack node, and no extra navigation callback.
+        ImageView actionArrow = new ImageView(a);
+        actionArrow.setImageResource(R.drawable.ic_p7_creator_arrow);
+        actionArrow.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        actionArrow.setTag("p7-creator-action-arrow");
+        actionArrow.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        actionArrow.setClickable(false);
+        actionArrow.setFocusable(false);
+        LinearLayout.LayoutParams arrowParams =
+            new LinearLayout.LayoutParams(dp(22), dp(22));
+        arrowParams.leftMargin = dp(2);
+        arrowParams.gravity = Gravity.BOTTOM;
+        card.addView(actionArrow, arrowParams);
         card.setContentDescription(title + ": " + subtitle);
         card.setClickable(true);
         card.setFocusable(true);
