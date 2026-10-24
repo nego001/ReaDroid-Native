@@ -91,6 +91,27 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "gradle --no-daemon :app:connectedDebugAndroidTest")
         self.assertLess(built, captured)
         self.assertLess(captured, regression)
+        # Both full connectedAndroidTest invocations are REQUIRED. The suite
+        # may be split for emulator stability but must not shrink or duplicate.
+        import re
+        commands = re.findall(
+            r"gradle --no-daemon :app:connectedDebugAndroidTest "
+            r"-Pandroid\\.testInstrumentationRunnerArguments\\.class=([^\\s]+)",
+            workflow)
+        self.assertEqual(2, len(commands))
+        selections = [name for cmd in commands for name in cmd.split(",")]
+        self.assertEqual(21, len(selections))
+        self.assertEqual(21, len(set(selections)))
+        self.assertEqual(
+            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            commands[0].split(","))
+        self.assertEqual(20, len(commands[1].split(",")))
+        self.assertIn(
+            "com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest"
+            "#detectsSyntheticSystemOverlayBeforeEvidenceExport", selections)
+        self.assertIn("com.readroid.app.P7VisualCatalogInstrumentedTest", selections)
+        self.assertIn("com.readroid.app.P7ProjectHistoryInstrumentedTest", selections)
+        self.assertIn("com.readroid.app.ApkRebuilderInstrumentedTest", selections)
         self.assertEqual(1, workflow.count("bash tools/p7_capture_populated.sh"))
         # Gradle removes the tested target package when instrumented tests
         # finish. The visual capture must reinstall the exact debug target,
