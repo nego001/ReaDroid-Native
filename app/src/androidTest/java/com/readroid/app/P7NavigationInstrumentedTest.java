@@ -261,6 +261,178 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void viewAllWaitsForThemeConfirmationAndRecoversAfterCancel() {
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            first = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertTrue(byDescription(root, "Abrir seção Design").performClick());
+                android.content.SharedPreferences prefs =
+                    activity.getSharedPreferences("v3_personalizacao", 0);
+                java.util.Map<String, ?> saved =
+                    new java.util.HashMap<>(prefs.getAll());
+                int current = P7ThemeCatalog.currentTheme(activity);
+                String next = P7ThemeCatalog.nameAt(current == 0 ? 1 : 0);
+                assertTrue(byDescription(root, next + ",").performClick());
+                P7DesignStudio studio;
+                try {
+                    java.lang.reflect.Field field =
+                        MainActivity.class.getDeclaredField("designStudio");
+                    field.setAccessible(true);
+                    studio = (P7DesignStudio) field.get(activity);
+                } catch (ReflectiveOperationException error) {
+                    throw new AssertionError(error);
+                }
+                assertNotNull(studio);
+                android.app.AlertDialog confirmation =
+                    studio.activeThemeConfirmation();
+                first.set(confirmation);
+                assertNotNull(confirmation);
+                assertTrue(confirmation.isShowing());
+                View opener = byDescription(
+                    root, "Ver todos: Previews de Temas");
+                assertAccessibleButton(opener);
+                assertTrue(opener.performClick());
+                assertNull("View All may not appear behind Apply confirmation",
+                    studio.activeCatalogChooser());
+                assertSame(confirmation, studio.activeThemeConfirmation());
+                assertEquals(saved, prefs.getAll());
+                assertTrue(confirmation.getButton(
+                    android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                assertFalse(first.get().isShowing());
+                P7DesignStudio studio;
+                try {
+                    java.lang.reflect.Field field =
+                        MainActivity.class.getDeclaredField("designStudio");
+                    field.setAccessible(true);
+                    studio = (P7DesignStudio) field.get(activity);
+                } catch (ReflectiveOperationException error) {
+                    throw new AssertionError(error);
+                }
+                assertNull(studio.activeThemeConfirmation());
+                View opener = byDescription(
+                    activity.getWindow().getDecorView(),
+                    "Ver todos: Previews de Temas");
+                assertAccessibleButton(opener);
+                assertTrue("View All must work normally after Cancel",
+                    opener.performClick());
+                android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                assertNotNull(chooser);
+                assertTrue(chooser.isShowing());
+                assertTrue(chooser.getButton(
+                    android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+            });
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                android.app.AlertDialog confirmation = first.get();
+                if (confirmation != null && confirmation.isShowing())
+                    confirmation.cancel();
+            });
+        }
+    }
+
+    @Test public void repeatedViewAllNeverStacksNativeCatalogChoosers() {
+        final String[] sections = {
+            "Previews de Temas", "Opções de Layout", "Presets de Aparência"
+        };
+        final String[] titles = {
+            "Temas disponíveis", "Layouts disponíveis", "Presets disponíveis"
+        };
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> original =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            opened = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    original.set(new java.util.HashMap<>(activity
+                        .getSharedPreferences("v3_personalizacao", 0).getAll()));
+                });
+                for (int index = 0; index < sections.length; index++) {
+                    final int selection = index;
+                    scenario.onActivity(activity -> {
+                        View root = activity.getWindow().getDecorView();
+                        View opener = byDescription(
+                            root, "Ver todos: " + sections[selection]);
+                        assertAccessibleButton(opener);
+                        assertTrue("First View All click opens chooser",
+                            opener.performClick());
+                        P7DesignStudio studio;
+                        try {
+                            java.lang.reflect.Field field =
+                                MainActivity.class.getDeclaredField("designStudio");
+                            field.setAccessible(true);
+                            studio = (P7DesignStudio) field.get(activity);
+                        } catch (ReflectiveOperationException error) {
+                            throw new AssertionError("Cannot inspect Design Studio",
+                                error);
+                        }
+                        assertNotNull(studio);
+                        android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                        opened.set(chooser);
+                        assertNotNull("A real chooser must exist", chooser);
+                        assertTrue(chooser.isShowing());
+                        assertNotNull(chooser.getWindow());
+                        assertTrue("Chooser title must match its actual catalog",
+                            hasText(chooser.getWindow().getDecorView(),
+                                titles[selection]));
+                        assertTrue("Second queued View All click handled",
+                            opener.performClick());
+                        assertSame("View All cannot stack a second native chooser",
+                            chooser, studio.activeCatalogChooser());
+                        assertTrue("First chooser must remain visible",
+                            chooser.isShowing());
+                        assertEquals("Opening a chooser cannot save appearance",
+                            original.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                        android.widget.Button close = chooser.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE);
+                        assertNotNull(close);
+                        assertEquals("Fechar", close.getText().toString());
+                        assertTrue("Fechar must be clickable", close.performClick());
+                    });
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        assertNotNull(opened.get());
+                        assertFalse("Fechar dismisses the active catalog chooser",
+                            opened.get().isShowing());
+                        try {
+                            java.lang.reflect.Field field =
+                                MainActivity.class.getDeclaredField("designStudio");
+                            field.setAccessible(true);
+                            P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                            assertNull("Dismiss must release the chooser handle",
+                                studio.activeCatalogChooser());
+                        } catch (ReflectiveOperationException error) {
+                            throw new AssertionError("Cannot verify chooser cleanup",
+                                error);
+                        }
+                        assertEquals("Closing a chooser cannot save appearance",
+                            original.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                    });
+                    opened.set(null);
+                }
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = opened.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void designSubtabsAndAllCatalogOpenersAnnounceButtonRoles() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

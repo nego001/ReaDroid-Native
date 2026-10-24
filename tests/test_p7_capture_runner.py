@@ -158,7 +158,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(39, navigation.count("@Test"))
+        self.assertEqual(41, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
         icon_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                          "P7IconTemplatesLargeFontInstrumentedTest.java").read_text(
@@ -169,6 +169,19 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(1, icon_isolated.count("@Test"))
         self.assertIn("Icon label must fit in tile height", icon_isolated)
         self.assertIn("NegrescoTheme.apply(context)", icon_isolated)
+        self.assertEqual(1, navigation.count(
+            "void viewAllWaitsForThemeConfirmationAndRecoversAfterCancel()"))
+        self.assertIn("View All may not appear behind Apply confirmation", navigation)
+        self.assertIn("View All must work normally after Cancel", navigation)
+        self.assertEqual(1, navigation.count(
+            "void repeatedViewAllNeverStacksNativeCatalogChoosers()"))
+        self.assertIn("View All cannot stack a second native chooser", navigation)
+        self.assertIn("Closing a chooser cannot save appearance", navigation)
+        catalog_source = (ROOT / "app/src/main/java/com/readroid/app/"
+            "P7DesignStudio.java").read_text(encoding="utf-8")
+        self.assertIn("activeCatalogChooser()", catalog_source)
+        self.assertIn("if (catalogChooser != null && catalogChooser.isShowing()) return;", catalog_source)
+        self.assertIn("if (catalogChooser == chooser) catalogChooser = null;", catalog_source)
         self.assertEqual(1, navigation.count(
             "void customThemeOpensDesignWithoutFakeAppliedBadge()"))
         self.assertIn("Custom theme cannot have an applied check", navigation)

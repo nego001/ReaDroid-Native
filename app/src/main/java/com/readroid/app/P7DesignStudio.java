@@ -393,15 +393,29 @@ public final class P7DesignStudio {
         }
     }
 
+    // One native chooser per Studio: queued accessibility activations must not
+    // stack behind each other or behind a pending Apply/Cancel confirmation.
+    private android.app.AlertDialog catalogChooser;
+
+    /** The real chooser, package-scoped for Android instrumentation. */
+    android.app.AlertDialog activeCatalogChooser() {
+        return catalogChooser;
+    }
+
     /** All preview families have a real chooser and explicit apply confirmation. */
     private void showCatalogDialog(int type) {
+        if (catalogChooser != null && catalogChooser.isShowing()) return;
+        if ((themeConfirmation != null && themeConfirmation.isShowing())
+                || (layoutConfirmation != null && layoutConfirmation.isShowing())
+                || (presetConfirmation != null && presetConfirmation.isShowing()))
+            return;
         final String[] names = type == 0 ? P7ThemeCatalog.names() :
             type == 1 ? P7VisualCatalog.LAYOUT_NAMES : P7VisualCatalog.PRESET_NAMES;
         int selected = type == 0 ? selectedTheme :
             type == 1 ? selectedLayout : selectedPreset;
         String title = type == 0 ? "Temas disponíveis" :
             type == 1 ? "Layouts disponíveis" : "Presets disponíveis";
-        new android.app.AlertDialog.Builder(a)
+        android.app.AlertDialog chooser = new android.app.AlertDialog.Builder(a)
             .setTitle(title)
             .setSingleChoiceItems(names, selected, (dialog, which) -> {
                 if (type == 0) selectedTheme = which;
@@ -413,7 +427,12 @@ public final class P7DesignStudio {
                 else if (type == 1) confirmLayout();
                 else confirmPreset();
             })
-            .setNegativeButton("Fechar", null).show();
+            .setNegativeButton("Fechar", null).create();
+        chooser.setOnDismissListener(dismissed -> {
+            if (catalogChooser == chooser) catalogChooser = null;
+        });
+        catalogChooser = chooser;
+        chooser.show();
     }
 
     /**
