@@ -3,6 +3,7 @@ package com.readroid.app;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.view.Gravity;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -88,6 +89,16 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     NegrescoTheme.dp(activity, 48), options.getLayoutParams().width);
                 assertEquals("File menu height must be at least 48dp",
                     NegrescoTheme.dp(activity, 48), options.getLayoutParams().height);
+                AccessibilityNodeInfo optionsNode = options.createAccessibilityNodeInfo();
+                assertNotNull(optionsNode);
+                assertEquals("Overflow must be announced as a native button",
+                    android.widget.Button.class.getName(),
+                    optionsNode.getClassName().toString());
+                assertEquals("Opções de assets/",
+                    optionsNode.getContentDescription().toString());
+                assertTrue("Overflow must be a separate clickable action",
+                    optionsNode.isClickable());
+                optionsNode.recycle();
                 assertTrue(options.performClick());
                 assertEquals(1, optionsOpened.get());
                 assertEquals("Opening options must not enter a folder",
@@ -105,6 +116,16 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     .getText().toString().contains("AndroidManifest.xml"));
                 assertTrue(((TextView) labels.getChildAt(1))
                     .getText().toString().contains("ALTERADO"));
+                View fileOptions = descendant(edited, "Opções de AndroidManifest.xml");
+                assertNotNull("Edited file also needs an independent overflow", fileOptions);
+                AccessibilityNodeInfo fileNode = fileOptions.createAccessibilityNodeInfo();
+                assertEquals(android.widget.Button.class.getName(),
+                    fileNode.getClassName().toString());
+                assertTrue(fileNode.isClickable());
+                fileNode.recycle();
+                assertTrue(fileOptions.performClick());
+                assertEquals("File overflow must not open the file", 1, opened.get());
+                assertEquals(2, optionsOpened.get());
             });
         }
     }
