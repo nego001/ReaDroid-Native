@@ -99,10 +99,15 @@ jobs:
             bash tools/p7_capture_populated.sh ${{ matrix.api }}
             # Run the full regression suite only after the capture. Gradle may
             # reinstall debug APKs, but the screenshot is already on the host.
-            # Split the exact 21 test selectors into two REQUIRED Gradle
+            # Split the exact 22 test selectors into three REQUIRED Gradle
             # invocations. On API35 an intermittently lost emulator stopped
             # during the large-font navigation test after 24 other tests.
-            # Run the FULL navigation class in a clean session first.
+            # Run the isolated bottom-tab class, then the rest of navigation.
+            # First session: preserve 135% bottom-navigation assertions in isolation.
+            # API35 has intermittently lost the emulator when this method ran
+            # late in navigation. Every session fails closed with set -eu.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7BottomNavigationLargeFontInstrumentedTest
+            # Second session: all other 36 navigation tests, unchanged.
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7NavigationInstrumentedTest
             # All remaining test selectors (including overlay guard) remain
             # mandatory; either Gradle failure blocks the entire screenshot gate.

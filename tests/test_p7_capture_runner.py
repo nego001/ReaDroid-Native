@@ -91,23 +91,40 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "gradle --no-daemon :app:connectedDebugAndroidTest")
         self.assertLess(built, captured)
         self.assertLess(captured, regression)
-        # Both full connectedAndroidTest invocations are REQUIRED. The suite
+        # All three connectedAndroidTest invocations are REQUIRED. The suite
         # may be split for emulator stability but must not shrink or duplicate.
         import re
         commands = re.findall(
             r"gradle --no-daemon :app:connectedDebugAndroidTest "
             r"-Pandroid\.testInstrumentationRunnerArguments\.class=([^\s]+)",
             workflow)
-        self.assertEqual(2, len(commands))
+        self.assertEqual(3, len(commands))
         selections = [name for cmd in commands for name in cmd.split(",")]
-        self.assertEqual(21, len(selections))
-        self.assertEqual(21, len(set(selections)))
+        self.assertEqual(22, len(selections))
+        self.assertEqual(22, len(set(selections)))
         self.assertIn("ram-size: 3072M", workflow)
         self.assertIn("free -m", workflow)
         self.assertEqual(
-            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            ["com.readroid.app.P7BottomNavigationLargeFontInstrumentedTest"],
             commands[0].split(","))
-        self.assertEqual(20, len(commands[1].split(",")))
+        self.assertEqual(
+            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            commands[1].split(","))
+        self.assertEqual(20, len(commands[2].split(",")))
+        navigation = (ROOT / "app/src/androidTest/java/com/readroid/app/"
+                      "P7NavigationInstrumentedTest.java").read_text(
+                          encoding="utf-8")
+        isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
+                    "P7BottomNavigationLargeFontInstrumentedTest.java").read_text(
+                        encoding="utf-8")
+        method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
+        self.assertNotIn(method, navigation)
+        self.assertEqual(1, isolated.count(method))
+        self.assertEqual(36, navigation.count("@Test"))
+        self.assertEqual(1, isolated.count("@Test"))
+        self.assertIn("navTabHeightDp(310, 3f, 1.35f, true)", isolated)
+        self.assertIn("NegrescoTheme.apply(context)", isolated)
+        self.assertIn("Navigation row must reserve enlarged text", isolated)
         self.assertIn(
             "com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest"
             "#detectsSyntheticSystemOverlayBeforeEvidenceExport", selections)
