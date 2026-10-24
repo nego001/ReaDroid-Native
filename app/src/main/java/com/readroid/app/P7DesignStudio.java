@@ -618,7 +618,9 @@ public final class P7DesignStudio {
         body.addView(row);
         creator(row, R.drawable.ic_p7_icon_creator, "Criador de Ícones",
             "Criar e exportar PNG", -4, true);
-        creator(row, R.drawable.ic_negrecodroid_foreground, "Logo Studio",
+        // The reference card carries a freestanding metallic N; the app's
+        // installed shield remains unchanged in every launcher resource.
+        creator(row, R.drawable.ic_p7_logo_studio_monogram, "Logo Studio",
             "Criar e exportar logo PNG", -5, false);
     }
 
