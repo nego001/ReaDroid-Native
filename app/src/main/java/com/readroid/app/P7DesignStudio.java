@@ -426,6 +426,13 @@ public final class P7DesignStudio {
             : ", selecionar prévia";
     }
 
+    /** Check badge and spoken state must describe a SAVED choice, not preview. */
+    static String appearanceTileState(int kind, boolean selected, boolean applied) {
+        return applied ? (kind == 0 ? ", tema aplicado" : ", layout aplicado")
+            : selected ? ", prévia escolhida, ainda não aplicada"
+            : ", selecionar prévia";
+    }
+
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
@@ -459,11 +466,14 @@ public final class P7DesignStudio {
             new P7ThemePreviewView(a, accent, kind, themeSurface, themeGlow);
         previewFrame.addView(miniature,
             new FrameLayout.LayoutParams(-1, -1));
-        // The check mark means a COMMITTED preset, not a temporary selection
-        // that is still waiting for the native Apply/Cancel confirmation.
-        boolean appliedPreset = kind == 2
-            && P7VisualCatalog.currentPreset(a) == themeSurface;
-        if (kind == 2 ? appliedPreset : selected) {
+        // Checkmarks always represent COMMITTED appearance; for themes the
+        // themeSurface parameter is a preview surface, not a catalog index.
+        boolean applied = kind == 2
+            ? P7VisualCatalog.currentPreset(a) == themeSurface
+            : kind == 1
+                ? P7VisualCatalog.currentLayout(a) == themeSurface
+                : name.equals(P7ThemeCatalog.nameAt(P7ThemeCatalog.currentTheme(a)));
+        if (applied) {
             TextView check = label("✓", 11, android.graphics.Color.WHITE, true);
             check.setGravity(Gravity.CENTER);
             GradientDrawable bubble = new GradientDrawable();
@@ -502,8 +512,8 @@ public final class P7DesignStudio {
         // not decoration. Include them in the single spoken card description.
         // Keep its existing name/selection prefix for navigation compatibility.
         card.setContentDescription(name +
-            (kind == 2 ? presetTileState(selected, appliedPreset)
-                : selected ? ", prévia selecionada" : ", selecionar prévia") +
+            (kind == 2 ? presetTileState(selected, applied)
+                : appearanceTileState(kind, selected, applied)) +
             (kind == 0 && !subtitle.isEmpty() ? ". " + subtitle : "") +
             (kind == 2 ? ". " + P7VisualCatalog.presetSummary(themeSurface) : ""));
         // The whole tile is the single interaction target. Tell TalkBack

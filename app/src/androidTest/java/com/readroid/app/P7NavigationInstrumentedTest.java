@@ -174,7 +174,7 @@ public final class P7NavigationInstrumentedTest {
                 assertTrue(hasText(root,"Previews de Temas"));
                 assertTrue(hasText(root,"Opções de Layout"));
                 assertTrue(hasText(root,"Presets de Aparência"));
-                View dark = byDescription(root,"Negreco Blue, prévia selecionada");
+                View dark = byDescription(root,"Negreco Blue, tema aplicado");
                 View matrix = byDescription(root,"Matrix Green, selecionar prévia");
                 assertNotNull(dark);
                 assertNotNull(matrix);
@@ -1311,6 +1311,123 @@ public final class P7NavigationInstrumentedTest {
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
                     android.app.AlertDialog opened = confirmation.get();
                     if (opened != null && opened.isShowing()) opened.cancel();
+                });
+            }
+        }
+    }
+
+    @Test public void themeAndLayoutBadgesRequireCommittedAppearance() {
+        assertEquals(", tema aplicado",
+            P7DesignStudio.appearanceTileState(0, false, true));
+        assertEquals(", layout aplicado",
+            P7DesignStudio.appearanceTileState(1, true, true));
+        assertEquals(", prévia escolhida, ainda não aplicada",
+            P7DesignStudio.appearanceTileState(0, true, false));
+        assertEquals(", prévia escolhida, ainda não aplicada",
+            P7DesignStudio.appearanceTileState(1, true, false));
+        assertEquals(", selecionar prévia",
+            P7DesignStudio.appearanceTileState(0, false, false));
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            pending = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    java.util.Map<String, ?> saved =
+                        new java.util.HashMap<>(prefs.getAll());
+                    P7DesignStudio studio;
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        studio = (P7DesignStudio) field.get(activity);
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError("Studio not inspectable", error);
+                    }
+                    assertNotNull(studio);
+                    int currentTheme = P7ThemeCatalog.currentTheme(activity);
+                    String appliedTheme = P7ThemeCatalog.nameAt(currentTheme);
+                    String nextTheme = P7ThemeCatalog.nameAt(
+                        currentTheme == 0 ? 1 : 0);
+                    View committed = byDescription(
+                        root, appliedTheme + ", tema aplicado");
+                    assertAccessibleButton(committed);
+                    assertEquals("Saved theme keeps blue check", 2,
+                        ((ViewGroup) ((ViewGroup) committed)
+                            .getChildAt(0)).getChildCount());
+                    View selectable = byDescription(
+                        root, nextTheme + ", selecionar prévia");
+                    assertAccessibleButton(selectable);
+                    assertTrue(selectable.performClick());
+                    android.app.AlertDialog dialog = studio.activeThemeConfirmation();
+                    pending.set(dialog);
+                    assertNotNull(dialog);
+                    assertTrue(dialog.isShowing());
+                    View proposed = byDescription(root,
+                        nextTheme + ", prévia escolhida, ainda não aplicada");
+                    assertAccessibleButton(proposed);
+                    assertEquals("Pending theme has no applied badge", 1,
+                        ((ViewGroup) ((ViewGroup) proposed)
+                            .getChildAt(0)).getChildCount());
+                    View prior = byDescription(root, appliedTheme + ", tema aplicado");
+                    assertNotNull(prior);
+                    assertEquals(2, ((ViewGroup) ((ViewGroup) prior)
+                        .getChildAt(0)).getChildCount());
+                    assertEquals("No preference changed by preview", saved,
+                        prefs.getAll());
+                    assertTrue(dialog.getButton(
+                        android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                    pending.set(null);
+                    assertEquals(saved, prefs.getAll());
+                    assertNotNull(byDescription(
+                        root, appliedTheme + ", tema aplicado"));
+
+                    int currentLayout = P7VisualCatalog.currentLayout(activity);
+                    String appliedLayout = P7VisualCatalog.LAYOUT_NAMES[currentLayout];
+                    String nextLayout = P7VisualCatalog.LAYOUT_NAMES[
+                        currentLayout == 0 ? 1 : 0];
+                    committed = byDescription(root, appliedLayout + ", layout aplicado");
+                    assertAccessibleButton(committed);
+                    assertEquals("Saved layout keeps blue check", 2,
+                        ((ViewGroup) ((ViewGroup) committed)
+                            .getChildAt(0)).getChildCount());
+                    selectable = byDescription(root, nextLayout + ", selecionar prévia");
+                    assertAccessibleButton(selectable);
+                    assertTrue(selectable.performClick());
+                    dialog = studio.activeLayoutConfirmation();
+                    pending.set(dialog);
+                    assertNotNull(dialog);
+                    assertTrue(dialog.isShowing());
+                    proposed = byDescription(root,
+                        nextLayout + ", prévia escolhida, ainda não aplicada");
+                    assertAccessibleButton(proposed);
+                    assertEquals("Pending layout has no applied badge", 1,
+                        ((ViewGroup) ((ViewGroup) proposed)
+                            .getChildAt(0)).getChildCount());
+                    prior = byDescription(root, appliedLayout + ", layout aplicado");
+                    assertNotNull(prior);
+                    assertEquals(2, ((ViewGroup) ((ViewGroup) prior)
+                        .getChildAt(0)).getChildCount());
+                    assertEquals("No layout saved before Apply", saved,
+                        prefs.getAll());
+                    assertTrue(dialog.getButton(
+                        android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                    pending.set(null);
+                    assertEquals("Cancel leaves all preferences unchanged",
+                        saved, prefs.getAll());
+                    assertNotNull(byDescription(
+                        root, appliedLayout + ", layout aplicado"));
+                });
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = pending.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
                 });
             }
         }

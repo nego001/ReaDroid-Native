@@ -158,7 +158,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(37, navigation.count("@Test"))
+        self.assertEqual(38, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
         icon_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                          "P7IconTemplatesLargeFontInstrumentedTest.java").read_text(
@@ -169,6 +169,16 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(1, icon_isolated.count("@Test"))
         self.assertIn("Icon label must fit in tile height", icon_isolated)
         self.assertIn("NegrescoTheme.apply(context)", icon_isolated)
+        self.assertEqual(1, navigation.count(
+            "void themeAndLayoutBadgesRequireCommittedAppearance()"))
+        self.assertIn("Pending theme has no applied badge", navigation)
+        self.assertIn("Pending layout has no applied badge", navigation)
+        studio_state = (ROOT / "app/src/main/java/com/readroid/app/"
+            "P7DesignStudio.java").read_text(encoding="utf-8")
+        self.assertIn("static String appearanceTileState(", studio_state)
+        self.assertIn("P7VisualCatalog.currentLayout(a) == themeSurface",
+            studio_state)
+        self.assertIn("if (applied) {", studio_state)
         self.assertEqual(1, navigation.count(
             "void repeatedThemeTapNeverStacksOrChangesConfirmedChoice()"))
         self.assertIn("No second theme dialog may replace the first", navigation)
