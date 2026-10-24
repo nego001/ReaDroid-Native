@@ -830,12 +830,20 @@ public final class P7NavigationInstrumentedTest {
             assertTrue(prefs.edit().putInt("font_percent", 135).commit());
             try (ActivityScenario<MainActivity> scenario =
                     ActivityScenario.launch(MainActivity.class)) {
+                // Use the same real Activity/Design navigation as users.
+                // Replacing MainActivity's window with a synthetic 320dp
+                // setContentView fixture was the last logcat event before
+                // recurring API35 emulator disappearance (no assertion trace).
+                // The 320dp layout is checked independently by compact-smoke.
                 scenario.onActivity(activity -> {
-                    LinearLayout fixture = new LinearLayout(activity);
-                    fixture.setOrientation(LinearLayout.VERTICAL);
-                    activity.setContentView(fixture, new ViewGroup.LayoutParams(
-                        NegrescoTheme.dp(activity, 320), -1));
-                    new P7DesignStudio(activity, fixture, new Button[13], 1);
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull("Native Design section must exist", design);
+                    assertTrue(design.performClick());
+                    View layoutTab = clickableText(root, "Layout");
+                    assertNotNull("Real Layout tab must be clickable", layoutTab);
+                    assertTrue(layoutTab.performClick());
+                    assertTrue(layoutTab.isSelected());
                 });
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync();
                 scenario.onActivity(activity -> {
