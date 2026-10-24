@@ -55,8 +55,15 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "  print('Success')\n"
             "elif args[:3]==['shell','am','instrument']:\n"
             "  print(os.environ.get('P7_INSTRUMENT_RESULT','OK (1 test)'))\n"
+            "  sys.exit(int(os.environ.get('P7_INSTRUMENT_EXIT','0')))\n"
             "elif args[:4]==['exec-out','run-as','com.readroid.app','cat']:\n"
             "  sys.stdout.buffer.write(pathlib.Path(os.environ['P7_PNG']).read_bytes())\n"
+            "elif args[:3]==['shell','getprop','sys.boot_completed']:\n"
+            "  print('1')\n"
+            "elif args[:3]==['shell','dumpsys','window']:\n"
+            "  print('mCurrentFocus=Window{u0 com.android.launcher3/.Launcher}')\n"
+            "elif args[:4]==['shell','dumpsys','activity','activities']:\n"
+            "  print('topResumedActivity=ActivityRecord{u0 com.android.launcher3/.Launcher}')\n"
             "else:\n"
             "  sys.exit(9)\n",
             encoding="utf-8")
@@ -215,6 +222,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         result = self.execute()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("P7_POPULATED_PNG_OK", result.stdout)
+        self.assertFalse((self.cwd / "p7-capture-diagnostics-android-29.txt").exists())
         self.assertTrue((self.cwd /
                          "p7-explorer-populated-android-29.png").is_file())
         commands = self.log.read_text()
@@ -240,6 +248,26 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertFalse((self.cwd /
                           "p7-explorer-populated-android-29.png").exists())
+        diag = self.cwd / "p7-capture-diagnostics-android-29.txt"
+        self.assertTrue(diag.is_file(), result.stderr)
+        content = diag.read_text(encoding="utf-8")
+        self.assertIn("P7_CAPTURE_DIAGNOSTICS api=29", content)
+        self.assertIn("instrument_exit=0", content)
+        self.assertIn("mCurrentFocus=Window{u0 com.android.launcher3/.Launcher}", content)
+        self.assertIn("topResumedActivity=ActivityRecord", content)
+        commands = self.log.read_text()
+        self.assertIn("shell dumpsys window", commands)
+        self.assertIn("shell dumpsys activity activities", commands)
+
+    def test_instrumentation_adb_nonzero_blocks_and_leaves_diagnostics(self):
+        self.env["P7_INSTRUMENT_EXIT"] = "16"
+        result = self.execute("35")
+        self.assertNotEqual(0, result.returncode)
+        diag = self.cwd / "p7-capture-diagnostics-android-35.txt"
+        self.assertTrue(diag.is_file())
+        self.assertIn("instrument_exit=16", diag.read_text())
+        self.assertFalse((self.cwd /
+                          "p7-explorer-populated-android-35.png").exists())
 
     def test_missing_android_test_package_cannot_pass(self):
         (self.cwd /

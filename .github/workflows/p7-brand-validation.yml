@@ -179,6 +179,7 @@ jobs:
             p7-large-text-*-android-*.png
             p7-icon-workshop-android-*.png
             p7-logo-workshop-android-*.png
+            p7-capture-diagnostics-android-*.txt
             p7-evidence-android-*.json
             p7-visual-review-android-*.html
             app/build/outputs/androidTest-results/connected/
