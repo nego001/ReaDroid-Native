@@ -162,6 +162,37 @@ public final class P7VisualCatalogInstrumentedTest {
         }
     }
 
+    @Test public void primaryLayoutMiniaturesReflectRealDensityAndRadius() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        Bitmap[] previews = new Bitmap[3];
+        try {
+            for (int layout = 0; layout < 3; layout++) {
+                assertArrayEquals("Primary layouts keep actual 3x2 actions",
+                    new int[]{3, 3}, P7VisualCatalog.quickActionRowSizes(layout));
+                previews[layout] = Bitmap.createBitmap(
+                    100, 100, Bitmap.Config.ARGB_8888);
+                P7ThemePreviewView view = new P7ThemePreviewView(
+                    context, 0xff1688ff, 1, layout, false);
+                view.layout(0, 0, 100, 100);
+                view.draw(new Canvas(previews[layout]));
+            }
+            assertFalse("Compact must not look identical to Standard",
+                previews[0].sameAs(previews[1]));
+            assertFalse("Modern roundness/spacing must differ from Standard",
+                previews[0].sameAs(previews[2]));
+            assertFalse("Compact must not look identical to Modern",
+                previews[1].sameAs(previews[2]));
+            assertEquals("Compact shows its denser first card earlier",
+                0xff20364d, previews[1].getPixel(30, 31));
+            assertEquals("Standard keeps extra breathing room",
+                0xff07101d, previews[0].getPixel(30, 31));
+        } finally {
+            for (Bitmap preview : previews)
+                if (preview != null) preview.recycle();
+        }
+    }
+
     @Test public void twoColumnMiniatureDiffersFromListAndStandard() {
         Context context = androidx.test.platform.app.InstrumentationRegistry
             .getInstrumentation().getTargetContext();
