@@ -102,6 +102,8 @@ class P7CaptureRunnerTests(unittest.TestCase):
         selections = [name for cmd in commands for name in cmd.split(",")]
         self.assertEqual(21, len(selections))
         self.assertEqual(21, len(set(selections)))
+        self.assertIn("ram-size: 3072M", workflow)
+        self.assertIn("free -m", workflow)
         self.assertEqual(
             ["com.readroid.app.P7NavigationInstrumentedTest"],
             commands[0].split(","))
