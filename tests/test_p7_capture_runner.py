@@ -177,6 +177,13 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "void crossFamilyAppearanceConfirmationsNeverStackOrLeavePhantomPreview()"))
         self.assertIn("Layout cannot stack behind theme confirmation", navigation)
         self.assertIn("Theme cannot stack behind layout confirmation", navigation)
+        self.assertIn("Theme must finish dismissal before next modal", navigation)
+        self.assertIn("Layout OnDismiss must release its reference", navigation)
+        self.assertIn("Theme must close before layout can open", navigation)
+        self.assertIn("Both cancels preserve all appearance preferences", navigation)
+        self.assertGreaterEqual(navigation.count(
+            "InstrumentationRegistry.getInstrumentation().waitForIdleSync()"), 5)
+
         self.assertIn("Layout cannot stack behind preset confirmation", navigation)
         all_dialogs = (ROOT / "app/src/main/java/com/readroid/app/"
             "P7DesignStudio.java").read_text(encoding="utf-8")

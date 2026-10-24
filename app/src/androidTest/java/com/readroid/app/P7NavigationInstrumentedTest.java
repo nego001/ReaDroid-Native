@@ -336,7 +336,23 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    /** Real Activity-owned dialog, not a detached synthetic mock. */
+    private static P7DesignStudio studioForModalRegression(MainActivity activity) {
+        try {
+            java.lang.reflect.Field field =
+                MainActivity.class.getDeclaredField("designStudio");
+            field.setAccessible(true);
+            P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+            assertNotNull("Activity must retain its Design Studio", studio);
+            return studio;
+        } catch (ReflectiveOperationException error) {
+            throw new AssertionError("Cannot inspect real Design Studio", error);
+        }
+    }
+
     @Test public void crossFamilyAppearanceConfirmationsNeverStackOrLeavePhantomPreview() {
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, ?>>
+            original = new java.util.concurrent.atomic.AtomicReference<>();
         final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
             pending = new java.util.concurrent.atomic.AtomicReference<>();
         try (ActivityScenario<MainActivity> scenario =
@@ -347,107 +363,126 @@ public final class P7NavigationInstrumentedTest {
                     assertTrue(byDescription(root, "Abrir seção Design").performClick());
                     android.content.SharedPreferences prefs =
                         activity.getSharedPreferences("v3_personalizacao", 0);
-                    java.util.Map<String, ?> saved =
-                        new java.util.HashMap<>(prefs.getAll());
-                    P7DesignStudio studio;
-                    try {
-                        java.lang.reflect.Field f =
-                            MainActivity.class.getDeclaredField("designStudio");
-                        f.setAccessible(true);
-                        studio = (P7DesignStudio) f.get(activity);
-                    } catch (ReflectiveOperationException e) {
-                        throw new AssertionError("Studio unavailable", e);
-                    }
-                    assertNotNull(studio);
-                    int currentTheme = P7ThemeCatalog.currentTheme(activity);
-                    String themeChoice = P7ThemeCatalog.nameAt(
-                        currentTheme == 0 ? 1 : 0);
-                    String savedTheme = currentTheme < 0 ? null
-                        : P7ThemeCatalog.nameAt(currentTheme);
-                    int currentLayout = P7VisualCatalog.currentLayout(activity);
-                    String layoutChoice = P7VisualCatalog.LAYOUT_NAMES[
-                        currentLayout == 0 ? 1 : 0];
-                    String savedLayout = P7VisualCatalog.LAYOUT_NAMES[currentLayout];
-                    int currentPreset = P7VisualCatalog.currentPreset(activity);
-                    String presetChoice = P7VisualCatalog.PRESET_NAMES[
-                        currentPreset == 0 ? 1 : 0];
-                    String savedPreset = currentPreset < 0 ? null
-                        : P7VisualCatalog.PRESET_NAMES[currentPreset];
-
-                    View themeTile = byDescription(root, themeChoice + ",");
-                    assertAccessibleButton(themeTile);
-                    assertTrue(themeTile.performClick());
-                    android.app.AlertDialog themeDialog =
-                        studio.activeThemeConfirmation();
-                    pending.set(themeDialog);
-                    assertNotNull(themeDialog);
-                    assertTrue(themeDialog.isShowing());
-                    assertTrue(byDescription(root, layoutChoice + ",")
-                        .performClick());
+                    original.set(new java.util.HashMap<>(prefs.getAll()));
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    int current = P7ThemeCatalog.currentTheme(activity);
+                    String choice = P7ThemeCatalog.nameAt(current == 0 ? 1 : 0);
+                    assertTrue(byDescription(root, choice + ",").performClick());
+                    android.app.AlertDialog dialog = studio.activeThemeConfirmation();
+                    pending.set(dialog);
+                    assertNotNull("Theme confirmation must open", dialog);
+                    assertTrue(dialog.isShowing());
+                    int layout = P7VisualCatalog.currentLayout(activity);
+                    String otherLayout = P7VisualCatalog.LAYOUT_NAMES[
+                        layout == 0 ? 1 : 0];
+                    assertTrue(byDescription(root, otherLayout + ",").performClick());
                     assertNull("Layout cannot stack behind theme confirmation",
                         studio.activeLayoutConfirmation());
-                    assertTrue(themeDialog.isShowing());
-                    assertTrue(byDescription(root, presetChoice + ",")
-                        .performClick());
+                    int preset = P7VisualCatalog.currentPreset(activity);
+                    String otherPreset = P7VisualCatalog.PRESET_NAMES[
+                        preset == 0 ? 1 : 0];
+                    assertTrue(byDescription(root, otherPreset + ",").performClick());
                     assertNull("Preset cannot stack behind theme confirmation",
                         studio.activePresetConfirmation());
-                    assertTrue(themeDialog.isShowing());
+                    assertTrue("Original theme confirmation must survive blocked taps",
+                        dialog.isShowing());
                     assertNotNull(byDescription(root,
-                        savedLayout + ", layout aplicado"));
-                    if (savedPreset != null)
-                        assertNotNull(byDescription(root,
-                            savedPreset + ", preset aplicado"));
-                    assertEquals("Blocked choices must not persist",
-                        saved, prefs.getAll());
-                    assertTrue(themeDialog.getButton(
+                        P7VisualCatalog.LAYOUT_NAMES[layout] + ", layout aplicado"));
+                    assertEquals("Blocked choices cannot save preferences",
+                        original.get(), prefs.getAll());
+                    assertTrue(dialog.getButton(
                         android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
-                    pending.set(null);
-                    if (savedTheme != null)
-                        assertNotNull(byDescription(root,
-                            savedTheme + ", tema aplicado"));
-
-                    assertTrue(byDescription(root, layoutChoice + ",")
-                        .performClick());
-                    android.app.AlertDialog layoutDialog =
-                        studio.activeLayoutConfirmation();
-                    pending.set(layoutDialog);
-                    assertNotNull(layoutDialog);
-                    assertTrue(layoutDialog.isShowing());
-                    assertTrue(byDescription(root, themeChoice + ",")
-                        .performClick());
+                });
+                // OnDismiss is posted by AlertDialog after its button callback.
+                // Starting a different confirmation in the SAME main-thread
+                // onActivity block is not a valid user-visible interaction.
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    assertNotNull(pending.get());
+                    assertFalse("Theme must finish dismissal before next modal",
+                        pending.get().isShowing());
+                    assertNull("Theme OnDismiss must release the reference",
+                        studio.activeThemeConfirmation());
+                    View root = activity.getWindow().getDecorView();
+                    int applied = P7VisualCatalog.currentLayout(activity);
+                    String choice = P7VisualCatalog.LAYOUT_NAMES[
+                        applied == 0 ? 1 : 0];
+                    assertTrue(byDescription(root, choice + ",").performClick());
+                    android.app.AlertDialog dialog = studio.activeLayoutConfirmation();
+                    pending.set(dialog);
+                    assertNotNull("Layout confirmation must open after theme closes",
+                        dialog);
+                    assertTrue(dialog.isShowing());
+                    int current = P7ThemeCatalog.currentTheme(activity);
+                    String themeChoice = P7ThemeCatalog.nameAt(
+                        current == 0 ? 1 : 0);
+                    assertTrue(byDescription(root, themeChoice + ",").performClick());
                     assertNull("Theme cannot stack behind layout confirmation",
                         studio.activeThemeConfirmation());
-                    assertTrue(byDescription(root, presetChoice + ",")
-                        .performClick());
+                    int preset = P7VisualCatalog.currentPreset(activity);
+                    String presetChoice = P7VisualCatalog.PRESET_NAMES[
+                        preset == 0 ? 1 : 0];
+                    assertTrue(byDescription(root, presetChoice + ",").performClick());
                     assertNull("Preset cannot stack behind layout confirmation",
                         studio.activePresetConfirmation());
-                    assertTrue(layoutDialog.isShowing());
-                    assertTrue(layoutDialog.getButton(
+                    assertTrue(dialog.isShowing());
+                    assertEquals(original.get(), activity.getSharedPreferences(
+                        "v3_personalizacao", 0).getAll());
+                    assertTrue(dialog.getButton(
                         android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
-                    pending.set(null);
-
-                    assertTrue(byDescription(root, presetChoice + ",")
-                        .performClick());
-                    android.app.AlertDialog presetDialog =
-                        studio.activePresetConfirmation();
-                    pending.set(presetDialog);
-                    assertNotNull(presetDialog);
-                    assertTrue(presetDialog.isShowing());
-                    assertTrue(byDescription(root, themeChoice + ",")
-                        .performClick());
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    assertNotNull(pending.get());
+                    assertFalse(pending.get().isShowing());
+                    assertNull("Layout OnDismiss must release its reference",
+                        studio.activeLayoutConfirmation());
+                    View root = activity.getWindow().getDecorView();
+                    int current = P7VisualCatalog.currentPreset(activity);
+                    String choice = P7VisualCatalog.PRESET_NAMES[
+                        current == 0 ? 1 : 0];
+                    assertTrue(byDescription(root, choice + ",").performClick());
+                    android.app.AlertDialog dialog = studio.activePresetConfirmation();
+                    pending.set(dialog);
+                    assertNotNull("Preset confirmation must open after layout closes",
+                        dialog);
+                    assertTrue(dialog.isShowing());
+                    int theme = P7ThemeCatalog.currentTheme(activity);
+                    String otherTheme = P7ThemeCatalog.nameAt(theme == 0 ? 1 : 0);
+                    assertTrue(byDescription(root, otherTheme + ",").performClick());
                     assertNull("Theme cannot stack behind preset confirmation",
                         studio.activeThemeConfirmation());
-                    assertTrue(byDescription(root, layoutChoice + ",")
-                        .performClick());
+                    int layout = P7VisualCatalog.currentLayout(activity);
+                    String otherLayout = P7VisualCatalog.LAYOUT_NAMES[
+                        layout == 0 ? 1 : 0];
+                    assertTrue(byDescription(root, otherLayout + ",").performClick());
                     assertNull("Layout cannot stack behind preset confirmation",
                         studio.activeLayoutConfirmation());
-                    assertTrue(presetDialog.isShowing());
-                    assertTrue(presetDialog.getButton(
-                        android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
-                    pending.set(null);
+                    assertTrue(dialog.isShowing());
                     assertEquals("No cross-family tap may save or alter appearance",
-                        saved, prefs.getAll());
-                    assertNotNull(byDescription(root,
+                        original.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                    assertTrue(dialog.getButton(
+                        android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    assertNotNull(pending.get());
+                    assertFalse(pending.get().isShowing());
+                    assertNull(studio.activeThemeConfirmation());
+                    assertNull(studio.activeLayoutConfirmation());
+                    assertNull(studio.activePresetConfirmation());
+                    assertNull(studio.activeCatalogChooser());
+                    assertEquals("All blocked previews must remain uncommitted",
+                        original.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                    String savedLayout = P7VisualCatalog.LAYOUT_NAMES[
+                        P7VisualCatalog.currentLayout(activity)];
+                    assertNotNull(byDescription(
+                        activity.getWindow().getDecorView(),
                         savedLayout + ", layout aplicado"));
                 });
             } finally {
@@ -1792,6 +1827,8 @@ public final class P7NavigationInstrumentedTest {
             P7DesignStudio.appearanceTileState(1, true, false));
         assertEquals(", selecionar prévia",
             P7DesignStudio.appearanceTileState(0, false, false));
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, ?>>
+            original = new java.util.concurrent.atomic.AtomicReference<>();
         final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
             pending = new java.util.concurrent.atomic.AtomicReference<>();
         try (ActivityScenario<MainActivity> scenario =
@@ -1799,95 +1836,98 @@ public final class P7NavigationInstrumentedTest {
             try {
                 scenario.onActivity(activity -> {
                     View root = activity.getWindow().getDecorView();
-                    View design = byDescription(root, "Abrir seção Design");
-                    assertNotNull(design);
-                    assertTrue(design.performClick());
+                    assertTrue(byDescription(root, "Abrir seção Design").performClick());
                     android.content.SharedPreferences prefs =
                         activity.getSharedPreferences("v3_personalizacao", 0);
-                    java.util.Map<String, ?> saved =
-                        new java.util.HashMap<>(prefs.getAll());
-                    P7DesignStudio studio;
-                    try {
-                        java.lang.reflect.Field field =
-                            MainActivity.class.getDeclaredField("designStudio");
-                        field.setAccessible(true);
-                        studio = (P7DesignStudio) field.get(activity);
-                    } catch (ReflectiveOperationException error) {
-                        throw new AssertionError("Studio not inspectable", error);
-                    }
-                    assertNotNull(studio);
-                    int currentTheme = P7ThemeCatalog.currentTheme(activity);
-                    String appliedTheme = P7ThemeCatalog.nameAt(currentTheme);
-                    String nextTheme = P7ThemeCatalog.nameAt(
-                        currentTheme == 0 ? 1 : 0);
+                    original.set(new java.util.HashMap<>(prefs.getAll()));
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    int current = P7ThemeCatalog.currentTheme(activity);
+                    String appliedName = P7ThemeCatalog.nameAt(current);
+                    String proposalName = P7ThemeCatalog.nameAt(
+                        current == 0 ? 1 : 0);
                     View committed = byDescription(
-                        root, appliedTheme + ", tema aplicado");
+                        root, appliedName + ", tema aplicado");
                     assertAccessibleButton(committed);
                     assertEquals("Saved theme keeps blue check", 2,
                         ((ViewGroup) ((ViewGroup) committed)
                             .getChildAt(0)).getChildCount());
                     View selectable = byDescription(
-                        root, nextTheme + ", selecionar prévia");
+                        root, proposalName + ", selecionar prévia");
                     assertAccessibleButton(selectable);
                     assertTrue(selectable.performClick());
                     android.app.AlertDialog dialog = studio.activeThemeConfirmation();
                     pending.set(dialog);
                     assertNotNull(dialog);
                     assertTrue(dialog.isShowing());
-                    View proposed = byDescription(root,
-                        nextTheme + ", prévia escolhida, ainda não aplicada");
-                    assertAccessibleButton(proposed);
+                    View preview = byDescription(root,
+                        proposalName + ", prévia escolhida, ainda não aplicada");
+                    assertAccessibleButton(preview);
                     assertEquals("Pending theme has no applied badge", 1,
-                        ((ViewGroup) ((ViewGroup) proposed)
+                        ((ViewGroup) ((ViewGroup) preview)
                             .getChildAt(0)).getChildCount());
-                    View prior = byDescription(root, appliedTheme + ", tema aplicado");
-                    assertNotNull(prior);
-                    assertEquals(2, ((ViewGroup) ((ViewGroup) prior)
-                        .getChildAt(0)).getChildCount());
-                    assertEquals("No preference changed by preview", saved,
-                        prefs.getAll());
+                    assertNotNull(byDescription(
+                        root, appliedName + ", tema aplicado"));
+                    assertEquals("Unconfirmed theme must not change preferences",
+                        original.get(), prefs.getAll());
                     assertTrue(dialog.getButton(
                         android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
-                    pending.set(null);
-                    assertEquals(saved, prefs.getAll());
-                    assertNotNull(byDescription(
-                        root, appliedTheme + ", tema aplicado"));
-
-                    int currentLayout = P7VisualCatalog.currentLayout(activity);
-                    String appliedLayout = P7VisualCatalog.LAYOUT_NAMES[currentLayout];
-                    String nextLayout = P7VisualCatalog.LAYOUT_NAMES[
-                        currentLayout == 0 ? 1 : 0];
-                    committed = byDescription(root, appliedLayout + ", layout aplicado");
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull(pending.get());
+                    assertFalse("Theme must close before layout can open",
+                        pending.get().isShowing());
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    assertNull(studio.activeThemeConfirmation());
+                    View root = activity.getWindow().getDecorView();
+                    int current = P7VisualCatalog.currentLayout(activity);
+                    String savedName = P7VisualCatalog.LAYOUT_NAMES[current];
+                    String proposal = P7VisualCatalog.LAYOUT_NAMES[
+                        current == 0 ? 1 : 0];
+                    View committed = byDescription(
+                        root, savedName + ", layout aplicado");
                     assertAccessibleButton(committed);
                     assertEquals("Saved layout keeps blue check", 2,
                         ((ViewGroup) ((ViewGroup) committed)
                             .getChildAt(0)).getChildCount());
-                    selectable = byDescription(root, nextLayout + ", selecionar prévia");
+                    View selectable = byDescription(root,
+                        proposal + ", selecionar prévia");
                     assertAccessibleButton(selectable);
                     assertTrue(selectable.performClick());
-                    dialog = studio.activeLayoutConfirmation();
+                    android.app.AlertDialog dialog = studio.activeLayoutConfirmation();
                     pending.set(dialog);
-                    assertNotNull(dialog);
+                    assertNotNull("Layout must open after theme dismisses", dialog);
                     assertTrue(dialog.isShowing());
-                    proposed = byDescription(root,
-                        nextLayout + ", prévia escolhida, ainda não aplicada");
-                    assertAccessibleButton(proposed);
+                    View preview = byDescription(root,
+                        proposal + ", prévia escolhida, ainda não aplicada");
+                    assertAccessibleButton(preview);
                     assertEquals("Pending layout has no applied badge", 1,
-                        ((ViewGroup) ((ViewGroup) proposed)
+                        ((ViewGroup) ((ViewGroup) preview)
                             .getChildAt(0)).getChildCount());
-                    prior = byDescription(root, appliedLayout + ", layout aplicado");
-                    assertNotNull(prior);
-                    assertEquals(2, ((ViewGroup) ((ViewGroup) prior)
-                        .getChildAt(0)).getChildCount());
-                    assertEquals("No layout saved before Apply", saved,
-                        prefs.getAll());
+                    assertNotNull(byDescription(
+                        root, savedName + ", layout aplicado"));
+                    assertEquals("Unconfirmed layout cannot save appearance",
+                        original.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
                     assertTrue(dialog.getButton(
                         android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
-                    pending.set(null);
-                    assertEquals("Cancel leaves all preferences unchanged",
-                        saved, prefs.getAll());
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull(pending.get());
+                    assertFalse(pending.get().isShowing());
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    assertNull("Layout dialog must release its reference",
+                        studio.activeLayoutConfirmation());
+                    assertNull(studio.activeThemeConfirmation());
+                    assertEquals("Both cancels preserve all appearance preferences",
+                        original.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                    String saved = P7VisualCatalog.LAYOUT_NAMES[
+                        P7VisualCatalog.currentLayout(activity)];
                     assertNotNull(byDescription(
-                        root, appliedLayout + ", layout aplicado"));
+                        activity.getWindow().getDecorView(),
+                        saved + ", layout aplicado"));
                 });
             } finally {
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
