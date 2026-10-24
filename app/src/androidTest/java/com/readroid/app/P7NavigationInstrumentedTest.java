@@ -925,6 +925,53 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void creatorCardsUseRealVectorArtworkInsteadOfTextSymbols() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+
+                View iconCard = byDescription(root, "Criador de Ícones: ");
+                View logoCard = byDescription(root, "Logo Studio: ");
+                assertNotNull("Icon Creator action missing", iconCard);
+                assertNotNull("Logo Studio action missing", logoCard);
+                assertTrue(iconCard.isClickable());
+                assertTrue(logoCard.isClickable());
+
+                int[] expected = {
+                    R.drawable.ic_p7_icon_creator,
+                    R.drawable.ic_negrecodroid_foreground
+                };
+                View[] cards = {iconCard, logoCard};
+                for (int i = 0; i < cards.length; i++) {
+                    assertTrue("Creator action must be a native layout",
+                        cards[i] instanceof LinearLayout);
+                    View glyph = ((LinearLayout) cards[i]).getChildAt(0);
+                    assertTrue("Creator cannot use plain Unicode text artwork",
+                        glyph instanceof android.widget.ImageView);
+                    android.widget.ImageView vector =
+                        (android.widget.ImageView) glyph;
+                    assertEquals("Wrong vector associated with creator action",
+                        expected[i], ((Integer) vector.getTag()).intValue());
+                    assertNotNull("Vector drawable must actually load",
+                        vector.getDrawable());
+                    assertTrue(vector.getDrawable().getIntrinsicWidth() > 0);
+                    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                        vector.getImportantForAccessibility());
+                    assertEquals(NegrescoTheme.dp(activity, 42),
+                        vector.getLayoutParams().width);
+                    assertEquals(NegrescoTheme.dp(activity, 42),
+                        vector.getLayoutParams().height);
+                    assertTrue(cards[i].getContentDescription().toString()
+                        .contains(i == 0 ? "Criador de Ícones" : "Logo Studio"));
+                }
+            });
+        }
+    }
+
     @Test public void enlargedFontsStackCreatorCardsWithoutLosingActions() {
         assertFalse(P7DesignStudio.shouldStackCreators(393, 1f, 1f));
         assertTrue(P7DesignStudio.shouldStackCreators(320, 1f, 1f));
