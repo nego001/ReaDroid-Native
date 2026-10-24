@@ -99,44 +99,111 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
 
 
     /**
-     * A valid PNG may still contain an Android ANR modal over the real app.
-     * Keep this test screenshot honest: check the focused accessibility
-     * window AND a near-white centered rectangle characteristic of system
-     * ANR dialogs in our isolated, dark-theme fixture. This is not a general
-     * image classifier and does not certify visual fidelity.
+     * An isolated screenshot is invalid if any system modal covers the app.
+     * Android 15 may show the Pixel Launcher ANR independently of our app.
+     * Only that exact dialog, with the exact Android close action, can be
+     * dismissed once. An app ANR, unrelated modal or missing UI data FAILS.
      */
-    private static void assertExplorerWindowInForeground(
-            ActivityScenario<MainActivity> scenario) {
-        // getRootInActiveWindow() legitimately returns null on some emulator
-        // configurations without accessibility retrieval enabled. The
-        // resumed Activity must still own keyboard/window focus. An OS ANR
-        // overlay steals it, independently of accessibility availability.
-        // Android 15's headless Pixel launcher can briefly own focus even
-        // after ActivityScenario has reached RESUMED. Wait for actual window
-        // ownership (never infer it from lifecycle state alone); fail closed
-        // if an ANR or system overlay continues to obstruct this session.
+    private static boolean isLauncherAnrNode(AccessibilityNodeInfo node) {
+        return "android".contentEquals(
+                node.getPackageName() == null ? "" : node.getPackageName())
+            && "Pixel Launcher isn't responding".contentEquals(
+                node.getText() == null ? "" : node.getText());
+    }
+
+    private static boolean isAppAnrNode(AccessibilityNodeInfo node) {
+        CharSequence text = node.getText();
+        return text != null && (
+            "NegrecoDroid isn't responding".contentEquals(text)
+            || "NegrescoDroid isn't responding".contentEquals(text));
+    }
+
+    private static boolean isLauncherCloseNode(AccessibilityNodeInfo node) {
+        return "android".contentEquals(
+                node.getPackageName() == null ? "" : node.getPackageName())
+            && "android:id/aerr_close".equals(node.getViewIdResourceName())
+            && node.isClickable();
+    }
+
+    private static final class OverlayScan {
+        boolean launcherAnr;
+        boolean appAnr;
+        int closeCount;
+        AccessibilityNodeInfo closeNode;
+    }
+
+    private static void collectOverlay(AccessibilityNodeInfo node,
+            OverlayScan scan) {
+        if (isLauncherAnrNode(node)) scan.launcherAnr = true;
+        if (isAppAnrNode(node)) scan.appAnr = true;
+        if (isLauncherCloseNode(node)) {
+            scan.closeCount++;
+            if (scan.closeNode == null)
+                scan.closeNode = AccessibilityNodeInfo.obtain(node);
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child == null) continue;
+            try {
+                collectOverlay(child, scan);
+            } finally {
+                child.recycle();
+            }
+        }
+    }
+
+    private static boolean dismissKnownLauncherAnrOnce() {
+        AccessibilityNodeInfo active = InstrumentationRegistry
+            .getInstrumentation().getUiAutomation().getRootInActiveWindow();
+        if (active == null) return false;
+        OverlayScan scan = new OverlayScan();
+        try {
+            collectOverlay(active, scan);
+            // Never dismiss our own ANR. Require one unambiguous system
+            // close action before touching anything outside the app.
+            if (scan.appAnr || !scan.launcherAnr || scan.closeCount != 1
+                    || scan.closeNode == null) return false;
+            return scan.closeNode.performAction(
+                AccessibilityNodeInfo.ACTION_CLICK);
+        } finally {
+            if (scan.closeNode != null) scan.closeNode.recycle();
+            active.recycle();
+        }
+    }
+
+    private static boolean waitForExplorerFocus(
+            ActivityScenario<MainActivity> scenario, long timeoutMillis) {
         boolean[] hasFocus = {false};
-        long deadline = android.os.SystemClock.uptimeMillis() + 8000L;
+        long deadline = android.os.SystemClock.uptimeMillis() + timeoutMillis;
         do {
             scenario.onActivity(activity -> {
                 View decor = activity.getWindow().getDecorView();
                 hasFocus[0] = decor.hasWindowFocus()
-                    && !activity.isFinishing()
-                    && !activity.isDestroyed();
+                    && !activity.isFinishing() && !activity.isDestroyed();
             });
-            if (hasFocus[0]) break;
+            if (hasFocus[0]) return true;
             android.os.SystemClock.sleep(200L);
         } while (android.os.SystemClock.uptimeMillis() < deadline);
-        assertTrue("Explorer Activity lost foreground window focus "
-            + "after bounded 8s recovery", hasFocus[0]);
+        return false;
+    }
+
+    private static void assertExplorerWindowInForeground(
+            ActivityScenario<MainActivity> scenario) {
+        boolean hasFocus = waitForExplorerFocus(scenario, 8000L);
+        if (!hasFocus && dismissKnownLauncherAnrOnce()) {
+            // This recovers ONLY a confirmed Pixel Launcher ANR. Recheck the
+            // real Activity; do not infer success from clicking the OS dialog.
+            hasFocus = waitForExplorerFocus(scenario, 6000L);
+        }
+        assertTrue("Explorer Activity lost foreground window focus after "
+            + "bounded recovery; no unrelated overlay was dismissed", hasFocus);
         AccessibilityNodeInfo active = InstrumentationRegistry
             .getInstrumentation().getUiAutomation().getRootInActiveWindow();
         if (active == null) return; // focus + pixel checks remain mandatory
         try {
             CharSequence owner = active.getPackageName();
             assertEquals("An unrelated system window covers the Explorer",
-                "com.readroid.app",
-                owner == null ? null : owner.toString());
+                "com.readroid.app", owner == null ? null : owner.toString());
         } finally {
             active.recycle();
         }
@@ -183,6 +250,40 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
             android.graphics.Paint paint = new android.graphics.Paint();
             paint.setColor(0xfff0eff5);
             canvas.drawRoundRect(40, 195, 260, 405, 18, 18, paint);
+            // A launcher ANR may be dismissed once, but only with a
+            // precise system label and a real Android close control.
+            AccessibilityNodeInfo launcher = AccessibilityNodeInfo.obtain();
+            AccessibilityNodeInfo appAnr = AccessibilityNodeInfo.obtain();
+            AccessibilityNodeInfo unrelated = AccessibilityNodeInfo.obtain();
+            AccessibilityNodeInfo close = AccessibilityNodeInfo.obtain();
+            try {
+                launcher.setPackageName("android");
+                launcher.setText("Pixel Launcher isn't responding");
+                appAnr.setPackageName("android");
+                appAnr.setText("NegrecoDroid isn't responding");
+                unrelated.setPackageName("android");
+                unrelated.setText("Camera isn't responding");
+                close.setPackageName("android");
+                close.setViewIdResourceName("android:id/aerr_close");
+                close.setClickable(true);
+                assertTrue(isLauncherAnrNode(launcher));
+                assertFalse(isLauncherAnrNode(appAnr));
+                assertFalse(isLauncherAnrNode(unrelated));
+                assertTrue(isAppAnrNode(appAnr));
+                assertFalse(isAppAnrNode(launcher));
+                assertFalse(isAppAnrNode(unrelated));
+                assertTrue(isLauncherCloseNode(close));
+                close.setClickable(false);
+                assertFalse(isLauncherCloseNode(close));
+                close.setClickable(true);
+                close.setPackageName("com.readroid.app");
+                assertFalse(isLauncherCloseNode(close));
+            } finally {
+                launcher.recycle();
+                appAnr.recycle();
+                unrelated.recycle();
+                close.recycle();
+            }
             assertNoBrightSystemOverlay(dark);
             try {
                 assertNoBrightSystemOverlay(blocked);
