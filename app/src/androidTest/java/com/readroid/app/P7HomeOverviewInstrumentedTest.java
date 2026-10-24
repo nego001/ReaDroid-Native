@@ -97,6 +97,66 @@ public final class P7HomeOverviewInstrumentedTest {
         }
     }
 
+    @Test public void statisticsSpeakVerifiedValuesAndExplicitlyUnknownMetrics()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                try {
+                    P7HomeOverview panel = new P7HomeOverview(activity, v -> {});
+                    activity.setContentView(panel);
+                    LinearLayout top = (LinearLayout) panel.getChildAt(0);
+                    LinearLayout bottom = (LinearLayout) panel.getChildAt(1);
+                    LinearLayout projects = (LinearLayout) top.getChildAt(0);
+                    LinearLayout files = (LinearLayout) top.getChildAt(1);
+                    LinearLayout builds = (LinearLayout) bottom.getChildAt(0);
+                    LinearLayout threats = (LinearLayout) bottom.getChildAt(1);
+                    assertStatLabel(projects, "Projetos: 0");
+                    assertStatLabel(files, "Arquivos: não disponível");
+                    assertStatLabel(builds, "APKs Builds: não disponível");
+                    assertStatLabel(threats, "Ameaças: não disponível");
+                    // The visual text still exists, but is not spoken twice.
+                    LinearLayout metrics = (LinearLayout) files.getChildAt(1);
+                    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                        metrics.getChildAt(0).getImportantForAccessibility());
+                    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                        metrics.getChildAt(1).getImportantForAccessibility());
+
+                    JSONObject verified = new JSONObject();
+                    verified.put("explorer", new JSONObject().put("fileCount", 301));
+                    panel.update(verified, 0);
+                    assertStatLabel(projects, "Projetos: 1");
+                    assertStatLabel(files, "Arquivos: 301");
+                    assertStatLabel(builds, "APKs Builds: não disponível");
+                    assertStatLabel(threats, "Ameaças: não disponível");
+
+                    panel.update(null, 0);
+                    assertStatLabel(projects, "Projetos: 0");
+                    assertStatLabel(files, "Arquivos: não disponível");
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+        }
+    }
+
+    private static void assertStatLabel(View cell, String expected) {
+        assertEquals(expected, cell.getContentDescription().toString());
+        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_YES,
+            cell.getImportantForAccessibility());
+        assertTrue("Statistics must support keyboard accessibility focus",
+            cell.isFocusable());
+        AccessibilityNodeInfo node = cell.createAccessibilityNodeInfo();
+        assertNotNull(node);
+        try {
+            assertEquals(expected, node.getContentDescription().toString());
+            assertFalse("Read-only stats cannot pretend to be buttons",
+                node.isClickable());
+        } finally {
+            node.recycle();
+        }
+    }
+
     @Test public void emptyAndActiveStatesNeverInventProjectHistoryOrSecurityResults()
             throws Exception {
         try (ActivityScenario<MainActivity> scenario =
