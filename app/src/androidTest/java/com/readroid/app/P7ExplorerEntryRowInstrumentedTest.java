@@ -1,5 +1,8 @@
 package com.readroid.app;
 
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -60,6 +63,20 @@ public final class P7ExplorerEntryRowInstrumentedTest {
                     v -> optionsOpened.incrementAndGet());
 
                 assertEquals(LinearLayout.HORIZONTAL, folder.getOrientation());
+                assertTrue("Explorer entries must use bottom dividers instead of outlined cards",
+                    folder.getBackground() instanceof LayerDrawable);
+                LayerDrawable layers = (LayerDrawable) folder.getBackground();
+                assertEquals(2, layers.getNumberOfLayers());
+                assertTrue(layers.getDrawable(1) instanceof ColorDrawable);
+                assertEquals(NegrescoTheme.BORDER,
+                    ((ColorDrawable) layers.getDrawable(1)).getColor());
+                assertEquals(Gravity.BOTTOM | Gravity.FILL_HORIZONTAL,
+                    layers.getLayerGravity(1));
+                assertEquals(NegrescoTheme.dp(activity, 1), layers.getLayerHeight(1));
+                assertEquals("Rows must meet edge to edge without inter-card gaps", 0,
+                    ((LinearLayout.LayoutParams) folder.getLayoutParams()).bottomMargin);
+                assertTrue("Tap height must remain at least 58dp",
+                    folder.getMinimumHeight() >= NegrescoTheme.dp(activity, 58));
                 assertTrue("Files need an independent native icon",
                     folder.getChildAt(0) instanceof ImageView);
                 assertEquals("Abrir pasta assets/", folder.getContentDescription());
