@@ -841,6 +841,102 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void repeatedThemeTapNeverStacksOrChangesConfirmedChoice() {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> saved =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            opened = new java.util.concurrent.atomic.AtomicReference<>();
+        final String[] themeName = {null};
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    saved.set(new java.util.HashMap<>(prefs.getAll()));
+                    int current = P7ThemeCatalog.currentTheme(activity);
+                    int choice = current == 0 ? 1 : 0;
+                    String name = P7ThemeCatalog.nameAt(choice);
+                    themeName[0] = name;
+                    View card = byDescription(root, name + ",");
+                    assertAccessibleButton(card);
+                    assertTrue("Theme tap opens a real native confirmation",
+                        card.performClick());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNotNull(studio);
+                        android.app.AlertDialog dialog =
+                            studio.activeThemeConfirmation();
+                        opened.set(dialog);
+                        assertNotNull("Theme confirmation must exist", dialog);
+                        assertTrue(dialog.isShowing());
+                        String expectedTitle = "Aplicar " + name + "?";
+                        assertEquals("Dialog names the pending theme",
+                            expectedTitle, dialog.getWindow() == null ? null
+                                : ((android.widget.TextView) dialog.findViewById(
+                                    activity.getResources().getIdentifier(
+                                        "alertTitle", "id", "android"))).getText().toString());
+                        assertTrue("Second queued tap still handled",
+                            card.performClick());
+                        assertSame("No second theme dialog may replace the first",
+                            dialog, studio.activeThemeConfirmation());
+                        assertTrue("Original theme confirmation remains showing",
+                            dialog.isShowing());
+                        assertEquals("Unconfirmed theme cannot change any preference",
+                            saved.get(), prefs.getAll());
+                        android.widget.Button cancel = dialog.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE);
+                        assertNotNull(cancel);
+                        assertEquals("Cancelar", cancel.getText().toString());
+                        assertTrue("Cancelar remains actionable", cancel.performClick());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Could not inspect native theme confirmation", error);
+                    }
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull(opened.get());
+                    assertFalse("Cancel must close theme dialog",
+                        opened.get().isShowing());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNull("Dismiss releases theme dialog reference",
+                            studio.activeThemeConfirmation());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Could not verify theme confirmation cleanup", error);
+                    }
+                    View restored = byDescription(
+                        activity.getWindow().getDecorView(), themeName[0] + ",");
+                    assertNotNull("Cancelled theme remains in catalog", restored);
+                    assertTrue("Cancelled theme must no longer be selected",
+                        restored.getContentDescription().toString().startsWith(
+                            themeName[0] + ", selecionar prévia"));
+                    assertEquals("Cancel cannot save a theme or any other setting",
+                        saved.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                });
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = opened.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void repeatedLayoutTapNeverStacksNativeConfirmations() {
         final java.util.concurrent.atomic.AtomicReference<
             java.util.Map<String, ?>> saved =

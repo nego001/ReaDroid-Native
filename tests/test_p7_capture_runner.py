@@ -158,7 +158,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(36, navigation.count("@Test"))
+        self.assertEqual(37, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
         icon_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                          "P7IconTemplatesLargeFontInstrumentedTest.java").read_text(
@@ -169,6 +169,19 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(1, icon_isolated.count("@Test"))
         self.assertIn("Icon label must fit in tile height", icon_isolated)
         self.assertIn("NegrescoTheme.apply(context)", icon_isolated)
+        self.assertEqual(1, navigation.count(
+            "void repeatedThemeTapNeverStacksOrChangesConfirmedChoice()"))
+        self.assertIn("No second theme dialog may replace the first", navigation)
+        self.assertIn("Cancel cannot save a theme or any other setting", navigation)
+        self.assertIn("activeThemeConfirmation()", (ROOT /
+            "app/src/main/java/com/readroid/app/P7DesignStudio.java"
+            ).read_text(encoding="utf-8"))
+        theme_source = (ROOT /
+            "app/src/main/java/com/readroid/app/P7DesignStudio.java"
+            ).read_text(encoding="utf-8")
+        self.assertIn("if (themeConfirmation != null && themeConfirmation.isShowing()) return;", theme_source)
+        self.assertIn("P7ThemeCatalog.apply(a, choice)", theme_source)
+        self.assertIn("if (themeConfirmation == dialog) themeConfirmation = null;", theme_source)
         self.assertEqual(1, navigation.count(
             "void repeatedLayoutTapNeverStacksNativeConfirmations()"))
         self.assertIn("Rapid layout taps must preserve one native dialog", navigation)

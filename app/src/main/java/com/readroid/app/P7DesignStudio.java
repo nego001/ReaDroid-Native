@@ -24,10 +24,18 @@ public final class P7DesignStudio {
     private final Button[] actions;
     private int activeTab = 0;
     private int selectedTheme = 0;
+    private android.app.AlertDialog themeConfirmation;
+
+    /** Inspection of this Studio's actual native dialog for Android tests. */
+    android.app.AlertDialog activeThemeConfirmation() {
+        return themeConfirmation;
+    }
+
     private void restoreCurrentTheme() {
         selectedTheme = P7ThemeCatalog.currentTheme(a);
     }
     private void applySelectedTheme() {
+        if (themeConfirmation != null && themeConfirmation.isShowing()) return;
         if (selectedTheme < 0 || selectedTheme >= P7ThemeCatalog.count()) {
             new android.app.AlertDialog.Builder(a)
                 .setTitle("Selecione um tema")
@@ -35,13 +43,16 @@ public final class P7DesignStudio {
                 .setPositiveButton("OK", null).show();
             return;
         }
-        new android.app.AlertDialog.Builder(a)
-            .setTitle("Aplicar " + P7ThemeCatalog.nameAt(selectedTheme) + "?")
+        // Apply exactly the theme named by the visible confirmation, even
+        // when a second queued click mutates the in-memory preview choice.
+        final int choice = selectedTheme;
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(a)
+            .setTitle("Aplicar " + P7ThemeCatalog.nameAt(choice) + "?")
             .setMessage("O tema será salvo e a interface reiniciada. "
                 + "O APK e o plano de edições serão preservados.")
-            .setPositiveButton("Aplicar", (dialog, which) -> {
+            .setPositiveButton("Aplicar", (ignored, which) -> {
                 try {
-                    P7ThemeCatalog.apply(a, selectedTheme);
+                    P7ThemeCatalog.apply(a, choice);
                 } catch (Exception error) {
                     restoreCurrentTheme();
                     render();
@@ -51,14 +62,19 @@ public final class P7DesignStudio {
                         .setPositiveButton("OK", null).show();
                 }
             })
-            .setNegativeButton("Cancelar", (dialog, which) -> {
+            .setNegativeButton("Cancelar", (ignored, which) -> {
                 restoreCurrentTheme();
                 render();
             })
-            .setOnCancelListener(dialog -> {
+            .setOnCancelListener(cancelled -> {
                 restoreCurrentTheme();
                 render();
-            }).show();
+            }).create();
+        dialog.setOnDismissListener(dismissed -> {
+            if (themeConfirmation == dialog) themeConfirmation = null;
+        });
+        themeConfirmation = dialog;
+        dialog.show();
     }
     private int selectedLayout = 0;
     private int selectedPreset = 0;
