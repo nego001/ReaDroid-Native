@@ -7,7 +7,9 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.LayerDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -100,6 +102,16 @@ public final class P7ExplorerEntryRow extends LinearLayout {
         overflow.setGravity(Gravity.CENTER);
         overflow.setTextSize(21 * NegrescoTheme.FONT_SCALE);
         overflow.setContentDescription("Opções de " + name);
+        // The trailing three-dot control is a separate action from opening
+        // the entry. TalkBack must identify it as a Button, not plain text.
+        overflow.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+        overflow.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
         overflow.setClickable(true);
         overflow.setFocusable(true);
         LayoutParams menuParams = new LayoutParams(dp(activity, 48),
