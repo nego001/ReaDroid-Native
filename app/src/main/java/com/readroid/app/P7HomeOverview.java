@@ -4,9 +4,11 @@ import android.app.Activity;
 import android.graphics.Typeface;
 import android.graphics.Bitmap;
 import android.widget.ImageView;
+import android.widget.Button;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -53,6 +55,18 @@ public final class P7HomeOverview extends LinearLayout {
         LinearLayout v = new LinearLayout(activity);
         v.setOrientation(VERTICAL);
         return v;
+    }
+
+    /** Make TextView actions announce their actual button role to TalkBack. */
+    private static void exposeAsButton(View control) {
+        control.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        control.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
     }
 
     public P7HomeOverview(Activity activity, View.OnClickListener openFiles) {
@@ -123,6 +137,7 @@ public final class P7HomeOverview extends LinearLayout {
         seeAll.setPadding(dp(8), 0, 0, 0);
         seeAll.setContentDescription("Ver todos os projetos recentes");
         seeAll.setFocusable(true);
+        exposeAsButton(seeAll);
         seeAll.setOnClickListener(v -> {
             if (showAll != null) showAll.onClick(v);
         });
@@ -220,6 +235,7 @@ public final class P7HomeOverview extends LinearLayout {
             overflow.setMinimumHeight(dp(48));
             overflow.setContentDescription("Mais opções de " + name);
             overflow.setFocusable(true);
+            exposeAsButton(overflow);
             overflow.setClickable(true);
             overflow.setOnClickListener(v -> showRecentOptions(name, document, action));
             line.addView(overflow, new LayoutParams(dp(48), dp(48)));
