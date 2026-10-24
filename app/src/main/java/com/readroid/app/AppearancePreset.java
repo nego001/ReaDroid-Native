@@ -19,9 +19,12 @@ public final class AppearancePreset {
         o.put("card_radius", p.getInt("card_radius", 18));
         o.put("font_percent", p.getInt("font_percent", 100));
         o.put("compact", p.getBoolean("compact", false));
+        o.put("layout_variant", p.getInt("layout_variant",
+            p.getBoolean("compact", false) ? 1 : 0));
+        o.put("p7_active_preset", p.getInt("p7_active_preset", -1));
         o.put("nav_labels", p.getBoolean("nav_labels", true));
         o.put("favorite_tab", p.getInt("favorite_tab", 1));
-        o.put("display_name", p.getString("display_name", "NEGRESCODROID"));
+        o.put("display_name", p.getString("display_name", "NegrecoDroid"));
         o.put("display_subtitle", p.getString("display_subtitle", "APK ENGINEERING STUDIO"));
         return o.toString(2);
     }
@@ -63,11 +66,18 @@ public final class AppearancePreset {
         int favorite = o.getInt("favorite_tab");
         boolean compact = o.getBoolean("compact");
         boolean labels = o.getBoolean("nav_labels");
+        if (o.has("layout_variant") && !isInteger(o.opt("layout_variant")))
+            throw new IllegalArgumentException("Tipo de layout inválido");
+        if (o.has("p7_active_preset") && !isInteger(o.opt("p7_active_preset")))
+            throw new IllegalArgumentException("Tipo de preset inválido");
+        int layout = o.optInt("layout_variant", compact ? 1 : 0);
+        int preset = o.optInt("p7_active_preset", -1);
         String name = o.getString("display_name");
         String subtitle = o.getString("display_subtitle");
         if (!allowed(theme, "oled", "graphite", "light")
             || !allowed(accent, "blue", "purple", "green", "orange", "custom")
             || !customAccent.matches("#[0-9a-fA-F]{6}")
+            || layout < 0 || layout > 2 || preset < -1 || preset > 4
             || !(radius == 12 || radius == 18 || radius == 26)
             || font < 85 || font > 135 || favorite < 1 || favorite > 4
             || name.trim().isEmpty() || name.length() > 30 || subtitle.length() > 48
@@ -108,6 +118,8 @@ public final class AppearancePreset {
         int favorite = o.getInt("favorite_tab");
         boolean compact = o.getBoolean("compact");
         boolean labels = o.getBoolean("nav_labels");
+        int layout = o.optInt("layout_variant", compact ? 1 : 0);
+        int preset = o.optInt("p7_active_preset", -1);
         String name = o.getString("display_name");
         String subtitle = o.getString("display_subtitle");
         context.getSharedPreferences("v3_personalizacao", Context.MODE_PRIVATE).edit()
@@ -116,6 +128,7 @@ public final class AppearancePreset {
             .putBoolean("studio_glow", glow).putInt("card_radius", radius)
             .putInt("font_percent", font).putInt("favorite_tab", favorite)
             .putBoolean("compact", compact).putBoolean("nav_labels", labels)
+            .putInt("layout_variant", layout).putInt("p7_active_preset", preset)
             .putString("display_name", name).putString("display_subtitle", subtitle).apply();
     }
 

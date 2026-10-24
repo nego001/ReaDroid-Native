@@ -38,6 +38,12 @@ public class MainActivity extends Activity {
     private static final int REQUEST_COMPARE_APK = 3;
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
     private static final int REQUEST_IMPORT_APPEARANCE = 42;
+    private static final int REQUEST_EXPORT_P7_ICON = 43;
+    private static final int REQUEST_EXPORT_P7_LOGO = 44;
+    private static final int REQUEST_EXPORT_P7_LOGO_SVG = 45;
+    private static final int REQUEST_EXPORT_P7_ICON_SVG = 46;
+    private P7IconWorkshop.Spec pendingIconExport;
+    private P7LogoWorkshop.Spec pendingLogoExport;
     private JSONObject report;
     private File currentApk;
     private File currentIndex;
@@ -47,12 +53,26 @@ public class MainActivity extends Activity {
     private LinearLayout securitySection;
     private LinearLayout buildSection;
     private LinearLayout aiSection;
+    private LinearLayout designSection;
+    private P7DesignStudio designStudio;
+    private static final String[] NAV_TITLES = {
+        "Início", "Arquivos", "Segurança", "Build", "Design"
+    };
     private TextView[] navigationItems;
     private NavGlyph[] navigationIcons;
+    private View[] navigationIndicators;
     private LinearLayout[] navigationContainers;
     private int selectedSection = 0;
+    // Each bottom section has its own vertical reading position. Re-tapping
+    // the active section intentionally returns to its beginning.
+    private final int[] sectionScrollPositions = new int[5];
+    private boolean sectionNavigationInitialized;
+    private int sectionNavigationGeneration;
+    private int pendingScrollSection = -1;
     private Uri selectedApkUri;
-    private int analysisSequence = 0;
+    /** A replacement is staged independently until its analysis succeeds. */
+    private Uri pendingApkUri;
+    private volatile int analysisSequence = 0;
 
     /** Keep worker output separate from the Activity's current project. */
     private static final class AnalyzedApk {
@@ -67,6 +87,7 @@ public class MainActivity extends Activity {
     }
     private TextView apkSummary;
     private TextView projectMetrics;
+    private P7HomeOverview homeOverview;
     private ScrollView contentScroll;
 
     /** Holds a project in memory across theme changes and rotation only. */
@@ -89,6 +110,40 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Room for enlarged, single-line bottom-navigation labels when Android
+     * and app text scaling are enabled. Preserve normal 64dp proportions.
+     */
+    static int navTabHeightDp(int widthDp, float systemScale, float appScale,
+            boolean labelsVisible) {
+        if (!labelsVisible) return 64;
+        float effective = Math.max(0.85f, systemScale) * Math.max(0.85f, appScale);
+        if (effective <= 1.15f) return 64;
+        int labelSp = widthDp < 360 ? 9 : 10;
+        int estimatedText = (int) Math.ceil(labelSp * effective * 1.8f);
+        // Selected marker, icon and spacing total 34dp. Reserve a complete
+        // single-line label with breathing room and no mid-word wrapping.
+        return Math.max(64, Math.min(120, 34 + estimatedText + 8));
+    }
+
+    /**
+     * Only shorten the on-screen labels when scaling would split a word
+     * inside one of five equal-width tabs. The parent retains full TalkBack
+     * names and normal-sized layouts preserve the full approved labels.
+     */
+    static String navVisualLabel(String full, int widthDp, float systemScale,
+            float appScale) {
+        float effective = Math.max(0.85f, systemScale)
+            * Math.max(0.85f, appScale);
+        if ("Segurança".equals(full) && (effective >= 1.65f
+                || (widthDp < 360 && effective >= 1.2f))) {
+            return "Seg.";
+        }
+        if ("Arquivos".equals(full) && effective >= 1.65f)
+            return "Arqs.";
+        return full;
+    }
+
     @Override public void onCreate(Bundle state) {
         NegrescoTheme.apply(this);
         String activeTheme = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
@@ -97,11 +152,33 @@ public class MainActivity extends Activity {
             ? android.R.style.Theme_Material_Light_NoActionBar
             : android.R.style.Theme_Material_NoActionBar);
         super.onCreate(state);
+        if (state != null && state.containsKey("p7_icon_export")) {
+            int[] selected = state.getIntArray("p7_icon_export");
+            if (selected != null && selected.length == 3) {
+                try {
+                    pendingIconExport = new P7IconWorkshop.Spec(
+                        selected[0], selected[1], selected[2]);
+                } catch (IllegalArgumentException ignored) {
+                    pendingIconExport = null;
+                }
+            }
+        }
+        if (state != null && state.containsKey("p7_logo_export")) {
+            String[] selected = state.getStringArray("p7_logo_export");
+            if (selected != null && selected.length == 4) {
+                try {
+                    pendingLogoExport = new P7LogoWorkshop.Spec(selected[0], selected[1],
+                        Integer.parseInt(selected[2]), Integer.parseInt(selected[3]));
+                } catch (IllegalArgumentException ignored) {
+                    pendingLogoExport = null;
+                }
+            }
+        }
         // Window insets are not available until after the content view is attached.
         // Calling Window.getInsetsController here crashes on Android 15.
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 18 : 34), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 20), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 24));
+        root.setPadding(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 15), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 8 : 12), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 12 : 15), NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 10 : 14));
         root.setBackgroundColor(NegrescoTheme.BACKGROUND);
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
@@ -132,15 +209,21 @@ public class MainActivity extends Activity {
 
         android.content.SharedPreferences appearance =
             getSharedPreferences("v3_personalizacao", MODE_PRIVATE);
-        String displayName = appearance.getString("display_name", "NEGRESCODROID");
+        String displayName = appearance.getString("display_name", "NegrecoDroid");
+        // Migrate only the old built-in brand; user-supplied names are retained.
+        if ("NEGRESCODROID".equals(displayName) || "NegrescoDroid".equals(displayName)) {
+            displayName = "NegrecoDroid";
+            appearance.edit().putString("display_name", displayName).apply();
+        }
         String displaySubtitle = appearance.getString("display_subtitle", "APK ENGINEERING STUDIO");
         LinearLayout brandRow = new LinearLayout(this);
         brandRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        brandRow.setPadding(0, NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 14));
-        NavGlyph brandMark = new NavGlyph(this, 2);
-        brandMark.setSelectedState(true);
+        brandRow.setPadding(0, NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 9));
+        android.widget.ImageView brandMark = new android.widget.ImageView(this);
+        brandMark.setImageResource(R.drawable.ic_negrecodroid_foreground);
+        brandMark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         brandRow.addView(brandMark, new LinearLayout.LayoutParams(
-            NegrescoTheme.dp(this, 38), NegrescoTheme.dp(this, 38)));
+            NegrescoTheme.dp(this, 34), NegrescoTheme.dp(this, 34)));
         LinearLayout brandText = new LinearLayout(this);
         brandText.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -153,30 +236,39 @@ public class MainActivity extends Activity {
             droid, droid + 5, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         title.setText(brandName);
         title.setTextColor(NegrescoTheme.TEXT);
-        title.setTextSize(21 * NegrescoTheme.FONT_SCALE);
+        title.setTextSize(22 * NegrescoTheme.FONT_SCALE);
         title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         title.setMaxLines(2);
         brandText.addView(title);
         TextView brandSubtitleView = new TextView(this);
-        brandSubtitleView.setText(displaySubtitle);
+        brandSubtitleView.setText("APK ENGINEERING STUDIO".equals(displaySubtitle)
+            ? "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS" : displaySubtitle);
         brandSubtitleView.setTextColor(NegrescoTheme.MUTED);
-        brandSubtitleView.setTextSize(9.5f * NegrescoTheme.FONT_SCALE);
+        brandSubtitleView.setTextSize(8.5f * NegrescoTheme.FONT_SCALE);
         brandSubtitleView.setLetterSpacing(0.13f);
         brandSubtitleView.setMaxLines(2);
         brandText.addView(brandSubtitleView);
+        P7HomeToolbar homeToolbar = new P7HomeToolbar(this,
+            v -> showHomeMenu(), v -> showSection(4));
+        root.addView(homeToolbar);
         root.addView(brandRow);
-        String[] tabs = {"Início", "Arquivos", "Construir", "Segurança", "IA"};
+        String[] tabs = NAV_TITLES;
         boolean showNavLabels = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
             .getBoolean("nav_labels", true);
         navigationItems = new TextView[tabs.length];
         navigationIcons = new NavGlyph[tabs.length];
+        navigationIndicators = new View[tabs.length];
         navigationContainers = new LinearLayout[tabs.length];
+        final int tabHeightDp = navTabHeightDp(
+            getResources().getConfiguration().screenWidthDp,
+            getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE, showNavLabels);
         for (int index = 0; index < tabs.length; index++) {
             final int target = index;
             LinearLayout tabContainer = new LinearLayout(this);
             tabContainer.setOrientation(LinearLayout.VERTICAL);
             tabContainer.setGravity(android.view.Gravity.CENTER);
-            tabContainer.setMinimumHeight(NegrescoTheme.dp(this, 56));
+            tabContainer.setMinimumHeight(NegrescoTheme.dp(this, tabHeightDp));
             tabContainer.setFocusable(true);
             tabContainer.setClickable(true);
             // Stable IDs allow real DPAD left/right navigation between tabs.
@@ -191,18 +283,40 @@ public class MainActivity extends Activity {
             });
             navigationContainers[index] = tabContainer;
             LinearLayout.LayoutParams navParams =
-                new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, 64), 1f);
+                new LinearLayout.LayoutParams(0, NegrescoTheme.dp(this, tabHeightDp), 1f);
             navParams.setMargins(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
             nav.addView(tabContainer, navParams);
-            NavGlyph glyph = new NavGlyph(this, index);
+            // A narrow electric-blue dash above the active icon matches the
+            // approved five-tab bar, while preserving 64dp touch targets.
+            View indicator = new View(this);
+            android.graphics.drawable.GradientDrawable marker =
+                new android.graphics.drawable.GradientDrawable();
+            marker.setColor(NegrescoTheme.ACCENT);
+            marker.setCornerRadius(NegrescoTheme.dp(this, 5));
+            indicator.setBackground(marker);
+            indicator.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            indicator.setVisibility(View.INVISIBLE);
+            LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(
+                NegrescoTheme.dp(this, 28), NegrescoTheme.dp(this, 3));
+            markerParams.bottomMargin = NegrescoTheme.dp(this, 4);
+            tabContainer.addView(indicator, markerParams);
+            navigationIndicators[index] = indicator;
+            int[] tabIcons = {0, 1, 3, 2, 4};
+            NavGlyph glyph = new NavGlyph(this, tabIcons[index]);
             tabContainer.addView(glyph, new LinearLayout.LayoutParams(NegrescoTheme.dp(this, 27), NegrescoTheme.dp(this, 27)));
             navigationIcons[index] = glyph;
             TextView label = new TextView(this);
-            label.setText(tabs[index]);
+            int screenWidthDp = getResources().getConfiguration().screenWidthDp;
+            label.setText(navVisualLabel(tabs[index], screenWidthDp,
+                getResources().getConfiguration().fontScale,
+                NegrescoTheme.FONT_SCALE));
             label.setGravity(android.view.Gravity.CENTER);
-            boolean narrow = getResources().getConfiguration().screenWidthDp < 360;
+            boolean narrow = screenWidthDp < 360;
             label.setTextSize((narrow ? 9 : 10) * NegrescoTheme.FONT_SCALE);
-            label.setMaxLines(2);
+            // Accessibility enlargements must not break words vertically;
+            // a semantic short label is used only for extreme scales.
+            label.setSingleLine(true);
+            label.setMaxLines(1);
             label.setEllipsize(android.text.TextUtils.TruncateAt.END);
             label.setIncludeFontPadding(false);
             label.setPadding(NegrescoTheme.dp(this, 2), 0, NegrescoTheme.dp(this, 2), 0);
@@ -232,6 +346,7 @@ public class MainActivity extends Activity {
         buildSection = section(root);
         securitySection = section(root);
         aiSection = section(root);
+        designSection = section(root);
 
         TextView customizationTitle = new TextView(this);
         customizationTitle.setText("V3 • PERSONALIZAÇÃO");
@@ -261,7 +376,8 @@ public class MainActivity extends Activity {
             new android.app.AlertDialog.Builder(this).setTitle("Tema visual")
                 .setSingleChoiceItems(options, Math.max(0, selected), (dialog, which) -> {
                     getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                        .putString("theme", values[which]).apply();
+                        .putString("theme", values[which])
+                        .remove("p7_active_preset").apply();
                     dialog.dismiss();
                     recreate();
                 }).setNegativeButton("Cancelar", null).show();
@@ -278,7 +394,8 @@ public class MainActivity extends Activity {
                     dialog.dismiss();
                     if (which != 4) {
                         getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                            .putString("accent", values[which]).apply();
+                            .putString("accent", values[which])
+                            .remove("p7_active_preset").apply();
                         recreate();
                         return;
                     }
@@ -305,7 +422,7 @@ public class MainActivity extends Activity {
                             Runnable applyCustomColor = () -> {
                                 getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
                                     .putString("accent", "custom").putString("custom_accent", color)
-                                    .apply();
+                                    .remove("p7_active_preset").apply();
                                 recreate();
                             };
                             double contrast = NegrescoTheme.contrastRatio(
@@ -347,7 +464,9 @@ public class MainActivity extends Activity {
                 .setSingleChoiceItems(new String[]{"Confortável", "Compacto"}, compact ? 1 : 0,
                     (dialog, which) -> {
                         getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
-                            .putBoolean("compact", which == 1).apply();
+                            .putBoolean("compact", which == 1)
+                            .putInt("layout_variant", which == 1 ? 1 : 0)
+                            .remove("p7_active_preset").apply();
                         dialog.dismiss();
                         recreate();
                     }).setNegativeButton("Cancelar", null).show();
@@ -395,7 +514,7 @@ public class MainActivity extends Activity {
                 | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
             nameInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(30)});
             nameInput.setText(getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
-                .getString("display_name", "NEGRESCODROID"));
+                .getString("display_name", "NegrecoDroid"));
             form.addView(nameInput);
             android.widget.EditText subtitleInput = new android.widget.EditText(this);
             subtitleInput.setSingleLine(true);
@@ -411,7 +530,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     String name = nameInput.getText().toString().trim();
                     String subtitle = subtitleInput.getText().toString().trim();
-                    if (name.isEmpty()) name = "NEGRESCODROID";
+                    if (name.isEmpty()) name = "NegrecoDroid";
                     if (subtitle.isEmpty()) subtitle = "APK ENGINEERING STUDIO";
                     getSharedPreferences("v3_personalizacao", MODE_PRIVATE).edit()
                         .putString("display_name", name)
@@ -430,7 +549,7 @@ public class MainActivity extends Activity {
             preview.setBackgroundColor(NegrescoTheme.BACKGROUND);
             TextView previewTitle = NegrescoTheme.heading(this,
                 getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
-                    .getString("display_name", "NEGRESCODROID"),
+                    .getString("display_name", "NegrecoDroid"),
                 getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
                     .getString("display_subtitle", "APK ENGINEERING STUDIO"));
             preview.addView(previewTitle);
@@ -686,49 +805,75 @@ public class MainActivity extends Activity {
         homeSection.addView(shortcutHint);
         LinearLayout quickGrid = new LinearLayout(this);
         quickGrid.setOrientation(LinearLayout.VERTICAL);
+        quickGrid.setTag("p7-quick-actions-grid");
         homeSection.addView(quickGrid);
-        String[] quickLabels = {"Arquivos", "Construir", "Segurança", "IA"};
-        String[] quickSubtitles = {
-            "Explore e organize arquivos APK",
-            "Revise e exporte alterações",
-            "Verifique certificados e riscos",
-            "Compartilhe análises com IA"
+        // P7: match the approved two-row / three-column action composition.
+        // Every tile opens an actual existing workflow; unsupported operations
+        // remain in the Build/Security sections and are not falsely enabled.
+        String[] actionNames = {"Abrir APK", "Analisar", "Build APK",
+            "Decompilar", "Editar Smali", "Assinar APK"};
+        // Faithful six-action symbols: folder, search, wrench, code,
+        // editable document and verified shield instead of nav placeholders.
+        int[] actionGlyphs = {
+            R.drawable.ic_p7_folder, R.drawable.ic_p7_search,
+            R.drawable.ic_p7_wrench, R.drawable.ic_p7_code,
+            R.drawable.ic_p7_file, R.drawable.ic_p7_shield
         };
-        int[] quickTargets = {1, 2, 3, 4};
-        int favorite = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getInt("favorite_tab", 1);
-        if (favorite < 1 || favorite > 4) favorite = 1;
-        // The chosen favorite always occupies the first tile, preserving the
-        // previous V3 behavior while leaving all four destinations available.
-        int chosen = favorite - 1;
-        String chosenLabel = quickLabels[chosen];
-        String chosenSubtitle = quickSubtitles[chosen];
-        int chosenTarget = quickTargets[chosen];
-        for (int i = chosen; i > 0; i--) {
-            quickLabels[i] = quickLabels[i - 1];
-            quickSubtitles[i] = quickSubtitles[i - 1];
-            quickTargets[i] = quickTargets[i - 1];
-        }
-        quickLabels[0] = chosenLabel;
-        quickSubtitles[0] = chosenSubtitle;
-        quickTargets[0] = chosenTarget;
-        for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
-            LinearLayout shortcutRow = new LinearLayout(this);
-            shortcutRow.setOrientation(LinearLayout.HORIZONTAL);
-            quickGrid.addView(shortcutRow);
-            for (int column = 0; column < 2; column++) {
-                int index = rowIndex * 2 + column;
-                final int target = quickTargets[index];
-                LinearLayout tile = StudioDashboard.quickTile(this, quickLabels[index],
-                    quickSubtitles[index], target, target == favorite,
-                    v -> showSection(target));
-                tile.setMinimumHeight(NegrescoTheme.dp(this, NegrescoTheme.COMPACT ? 122 : 142));
-                LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(
-                    0, -2, 1f);
-                tileParams.setMargins(column == 0 ? 0 : NegrescoTheme.dp(this, 5), 0,
-                    column == 0 ? NegrescoTheme.dp(this, 5) : 0, NegrescoTheme.dp(this, 10));
-                shortcutRow.addView(tile, tileParams);
-            }
-        }
+        View.OnClickListener[] actionHandlers = new View.OnClickListener[]{
+            v -> {
+                Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                pick.addCategory(Intent.CATEGORY_OPENABLE);
+                pick.setType("*/*");
+                startActivityForResult(pick, 1);
+            },
+            v -> {
+                if (report == null) {
+                    Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    pick.addCategory(Intent.CATEGORY_OPENABLE);
+                    pick.setType("*/*");
+                    startActivityForResult(pick, 1);
+                } else {
+                    showSection(0);
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Análise do APK atual")
+                        .setMessage("O relatório técnico está disponível na Home.")
+                        .setPositiveButton("Ver relatório", (d, w) ->
+                            output.post(() -> output.requestRectangleOnScreen(
+                                new android.graphics.Rect(0, 0,
+                                    Math.max(1, output.getWidth()), 90), true)))
+                        .setNegativeButton("Fechar", null).show();
+                }
+            },
+            v -> showSection(3),
+            v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Decompilação")
+                .setMessage("Decompilação Smali completa ainda não disponível.")
+                .setPositiveButton("Fechar", null).show(),
+            v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Edição Smali indisponível")
+                .setMessage("O editor Smali ainda não está implementado. "
+                    + "Em Arquivos, você pode navegar pelo APK e planejar "
+                    + "edições de texto compatíveis. Este atalho não "
+                    + "decompila nem modifica código Smali.")
+                .setPositiveButton("Abrir arquivos", (d, w) -> showSection(1))
+                .setNegativeButton("Fechar", null).show(),
+            v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("Assinar APK")
+                .setMessage("A assinatura de APKs reconstruídos ainda não está "
+                    + "disponível. A seção Segurança permite inspecionar "
+                    + "certificados e testar uma identidade local.")
+                .setPositiveButton("Ver segurança", (d, w) -> showSection(2))
+                .setNegativeButton("Fechar", null).show()
+        };
+        // At regular width preserve the selected layout exactly. For narrow
+        // screens or enlarged fonts only the geometry reflows, not the saved
+        // layout, APK workspace or six original click handlers.
+        P7ActionGrid.populate(this, quickGrid,
+            actionNames, actionGlyphs, actionHandlers,
+            NegrescoTheme.LAYOUT_VARIANT,
+            getResources().getConfiguration().screenWidthDp,
+            getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
 
         TextView detailsTitle = new TextView(this);
         detailsTitle.setText("RELATÓRIO TÉCNICO");
@@ -739,8 +884,12 @@ public class MainActivity extends Activity {
         homeSection.addView(output);
 
         explorerView = new ExplorerView(this, filesSection);
-        StudioDashboard.featureHeader(this, filesSection, 1, "Arquivos",
-            "Explore pastas, pesquise recursos e compare versões do APK.");
+        explorerView.setNavigationActions(() -> showSection(0), () -> {
+            Intent chooser = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            chooser.addCategory(Intent.CATEGORY_OPENABLE);
+            chooser.setType("*/*");
+            startActivityForResult(chooser, 1);
+        }, this::reviewEditPlan);
         Button compare = NegrescoTheme.action(this, "Comparar com outro APK", false);
         filesSection.addView(compare);
         compare.setOnClickListener(v -> {
@@ -938,7 +1087,7 @@ public class MainActivity extends Activity {
         securitySection.addView(signingGuide);
         signingGuide.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
             .setTitle("Assinatura de APK modificado")
-            .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO ReaDroid ainda NÃO assina APKs modificados.")
+            .setMessage("O APK exportado ainda não pode ser considerado instalável. Para assinar corretamente, precisamos de alinhamento ZIP, assinatura APK Signature Scheme v2/v3 e verificação criptográfica.\\n\\nUma chave própria deve ser gerada e protegida, nunca enviada ao ChatGPT ou ao GitHub. A nova assinatura não substitui a identidade do desenvolvedor original e pode exigir desinstalar a versão anterior.\\n\\nO NegrecoDroid ainda NÃO assina APKs modificados.")
             .setPositiveButton("Entendi", null).show());
 
         localIdentity = NegrescoTheme.action(this, "", false);
@@ -1045,25 +1194,61 @@ public class MainActivity extends Activity {
             "Inspecione certificados, assinaturas e sua identidade local.");
         StudioDashboard.featureHeader(this, aiSection, 4, "Assistente IA",
             "Compartilhe um relatório técnico para análise no ChatGPT.");
-        StudioDashboard.compose(this, homeSection, apkSummary, projectMetrics, choose,
-            shortcutsTitle, shortcutHint, quickGrid,
+        homeOverview = new P7HomeOverview(this, v -> showSection(1));
+        homeOverview.setHistoryCallbacks(this::openRecentProject,
+            v -> showAllRecentProjects());
+        homeOverview.setHistoryRemover(uri -> mutateRecentProjectHistory(uri));
+        refreshRecentProjects();
+        // Home-only branding and a separate, functional Design page.
+        // Remove the global header so Explorer and Design do not show a
+        // second title above their own headers.
+        root.removeView(homeToolbar);
+        root.removeView(brandRow);
+        designStudio = new P7DesignStudio(this, designSection, new Button[]{
+            themePicker, accentPicker, textScale, densityPicker, navLabels,
+            favoriteShortcut, identityPicker, appearancePreview,
+            exportAppearance, importAppearance, glowPicker, cornersPicker,
+            resetAppearance
+        }, state == null ? 0 : state.getInt("p7_design_active_tab", 0));
+        StudioDashboard.compose(this, homeSection, designSection,
+            apkSummary, projectMetrics, choose,
+            homeOverview, shortcutsTitle, shortcutHint, quickGrid,
             customizationTitle, customizationHint, togglePersonalization, personalizationGroup,
             new Button[]{themePicker, accentPicker, textScale, densityPicker, navLabels,
                 favoriteShortcut, identityPicker, appearancePreview,
                 exportAppearance, importAppearance, glowPicker, cornersPicker, resetAppearance},
             otaTitle, otaStatus, otaChannel, otaCheck,
             detailsTitle, output, project);
+        homeSection.addView(homeToolbar, 0);
+        homeSection.addView(brandRow, 1);
+        // Legacy AI controls remain accessible in Design without losing them.
+        ((android.view.ViewGroup) aiSection.getParent()).removeView(aiSection);
+        designSection.addView(aiSection);
+        if (state != null) {
+            int[] savedOffsets = state.getIntArray("p7_section_scroll_positions");
+            if (savedOffsets != null && savedOffsets.length == sectionScrollPositions.length)
+                for (int i = 0; i < savedOffsets.length; i++)
+                    sectionScrollPositions[i] = Math.max(0, savedOffsets[i]);
+        }
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
         boolean retained = restoreWorkspace();
         if (state != null) {
             selectedApkUri = state.getParcelable("selected_apk_uri");
-            if (!retained && selectedApkUri != null) analyzeSelectedApk(selectedApkUri);
+            Uri interruptedImport = state.getParcelable("pending_apk_uri");
+            // A rotation must not lose the user's already-authorized request
+            // or replace the retained old project with an unfinished import.
+            if (interruptedImport != null) analyzeSelectedApk(interruptedImport);
+            else if (!retained && selectedApkUri != null)
+                analyzeSelectedApk(selectedApkUri);
         }
+        refreshRecentProjects();
     }
 
     /** The same report renderer is used for fresh APKs and retained workspaces. */
     private void displayAnalyzedReport(JSONObject resultJson) {
         report = resultJson;
+        if (homeOverview != null)
+            homeOverview.update(report, explorerView.getEditPlan().size());
         output.setText(formatReport(resultJson));
         JSONObject info = resultJson.optJSONObject("manifestAnalysis");
         String packageName = info == null ? "Desconhecido" : info.optString("packageName", "Desconhecido");
@@ -1088,6 +1273,8 @@ public class MainActivity extends Activity {
         if (currentIndex != null && currentIndex.isFile())
             explorerView.setIndexedFiles(paths, currentApk, currentIndex);
         else explorerView.setFiles(paths, currentApk);
+        explorerView.setProjectSummary(headline, resultJson.optLong("sizeBytes", -1));
+        refreshRecentProjects();
         share.setEnabled(true);
         ai.setEnabled(true);
         apkAdvisor.setEnabled(profile != null);
@@ -1120,6 +1307,7 @@ public class MainActivity extends Activity {
             }
         }
         explorerView.restoreBrowseState(workspace.browse);
+        homeOverview.update(report, explorerView.getEditPlan().size());
         showSection(workspace.activeSection);
         return true;
     }
@@ -1198,30 +1386,171 @@ public class MainActivity extends Activity {
         return content;
     }
 
+    /** Home menu from the approved reference, routing only to real workflows. */
+    private void showHomeMenu() {
+        String[] commands = {"Abrir APK", "Explorador de Arquivos",
+            "Segurança", "Build APK", "Design Studio"};
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("NegrecoDroid")
+            .setItems(commands, (dialog, choice) -> {
+                if (choice == 0) {
+                    Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("*/*");
+                    startActivityForResult(picker, 1);
+                } else if (choice == 1) showSection(1);
+                else if (choice == 2) showSection(2);
+                else if (choice == 3) showSection(3);
+                else if (choice == 4) showSection(4);
+            })
+            .setNegativeButton("Fechar", null).show();
+    }
+
     private void showSection(int index) {
-        LinearLayout[] sections = {homeSection, filesSection, buildSection, securitySection, aiSection};
+        LinearLayout[] sections = {homeSection, filesSection, securitySection, buildSection, designSection};
         if (index < 0 || index >= sections.length) return;
+        if (sectionNavigationInitialized) {
+            if (index == selectedSection) {
+                // Standard bottom-navigation behavior: tapping the current
+                // section again scrolls it to its beginning.
+                sectionScrollPositions[index] = 0;
+            } else if (pendingScrollSection != selectedSection) {
+                // Don't replace a not-yet-restored offset with the temporary
+                // zero position from an immediately preceding tab change.
+                sectionScrollPositions[selectedSection] =
+                    Math.max(0, contentScroll.getScrollY());
+            }
+        }
+        sectionNavigationInitialized = true;
         selectedSection = index;
+        if (index == 0 && homeOverview != null) {
+            homeOverview.update(report, explorerView == null ? 0
+                : explorerView.getEditPlan().size());
+            refreshRecentProjects();
+        }
         for (int i = 0; i < sections.length; i++) {
             boolean selected = i == index;
             sections[i].setVisibility(selected ? View.VISIBLE : View.GONE);
             navigationItems[i].setTextColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.MUTED);
             navigationIcons[i].setSelectedState(selected);
+            navigationIndicators[i].setVisibility(selected ? View.VISIBLE : View.INVISIBLE);
             navigationContainers[i].setBackground(NegrescoTheme.navigationSurface(
                 this, selected, navigationContainers[i].hasFocus()));
             navigationContainers[i].setSelected(selected);
             navigationContainers[i].setActivated(selected);
             navigationContainers[i].setContentDescription(
-                "Seção " + navigationItems[i].getText()
+                "Seção " + NAV_TITLES[i]
                     + (selected ? ", selecionada" : ""));
             navigationItems[i].setTypeface(null,
                 selected ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         }
+        // Layout height changes when a different section becomes VISIBLE.
+        // Post restoration after layout, and invalidate old pending callbacks
+        // when the user changes tabs rapidly.
+        int desiredY = sectionScrollPositions[index];
+        int generation = ++sectionNavigationGeneration;
+        pendingScrollSection = index;
         contentScroll.scrollTo(0, 0);
+        contentScroll.post(() -> {
+            if (generation != sectionNavigationGeneration || selectedSection != index)
+                return;
+            contentScroll.scrollTo(0, desiredY);
+            pendingScrollSection = -1;
+        });
+    }
+
+    /** Uses the Android document picker, never broad storage write access. */
+    public void startP7IconExport(P7IconWorkshop.Spec icon) {
+        pendingIconExport = icon;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/png");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-icone.png");
+        startActivityForResult(create, REQUEST_EXPORT_P7_ICON);
+    }
+
+    /** SVG icon uses the same consent-driven SAF flow as PNG export. */
+    public void startP7IconSvgExport(P7IconWorkshop.Spec icon) {
+        if (icon == null) throw new IllegalArgumentException("Ícone vazio");
+        pendingIconExport = icon;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/svg+xml");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-icone.svg");
+        startActivityForResult(create, REQUEST_EXPORT_P7_ICON_SVG);
+    }
+
+    /** Logo export uses the same explicit SAF consent as the icon workshop. */
+    public void startP7LogoExport(P7LogoWorkshop.Spec logo) {
+        pendingLogoExport = logo;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/png");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-logo.png");
+        startActivityForResult(create, REQUEST_EXPORT_P7_LOGO);
+    }
+
+    /** Editable SVG export uses the existing, validated logo specification. */
+    public void startP7LogoSvgExport(P7LogoWorkshop.Spec logo) {
+        if (logo == null) throw new IllegalArgumentException("Logo vazio");
+        pendingLogoExport = logo;
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("image/svg+xml");
+        create.putExtra(Intent.EXTRA_TITLE, "NegrecoDroid-logo.svg");
+        startActivityForResult(create, REQUEST_EXPORT_P7_LOGO_SVG);
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == REQUEST_EXPORT_P7_LOGO ||
+                request == REQUEST_EXPORT_P7_LOGO_SVG) {
+            P7LogoWorkshop.Spec requested = pendingLogoExport;
+            pendingLogoExport = null;
+            if (result != RESULT_OK || data == null ||
+                    data.getData() == null || requested == null) return;
+            try {
+                boolean svg = request == REQUEST_EXPORT_P7_LOGO_SVG;
+                if (svg) P7LogoSvg.export(this, requested, data.getData());
+                else P7LogoWorkshop.export(this, requested, data.getData());
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Logo exportado")
+                    .setMessage((svg ? "SVG vetorial editável" : "PNG 1024×512") +
+                        " salvo no destino escolhido. O APK e a identidade instalada " +
+                        "não foram alterados.")
+                    .setPositiveButton("OK", null).show();
+            } catch (Exception error) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Falha ao exportar logo")
+                    .setMessage(error.getMessage())
+                    .setPositiveButton("OK", null).show();
+            }
+            return;
+        }
+        if (request == REQUEST_EXPORT_P7_ICON ||
+                request == REQUEST_EXPORT_P7_ICON_SVG) {
+            P7IconWorkshop.Spec requested = pendingIconExport;
+            pendingIconExport = null;
+            if (result != RESULT_OK || data == null ||
+                    data.getData() == null || requested == null) return;
+            try {
+                boolean svg = request == REQUEST_EXPORT_P7_ICON_SVG;
+                if (svg) P7IconSvg.export(this, requested, data.getData());
+                else P7IconWorkshop.export(this, requested, data.getData());
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Ícone exportado")
+                    .setMessage((svg ? "SVG vetorial editável" : "PNG 512×512") +
+                        " salvo no destino escolhido. O APK e a identidade instalada " +
+                        "não foram alterados.")
+                    .setPositiveButton("OK", null).show();
+            } catch (Exception error) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Falha ao exportar ícone")
+                    .setMessage(error.getMessage())
+                    .setPositiveButton("OK", null).show();
+            }
+            return;
+        }
         if ((request == REQUEST_EXPORT_APPEARANCE || request == REQUEST_IMPORT_APPEARANCE)
             && result == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
@@ -1286,52 +1615,246 @@ public class MainActivity extends Activity {
         if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
         if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
         if (request != 1) return;
-        analyzeSelectedApk(data.getData());
+        selectApkWithConfirmation(data.getData(), true);
+    }
+
+    private void refreshRecentProjects() {
+        if (homeOverview == null) return;
+        homeOverview.setRecentProjects(P7ProjectHistory.list(this),
+            report == null ? null : selectedApkUri);
+    }
+
+    private void openRecentProject(P7ProjectHistory.Entry item) {
+        if (!P7ProjectHistory.hasPermission(this, item.uri)) {
+            refreshRecentProjects();
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Permissão expirada")
+                .setMessage("O Android não permite mais acessar este APK. Selecione-o "
+                    + "novamente pelo gerenciador de arquivos.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        selectApkWithConfirmation(item.uri, false);
+    }
+
+    private void showAllRecentProjects() {
+        List<P7ProjectHistory.Entry> entries = P7ProjectHistory.list(this);
+        if (entries.isEmpty()) {
+            refreshRecentProjects();
+            return;
+        }
+        String[] names = new String[entries.size()];
+        for (int i = 0; i < entries.size(); i++) {
+            P7ProjectHistory.Entry item = entries.get(i);
+            names[i] = item.name + "  •  " + item.packageName;
+        }
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Projetos recentes")
+            .setItems(names, (dialog, which) -> openRecentProject(entries.get(which)))
+            .setNeutralButton("Limpar lista", (dialog, which) ->
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Limpar histórico?")
+                    .setMessage("Remove apenas a lista de projetos recentes deste "
+                        + "aplicativo. Não exclui APKs nem planos de edição.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Limpar", (d, w) ->
+                        mutateRecentProjectHistory(null)).show())
+            .setNegativeButton("Fechar", null).show();
+    }
+
+    /**
+     * A history clear/forget must execute after any accepted-project writes
+     * already queued on the same single-thread executor. Otherwise an older
+     * thumbnail/history worker can repopulate a just-cleared list.
+     * Null means clear all; a non-null URI forgets only that entry.
+     */
+    private void mutateRecentProjectHistory(Uri forgottenUri) {
+        final android.content.Context application = getApplicationContext();
+        try {
+            executor.execute(() -> {
+                boolean updated = false;
+                try {
+                    updated = forgottenUri == null
+                        ? P7ProjectHistory.clear(application)
+                        : P7ProjectHistory.forget(application, forgottenUri);
+                    if (updated) {
+                        // Disk pruning is strictly best-effort; a missing or
+                        // corrupt thumbnail must not undo a saved deletion.
+                        try {
+                            P7RecentAppIcons.prune(application,
+                                P7ProjectHistory.list(application));
+                        } catch (RuntimeException brokenThumbnailCache) {
+                            // History data has already been deleted.
+                        }
+                    }
+                } catch (RuntimeException inaccessiblePreferences) {
+                    // Leave the active APK and edit plan untouched.
+                }
+                final boolean success = updated;
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    refreshRecentProjects();
+                    if (!success)
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Não foi possível atualizar o histórico")
+                            .setMessage("A lista de projetos recentes não foi alterada. "
+                                + "O APK aberto e suas edições continuam intactos.")
+                            .setPositiveButton("OK", null).show();
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closing) {
+            // Closing Activity: never start an unsynchronized second writer.
+        }
+    }
+
+    private void selectApkWithConfirmation(Uri uri, boolean fromPicker) {
+        if (uri == null || !"content".equals(uri.getScheme())) {
+            new android.app.AlertDialog.Builder(this)
+                .setMessage("Selecione um APK pelo gerenciador de arquivos do Android.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        Runnable open = () -> {
+            if (fromPicker) {
+                try {
+                    getContentResolver().takePersistableUriPermission(uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException | IllegalArgumentException denied) {
+                    // Import works for this session, but must NOT appear
+                    // in the persistent list without a real SAF permission.
+                }
+            }
+            analyzeSelectedApk(uri);
+        };
+        if (explorerView != null && explorerView.getEditPlan().size() > 0) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Trocar de APK?")
+                .setMessage("Existem " + explorerView.getEditPlan().size()
+                    + " alterações pendentes. Elas só serão descartadas "
+                    + "depois que o novo APK passar pela análise e abrir "
+                    + "com sucesso. Se falhar, seu projeto atual permanece. "
+                    + "Salve uma recuperação antes, se necessário.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Verificar e abrir", (d, which) -> open.run())
+                .show();
+        } else {
+            open.run();
+        }
     }
 
     private void analyzeSelectedApk(Uri uri) {
         final int sequence = ++analysisSequence;
-        selectedApkUri = uri;
-        report = null;
-        if (currentApk != null) { currentApk.delete(); currentApk = null; }
-        if (currentIndex != null) {
-            android.database.sqlite.SQLiteDatabase.deleteDatabase(currentIndex);
-            currentIndex = null;
+        pendingApkUri = uri;
+        final boolean previousProjectIsUsable =
+            currentApk != null && currentApk.isFile() && report != null;
+        // Transactional replacement: never destroy the old APK cache, its
+        // SQLite index or unsaved edit plan before the candidate validates.
+        // Keep the current project fully usable if the provider returns an
+        // invalid, missing, oversized or inaccessible replacement document.
+        if (!previousProjectIsUsable) {
+            report = null;
+            if (homeOverview != null) homeOverview.update(null, 0);
+            output.setText("Analisando...");
+            apkSummary.setText("ANÁLISE EM ANDAMENTO");
+            projectMetrics.setText("ESTRUTURA   •   Analisando...");
+            share.setEnabled(false);
+            ai.setEnabled(false);
+            apkAdvisor.setEnabled(false);
+            project.setEnabled(false);
+            rebuild.setEnabled(false);
+            signatureInfo.setEnabled(false);
+            explorerView.setFiles(null, null);
+        } else {
+            android.widget.Toast.makeText(this,
+                "Verificando novo APK. Seu projeto atual será preservado até a validação.",
+                android.widget.Toast.LENGTH_LONG).show();
         }
-        output.setText("Analisando...");
-        apkSummary.setText("ANÁLISE EM ANDAMENTO");
-        projectMetrics.setText("ESTRUTURA   •   Analisando...");
-        share.setEnabled(false);
-        ai.setEnabled(false);
-        apkAdvisor.setEnabled(false);
-        project.setEnabled(false);
-        rebuild.setEnabled(false);
-        signatureInfo.setEnabled(false);
-        explorerView.getEditPlan().clear();
-        explorerView.setFiles(null, null);
         executor.execute(() -> {
             try {
-                AnalyzedApk result = analyze(uri);
+                AnalyzedApk candidate = analyze(uri);
+                // Validation alone is not an accepted import. The history and
+                // icon cache must not change until the UI commits this candidate.
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
-                        result.file.delete();
-                        if (result.indexFile != null)
-                            android.database.sqlite.SQLiteDatabase.deleteDatabase(result.indexFile);
+                        candidate.file.delete();
+                        if (candidate.indexFile != null)
+                            android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate.indexFile);
                         return;
                     }
-                    currentApk = result.file;
-                    currentIndex = result.indexFile;
-                    displayAnalyzedReport(result.report);
+                    File previousApk = currentApk;
+                    File previousIndex = currentIndex;
+                    // Commit the replacement only when a complete, validated
+                    // report and private file/index are ready to display.
+                    explorerView.getEditPlan().clear();
+                    currentApk = candidate.file;
+                    currentIndex = candidate.indexFile;
+                    selectedApkUri = uri;
+                    pendingApkUri = null;
+                    displayAnalyzedReport(candidate.report);
+                    refreshRecentProjects();
+                    // Side effects happen only after a successful UI commit.
+                    // Metadata remains on the worker so no disk work blocks UI.
+                    JSONObject manifest = candidate.report.optJSONObject("manifestAnalysis");
+                    String packageName = manifest == null ? "" :
+                        manifest.optString("packageName", "");
+                    recordAcceptedProject(uri, packageName, candidate.file, sequence);
+                    if (previousApk != null && previousApk != candidate.file)
+                        previousApk.delete();
+                    if (previousIndex != null && previousIndex != candidate.indexFile)
+                        android.database.sqlite.SQLiteDatabase.deleteDatabase(previousIndex);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) return;
-                    output.setText("Erro: " + error.getMessage());
-                    apkSummary.setText("FALHA AO ABRIR PROJETO");
-                    projectMetrics.setText("ESTRUTURA   •   Indisponível");
+                    pendingApkUri = null;
+                    if (previousProjectIsUsable) {
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Falha ao abrir outro APK")
+                            .setMessage("Não foi possível validar o novo arquivo: "
+                                + error.getMessage()
+                                + "\n\nSeu projeto, a pesquisa e as alterações "
+                                + "pendentes foram preservados.")
+                            .setPositiveButton("Entendi", null).show();
+                    } else {
+                        output.setText("Erro: " + error.getMessage());
+                        apkSummary.setText("FALHA AO ABRIR PROJETO");
+                        projectMetrics.setText("ESTRUTURA   •   Indisponível");
+                    }
                 });
             }
         });
+    }
+
+    /**
+     * Recent-project metadata is best-effort and follows an accepted import.
+     * Never record a candidate in the analysis worker before UI commitment:
+     * rotation, cancellation or a newer import can discard that candidate.
+     */
+    private void recordAcceptedProject(Uri uri, String packageName,
+            File committedApk, int acceptedSequence) {
+        final android.content.Context application = getApplicationContext();
+        try {
+            executor.execute(() -> {
+                try {
+                    if (!P7ProjectHistory.record(application, uri, packageName)) return;
+                    P7RecentAppIcons.capture(application, uri, committedApk);
+                    P7RecentAppIcons.prune(application, P7ProjectHistory.list(application));
+                    runOnUiThread(() -> {
+                        // A newer project may already have opened by the time
+                        // the optional history work finishes.
+                        if (acceptedSequence == analysisSequence &&
+                                !isFinishing() && !isDestroyed())
+                            refreshRecentProjects();
+                    });
+                } catch (RuntimeException metadataFailure) {
+                    // Untrusted SAF provider metadata must never undo an APK
+                    // already accepted, or corrupt its unsaved edits.
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closing) {
+            // Activity is closing: skipping history is safer than inventing
+            // an opened project or retrying its import.
+        }
     }
 
     private void confirmOtaDownload(OtaRelease release) {
@@ -1611,7 +2134,24 @@ public class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putInt("active_studio_section", selectedSection);
+        if (sectionNavigationInitialized && pendingScrollSection != selectedSection)
+            sectionScrollPositions[selectedSection] =
+                Math.max(0, contentScroll.getScrollY());
+        outState.putIntArray("p7_section_scroll_positions",
+            sectionScrollPositions.clone());
+        if (designStudio != null)
+            outState.putInt("p7_design_active_tab", designStudio.getActiveTab());
+        if (pendingIconExport != null)
+            outState.putIntArray("p7_icon_export", new int[] {
+                pendingIconExport.color, pendingIconExport.symbol,
+                pendingIconExport.shape });
+        if (pendingLogoExport != null)
+            outState.putStringArray("p7_logo_export", new String[] {
+                pendingLogoExport.name, pendingLogoExport.subtitle,
+                Integer.toString(pendingLogoExport.color),
+                Integer.toString(pendingLogoExport.background) });
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
+        if (pendingApkUri != null) outState.putParcelable("pending_apk_uri", pendingApkUri);
         super.onSaveInstanceState(outState);
     }
 

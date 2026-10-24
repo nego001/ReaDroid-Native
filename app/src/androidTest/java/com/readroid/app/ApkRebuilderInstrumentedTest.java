@@ -95,18 +95,21 @@ public final class ApkRebuilderInstrumentedTest {
         }
     }
 
-    @Test public void missingEditPathFailsAndDeletesIncompleteOutput() throws Exception {
+    @Test public void missingEditPathFailsWithoutChangingExistingOutput() throws Exception {
         File original = file(".apk");
         File output = file(".apk");
         try {
             fixture(original, false);
+            byte[] previous = utf8("Exportação anterior válida: não substituir em caso de falha");
+            Files.write(output.toPath(), previous);
             EditPlan plan = new EditPlan();
             plan.addTextReplacement("assets/missing.json", "{\"invalid\":true}");
             try {
                 ApkRebuilder.rebuild(original, output, plan.snapshot());
                 fail("Missing ZIP entry should reject rebuild");
             } catch (IOException expected) {
-                assertFalse("Incomplete output must be deleted", output.exists());
+                assertArrayEquals("Previous output must survive failed rebuild",
+                    previous, Files.readAllBytes(output.toPath()));
                 assertTrue("Original ZIP must remain", original.isFile());
             }
         } finally {
@@ -120,13 +123,16 @@ public final class ApkRebuilderInstrumentedTest {
         File output = file(".apk");
         try {
             fixture(original, true);
+            byte[] previous = utf8("Exportação anterior intacta");
+            Files.write(output.toPath(), previous);
             EditPlan plan = new EditPlan();
             plan.addTextReplacement("assets/config.json", "{}");
             try {
                 ApkRebuilder.rebuild(original, output, plan.snapshot());
                 fail("Unsafe ZIP path should be rejected");
             } catch (IOException expected) {
-                assertFalse("Partial output must be deleted", output.exists());
+                assertArrayEquals("Unsafe ZIP cannot destroy previous output",
+                    previous, Files.readAllBytes(output.toPath()));
                 assertTrue("Original must be left intact", original.isFile());
             }
         } finally {
@@ -212,6 +218,106 @@ public final class ApkRebuilderInstrumentedTest {
             }
         } finally {
             original.delete();
+        }
+    }
+
+    @Test public void directMapCannotBypassUtf8ByteLimit() throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] immutable = Files.readAllBytes(original.toPath());
+            assertTrue(output.delete());
+            char[] chars = new char[44000];
+            java.util.Arrays.fill(chars, '界'); // 132000 UTF-8 bytes
+            Map<String, String> raw = Collections.singletonMap(
+                "assets/config.json", new String(chars));
+            try {
+                ApkRebuilder.rebuild(original, output, raw);
+                fail("Direct rebuild must obey EditPlan's byte budget");
+            } catch (IOException expected) {
+                assertFalse("Must reject before creating output", output.exists());
+            }
+            assertArrayEquals(immutable, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void directMapRejectsOrphanSurrogatesBeforeOutput() throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] immutable = Files.readAllBytes(original.toPath());
+            assertTrue(output.delete());
+            String malformed = "abc" + (char) 0xD83D;
+            Map<String, String> raw = Collections.singletonMap(
+                "assets/config.json", malformed);
+            try {
+                ApkRebuilder.rebuild(original, output, raw);
+                fail("Direct rebuild must not replace malformed Unicode with '?'");
+            } catch (IOException expected) {
+                assertFalse("Must reject before creating output", output.exists());
+            }
+            assertArrayEquals(immutable, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void validatedSnapshotIgnoresInconsistentCallerMap() throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            Map<String, String> deceptive = new java.util.AbstractMap<String, String>() {
+                @Override public java.util.Set<Map.Entry<String, String>> entrySet() {
+                    return Collections.<Map.Entry<String, String>>singleton(
+                        new java.util.AbstractMap.SimpleImmutableEntry<>(
+                            "assets/config.json", "validado"));
+                }
+                @Override public String get(Object path) {
+                    return "não foi validado";
+                }
+            };
+            ApkRebuilder.rebuild(original, output, deceptive);
+            try (ZipFile rebuilt = new ZipFile(output)) {
+                assertArrayEquals(utf8("validado"), entryBytes(rebuilt, "assets/config.json"));
+            }
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void interruptedRebuildKeepsPriorExportAndSource() throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] source = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("arquivo de destino anterior");
+            Files.write(output.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{}");
+            Thread.currentThread().interrupt();
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot());
+                fail("Interrupted rebuild must refuse committing the destination");
+            } catch (java.io.InterruptedIOException expected) {
+                // Do not publish a partial archive after cancellation.
+            } finally {
+                Thread.interrupted(); // Clear only the flag set by this test.
+            }
+            assertArrayEquals(previous, Files.readAllBytes(output.toPath()));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            Thread.interrupted();
+            original.delete();
+            output.delete();
         }
     }
 

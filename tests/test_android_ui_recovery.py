@@ -33,12 +33,14 @@ class EmulatorLauncherRecoveryTests(unittest.TestCase):
             tap.assert_called_once_with(overlay[1])
 
     def test_app_anr_is_never_dismissed(self):
-        overlay = [node(text="NegrescoDroid isn't responding", package="android")]
-        with patch.object(smoke, "hierarchy", return_value=overlay), \
-             patch.object(smoke, "tap") as tap:
-            with self.assertRaisesRegex(AssertionError, "NegrescoDroid ANR"):
-                smoke.visible_app_hierarchy()
-            tap.assert_not_called()
+        for brand in ("NegrecoDroid", "NegrescoDroid"):
+            with self.subTest(brand=brand):
+                overlay = [node(text=brand + " isn't responding", package="android")]
+                with patch.object(smoke, "hierarchy", return_value=overlay), \
+                     patch.object(smoke, "tap") as tap:
+                    with self.assertRaisesRegex(AssertionError, "NegrecoDroid ANR"):
+                        smoke.visible_app_hierarchy()
+                    tap.assert_not_called()
 
     def test_unrelated_dialog_is_never_dismissed(self):
         overlay = [

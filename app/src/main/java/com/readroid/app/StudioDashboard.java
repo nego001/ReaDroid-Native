@@ -10,8 +10,11 @@ import android.text.style.RelativeSizeSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 /**
@@ -92,6 +95,34 @@ public final class StudioDashboard {
         return tile;
     }
 
+    /** Compact three-column action card matching the approved Home composition. */
+    public static LinearLayout referenceAction(Activity a, String title, int glyph,
+            View.OnClickListener action) {
+        LinearLayout tile = new LinearLayout(a);
+        tile.setOrientation(LinearLayout.HORIZONTAL);
+        tile.setGravity(Gravity.CENTER_VERTICAL);
+        tile.setPadding(dp(a, 6), dp(a, 6), dp(a, 5), dp(a, 6));
+        tile.setMinimumHeight(dp(a, 48));
+        tile.setBackground(NegrescoTheme.studioCard(a, false));
+        ImageView symbol = new ImageView(a);
+        symbol.setImageResource(glyph);
+        symbol.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        tile.addView(symbol, new LinearLayout.LayoutParams(dp(a, 20), dp(a, 20)));
+        TextView label = label(a, title, 10, NegrescoTheme.TEXT, false);
+        label.setMaxLines(2);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+        lp.leftMargin = dp(a, 5);
+        tile.addView(label, lp);
+        tile.setContentDescription(title);
+        symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        tile.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        tile.setClickable(true);
+        tile.setFocusable(true);
+        tile.setOnClickListener(action);
+        return tile;
+    }
+
     private static LinearLayout option(Activity a, Button action, String glyph, String detail) {
         LinearLayout wrapper = card(a, false);
         wrapper.setPadding(dp(a, 10), dp(a, 12), dp(a, 10), dp(a, 12));
@@ -113,11 +144,29 @@ public final class StudioDashboard {
         wrapper.setFocusable(true);
         wrapper.setContentDescription(action.getText().toString() + ". " + detail);
         wrapper.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        // A clickable LinearLayout must be announced as a button, not as an
+        // unlabeled generic group. Decorative glyphs stay outside TalkBack.
+        wrapper.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(
+                    View host, AccessibilityNodeInfo node) {
+                super.onInitializeAccessibilityNodeInfo(host, node);
+                node.setClassName(Button.class.getName());
+            }
+        });
         header.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         name.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         description.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         wrapper.setOnClickListener(v -> action.performClick());
         return wrapper;
+    }
+
+    /** Keep every personalization control readable on narrow and large-text screens. */
+    static int personalizationColumnsForViewport(int layout, int widthDp,
+            float systemFontScale, float appFontScale) {
+        if (layout == 3) return 1;
+        float effective = Math.max(0.75f, systemFontScale)
+            * Math.max(0.85f, appFontScale);
+        return widthDp > 0 && (widthDp < 360 || effective >= 1.20f) ? 1 : 2;
     }
 
     private static void buildOptions(Activity a, LinearLayout destination, Button[] actions) {
@@ -131,22 +180,30 @@ public final class StudioDashboard {
             "Neon ou minimalista", "Bordas do seu jeito", "Voltar ao padrão"
         };
         destination.removeAllViews();
-        for (int index = 0; index < actions.length; index += 2) {
+        destination.setTag("p7-personalization-options");
+        final int columns = personalizationColumnsForViewport(
+            NegrescoTheme.LAYOUT_VARIANT,
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
+        for (int index = 0; index < actions.length; index += columns) {
             LinearLayout row = new LinearLayout(a);
             row.setOrientation(LinearLayout.HORIZONTAL);
             destination.addView(row);
-            for (int col = 0; col < 2; col++) {
+            for (int col = 0; col < columns; col++) {
                 int i = index + col;
                 if (i >= actions.length) break;
                 Button action = actions[i];
                 detach(action);
                 LinearLayout tile = option(a, action, glyphs[i], details[i]);
-                boolean lastAlone = (i == actions.length - 1 && col == 0);
-                tile.setMinimumHeight(dp(a, NegrescoTheme.COMPACT ? 106 : 120));
+                boolean alone = columns == 1 ||
+                    (i == actions.length - 1 && col == 0);
+                tile.setMinimumHeight(dp(a, alone ? 76 :
+                    (NegrescoTheme.COMPACT ? 106 : 120)));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    lastAlone ? -1 : 0, -2, lastAlone ? 0f : 1f);
-                lp.setMargins(col == 0 ? 0 : dp(a, 4), 0,
-                    col == 0 ? (lastAlone ? 0 : dp(a, 4)) : 0, dp(a, 8));
+                    alone ? -1 : 0, -2, alone ? 0f : 1f);
+                lp.setMargins(columns == 1 || col == 0 ? 0 : dp(a, 4), 0,
+                    alone || col == 1 ? 0 : dp(a, 4), dp(a, 8));
                 row.addView(tile, lp);
             }
         }
@@ -162,6 +219,8 @@ public final class StudioDashboard {
         mark.setSelectedState(true);
         top.addView(mark, new LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)));
         TextView heading = label(a, title, 21, NegrescoTheme.TEXT, true);
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            heading.setAccessibilityHeading(true);
         LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(-2, -2);
         headingParams.leftMargin = dp(a, 12);
         top.addView(heading, headingParams);
@@ -203,8 +262,9 @@ public final class StudioDashboard {
         button.setContentDescription(title + ". " + description);
     }
 
-    public static void compose(Activity a, LinearLayout home,
+    public static void compose(Activity a, LinearLayout home, LinearLayout designSettingsDestination,
                                TextView apkSummary, TextView projectMetrics, Button choose,
+                               P7HomeOverview overview,
                                TextView shortcutsTitle, TextView shortcutHint, LinearLayout quickGrid,
                                TextView customizationTitle, TextView customizationHint,
                                Button togglePersonalization, LinearLayout personalizationGroup,
@@ -215,8 +275,59 @@ public final class StudioDashboard {
         home.setClipChildren(false);
         home.setClipToPadding(false);
 
+        // Reproduce the reference composition: a short welcome card, with
+        // the original mascot crossing up into the header. No extra tall
+        // illustration card pushing the statistics and recent files away.
+        // Both the Android accessibility font scale and in-app scaling can
+        // enlarge the welcome description. Do not judge only the app setting.
+        float effectiveScale = a.getResources().getConfiguration().fontScale
+            * NegrescoTheme.FONT_SCALE;
+        boolean enlarged = effectiveScale > 1.15f;
+        boolean narrow = a.getResources().getConfiguration().screenWidthDp < 360;
+        final int stageHeight = enlarged ? 133 : 101;
+        final int mascotWidth = narrow ? 103 : 124;
+        final int mascotHeight = enlarged ? 137 : 160;
+        final int topOverlap = enlarged ? 17 : 59;
+        FrameLayout welcomeStage = new FrameLayout(a);
+        welcomeStage.setTag("p7-welcome-stage");
+        welcomeStage.setClipChildren(false);
+        welcomeStage.setClipToPadding(false);
+        LinearLayout welcome = card(a, false);
+        welcome.setMinimumHeight(dp(a, stageHeight));
+        welcome.setGravity(Gravity.CENTER_VERTICAL);
+        welcome.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+        // The minimum reproduces the normal approved mockup, but wrap_content
+        // expands when a larger font or longer translation needs more space.
+        FrameLayout.LayoutParams welcomeParams = new FrameLayout.LayoutParams(
+            -1, -2);
+        welcomeStage.addView(welcome, welcomeParams);
+        LinearLayout welcomeText = column(a);
+        welcomeText.setTag("p7-welcome-text");
+        welcomeText.setGravity(Gravity.CENTER_VERTICAL);
+        welcomeText.setPadding(0, 0, dp(a, mascotWidth + 6), 0);
+        welcome.addView(welcomeText, new LinearLayout.LayoutParams(-1, -2));
+        welcomeText.addView(label(a, "Olá, Desenvolvedor", 15,
+            NegrescoTheme.TEXT, true));
+        gap(a, welcomeText, 4);
+        welcomeText.addView(label(a,
+            "Analise, edite e reconstrua seus apps de forma simples e poderosa.",
+            11, NegrescoTheme.MUTED, false));
+
+        P7MascotView mascot = new P7MascotView(a);
+        // A card has its own elevation. Without a higher Z, Android draws
+        // the opaque card over the artist's face despite child order.
+        mascot.setElevation(dp(a, 8));
+        FrameLayout.LayoutParams art = new FrameLayout.LayoutParams(
+            dp(a, mascotWidth), dp(a, mascotHeight),
+            Gravity.TOP | Gravity.RIGHT);
+        art.topMargin = -dp(a, topOverlap);
+        art.rightMargin = dp(a, 2);
+        welcomeStage.addView(mascot, art);
+        home.addView(welcomeStage, new LinearLayout.LayoutParams(-1, -2));
+        gap(a, home, 7);
+
         // Main project area with the live report-bound text views and real picker.
-        LinearLayout hero = card(a, true);
+        LinearLayout hero = card(a, false);
         TextView heroLabel = label(a, "◈  PROJETO ATUAL", 12, NegrescoTheme.ACCENT, true);
         heroLabel.setLetterSpacing(0.05f);
         hero.addView(heroLabel);
@@ -243,25 +354,36 @@ public final class StudioDashboard {
         choose.setContentDescription("Selecionar arquivo APK para analisar");
         choose.setMinHeight(dp(a, 52));
         hero.addView(choose);
-        home.addView(hero);
-        gap(a, home, 14);
+        // Put live information immediately after the welcome card, exactly
+        // as in the approved Home mockup; the full project card goes below
+        // the six compact actions so it doesn't consume the first viewport.
+        // Session-only counters and a clickable current-project row.
+        home.addView(overview);
+        gap(a, home, 9);
 
         // Quick actions, native icons, two-column layout on phones.
-        shortcutsTitle.setText("ACESSO RÁPIDO");
+        shortcutsTitle.setText("Ações rápidas");
         shortcutsTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            shortcutsTitle.setAccessibilityHeading(true);
         shortcutsTitle.setLetterSpacing(0.05f);
         shortcutsTitle.setPadding(0, dp(a, 2), 0, dp(a, 2));
         home.addView(shortcutsTitle);
-        shortcutHint.setText("FERRAMENTAS PRINCIPAIS");
-        shortcutHint.setPadding(0, 0, 0, dp(a, 10));
+        shortcutHint.setText("");
+        shortcutHint.setPadding(0, 0, 0, dp(a, 4));
         home.addView(shortcutHint);
         home.addView(quickGrid);
-        gap(a, home, 8);
+        gap(a, home, 12);
+        home.addView(hero);
+        gap(a, home, 10);
 
+        // Real appearance controls belong to the Design Studio, not the Home viewport.
         // Personalization panel: 11 real controls rendered as compact two-column
         // options. Their original click handlers remain authoritative.
         LinearLayout settingsPanel = card(a, true);
         customizationTitle.setText("◉  PERSONALIZAÇÃO");
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            customizationTitle.setAccessibilityHeading(true);
         customizationTitle.setTextColor(NegrescoTheme.TEXT);
         customizationTitle.setTextSize(17 * NegrescoTheme.FONT_SCALE);
         customizationTitle.setPadding(0, 0, 0, dp(a, 4));
@@ -279,12 +401,14 @@ public final class StudioDashboard {
         buildOptions(a, personalizationGroup, controls);
         personalizationGroup.setVisibility(expanded ? View.VISIBLE : View.GONE);
         settingsPanel.addView(personalizationGroup);
-        home.addView(settingsPanel);
-        gap(a, home, 14);
+        designSettingsDestination.addView(settingsPanel);
+        gap(a, designSettingsDestination, 14);
 
         // Actual OTA status is retained: no false claims about availability.
         LinearLayout updates = card(a, false);
         otaTitle.setText("↻  ATUALIZAÇÕES");
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            otaTitle.setAccessibilityHeading(true);
         otaTitle.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         otaTitle.setPadding(0, 0, 0, dp(a, 8));
         updates.addView(otaTitle);
@@ -298,6 +422,8 @@ public final class StudioDashboard {
         // The technical report remains selectable, with its existing buttons.
         LinearLayout technical = card(a, false);
         detailsTitle.setText("▥  RELATÓRIO TÉCNICO");
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            detailsTitle.setAccessibilityHeading(true);
         detailsTitle.setTextSize(12 * NegrescoTheme.FONT_SCALE);
         detailsTitle.setPadding(0, 0, 0, dp(a, 8));
         technical.addView(detailsTitle);

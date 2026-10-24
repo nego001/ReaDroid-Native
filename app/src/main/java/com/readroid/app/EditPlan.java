@@ -2,19 +2,41 @@ package com.readroid.app;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** In-memory edit plan only. Does not change the source APK. */
 public final class EditPlan {
+    private static final int MAX_REPLACEMENT_BYTES = 128 * 1024;
     private final LinkedHashMap<String, String> replacements = new LinkedHashMap<>();
+
+    /**
+     * Reject over-budget text and malformed UTF-16 (unpaired surrogates).
+     * String.getBytes(UTF_8) silently replaces unpaired surrogates with '?',
+     * which would otherwise corrupt the user's edit on export/recovery.
+     */
+    private static boolean invalidReplacement(String text) {
+        if (text == null || text.length() > MAX_REPLACEMENT_BYTES) return true;
+        for (int i = 0; i < text.length(); i++) {
+            char unit = text.charAt(i);
+            if (Character.isHighSurrogate(unit)) {
+                if (i + 1 >= text.length()
+                    || !Character.isLowSurrogate(text.charAt(i + 1))) return true;
+                i++; // A valid supplementary code point uses a surrogate pair.
+            } else if (Character.isLowSurrogate(unit)) {
+                return true;
+            }
+        }
+        return text.getBytes(StandardCharsets.UTF_8).length > MAX_REPLACEMENT_BYTES;
+    }
 
     public void addTextReplacement(String path, String replacement) {
         if (path == null || path.isEmpty() || path.startsWith("/") || path.contains("..") || path.contains("\\"))
             throw new IllegalArgumentException("Caminho inválido");
         if (!isEditable(path)) throw new IllegalArgumentException("Tipo de arquivo não suportado para edição textual");
-        if (replacement == null || replacement.length() > 131072)
-            throw new IllegalArgumentException("Texto excede o limite de 128 KB");
+        if (invalidReplacement(replacement))
+            throw new IllegalArgumentException("Texto inválido ou acima de 128 KiB em UTF-8");
         replacements.put(path, replacement);
     }
 
@@ -31,8 +53,8 @@ public final class EditPlan {
         // Validate paths and text even when user submits unchanged content.
         if (path == null || path.isEmpty() || path.startsWith("/")
             || path.contains("..") || path.contains("\\")
-            || !isEditable(path) || replacement.length() > 131072)
-            throw new IllegalArgumentException("Caminho ou edição inválida");
+            || !isEditable(path) || invalidReplacement(replacement))
+            throw new IllegalArgumentException("Caminho ou edição inválida (UTF-8, máximo 128 KiB)");
         if (replacement.equals(original))
             return replacements.remove(path) == null ? EditResult.UNCHANGED : EditResult.REMOVED;
         String previous = replacements.get(path);

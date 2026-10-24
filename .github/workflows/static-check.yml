@@ -27,3 +27,20 @@ jobs:
             if [ -f "$script" ]; then python3 -m py_compile "$script"; fi
           done
           echo "Source layout and Python syntax checks passed"
+      - name: Guard native NegrecoDroid mark and official studio wording
+        run: python3 -m unittest discover -s tests -p 'test_p7_brand_identity_contract.py' -v
+      - name: Verify P7 reference validator with synthetic test PNGs
+        run: python3 -m unittest discover -s tests -p 'test_p7_reference_assets.py' -v
+      - name: Verify committed official P7 PNG references
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-') }}
+        run: python3 tools/p7_reference_assets.py
+      - name: Guard P7 screenshot documentation against stale evidence counts
+        run: python3 -m unittest discover -s tests -p 'test_p7_reference_readme.py' -v
+      - name: Verify committed-import history contract
+        run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
+      - name: Guard single-shell P7 screenshot capture
+        run: |
+          bash -n tools/p7_capture_populated.sh
+          python3 -m unittest discover -s tests -p 'test_p7_capture_runner.py' -v
+      - name: Protect major-only APK generation policy
+        run: python3 -m unittest discover -s tests -p 'test_major_apk_policy.py' -v

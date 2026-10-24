@@ -1,0 +1,213 @@
+name: P7 NegrecoDroid brand validation
+on:
+  pull_request:
+    branches: [docs/p7-negrecodroid-ui-1to1, feature/v3-design-studio]
+    paths:
+      - 'app/src/main/**'
+      - 'app/src/qa/**'
+      - 'app/src/androidTest/**'
+      - 'tools/p7_explorer_smoke.py'
+      - 'tools/p7_security_build_smoke.py'
+      - 'tools/p7_compact_smoke.py'
+      - 'tools/p7_large_text_smoke.py'
+      - 'tools/p7_capture_manifest.py'
+      - 'tools/p7_visual_review_board.py'
+      - 'tools/p7_cross_api_review.py'
+      - 'tools/p7_capture_populated.sh'
+      - 'tools/p7_api35_reboot.sh'
+      - 'tests/test_p7_capture_runner.py'
+      - 'tests/test_p7_api35_reboot.py'
+      - 'tests/test_p7_cross_api_review.py'
+      - 'tests/test_p7_visual_review_board.py'
+      - 'tests/test_p7_capture_manifest.py'
+      - 'tests/test_p7_compact_smoke.py'
+      - 'tests/test_p7_design_smoke.py'
+      - 'tools/p7_design_smoke.py'
+      - 'tools/p7_home_smoke.py'
+      - 'tests/test_p7_import_history_contract.py'
+      - 'design/reference/p7/**'
+      - '.github/workflows/p7-brand-validation.yml'
+  workflow_dispatch:
+# A new PR commit supersedes old emulator runs. Don't burn GitHub Actions
+# minutes testing abandoned in-flight revisions.
+concurrency:
+  group: p7-brand-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  validate-brand:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify byte-identical official P7 artwork
+        run: python3 tools/p7_reference_assets.py
+      - name: Verify ANR recovery regression contracts
+        run: python3 -m unittest discover -s tests -p 'test_android_ui_recovery.py' -v
+      - name: Check compact viewport helper with unit tests
+        run: python3 -m unittest discover -s tests -p 'test_p7_compact_smoke.py' -v
+      - name: Check Design Studio accessible identity contracts
+        run: python3 -m unittest discover -s tests -p 'test_p7_design_smoke.py' -v
+      - name: Check P7 screenshot inventory helper
+        run: python3 -m unittest discover -s tests -p 'test_p7_capture_manifest.py' -v
+      - name: Verify P7 offline visual-review board builder
+        run: python3 -m unittest discover -s tests -p 'test_p7_visual_review_board.py' -v
+      - name: Verify cross-API visual evidence contracts
+        run: python3 -m unittest discover -s tests -p 'test_p7_cross_api_review.py' -v
+      - name: Verify populated Explorer capture runner
+        run: |
+          bash -n tools/p7_capture_populated.sh
+          bash -n tools/p7_api35_reboot.sh
+          python3 -m unittest discover -s tests -p 'test_p7_capture_runner.py' -v
+          python3 -m unittest discover -s tests -p 'test_p7_api35_reboot.py' -v
+      - name: Guard recent-history updates behind a committed APK import
+        run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
+      - name: Enable hardware acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Record runner memory before Android emulator
+        run: |
+          free -m
+          grep -E 'MemTotal|MemAvailable|SwapTotal' /proc/meminfo
+      - name: Check brand on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 3072M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            set -eu
+            # Capture the real, synthetic-only Explorer on a fresh emulator.
+            # Running it after the full test suite can leave Android 15's
+            # Pixel Launcher holding window focus; fail-closed checks stay on.
+            gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+            bash tools/p7_capture_populated.sh ${{ matrix.api }}
+            # Run the full regression suite only after the capture. Gradle may
+            # reinstall debug APKs, but the screenshot is already on the host.
+            # Split the exact 24 test selectors into five REQUIRED Gradle
+            # invocations. On API35 an intermittently lost emulator stopped
+            # during the large-font navigation test after 24 other tests.
+            # Run the isolated bottom-tab class, then the rest of navigation.
+            # First session: preserve 135% bottom-navigation assertions in isolation.
+            # API35 has intermittently lost the emulator when this method ran
+            # late in navigation. Every session fails closed with set -eu.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7BottomNavigationLargeFontInstrumentedTest
+            # Second session: large-font welcome-card test, full assertions.
+            # Verify the 135% long-welcome-card height and all multiline
+            # accessibility assertions in a clean isolated session.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7WelcomeLargeFontInstrumentedTest
+            # Remaining 35 navigation tests, including preset confirmation.
+            # Isolate all original large-font icon-template assertions.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7IconTemplatesLargeFontInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7NavigationInstrumentedTest
+            # Final session: the 116 tests from the remaining 20 selectors.
+            # mandatory; either Gradle failure blocks the entire screenshot gate.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#detectsSyntheticSystemOverlayBeforeEvidenceExport,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest,com.readroid.app.P7IconWorkshopInstrumentedTest,com.readroid.app.P7IconSvgInstrumentedTest,com.readroid.app.P7LogoWorkshopInstrumentedTest,com.readroid.app.P7LogoSvgInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest
+            # The comprehensive Android regression suite excludes only the
+            # screenshot-export method, already run in isolation above.
+            # Gradle connectedAndroidTest uninstalls its tested target on exit.
+            # Restore ONLY the already-built debug APK before UI smokes; never
+            # substitute a stale release APK or bypass the tests/capture.
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm path com.readroid.app | grep -Fq 'package:'
+            # Both stages must succeed before generating screenshot inventory.
+            adb shell am start -W -n com.readroid.app/.MainActivity
+            sleep 2
+            python3 -c 'from tools.android_ui_smoke import visible_app_hierarchy, ensure_foreground; nodes = visible_app_hierarchy(); ensure_foreground(); assert any(n.attrib.get("text") == "Olá, Desenvolvedor" for n in nodes), "Home not visible before screenshot"'
+            adb exec-out screencap -p > p7-brand-android-${{ matrix.api }}.png
+            test -s p7-brand-android-${{ matrix.api }}.png
+            python3 tools/p7_home_smoke.py
+            python3 tools/p7_explorer_smoke.py
+            test -s p7-explorer-android-${{ matrix.api }}.png
+            test -s p7-explorer-populated-android-${{ matrix.api }}.png
+            python3 tools/p7_security_build_smoke.py
+            test -s p7-security-android-${{ matrix.api }}.png
+            test -s p7-build-android-${{ matrix.api }}.png
+            python3 tools/p7_design_smoke.py
+            test -s p7-design-android-${{ matrix.api }}.png
+            test -s p7-icon-workshop-android-${{ matrix.api }}.png
+            test -s p7-logo-workshop-android-${{ matrix.api }}.png
+            # API35 passed all 153 instrumentation tests, then occasionally
+            # lost ADB while resizing the viewport for compact screenshots.
+            # Start compact QA on a freshly booted Android userspace while
+            # keeping the same AVD, same APK and all earlier screenshot gates.
+            # This is NOT a retry: reboot/boot/app verification must pass,
+            # or the job fails closed before taking any compact screenshot.
+            bash tools/p7_api35_reboot.sh ${{ matrix.api }}
+            python3 tools/p7_compact_smoke.py
+            test -s p7-compact-inicio-android-${{ matrix.api }}.png
+            test -s p7-compact-arquivos-android-${{ matrix.api }}.png
+            test -s p7-compact-design-android-${{ matrix.api }}.png
+            python3 tools/p7_large_text_smoke.py
+            test -s p7-large-text-inicio-android-${{ matrix.api }}.png
+            test -s p7-large-text-arquivos-android-${{ matrix.api }}.png
+            test -s p7-large-text-design-android-${{ matrix.api }}.png
+            python3 tools/p7_capture_manifest.py
+            test -s p7-evidence-android-${{ matrix.api }}.json
+            python3 tools/p7_visual_review_board.py
+            test -s p7-visual-review-android-${{ matrix.api }}.html
+      - name: Upload launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7-brand-android-${{ matrix.api }}
+          path: |
+            p7-brand-android-*.png
+            p7-explorer-android-*.png
+            p7-explorer-populated-android-*.png
+            p7-security-android-*.png
+            p7-build-android-*.png
+            p7-design-android-*.png
+            p7-compact-*-android-*.png
+            p7-large-text-*-android-*.png
+            p7-icon-workshop-android-*.png
+            p7-logo-workshop-android-*.png
+            p7-capture-diagnostics-android-*.txt
+            p7-evidence-android-*.json
+            p7-visual-review-android-*.html
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+
+  cross-api-visual-review:
+    needs: validate-brand
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/p7-')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p7-brand-android-*
+          path: artifacts
+      - name: Build offline Android 10 vs 15 evidence review
+        run: |
+          python3 tools/p7_cross_api_review.py \
+            --api29-dir artifacts/p7-brand-android-29 \
+            --api35-dir artifacts/p7-brand-android-35 \
+            --output p7-cross-api-review.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p7-cross-api-visual-review
+          path: p7-cross-api-review.html
+          if-no-files-found: error
