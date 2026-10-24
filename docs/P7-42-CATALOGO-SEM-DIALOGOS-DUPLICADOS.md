@@ -12,6 +12,8 @@ Os três controles “Ver todos” (Temas, Layouts, Presets) construíam um `Ale
 ## Regressão
 `repeatedViewAllNeverStacksNativeCatalogChoosers` passa pelos três controles reais: duas ativações consecutivas, mesmo diálogo ainda visível, título correspondente ao catálogo, nenhuma gravação em `v3_personalizacao`, botão Fechar, diálogo encerrado e referência limpa. Contrato Python exige testagem e guarda; não remove teste algum.
 
-Ao integrar, matriz exigirá **159 instrumentados por Android** (1+1+1+40+116), 14 capturas reais/API e 28 na revisão cruzada. Continua sem homologação de fidelidade visual 1:1, Galaxy A55/TalkBack físico, nem autorização de APK/OTA ou merge.
+Ao integrar, matriz exigirá **160 instrumentados por Android** (1+1+1+41+116), 14 capturas reais/API e 28 na revisão cruzada. Continua sem homologação de fidelidade visual 1:1, Galaxy A55/TalkBack físico, nem autorização de APK/OTA ou merge.
 
 **Status:** P7.42 preparada separadamente enquanto P7.41.1 aguarda matriz.
+
+Também há regressão que bloqueia Ver todos atrás da confirmação de tema; após Cancelar, verifica que o seletor volta a abrir, sem alterar as preferências.

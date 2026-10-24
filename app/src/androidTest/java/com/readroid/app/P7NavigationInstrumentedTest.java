@@ -261,6 +261,81 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void viewAllWaitsForThemeConfirmationAndRecoversAfterCancel() {
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            first = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertTrue(byDescription(root, "Abrir seção Design").performClick());
+                android.content.SharedPreferences prefs =
+                    activity.getSharedPreferences("v3_personalizacao", 0);
+                java.util.Map<String, ?> saved =
+                    new java.util.HashMap<>(prefs.getAll());
+                int current = P7ThemeCatalog.currentTheme(activity);
+                String next = P7ThemeCatalog.nameAt(current == 0 ? 1 : 0);
+                assertTrue(byDescription(root, next + ",").performClick());
+                P7DesignStudio studio;
+                try {
+                    java.lang.reflect.Field field =
+                        MainActivity.class.getDeclaredField("designStudio");
+                    field.setAccessible(true);
+                    studio = (P7DesignStudio) field.get(activity);
+                } catch (ReflectiveOperationException error) {
+                    throw new AssertionError(error);
+                }
+                assertNotNull(studio);
+                android.app.AlertDialog confirmation =
+                    studio.activeThemeConfirmation();
+                first.set(confirmation);
+                assertNotNull(confirmation);
+                assertTrue(confirmation.isShowing());
+                View opener = byDescription(
+                    root, "Ver todos: Previews de Temas");
+                assertAccessibleButton(opener);
+                assertTrue(opener.performClick());
+                assertNull("View All may not appear behind Apply confirmation",
+                    studio.activeCatalogChooser());
+                assertSame(confirmation, studio.activeThemeConfirmation());
+                assertEquals(saved, prefs.getAll());
+                assertTrue(confirmation.getButton(
+                    android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                assertFalse(first.get().isShowing());
+                P7DesignStudio studio;
+                try {
+                    java.lang.reflect.Field field =
+                        MainActivity.class.getDeclaredField("designStudio");
+                    field.setAccessible(true);
+                    studio = (P7DesignStudio) field.get(activity);
+                } catch (ReflectiveOperationException error) {
+                    throw new AssertionError(error);
+                }
+                assertNull(studio.activeThemeConfirmation());
+                View opener = byDescription(
+                    activity.getWindow().getDecorView(),
+                    "Ver todos: Previews de Temas");
+                assertAccessibleButton(opener);
+                assertTrue("View All must work normally after Cancel",
+                    opener.performClick());
+                android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                assertNotNull(chooser);
+                assertTrue(chooser.isShowing());
+                assertTrue(chooser.getButton(
+                    android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+            });
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                android.app.AlertDialog confirmation = first.get();
+                if (confirmation != null && confirmation.isShowing())
+                    confirmation.cancel();
+            });
+        }
+    }
+
     @Test public void repeatedViewAllNeverStacksNativeCatalogChoosers() {
         final String[] sections = {
             "Previews de Temas", "Opções de Layout", "Presets de Aparência"
