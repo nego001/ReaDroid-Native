@@ -967,6 +967,32 @@ public final class P7NavigationInstrumentedTest {
                         vector.getLayoutParams().height);
                     assertTrue(cards[i].getContentDescription().toString()
                         .contains(i == 0 ? "Criador de Ícones" : "Logo Studio"));
+                    LinearLayout creator = (LinearLayout) cards[i];
+                    assertEquals("Creator card needs emblem, text and arrow",
+                        3, creator.getChildCount());
+                    View arrow = creator.getChildAt(2);
+                    assertTrue("Reference arrow must be a vector image",
+                        arrow instanceof android.widget.ImageView);
+                    android.widget.ImageView arrowImage =
+                        (android.widget.ImageView) arrow;
+                    assertEquals("p7-creator-action-arrow", arrow.getTag());
+                    assertNotNull("Circular arrow drawable must load",
+                        arrowImage.getDrawable());
+                    assertTrue(arrowImage.getDrawable().getIntrinsicWidth() > 0);
+                    assertEquals(NegrescoTheme.dp(activity, 22),
+                        arrow.getLayoutParams().width);
+                    assertEquals(NegrescoTheme.dp(activity, 22),
+                        arrow.getLayoutParams().height);
+                    assertEquals(android.view.Gravity.BOTTOM,
+                        ((LinearLayout.LayoutParams) arrow.getLayoutParams()).gravity);
+                    assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                        arrow.getImportantForAccessibility());
+                    assertFalse("Arrow is decoration, never an action",
+                        arrow.isClickable());
+                    assertFalse("Arrow must not duplicate TalkBack focus",
+                        arrow.isFocusable());
+                    assertTrue("Only the creator card should open its editor",
+                        cards[i].hasOnClickListeners());
                 }
             });
         }
