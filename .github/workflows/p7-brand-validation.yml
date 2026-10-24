@@ -16,6 +16,7 @@ on:
       - 'tools/p7_capture_populated.sh'
       - 'tools/p7_api35_reboot.sh'
       - 'tests/test_p7_capture_runner.py'
+      - 'tests/test_p7_api35_reboot.py'
       - 'tests/test_p7_cross_api_review.py'
       - 'tests/test_p7_visual_review_board.py'
       - 'tests/test_p7_capture_manifest.py'
@@ -71,6 +72,7 @@ jobs:
           bash -n tools/p7_capture_populated.sh
           bash -n tools/p7_api35_reboot.sh
           python3 -m unittest discover -s tests -p 'test_p7_capture_runner.py' -v
+          python3 -m unittest discover -s tests -p 'test_p7_api35_reboot.py' -v
       - name: Guard recent-history updates behind a committed APK import
         run: python3 -m unittest discover -s tests -p 'test_p7_import_history_contract.py' -v
       - name: Enable hardware acceleration
