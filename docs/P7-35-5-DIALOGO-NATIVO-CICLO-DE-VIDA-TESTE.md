@@ -17,3 +17,9 @@ A [CI P7.35.4 #40071164210](https://github.com/nego001/ReaDroid-Native/actions/r
 - [ ] Revisão do comportamento real TalkBack/Galaxy A55 e fidelidade visual 1:1.
 
 Não concluir que a ausência de nó `UiAutomation` seja bug do app. PR #13 segue draft, sem merge, APK distribuído ou OTA publicada; `visual_1to1=NOT_APPROVED`, `physical=NOT_APPROVED`.
+
+## Resultado confirmado da P7.35.4, antes desta mudança
+
+A execução [#40071164210](https://github.com/nego001/ReaDroid-Native/actions/runs/40071164210) terminou com `success` para **API29**, `failure` para **API35** e cross-review `skipped`. API35 iniciou 36 testes de navegação, executou 31 e registrou duas falhas, inclusive `Native confirmation must own active window before Back: Aplicar Retro?` porque `UiAutomation.getRootInActiveWindow()` retornou `null`. Depois houve `device emulator-5554 not found`. A causa do segundo teste falho e da perda do emulador não está fechada. O sucesso API29 confirma que o fluxo Back naquele emulador chegou às asserções finais da P7.35.4.
+
+O ajuste final da P7.35.5 também envolve toda a sequência do teste em `try/finally`: qualquer falha após a criação da `ActivityScenario` limpa o `AlertDialog` capturado pelo próprio Studio, sem convertê-la em sucesso. A verificação adicional de `isAttachedToWindow()` garante que a janela do diálogo foi anexada antes do evento Back; não depende da árvore global da automação.
