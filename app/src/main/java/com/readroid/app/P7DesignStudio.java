@@ -65,6 +65,10 @@ public final class P7DesignStudio {
     private final LinearLayout body;
     private final HorizontalScrollView tabScroller;
     private final TextView[] tabViews=new TextView[4];
+    private static final int[] TAB_ICON_RES = {
+        R.drawable.ic_p7_tab_temas, R.drawable.ic_p7_tab_layout,
+        R.drawable.ic_p7_tab_icones, R.drawable.ic_p7_tab_logotipo
+    };
 
     private int dp(int n) { return NegrescoTheme.dp(a,n); }
 
@@ -141,6 +145,16 @@ public final class P7DesignStudio {
         float effective = Math.max(0.85f, systemFont)
             * Math.max(0.85f, appFont);
         return widthDp > 0 && widthDp < 360 && effective <= 1.40f;
+    }
+
+    /** The reference uses small icons alongside the four labels. Do not add
+     * them when the 320dp rail or enlarged font needs all available width.
+     * The full text labels and the four accessible actions are never removed.
+     */
+    static boolean showTabGlyphs(int widthDp, float systemFont, float appFont) {
+        float effective = Math.max(0.85f, systemFont)
+            * Math.max(0.85f, appFont);
+        return widthDp >= 360 && effective <= 1.20f;
     }
 
     /** Enlarged fonts need a visible, operable affordance for the scrollable
@@ -240,6 +254,10 @@ public final class P7DesignStudio {
             a.getResources().getConfiguration().screenWidthDp,
             a.getResources().getConfiguration().fontScale,
             NegrescoTheme.FONT_SCALE);
+        boolean withGlyphs = showTabGlyphs(
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale,
+            NegrescoTheme.FONT_SCALE);
         for(int i=0;i<names.length;i++) {
             final int index=i;
             TextView tab=label(names[i],11,NegrescoTheme.TEXT,false);
@@ -251,8 +269,15 @@ public final class P7DesignStudio {
             // property is separate and is required by accessibility
             // measurement and touch-target contracts on Android 10/15.
             tab.setMinimumHeight(dp(48));
-            tab.setPadding(dp(fitCompact ? 4 : 10),0,
-                dp(fitCompact ? 4 : 10),0);
+            tab.setPadding(dp(fitCompact ? 4 : withGlyphs ? 5 : 10),0,
+                dp(fitCompact ? 4 : withGlyphs ? 5 : 10),0);
+            if (withGlyphs) {
+                // Compound vector glyphs belong to the same clickable label:
+                // no second hit area, focus stop or spoken text.
+                tab.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                    TAB_ICON_RES[i], 0, 0, 0);
+                tab.setCompoundDrawablePadding(dp(3));
+            }
             tab.setClickable(true);
             tab.setFocusable(true);
             exposeAsButton(tab);
@@ -778,6 +803,8 @@ public final class P7DesignStudio {
             boolean selected=i==activeTab;
             tabViews[i].setBackground(tabBackground(selected));
             tabViews[i].setTextColor(tabLabelColor(selected));
+            tabViews[i].setCompoundDrawableTintList(
+                android.content.res.ColorStateList.valueOf(tabLabelColor(selected)));
             tabViews[i].setSelected(selected);
             // Expose the real selection state to TalkBack instead of relying
             // only on blue text and a border.
