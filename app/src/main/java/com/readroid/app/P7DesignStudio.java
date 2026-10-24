@@ -281,7 +281,11 @@ public final class P7DesignStudio {
             int left = target.getLeft();
             int right = target.getRight();
             int offset = tabScroller.getScrollX();
-            if (left < offset) tabScroller.scrollTo(left, 0);
+            // The segmented rail has 1dp interior padding. When returning
+            // to the first tab, scroll to the true origin, not its padded
+            // left coordinate, or the tab strip remains shifted by pixels.
+            if (index == 0) tabScroller.scrollTo(0, 0);
+            else if (left < offset) tabScroller.scrollTo(left, 0);
             else if (right > offset + tabScroller.getWidth())
                 tabScroller.scrollTo(right - tabScroller.getWidth(), 0);
         });
