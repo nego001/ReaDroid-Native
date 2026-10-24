@@ -960,6 +960,8 @@ public final class P7NavigationInstrumentedTest {
             java.util.Map<String, ?>> original =
                 new java.util.concurrent.atomic.AtomicReference<>();
         final int[] choice = {-1};
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            confirmation = new java.util.concurrent.atomic.AtomicReference<>();
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
@@ -989,27 +991,31 @@ public final class P7NavigationInstrumentedTest {
                 assertEquals("Previewing must not persist any preference",
                     original.get(), prefs.getAll());
             });
-            // Wait for the actual confirmation window to become the
-            // accessibility-active window BEFORE injecting Back. Sending
-            // Back in the same instant as AlertDialog.show() can dispatch
-            // to the Activity beneath it rather than cancelling the dialog.
-            androidx.test.platform.app.InstrumentationRegistry
-                .getInstrumentation().waitForIdleSync();
-            android.app.UiAutomation automation =
-                InstrumentationRegistry.getInstrumentation().getUiAutomation();
-            android.view.accessibility.AccessibilityNodeInfo focused =
-                automation.getRootInActiveWindow();
-            String dialogTitle = "Aplicar "
-                + P7VisualCatalog.PRESET_NAMES[choice[0]] + "?";
-            try {
-                assertNotNull("Native confirmation must own active window "
-                    + "before Back: " + dialogTitle, focused);
-                assertFalse("Back requires focused native confirmation: "
-                    + dialogTitle,
-                    focused.findAccessibilityNodeInfosByText(dialogTitle).isEmpty());
-            } finally {
-                if (focused != null) focused.recycle();
-            }
+            // UiAutomation.getRootInActiveWindow() is null on some
+            // headless emulators, even when Android has shown a dialog.
+            // Read the actual native AlertDialog via its owning Studio,
+            // instead of depending on a secondary accessibility service.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                try {
+                    java.lang.reflect.Field field =
+                        MainActivity.class.getDeclaredField("designStudio");
+                    field.setAccessible(true);
+                    P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                    assertNotNull("MainActivity must own the native Studio", studio);
+                    android.app.AlertDialog dialog =
+                        studio.activePresetConfirmation();
+                    confirmation.set(dialog);
+                    assertNotNull("Click must open a real AlertDialog", dialog);
+                    assertTrue("Real confirmation must be visible before Back",
+                        dialog.isShowing());
+                    assertEquals("Confirmation must offer Cancelar",
+                        "Cancelar", dialog.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE).getText().toString());
+                } catch (ReflectiveOperationException error) {
+                    throw new AssertionError("Cannot inspect Studio dialog", error);
+                }
+            });
             // Leave the confirmed native dialog without pressing Apply.
             // Back must trigger the existing cancel listener, then restore
             // the committed state and leave SharedPreferences unchanged.
@@ -1019,6 +1025,9 @@ public final class P7NavigationInstrumentedTest {
             // the Back key is dispatched. Compare the post-cancel UI only
             // when the main looper has processed that callback and re-render.
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            try {
+            assertFalse("Back must actually dismiss the native dialog",
+                confirmation.get().isShowing());
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
@@ -1034,6 +1043,14 @@ public final class P7NavigationInstrumentedTest {
                     activity.getSharedPreferences("v3_personalizacao", 0)
                         .getAll());
             });
+            } finally {
+                // Prevent one failed assertion from leaving a native dialog
+                // above the next instrumentation test.
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog opened = confirmation.get();
+                    if (opened != null && opened.isShowing()) opened.cancel();
+                });
+            }
         }
     }
 

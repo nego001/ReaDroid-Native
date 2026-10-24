@@ -62,6 +62,14 @@ public final class P7DesignStudio {
     }
     private int selectedLayout = 0;
     private int selectedPreset = 0;
+    // Scoped to this Studio/Activity. Cleared as soon as the native dialog
+    // is dismissed. Keeping the handle also prevents stacked confirmations.
+    private android.app.AlertDialog presetConfirmation;
+
+    /** Package-local inspection of the real native dialog for Android tests. */
+    android.app.AlertDialog activePresetConfirmation() {
+        return presetConfirmation;
+    }
     private final LinearLayout body;
     private final HorizontalScrollView tabScroller;
     private final TextView[] tabViews=new TextView[4];
@@ -569,6 +577,7 @@ public final class P7DesignStudio {
     }
 
     private void confirmPreset() {
+        if (presetConfirmation != null && presetConfirmation.isShowing()) return;
         if (selectedPreset < 0) {
             new android.app.AlertDialog.Builder(a)
                 .setTitle("Selecione um preset")
@@ -577,7 +586,7 @@ public final class P7DesignStudio {
             return;
         }
         final int choice = selectedPreset;
-        new android.app.AlertDialog.Builder(a)
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(a)
             .setTitle("Aplicar " + P7VisualCatalog.PRESET_NAMES[choice] + "?")
             .setMessage("Será aplicado: " +
                 P7VisualCatalog.presetSummary(choice) + ". " +
@@ -594,10 +603,15 @@ public final class P7DesignStudio {
                 selectedPreset = P7VisualCatalog.currentPreset(a);
                 render();
             })
-            .setOnCancelListener(dialog -> {
+            .setOnCancelListener(cancelled -> {
                 selectedPreset = P7VisualCatalog.currentPreset(a);
                 render();
-            }).show();
+            }).create();
+        dialog.setOnDismissListener(dismissed -> {
+            if (presetConfirmation == dialog) presetConfirmation = null;
+        });
+        presetConfirmation = dialog;
+        dialog.show();
     }
 
     private void showError(RuntimeException error) {
