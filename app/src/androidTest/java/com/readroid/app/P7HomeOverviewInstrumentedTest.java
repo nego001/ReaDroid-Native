@@ -2,6 +2,7 @@ package com.readroid.app;
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.net.Uri;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +41,22 @@ public final class P7HomeOverviewInstrumentedTest {
         return null;
     }
 
+    private static void assertAccessibleButton(View view, String description) {
+        AccessibilityNodeInfo node = view.createAccessibilityNodeInfo();
+        assertNotNull("Accessibility node is required", node);
+        try {
+            assertEquals("Action must be exposed as a Button to TalkBack",
+                android.widget.Button.class.getName(),
+                node.getClassName().toString());
+            assertEquals(description, node.getContentDescription().toString());
+            assertTrue("Action needs a clickable accessibility node",
+                node.isClickable());
+            assertTrue("Action needs to be keyboard-focusable", view.isFocusable());
+        } finally {
+            node.recycle();
+        }
+    }
+
     @Test public void recentProjectMenuIsAccessibleWithoutDeletingOriginal() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
@@ -63,6 +80,7 @@ public final class P7HomeOverviewInstrumentedTest {
                 assertEquals(View.VISIBLE, history.getVisibility());
                 assertTrue(history.getMinimumHeight() >= touch);
                 assertTrue(history.isClickable() && history.isFocusable());
+                assertAccessibleButton(history, "Ver todos os projetos recentes");
                 assertTrue(history.performClick());
                 assertEquals(1, allOpens.get());
                 View menu = byDescription(panel, "Mais opções de Fixture.apk");
@@ -72,6 +90,9 @@ public final class P7HomeOverviewInstrumentedTest {
                 assertTrue(menu.getMinimumWidth() >= touch);
                 assertTrue(menu.getMinimumHeight() >= touch);
                 assertTrue(menu.isClickable() && menu.isFocusable());
+                assertAccessibleButton(menu, "Mais opções de Fixture.apk");
+                assertNotNull("Menu listener must remain operational",
+                    menu.hasOnClickListeners() ? menu : null);
             });
         }
     }
