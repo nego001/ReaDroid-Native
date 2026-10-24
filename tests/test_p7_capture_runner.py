@@ -169,7 +169,9 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertLess(regression, restored)
         self.assertLess(restored, package_check)
         self.assertLess(package_check, launched)
-        self.assertEqual(1, workflow.count(
+        # The original package check follows instrumentation. API35 has a
+        # second mandatory package check after its verified AVD reboot.
+        self.assertEqual(2, workflow.count(
             "adb shell pm path com.readroid.app | grep -Fq 'package:'"))
         script = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
