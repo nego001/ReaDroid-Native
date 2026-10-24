@@ -947,6 +947,19 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void designTabGlyphsAppearOnlyWhenLabelsHaveRoom() {
+        assertTrue("Normal viewport can show four graphic labels",
+            P7DesignStudio.showTabGlyphs(393, 1f, 1f));
+        assertFalse("320dp must keep all four labels without icons",
+            P7DesignStudio.showTabGlyphs(320, 1f, 1f));
+        assertFalse("Compact 130 percent must not steal label width",
+            P7DesignStudio.showTabGlyphs(320, 1.3f, 1f));
+        assertFalse("200 percent must keep complete text and paging",
+            P7DesignStudio.showTabGlyphs(393, 2f, 1f));
+        assertFalse("Increased app font also needs icon-free labels",
+            P7DesignStudio.showTabGlyphs(393, 1f, 1.35f));
+    }
+
     @Test public void designTabsShareOneRailWithoutGapsOrLostActions() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
@@ -980,6 +993,26 @@ public final class P7NavigationInstrumentedTest {
                         i == 0, entry.isSelected());
                     assertTrue(entry.getBackground() instanceof
                         android.graphics.drawable.GradientDrawable);
+                    TextView label = (TextView) entry;
+                    boolean glyphExpected = P7DesignStudio.showTabGlyphs(
+                        activity.getResources().getConfiguration().screenWidthDp,
+                        activity.getResources().getConfiguration().fontScale,
+                        NegrescoTheme.FONT_SCALE);
+                    android.graphics.drawable.Drawable glyph =
+                        label.getCompoundDrawablesRelative()[0];
+                    if (glyphExpected) {
+                        assertNotNull("Normal Design tabs need vector symbols",
+                            glyph);
+                        assertTrue("Only decorative vector, no extra child",
+                            glyph.getIntrinsicWidth() > 0);
+                        assertEquals("Icon must share the tab's accessible label",
+                            names[i] + (i == 0
+                                ? ", aba selecionada" : ", selecionar aba"),
+                            label.getContentDescription().toString());
+                    } else {
+                        assertNull("Compact or enlarged labels stay icon-free",
+                            glyph);
+                    }
                     android.graphics.drawable.GradientDrawable fill =
                         (android.graphics.drawable.GradientDrawable)
                             entry.getBackground();
@@ -992,6 +1025,11 @@ public final class P7NavigationInstrumentedTest {
                 View layout = rail.getChildAt(1);
                 assertTrue("Layout must remain a working tab", layout.performClick());
                 assertTrue(layout.isSelected());
+                TextView layoutText = (TextView) layout;
+                assertNotNull("Selected color must also tint its icon",
+                    layoutText.getCompoundDrawableTintList());
+                assertEquals(layoutText.getCurrentTextColor(),
+                    layoutText.getCompoundDrawableTintList().getDefaultColor());
                 assertFalse(themes.isSelected());
                 assertEquals("Layout, aba selecionada",
                     layout.getContentDescription().toString());
