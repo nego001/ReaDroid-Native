@@ -943,9 +943,11 @@ public final class P7NavigationInstrumentedTest {
 
                 int[] expected = {
                     R.drawable.ic_p7_icon_creator,
-                    R.drawable.ic_negrecodroid_foreground
+                    R.drawable.ic_p7_logo_studio_monogram
                 };
                 View[] cards = {iconCard, logoCard};
+                assertNotEquals("The creative card cannot reuse the launcher shield",
+                    R.drawable.ic_negrecodroid_foreground, expected[1]);
                 for (int i = 0; i < cards.length; i++) {
                     assertTrue("Creator action must be a native layout",
                         cards[i] instanceof LinearLayout);
