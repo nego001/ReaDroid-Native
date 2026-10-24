@@ -841,6 +841,100 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void repeatedPresetTapNeverStacksNativeConfirmations() {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> original =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            first = new java.util.concurrent.atomic.AtomicReference<>();
+        final int[] choice = {-1};
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue(design.performClick());
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    original.set(new java.util.HashMap<>(prefs.getAll()));
+                    int applied = P7VisualCatalog.currentPreset(activity);
+                    choice[0] = applied == 0 ? 1 : 0;
+                    String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
+                    View card = byDescription(root, name + ",");
+                    assertAccessibleButton(card);
+                    assertTrue("First tap opens native confirmation",
+                        card.performClick());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNotNull(studio);
+                        android.app.AlertDialog dialog =
+                            studio.activePresetConfirmation();
+                        first.set(dialog);
+                        assertNotNull("First tap must create native dialog", dialog);
+                        assertTrue(dialog.isShowing());
+                        // Dispatch the already-queued click to the original
+                        // card instance, simulating two rapid taps before
+                        // the modal prevents a second physical touch.
+                        assertTrue("Duplicate tap must remain handled",
+                            card.performClick());
+                        assertSame("No second dialog may replace the first",
+                            dialog, studio.activePresetConfirmation());
+                        assertTrue("Original confirmation must remain showing",
+                            dialog.isShowing());
+                        assertEquals("Double-tap must not persist a preset",
+                            original.get(), prefs.getAll());
+                        android.widget.Button cancel = dialog.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE);
+                        assertNotNull(cancel);
+                        assertEquals("Cancelar", cancel.getText().toString());
+                        assertTrue(cancel.performClick());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Could not inspect the native Studio dialog", error);
+                    }
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull(first.get());
+                    assertFalse("Cancelar must dismiss the only confirmation",
+                        first.get().isShowing());
+                    try {
+                        java.lang.reflect.Field field =
+                            MainActivity.class.getDeclaredField("designStudio");
+                        field.setAccessible(true);
+                        P7DesignStudio studio = (P7DesignStudio) field.get(activity);
+                        assertNull("Dismiss must clear the native dialog handle",
+                            studio.activePresetConfirmation());
+                    } catch (ReflectiveOperationException error) {
+                        throw new AssertionError(
+                            "Could not check confirmation cleanup", error);
+                    }
+                    String name = P7VisualCatalog.PRESET_NAMES[choice[0]];
+                    View restored = byDescription(
+                        activity.getWindow().getDecorView(), name + ",");
+                    assertNotNull("Preset must remain in the catalog", restored);
+                    assertTrue("Cancelled repeated taps must restore state",
+                        restored.getContentDescription().toString().startsWith(
+                            name + ", selecionar prévia"));
+                    assertEquals("No double tap may save unconfirmed preferences",
+                        original.get(),
+                        activity.getSharedPreferences("v3_personalizacao", 0)
+                            .getAll());
+                });
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = first.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void negativePresetButtonRestoresPreferencesAndReleasesDialog() {
         final java.util.concurrent.atomic.AtomicReference<
             java.util.Map<String, ?>> original =

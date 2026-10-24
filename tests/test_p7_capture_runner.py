@@ -148,8 +148,12 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(35, navigation.count("@Test"))
+        self.assertEqual(36, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
+        self.assertEqual(1, navigation.count(
+            "void repeatedPresetTapNeverStacksNativeConfirmations()"))
+        self.assertIn("No second dialog may replace the first", navigation)
+        self.assertIn("Cancelled repeated taps must restore state", navigation)
         self.assertIn("navTabHeightDp(310, 3f, 1.35f, true)", isolated)
         self.assertIn("NegrescoTheme.apply(context)", isolated)
         self.assertIn("Navigation row must reserve enlarged text", isolated)
