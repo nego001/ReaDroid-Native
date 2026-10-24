@@ -82,6 +82,16 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "P7ExplorerPopulatedCaptureInstrumentedTest"
             "#detectsSyntheticSystemOverlayBeforeEvidenceExport", workflow)
         self.assertIn("bash tools/p7_capture_populated.sh", workflow)
+        # Capture before the long instrumentation run on the freshly started
+        # emulator; taking it after the suite races the API35 Pixel Launcher.
+        built = workflow.index(
+            "gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest")
+        captured = workflow.index("bash tools/p7_capture_populated.sh")
+        regression = workflow.index(
+            "gradle --no-daemon :app:connectedDebugAndroidTest")
+        self.assertLess(built, captured)
+        self.assertLess(captured, regression)
+        self.assertEqual(1, workflow.count("bash tools/p7_capture_populated.sh"))
         script = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
             "P7ExplorerPopulatedCaptureInstrumentedTest"
