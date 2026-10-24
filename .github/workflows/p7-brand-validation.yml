@@ -146,12 +146,12 @@ jobs:
               adb reboot
               timeout 150s adb wait-for-device
               for attempt in $(seq 1 60); do
-                if [ "$(adb shell getprop sys.boot_completed | tr -d '\\r')" = "1" ]; then
+                if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; then
                   break
                 fi
                 sleep 2
               done
-              test "$(adb shell getprop sys.boot_completed | tr -d '\\r')" = "1"
+              test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
               adb shell pm path com.readroid.app | grep -Fq 'package:'
               adb shell wm size | grep -Fq 'Physical size:'
               adb shell wm density | grep -Fq 'Physical density:'
