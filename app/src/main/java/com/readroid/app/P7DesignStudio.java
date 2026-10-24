@@ -392,6 +392,16 @@ public final class P7DesignStudio {
             .setNegativeButton("Fechar", null).show();
     }
 
+    /**
+     * A highlighted preset is only a proposal until Apply commits its values.
+     * Announce and tick committed appearance separately from pending choice.
+     */
+    static String presetTileState(boolean selected, boolean applied) {
+        return applied ? ", preset aplicado"
+            : selected ? ", prévia escolhida, ainda não aplicada"
+            : ", selecionar prévia";
+    }
+
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
@@ -425,7 +435,11 @@ public final class P7DesignStudio {
             new P7ThemePreviewView(a, accent, kind, themeSurface, themeGlow);
         previewFrame.addView(miniature,
             new FrameLayout.LayoutParams(-1, -1));
-        if (selected) {
+        // The check mark means a COMMITTED preset, not a temporary selection
+        // that is still waiting for the native Apply/Cancel confirmation.
+        boolean appliedPreset = kind == 2
+            && P7VisualCatalog.currentPreset(a) == themeSurface;
+        if (kind == 2 ? appliedPreset : selected) {
             TextView check = label("✓", 11, android.graphics.Color.WHITE, true);
             check.setGravity(Gravity.CENTER);
             GradientDrawable bubble = new GradientDrawable();
@@ -464,7 +478,8 @@ public final class P7DesignStudio {
         // not decoration. Include them in the single spoken card description.
         // Keep its existing name/selection prefix for navigation compatibility.
         card.setContentDescription(name +
-            (selected ? ", prévia selecionada" : ", selecionar prévia") +
+            (kind == 2 ? presetTileState(selected, appliedPreset)
+                : selected ? ", prévia selecionada" : ", selecionar prévia") +
             (kind == 0 && !subtitle.isEmpty() ? ". " + subtitle : "") +
             (kind == 2 ? ". " + P7VisualCatalog.presetSummary(themeSurface) : ""));
         // The whole tile is the single interaction target. Tell TalkBack

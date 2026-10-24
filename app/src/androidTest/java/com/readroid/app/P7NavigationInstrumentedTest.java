@@ -947,6 +947,41 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void presetAppliedIndicatorTracksCommittedValuesOnly() {
+        assertEquals(", preset aplicado", P7DesignStudio.presetTileState(true, true));
+        assertEquals(", preset aplicado", P7DesignStudio.presetTileState(false, true));
+        assertEquals(", prévia escolhida, ainda não aplicada",
+            P7DesignStudio.presetTileState(true, false));
+        assertEquals(", selecionar prévia",
+            P7DesignStudio.presetTileState(false, false));
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+                int applied = P7VisualCatalog.currentPreset(activity);
+                for (int i = 0; i < P7VisualCatalog.PRESET_NAMES.length; i++) {
+                    String name = P7VisualCatalog.PRESET_NAMES[i];
+                    View tile = byDescription(root, name + ",");
+                    assertAccessibleButton(tile);
+                    boolean committed = applied == i;
+                    assertTrue(tile.getContentDescription().toString().startsWith(
+                        name + (committed ? ", preset aplicado" : ", selecionar prévia")));
+                    assertTrue(tile.getContentDescription().toString().contains(
+                        P7VisualCatalog.presetSummary(i)));
+                    assertTrue(tile instanceof ViewGroup);
+                    View preview = ((ViewGroup) tile).getChildAt(0);
+                    assertTrue(preview instanceof ViewGroup);
+                    assertEquals("Only a committed preset gets the check badge",
+                        committed ? 2 : 1,
+                        ((ViewGroup) preview).getChildCount());
+                }
+            });
+        }
+    }
+
     @Test public void presetCardsExplainSavedSettingsAsOneAccessibleAction() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
