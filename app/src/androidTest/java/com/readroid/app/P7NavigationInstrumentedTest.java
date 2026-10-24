@@ -1316,6 +1316,50 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void customThemeOpensDesignWithoutFakeAppliedBadge() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs =
+            context.getSharedPreferences("v3_personalizacao", 0);
+        boolean hadAccent = prefs.contains("accent");
+        String originalAccent = prefs.getString("accent", "blue");
+        try {
+            assertTrue("Custom accent setup must commit",
+                prefs.edit().putString("accent", "custom").commit());
+            assertEquals("Noncatalog accent has no selected catalog theme",
+                -1, P7ThemeCatalog.currentTheme(context));
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertNotNull(design);
+                    assertTrue("Custom appearance must be able to open Design",
+                        design.performClick());
+                    for (int i = 0; i < P7ThemeCatalog.count(); i++) {
+                        String name = P7ThemeCatalog.nameAt(i);
+                        View card = byDescription(root, name + ", selecionar prévia");
+                        assertAccessibleButton(card);
+                        assertEquals("Custom theme cannot have an applied check: "
+                                + name, 1,
+                            ((ViewGroup) ((ViewGroup) card)
+                                .getChildAt(0)).getChildCount());
+                    }
+                    assertEquals("Browsing catalog cannot apply a canned theme",
+                        -1, P7ThemeCatalog.currentTheme(activity));
+                    assertEquals("Custom accent remains unchanged", "custom",
+                        prefs.getString("accent", ""));
+                });
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadAccent) restore.putString("accent", originalAccent);
+            else restore.remove("accent");
+            assertTrue("Restore original custom theme field", restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void themeAndLayoutBadgesRequireCommittedAppearance() {
         assertEquals(", tema aplicado",
             P7DesignStudio.appearanceTileState(0, false, true));

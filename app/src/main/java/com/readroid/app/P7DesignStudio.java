@@ -468,11 +468,15 @@ public final class P7DesignStudio {
             new FrameLayout.LayoutParams(-1, -1));
         // Checkmarks always represent COMMITTED appearance; for themes the
         // themeSurface parameter is a preview surface, not a catalog index.
+        // A hand-picked/custom appearance deliberately returns theme -1.
+        // Never pass that sentinel into nameAt(), or opening Design crashes.
+        final int committedTheme = kind == 0 ? P7ThemeCatalog.currentTheme(a) : -1;
         boolean applied = kind == 2
             ? P7VisualCatalog.currentPreset(a) == themeSurface
             : kind == 1
                 ? P7VisualCatalog.currentLayout(a) == themeSurface
-                : name.equals(P7ThemeCatalog.nameAt(P7ThemeCatalog.currentTheme(a)));
+                : committedTheme >= 0
+                    && name.equals(P7ThemeCatalog.nameAt(committedTheme));
         if (applied) {
             TextView check = label("✓", 11, android.graphics.Color.WHITE, true);
             check.setGravity(Gravity.CENTER);
