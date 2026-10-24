@@ -119,6 +119,19 @@ public final class P7DesignStudio {
         d.setStroke(dp(1), cardOutlineColor(selected));
         return d;
     }
+
+    /** Native segmented tabs like the single continuous rail in the reference.
+     * Only the selected item carries its blue stroke; all other tabs are
+     * transparent over a shared dark rail, not four floating rounded cards.
+     */
+    private GradientDrawable tabBackground(boolean selected) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(selected ? cardFillColor(true)
+            : android.graphics.Color.TRANSPARENT);
+        d.setCornerRadius(dp(9));
+        if (selected) d.setStroke(dp(1), cardOutlineColor(true));
+        return d;
+    }
     /**
      * At 320dp with 130% font, use compact tab chrome so all four real
      * editors are visible. At 200% font allow horizontal scrolling, keeping
@@ -173,6 +186,9 @@ public final class P7DesignStudio {
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout tabs=new LinearLayout(a);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setTag("p7-design-segmented-tabs");
+        tabs.setPadding(dp(1), dp(1), dp(1), dp(1));
+        tabs.setBackground(background(false));
         scroll.addView(tabs);
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));
         sp.topMargin=dp(8);
@@ -241,7 +257,8 @@ public final class P7DesignStudio {
             tab.setFocusable(true);
             exposeAsButton(tab);
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(48));
-            p.rightMargin=dp(fitCompact ? 3 : 5);
+            // A shared strip has no gaps between neighboring tab actions.
+            p.rightMargin=0;
             tabs.addView(tab,p);
             tabViews[i]=tab;
             tab.setOnClickListener(v->{activeTab=index;render();});
@@ -755,7 +772,7 @@ public final class P7DesignStudio {
         for(int i=0;i<tabViews.length;i++){
             if(tabViews[i]==null)continue;
             boolean selected=i==activeTab;
-            tabViews[i].setBackground(background(selected));
+            tabViews[i].setBackground(tabBackground(selected));
             tabViews[i].setTextColor(tabLabelColor(selected));
             tabViews[i].setSelected(selected);
             // Expose the real selection state to TalkBack instead of relying
