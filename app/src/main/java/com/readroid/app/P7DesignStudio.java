@@ -846,12 +846,13 @@ public final class P7DesignStudio {
             creatorRow();
             sectionHeader("Presets de Aparência", () -> showCatalogDialog(2));
             startCards();
-            String[] presets={"Dark OLED","Cyber Neon","Minimal","Glass","Retro"};
-            int[] presetColors={0xff29acff,0xffde42ff,0xffcbd8f9,0xff56c9ff,0xffff518a};
-            for(int i=0;i<presets.length;i++){
+            // One source of truth with the colors, surface and glow
+            // actually persisted by P7VisualCatalog.applyPreset().
+            for(int i=0;i<P7VisualCatalog.PRESET_NAMES.length;i++){
                 final int index=i;
-                tile(presets[i],"",presetColors[i],selectedPreset==i,
-                    2, () -> {
+                tile(P7VisualCatalog.PRESET_NAMES[i], "",
+                    P7VisualCatalog.presetAccentColor(i), selectedPreset==i,
+                    2, i, P7VisualCatalog.presetGlow(i), () -> {
                         selectedPreset = index;
                         render();
                         confirmPreset();

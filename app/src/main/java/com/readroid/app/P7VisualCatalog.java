@@ -27,6 +27,45 @@ public final class P7VisualCatalog {
     private static final int[] PRESET_RADII = {18, 26, 12, 26, 12};
     private static final int[] PRESET_LAYOUTS = {0, 2, 1, 2, 1};
 
+    /** Preset thumbnails must use the exact palette persisted on Apply. */
+    private static void requirePreset(int index) {
+        if (index < 0 || index >= PRESET_NAMES.length)
+            throw new IllegalArgumentException("Preset não reconhecido");
+    }
+
+    static int presetAccentColor(int index) {
+        requirePreset(index);
+        String accent = PRESET_ACCENTS[index];
+        if ("purple".equals(accent)) return 0xff9b6dff;
+        if ("green".equals(accent)) return 0xff27c99a;
+        if ("orange".equals(accent)) return 0xffffa24a;
+        return 0xff1688ff;
+    }
+
+    static int presetBackgroundColor(int index) {
+        requirePreset(index);
+        String theme = PRESET_THEMES[index];
+        return "light".equals(theme) ? 0xfff2f5fa
+            : "graphite".equals(theme) ? 0xff111217 : 0xff000000;
+    }
+
+    static int presetCardColor(int index) {
+        requirePreset(index);
+        String theme = PRESET_THEMES[index];
+        return "light".equals(theme) ? 0xffffffff
+            : "graphite".equals(theme) ? 0xff1c1e26 : 0xff101925;
+    }
+
+    static int presetCornerRadius(int index) {
+        requirePreset(index);
+        return PRESET_RADII[index];
+    }
+
+    static boolean presetGlow(int index) {
+        requirePreset(index);
+        return PRESET_GLOWS[index];
+    }
+
     /** Native Home structure: original 3x2, list 1x6, or two-column 2x3. */
     static int quickActionColumns(int layout) {
         if (layout == 3) return 1;

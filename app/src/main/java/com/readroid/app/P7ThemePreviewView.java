@@ -45,7 +45,8 @@ public final class P7ThemePreviewView extends View {
         this.themeGlow = glow;
         presetGradient = mode == 2
             ? new LinearGradient(14, 15, 90, 93,
-                new int[]{0xff081326, accent, 0xff13162b},
+                new int[]{P7VisualCatalog.presetBackgroundColor(themeSurface),
+                    accent, P7VisualCatalog.presetCardColor(themeSurface)},
                 new float[]{0f, 0.72f, 1f}, Shader.TileMode.CLAMP)
             : null;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -267,15 +268,26 @@ public final class P7ThemePreviewView extends View {
     }
 
     private void drawPreset(Canvas c) {
-        block(c, 0xff07101c, 4, 5, 96, 95, 12);
+        // An illustration of the same saved theme/accent/glow/corner settings,
+        // never a synthetic preview claiming user data or actual file results.
+        int background = P7VisualCatalog.presetBackgroundColor(themeSurface);
+        int surface = P7VisualCatalog.presetCardColor(themeSurface);
+        int line = background == 0xfff2f5fa ? 0xff53657c
+            : background == 0xff111217 ? 0xffa1a6b7 : 0xff93a6be;
+        int border = background == 0xfff2f5fa ? 0xffd9e2ee
+            : background == 0xff111217 ? 0xff343843 : 0xff25364b;
+        float radius = P7VisualCatalog.presetCornerRadius(themeSurface) / 2f;
+        block(c, background, 4, 5, 96, 95, 12);
+        block(c, surface, 13, 12, 87, 88, radius);
         paint.setStyle(Paint.Style.FILL);
         paint.setShader(presetGradient);
-        c.drawRoundRect(13, 12, 87, 88, 12, 12, paint);
+        c.drawRoundRect(18, 19, 82, 37, 6, 6, paint);
         paint.setShader(null);
-        block(c, 0xb5091322, 23, 23, 71, 32, 5);
-        block(c, 0xa6081322, 23, 42, 80, 53, 5);
-        block(c, 0xb5091322, 23, 63, 67, 73, 5);
-        outline(c, 0xff69829d, 4, 5, 96, 95, 12);
+        block(c, line, 23, 44, 73, 48, 2);
+        block(c, line, 23, 61, 64, 65, 2);
+        outline(c, border, 13, 12, 87, 88, radius);
+        if (P7VisualCatalog.presetGlow(themeSurface))
+            outline(c, accent, 16, 15, 84, 85, radius);
     }
 
     @Override protected void onDraw(Canvas c) {

@@ -739,6 +739,48 @@ public final class P7VisualCatalogInstrumentedTest {
             assertRepeatablePreview(context, accents[i % accents.length], 2, 0, false);
     }
 
+    @Test public void presetThumbnailsMatchPersistedThemeAndAccentTokens() {
+        Context context = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        int[] actualAccent = {
+            0xff1688ff, 0xff9b6dff, 0xff1688ff, 0xff1688ff, 0xffffa24a
+        };
+        int[] actualBackground = {
+            0xff000000, 0xff000000, 0xfff2f5fa, 0xff111217, 0xff000000
+        };
+        int[] actualRadius = {18, 26, 12, 26, 12};
+        Bitmap[] images = new Bitmap[P7VisualCatalog.PRESET_NAMES.length];
+        try {
+            for (int i=0; i<images.length; i++) {
+                assertEquals("Preview accent must match Apply", actualAccent[i],
+                    P7VisualCatalog.presetAccentColor(i));
+                assertEquals("Preview surface must match Apply",
+                    actualBackground[i],
+                    P7VisualCatalog.presetBackgroundColor(i));
+                assertEquals("Preview corners must match Apply",
+                    actualRadius[i], P7VisualCatalog.presetCornerRadius(i));
+                images[i] = Bitmap.createBitmap(
+                    100, 100, Bitmap.Config.ARGB_8888);
+                P7ThemePreviewView view = new P7ThemePreviewView(
+                    context, actualAccent[i], 2, i,
+                    P7VisualCatalog.presetGlow(i));
+                view.layout(0, 0, 100, 100);
+                view.draw(new Canvas(images[i]));
+                assertEquals("Mini background must show actual theme",
+                    actualBackground[i], images[i].getPixel(50, 8));
+            }
+            assertFalse("Retro orange cannot look like Dark OLED blue",
+                images[0].sameAs(images[4]));
+            assertFalse("Light Minimal cannot look like OLED",
+                images[0].sameAs(images[2]));
+            assertFalse("Graphite Glass cannot look like OLED",
+                images[0].sameAs(images[3]));
+        } finally {
+            for (Bitmap image : images)
+                if (image != null) image.recycle();
+        }
+    }
+
     @Test public void presetGradientIsCachedForEntireViewLifetime()
             throws Exception {
         Context context = androidx.test.platform.app.InstrumentationRegistry
