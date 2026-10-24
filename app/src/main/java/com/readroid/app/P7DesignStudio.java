@@ -599,7 +599,7 @@ public final class P7DesignStudio {
                     showError(error);
                 }
             })
-            .setNegativeButton("Cancelar", (dialog, which) -> {
+            .setNegativeButton("Cancelar", (ignored, which) -> {
                 selectedPreset = P7VisualCatalog.currentPreset(a);
                 render();
             })
