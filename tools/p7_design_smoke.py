@@ -26,6 +26,24 @@ def saved_identity_preview(nodes):
     return description
 
 
+def applied_theme_preview(nodes):
+    """Require exactly one clickable, committed catalog theme, never a pending preview."""
+    approved = ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset")
+    matching = [n for n in nodes
+                if ", tema aplicado" in n.attrib.get("content-desc", "")
+                and n.attrib.get("content-desc", "").startswith(approved)]
+    assert len(matching) == 1, "A saved theme must be reflected in its preview"
+    assert matching[0].attrib.get("clickable") == "true", (
+        "Saved theme must still expose a real clickable catalog card")
+    description = matching[0].attrib["content-desc"]
+    name, state = description.split(", tema aplicado", 1)
+    assert name in approved and state.startswith(". "), (
+        "Applied theme must announce its actual glow state and subtitle")
+    assert state[2:].startswith(("Neon · ", "Sem brilho · ")), (
+        "Applied theme must distinguish glow state for TalkBack")
+    return description
+
+
 def check():
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
     time.sleep(2)
@@ -64,12 +82,8 @@ def check():
     # Tiles must apply a real catalog choice via confirmation, not merely
     # move a decorative selection check. Back must undo the pending highlight.
     before = smoke.visible_app_hierarchy()
-    selected = [n.attrib.get("content-desc", "") for n in before
-                if ", prévia selecionada" in n.attrib.get("content-desc", "")
-                and n.attrib.get("content-desc", "").startswith(
-                    ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset"))]
-    assert len(selected) == 1, "A saved theme must be reflected in its preview"
-    theme = "Matrix Green" if not selected[0].startswith("Matrix Green") else "Negreco Blue"
+    saved_theme = applied_theme_preview(before)
+    theme = "Matrix Green" if not saved_theme.startswith("Matrix Green") else "Negreco Blue"
     # The accessible label now includes the actual glow state and subtitle:
     # "Matrix Green, selecionar prévia. Neon · Hacker Style".
     # Match the exact card-name/state prefix, then REQUIRE that the spoken
@@ -90,7 +104,7 @@ def check():
     smoke.adb("shell", "input", "keyevent", "4")
     smoke.ensure_foreground()
     after = smoke.visible_app_hierarchy()
-    assert any(n.attrib.get("content-desc") == selected[0] for n in after), (
+    assert any(n.attrib.get("content-desc") == saved_theme for n in after), (
         "Android Back must restore the previously applied theme")
     # Icon creation must be an operational editor, not the old placeholder.
     icon_tabs = [n for n in after if n.attrib.get("text") == "Ícones"
