@@ -34,8 +34,20 @@ public final class P7DesignStudio {
     private void restoreCurrentTheme() {
         selectedTheme = P7ThemeCatalog.currentTheme(a);
     }
+    /** No cross-family or chooser confirmations may stack in this Activity. */
+    private boolean appearanceDialogShowing() {
+        return (themeConfirmation != null && themeConfirmation.isShowing())
+            || (layoutConfirmation != null && layoutConfirmation.isShowing())
+            || (presetConfirmation != null && presetConfirmation.isShowing())
+            || (catalogChooser != null && catalogChooser.isShowing());
+    }
+
     private void applySelectedTheme() {
-        if (themeConfirmation != null && themeConfirmation.isShowing()) return;
+        if (appearanceDialogShowing()) {
+            restoreCurrentTheme();
+            render();
+            return;
+        }
         if (selectedTheme < 0 || selectedTheme >= P7ThemeCatalog.count()) {
             new android.app.AlertDialog.Builder(a)
                 .setTitle("Selecione um tema")
@@ -611,7 +623,11 @@ public final class P7DesignStudio {
     }
 
     private void confirmLayout() {
-        if (layoutConfirmation != null && layoutConfirmation.isShowing()) return;
+        if (appearanceDialogShowing()) {
+            selectedLayout = P7VisualCatalog.currentLayout(a);
+            render();
+            return;
+        }
         final int choice = selectedLayout;
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(a)
             .setTitle("Aplicar layout " + P7VisualCatalog.LAYOUT_NAMES[choice] + "?")
@@ -640,7 +656,11 @@ public final class P7DesignStudio {
     }
 
     private void confirmPreset() {
-        if (presetConfirmation != null && presetConfirmation.isShowing()) return;
+        if (appearanceDialogShowing()) {
+            selectedPreset = P7VisualCatalog.currentPreset(a);
+            render();
+            return;
+        }
         if (selectedPreset < 0) {
             new android.app.AlertDialog.Builder(a)
                 .setTitle("Selecione um preset")

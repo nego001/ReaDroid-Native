@@ -158,7 +158,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(42, navigation.count("@Test"))
+        self.assertEqual(43, navigation.count("@Test"))
         self.assertEqual(1, isolated.count("@Test"))
         icon_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
                          "P7IconTemplatesLargeFontInstrumentedTest.java").read_text(
@@ -173,6 +173,17 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "void viewAllWaitsForThemeConfirmationAndRecoversAfterCancel()"))
         self.assertIn("View All may not appear behind Apply confirmation", navigation)
         self.assertIn("View All must work normally after Cancel", navigation)
+        self.assertEqual(1, navigation.count(
+            "void crossFamilyAppearanceConfirmationsNeverStackOrLeavePhantomPreview()"))
+        self.assertIn("Layout cannot stack behind theme confirmation", navigation)
+        self.assertIn("Theme cannot stack behind layout confirmation", navigation)
+        self.assertIn("Layout cannot stack behind preset confirmation", navigation)
+        all_dialogs = (ROOT / "app/src/main/java/com/readroid/app/"
+            "P7DesignStudio.java").read_text(encoding="utf-8")
+        self.assertIn("private boolean appearanceDialogShowing()", all_dialogs)
+        self.assertIn("if (appearanceDialogShowing()) {", all_dialogs)
+        self.assertIn("selectedLayout = P7VisualCatalog.currentLayout(a);", all_dialogs)
+        self.assertIn("selectedPreset = P7VisualCatalog.currentPreset(a);", all_dialogs)
         self.assertEqual(1, navigation.count(
             "void catalogSelectionsRequireNativeConfirmationBeforeSaving()"))
         self.assertIn("Confirmation must match selected catalog option", navigation)
