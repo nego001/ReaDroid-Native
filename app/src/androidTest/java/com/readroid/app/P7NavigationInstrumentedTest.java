@@ -2165,6 +2165,82 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void appliedDesignBadgeRespectsSavedAccentAndReadableCheck() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean hadTheme = prefs.contains("theme");
+        String oldTheme = prefs.getString("theme", "oled");
+        boolean hadAccent = prefs.contains("accent");
+        String oldAccent = prefs.getString("accent", "blue");
+        boolean hadCustom = prefs.contains("custom_accent");
+        String oldCustom = prefs.getString("custom_accent", "#1688FF");
+        try {
+            for (String[] sample : new String[][]{
+                    {"oled", "blue", "#1688FF"},
+                    {"light", "green", "#1688FF"},
+                    {"graphite", "orange", "#1688FF"},
+                    {"oled", "purple", "#1688FF"},
+                    {"light", "custom", "#FFFFFF"},
+                    {"oled", "custom", "#050505"}}) {
+                assertTrue(prefs.edit().putString("theme", sample[0])
+                    .putString("accent", sample[1])
+                    .putString("custom_accent", sample[2]).commit());
+                NegrescoTheme.apply(context);
+                try (ActivityScenario<MainActivity> scenario =
+                        ActivityScenario.launch(MainActivity.class)) {
+                    scenario.onActivity(activity -> {
+                        View root = activity.getWindow().getDecorView();
+                        View design = byDescription(root, "Abrir seção Design");
+                        assertAccessibleButton(design);
+                        assertTrue(design.performClick());
+                        int applied = P7VisualCatalog.currentLayout(activity);
+                        String name = P7VisualCatalog.LAYOUT_NAMES[applied];
+                        View tile = byDescription(
+                            activity.getWindow().getDecorView(),
+                            name + ", layout aplicado");
+                        assertAccessibleButton(tile);
+                        View preview = ((ViewGroup) tile).getChildAt(0);
+                        assertTrue(preview instanceof ViewGroup);
+                        assertEquals("Committed choice must retain exactly one badge",
+                            2, ((ViewGroup) preview).getChildCount());
+                        View checkView = ((ViewGroup) preview).getChildAt(1);
+                        assertTrue(checkView instanceof TextView);
+                        TextView check = (TextView) checkView;
+                        assertEquals("✓", check.getText().toString());
+                        assertTrue(check.getBackground() instanceof
+                            android.graphics.drawable.GradientDrawable);
+                        android.graphics.drawable.GradientDrawable fill =
+                            (android.graphics.drawable.GradientDrawable)
+                                check.getBackground();
+                        assertNotNull(fill.getColor());
+                        assertEquals("Applied badge must use the SAVED accent",
+                            NegrescoTheme.ACCENT, fill.getColor().getDefaultColor());
+                        assertEquals("Check must use the contrasting foreground",
+                            NegrescoTheme.ON_ACCENT, check.getCurrentTextColor());
+                        assertTrue("Badge check contrast must be at least 4.5:1",
+                            NegrescoTheme.contrastRatio(
+                                fill.getColor().getDefaultColor(),
+                                check.getCurrentTextColor()) >= 4.5);
+                        assertEquals("Viewing Design must never change preferences",
+                            sample[1], prefs.getString("accent", ""));
+                    });
+                }
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadTheme) restore.putString("theme", oldTheme);
+            else restore.remove("theme");
+            if (hadAccent) restore.putString("accent", oldAccent);
+            else restore.remove("accent");
+            if (hadCustom) restore.putString("custom_accent", oldCustom);
+            else restore.remove("custom_accent");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void themeAndLayoutBadgesRequireCommittedAppearance() {
         assertEquals(", tema aplicado",
             P7DesignStudio.appearanceTileState(0, false, true));
