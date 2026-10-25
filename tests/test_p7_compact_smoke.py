@@ -7,7 +7,8 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from tools.p7_compact_smoke import (
     parse_wm, viewport_pixels, require_accessible_target,
-    require_stacked_explorer_summary, capture_compact_failure_diagnostics)
+    require_stacked_explorer_summary, capture_compact_failure_diagnostics,
+    require_applied_compact_settings)
 
 
 class P7CompactViewportTests(unittest.TestCase):
@@ -170,6 +171,38 @@ class P7CompactViewportTests(unittest.TestCase):
         self.assertIn("capture_compact_failure_diagnostics(api, failure)", source)
         self.assertIn("P7_COMPACT_DIAGNOSTIC_ONLY", source)
         self.assertIn("gate=FAILED", source)
+
+
+    def test_compact_override_and_scale_are_verified_before_evidence(self):
+        valid_size = "Physical size: 1080x2220\nOverride size: 880x1980"
+        valid_density = "Physical density: 440"
+        require_applied_compact_settings(
+            valid_size, valid_density, "1.3", (880, 1980), 440)
+        with self.assertRaisesRegex(AssertionError, "320dp override"):
+            require_applied_compact_settings(
+                "Physical size: 1080x2220", valid_density, "1.3",
+                (880, 1980), 440)
+        with self.assertRaisesRegex(AssertionError, "320dp override"):
+            require_applied_compact_settings(
+                "Physical size: 1080x2220\nOverride size: 880x1900",
+                valid_density, "1.3", (880, 1980), 440)
+        with self.assertRaisesRegex(AssertionError, "density changed"):
+            require_applied_compact_settings(
+                valid_size, "Physical density: 420", "1.3",
+                (880, 1980), 440)
+        for font in ("1.0", "1.5", "NaN", "garbled"):
+            with self.subTest(font=font), self.assertRaises(AssertionError):
+                require_applied_compact_settings(
+                    valid_size, valid_density, font, (880, 1980), 440)
+
+    def test_configuration_contract_is_not_optional_in_compact_workflow(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "tools/p7_compact_smoke.py").read_text(
+            encoding="utf-8")
+        self.assertIn('verify_compact_settings(compact, density)\n        launch()', source)
+        self.assertIn('launch()\n        verify_compact_settings(compact, density)', source)
+        self.assertIn("P7_COMPACT_ANDROID_CONFIG_VERIFIED", source)
+        self.assertIn("capture_compact_failure_diagnostics(api, failure)", source)
 
 
 if __name__ == "__main__":
