@@ -886,11 +886,24 @@ public final class P7NavigationInstrumentedTest {
                         assertNotNull(chooser);
                         assertTrue(chooser.isShowing());
                         assertNotNull(chooser.getWindow());
-                        assertTrue(chooser.getWindow().getDecorView()
-                            .isAttachedToWindow());
                         assertEquals("Opening catalog must not change preferences",
                             original.get(), activity.getSharedPreferences(
                                 "v3_personalizacao", 0).getAll());
+                    });
+                    // dialog.show() posts window attach/traversal to the main
+                    // looper. Check real attachment AFTER that work completes,
+                    // not in the same synchronous ActivityScenario callback.
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        android.app.AlertDialog chooser = opened.get();
+                        assertNotNull(chooser);
+                        assertSame("The same native chooser must remain active",
+                            chooser, studio.activeCatalogChooser());
+                        assertTrue(chooser.isShowing());
+                        assertTrue("Real chooser must attach before Android Back",
+                            chooser.getWindow().getDecorView()
+                                .isAttachedToWindow());
                     });
                     InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
                         android.view.KeyEvent.KEYCODE_BACK);
