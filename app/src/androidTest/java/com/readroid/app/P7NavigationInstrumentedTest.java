@@ -350,6 +350,138 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    /**
+     * Ver todos cannot appear behind an Apply confirmation for Layout/Preset.
+     * The exact same native confirmation must survive all queued taps, and
+     * after Cancel every chooser must be available without saving settings.
+     */
+    private static void assertViewAllBlockedByNonThemeConfirmation(int kind) {
+        final String[] sections = {
+            "Previews de Temas", "Opções de Layout", "Presets de Aparência"
+        };
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            confirmationRef = new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, ?>>
+            original = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    assertTrue(byDescription(root, "Abrir seção Design").performClick());
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    original.set(new java.util.HashMap<>(prefs.getAll()));
+
+                    int committed = kind == 1
+                        ? P7VisualCatalog.currentLayout(activity)
+                        : P7VisualCatalog.currentPreset(activity);
+                    String[] options = kind == 1
+                        ? P7VisualCatalog.LAYOUT_NAMES
+                        : P7VisualCatalog.PRESET_NAMES;
+                    int alternative = committed == 0 ? 1 : 0;
+                    assertTrue("Catalog must contain another choice",
+                        alternative < options.length);
+                    View tile = byDescription(root, options[alternative] + ",");
+                    assertAccessibleButton(tile);
+                    assertTrue("Selecting a preview opens native confirmation",
+                        tile.performClick());
+
+                    android.app.AlertDialog confirmation = kind == 1
+                        ? studio.activeLayoutConfirmation()
+                        : studio.activePresetConfirmation();
+                    confirmationRef.set(confirmation);
+                    assertNotNull("A real Apply confirmation must be showing",
+                        confirmation);
+                    assertTrue(confirmation.isShowing());
+                    assertNull(studio.activeCatalogChooser());
+
+                    for (String section : sections) {
+                        View opener = byDescription(root, "Ver todos: " + section);
+                        assertAccessibleButton(opener);
+                        assertTrue("Queued View All tap must be handled",
+                            opener.performClick());
+                        assertNull("View All cannot stack behind Layout/Preset Apply",
+                            studio.activeCatalogChooser());
+                        assertSame("View All cannot replace the current confirmation",
+                            confirmation,
+                            kind == 1 ? studio.activeLayoutConfirmation()
+                                : studio.activePresetConfirmation());
+                        assertTrue(confirmation.isShowing());
+                        assertEquals("Blocked catalog taps cannot persist appearance",
+                            original.get(), prefs.getAll());
+                    }
+                    assertEquals("Cancelar",
+                        confirmation.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE).getText().toString());
+                    assertTrue(confirmation.getButton(
+                        android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                });
+                // AlertDialog OnDismiss runs asynchronously on the main looper.
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNotNull(confirmationRef.get());
+                    assertFalse("Cancel must dismiss the Apply confirmation",
+                        confirmationRef.get().isShowing());
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    assertNull("Layout confirmation must release its handle",
+                        studio.activeLayoutConfirmation());
+                    assertNull("Preset confirmation must release its handle",
+                        studio.activePresetConfirmation());
+                    assertNull(studio.activeCatalogChooser());
+                    assertEquals(original.get(), activity.getSharedPreferences(
+                        "v3_personalizacao", 0).getAll());
+                });
+                for (String section : sections) {
+                    scenario.onActivity(activity -> {
+                        View opener = byDescription(
+                            activity.getWindow().getDecorView(),
+                            "Ver todos: " + section);
+                        assertAccessibleButton(opener);
+                        assertTrue("Chooser works after Cancel", opener.performClick());
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                        confirmationRef.set(chooser);
+                        assertNotNull(chooser);
+                        assertTrue(chooser.isShowing());
+                        assertNull(studio.activeThemeConfirmation());
+                        assertNull(studio.activeLayoutConfirmation());
+                        assertNull(studio.activePresetConfirmation());
+                        assertEquals("Catalog never persisted unconfirmed options",
+                            original.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                        assertTrue(chooser.getButton(
+                            android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                    });
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        assertNotNull(confirmationRef.get());
+                        assertFalse(confirmationRef.get().isShowing());
+                        assertNull("Fechar must release the native chooser",
+                            studio.activeCatalogChooser());
+                        assertEquals(original.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                    });
+                }
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog opened = confirmationRef.get();
+                    if (opened != null && opened.isShowing()) opened.cancel();
+                });
+            }
+        }
+    }
+
+    @Test public void viewAllWaitsForLayoutConfirmationAndRecoversAfterCancel() {
+        assertViewAllBlockedByNonThemeConfirmation(1);
+    }
+
+    @Test public void viewAllWaitsForPresetConfirmationAndRecoversAfterCancel() {
+        assertViewAllBlockedByNonThemeConfirmation(2);
+    }
+
     @Test public void crossFamilyAppearanceConfirmationsNeverStackOrLeavePhantomPreview() {
         final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, ?>>
             original = new java.util.concurrent.atomic.AtomicReference<>();
