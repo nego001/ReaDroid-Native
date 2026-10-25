@@ -57,6 +57,31 @@ public final class P7HomeOverviewInstrumentedTest {
         }
     }
 
+    @Test public void narrowBrandTaglineKeepsEveryWordAndCustomSubtitles() {
+        final String full = "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS";
+        final String narrow = "ANÁLISE, EDIÇÃO E\nCUSTOMIZAÇÃO DE APKS";
+        assertEquals(narrow, MainActivity.brandSubtitleForViewport(
+            "APK ENGINEERING STUDIO", 320, 1.3f, 1f));
+        assertEquals(narrow, MainActivity.brandSubtitleForViewport(
+            "APK ENGINEERING STUDIO", 359, 1f, 1.35f));
+        assertEquals(full, MainActivity.brandSubtitleForViewport(
+            "APK ENGINEERING STUDIO", 320, 1f, 1f));
+        assertEquals(full, MainActivity.brandSubtitleForViewport(
+            "APK ENGINEERING STUDIO", 393, 1.3f, 1f));
+        assertEquals(full, MainActivity.brandSubtitleForViewport(
+            "APK ENGINEERING STUDIO", 360, 1.3f, 1f));
+        assertEquals(full, narrow.replace("\n", " "));
+        for (String custom : new String[]{
+                "CUSTOM PERSONALIZADO", "MEU PROJETO APK", "",
+                "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS"}) {
+            assertEquals("User-saved subtitle must never be rewritten",
+                custom, MainActivity.brandSubtitleForViewport(
+                    custom, 320, 2f, 1.35f));
+        }
+        assertNull(MainActivity.brandSubtitleForViewport(
+            null, 320, 1.3f, 1f));
+    }
+
     @Test public void recentProjectMenuIsAccessibleWithoutDeletingOriginal() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
