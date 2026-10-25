@@ -1390,6 +1390,16 @@ public final class P7NavigationInstrumentedTest {
         assertEquals(57, P7DesignStudio.referencePreviewHeightDp(1, 393, 2f));
         assertEquals(46, P7DesignStudio.referencePreviewHeightDp(2, 600, 1f));
 
+        // The first-fold reference ends at the five presets. The real
+        // legacy customization actions stay in the scrollable page below.
+        assertEquals(26, P7DesignStudio.legacySettingsFoldSpacerDp(0, 393, 1f));
+        assertEquals(26, P7DesignStudio.legacySettingsFoldSpacerDp(0, 390, 1.15f));
+        assertEquals(0, P7DesignStudio.legacySettingsFoldSpacerDp(0, 389, 1f));
+        assertEquals(0, P7DesignStudio.legacySettingsFoldSpacerDp(0, 393, 1.3f));
+        assertEquals(0, P7DesignStudio.legacySettingsFoldSpacerDp(0, 600, 1f));
+        assertEquals(0, P7DesignStudio.legacySettingsFoldSpacerDp(1, 393, 1f));
+
+
 
         // Real font metrics, not arbitrary character counts, decide whether
         // the reference's same-line compact heading can fit safely.
