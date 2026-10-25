@@ -562,6 +562,17 @@ public final class P7DesignStudio {
         return widthDp >= 390 && widthDp < 420 && effectiveFontScale <= 1.15f;
     }
 
+    /**
+     * The official first-fold reference ends after the five presets. Keep
+     * the actual legacy appearance controls scrollable below the bottom bar
+     * rather than allowing a clipped section heading to peek behind it.
+     */
+    static int legacySettingsFoldSpacerDp(int tab, int widthDp,
+            float effectiveFontScale) {
+        return tab == 0 && referenceFirstViewport(widthDp, effectiveFontScale)
+            ? 26 : 0;
+    }
+
     static int referencePreviewHeightDp(int kind, int widthDp,
             float effectiveFontScale) {
         boolean compact = referenceFirstViewport(widthDp, effectiveFontScale);
@@ -1132,6 +1143,19 @@ public final class P7DesignStudio {
             actionCard("Editar nome e subtítulo", "Atualizar a identidade exibida na Home", 6);
             actionCard("Prévia de aparência", "Conferir as preferências atuais", 7);
         }
+        int foldSpacer = legacySettingsFoldSpacerDp(activeTab,
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale
+                * NegrescoTheme.FONT_SCALE);
+        if (foldSpacer > 0) {
+            View visualGap = new View(a);
+            visualGap.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            body.addView(visualGap,
+                new LinearLayout.LayoutParams(-1, dp(foldSpacer)));
+        }
+        // Real appearance actions remain in the scrollable content; this is
+        // spacing only, not visibility suppression or a mock navigation bar.
         heading("Personalização existente");
         actionCard("Cores e tons","Abrir paleta de destaques",1);
         actionCard("Exportar aparência","Salvar suas preferências em JSON",8);
