@@ -364,12 +364,42 @@ public final class P7DesignStudio {
         return (widthDp > 0 && widthDp < 360) || effective >= 1.20f;
     }
 
+    /**
+     * On a compact phone the two short reference headings can still share
+     * one baseline with "Ver todos". Use actual TextView font metrics, not
+     * character counts; preserve stacked layouts when fonts need the space.
+     */
+    static boolean compactHeadingFitsInOneRow(int widthDp, float systemScale,
+            float appScale, float titleWidthPx, float actionWidthPx,
+            float pixelsPerDp) {
+        float effective = Math.max(0.75f, systemScale)
+            * Math.max(0.85f, appScale);
+        if (widthDp <= 0 || widthDp >= 360 || effective > 1.40f
+                || pixelsPerDp <= 0) return false;
+        // The root already reserves horizontal app padding. Keep a further
+        // 12dp safety margin plus the action padding and breathing room.
+        float availableDp = widthDp - (NegrescoTheme.COMPACT ? 24 : 30) - 12;
+        float requiredDp = (titleWidthPx + actionWidthPx) / pixelsPerDp
+            + 8 + 3 + 12;
+        return requiredDp <= availableDp;
+    }
+
     private void sectionHeader(String title, Runnable onViewAll) {
+        int widthDp = a.getResources().getConfiguration().screenWidthDp;
+        float systemScale = a.getResources().getConfiguration().fontScale;
         boolean expanded = needsExpandedSectionHeader(
-            a.getResources().getConfiguration().screenWidthDp,
-            a.getResources().getConfiguration().fontScale,
-            NegrescoTheme.FONT_SCALE);
+            widthDp, systemScale, NegrescoTheme.FONT_SCALE);
+        TextView heading = label(title, 15, NegrescoTheme.TEXT, true);
+        TextView viewAll = onViewAll == null ? null
+            : label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
         boolean stacked = expanded && onViewAll != null;
+        if (stacked && viewAll != null && compactHeadingFitsInOneRow(
+                widthDp, systemScale, NegrescoTheme.FONT_SCALE,
+                heading.getPaint().measureText(title),
+                viewAll.getPaint().measureText("Ver todos  ›"),
+                a.getResources().getDisplayMetrics().density)) {
+            stacked = false;
+        }
         LinearLayout row = new LinearLayout(a);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setOrientation(stacked
@@ -379,15 +409,13 @@ public final class P7DesignStudio {
             -1, expanded ? -2 : dp(48));
         rp.topMargin = dp(4);
         body.addView(row, rp);
-        TextView label = label(title, 15, NegrescoTheme.TEXT, true);
         // Keep the full heading legible and navigable with TalkBack.
         if (android.os.Build.VERSION.SDK_INT >= 28)
-            label.setAccessibilityHeading(true);
-        row.addView(label, stacked
+            heading.setAccessibilityHeading(true);
+        row.addView(heading, stacked
             ? new LinearLayout.LayoutParams(-1, -2)
             : new LinearLayout.LayoutParams(0, -2, 1f));
-        if (onViewAll != null) {
-            TextView viewAll = label("Ver todos  ›", 11, NegrescoTheme.ACCENT, false);
+        if (viewAll != null) {
             viewAll.setGravity(Gravity.CENTER);
             viewAll.setMinHeight(dp(48));
             viewAll.setMinimumHeight(dp(48));
