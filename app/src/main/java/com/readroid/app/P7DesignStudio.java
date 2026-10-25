@@ -547,6 +547,12 @@ public final class P7DesignStudio {
         return widthDp >= 390 && widthDp < 600 ? 80 : 100;
     }
 
+    /** Five genuine preset tiles fill the normal reference-width rail. */
+    static int presetCardWidthDp(int widthDp, float effectiveFontScale) {
+        if (effectiveFontScale > 1.15f) return 120;
+        return widthDp >= 390 && widthDp < 600 ? 63 : 71;
+    }
+
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
@@ -563,7 +569,9 @@ public final class P7DesignStudio {
         boolean enlargedText = effectiveFontScale > 1.15f;
         // Preserve the canonical compact tiles at normal fonts, and give
         // longer theme/preset names actual room when accessibility text grows.
-        final int width = kind == 2 ? (enlargedText ? 120 : 71)
+        final int width = kind == 2 ? presetCardWidthDp(
+                a.getResources().getConfiguration().screenWidthDp,
+                effectiveFontScale)
             : kind == 1 ? (enlargedText ? 140 : 110)
             : themeCardWidthDp(
                 a.getResources().getConfiguration().screenWidthDp,
@@ -616,9 +624,11 @@ public final class P7DesignStudio {
         // When the reference-sized cards fit side by side, allow the whole
         // theme name to wrap instead of rendering e.g. "Negreco..." alone.
         boolean compactThemePreview = kind == 0 && width == 80;
+        boolean compactPresetPreview = kind == 2 && width == 63;
         title.setMaxLines(enlargedText ? 3
-            : (kind == 1 || compactThemePreview) ? 2 : 1);
-        title.setEllipsize(enlargedText || kind == 1 || compactThemePreview
+            : (kind == 1 || compactThemePreview || compactPresetPreview) ? 2 : 1);
+        title.setEllipsize(enlargedText || kind == 1
+                || compactThemePreview || compactPresetPreview
             ? null : android.text.TextUtils.TruncateAt.END);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2);
