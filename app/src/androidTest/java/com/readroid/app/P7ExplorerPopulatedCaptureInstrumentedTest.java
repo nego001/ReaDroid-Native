@@ -248,6 +248,52 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
         return false;
     }
 
+    /** Diagnostic only: do not dismiss any system window or infer app focus. */
+    private static String boundedForegroundEvidence(String dump) {
+        if (dump == null || dump.isEmpty()) return "unavailable";
+        StringBuilder focus = new StringBuilder();
+        for (String row : dump.split("\n")) {
+            String candidate = row.trim();
+            if (!candidate.startsWith("mCurrentFocus=")
+                    && !candidate.startsWith("mFocusedApp=")) continue;
+            // Protect diagnostic logs from arbitrarily large system output.
+            if (candidate.length() > 240) candidate = candidate.substring(0, 240);
+            if (focus.length() > 0) focus.append(" | ");
+            if (focus.length() + candidate.length() > 512) break;
+            focus.append(candidate.replace('\r', ' '));
+        }
+        return focus.length() == 0 ? "unavailable" : focus.toString();
+    }
+
+    private static String readForegroundEvidenceOnce() {
+        ParcelFileDescriptor pipe = null;
+        try {
+            pipe = InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                .executeShellCommand("dumpsys window | grep -E "
+                    + "'mCurrentFocus=|mFocusedApp='");
+            if (pipe == null) return "unavailable";
+            try (BufferedReader stream = new BufferedReader(
+                    new InputStreamReader(
+                        new ParcelFileDescriptor.AutoCloseInputStream(pipe),
+                        StandardCharsets.UTF_8))) {
+                pipe = null;
+                StringBuilder dump = new StringBuilder(512);
+                String row;
+                while ((row = stream.readLine()) != null) {
+                    if (dump.length() + row.length() > 4096) return "unavailable";
+                    dump.append(row).append('\n');
+                }
+                return boundedForegroundEvidence(dump.toString());
+            }
+        } catch (Exception inaccessible) {
+            return "unavailable";
+        } finally {
+            if (pipe != null) {
+                try { pipe.close(); } catch (java.io.IOException ignored) { }
+            }
+        }
+    }
+
     private static void assertExplorerWindowInForeground(
             ActivityScenario<MainActivity> scenario) {
         boolean hasFocus = waitForExplorerFocus(scenario, 8000L);
@@ -256,8 +302,12 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
             // real Activity; do not infer success from clicking the OS dialog.
             hasFocus = waitForExplorerFocus(scenario, 6000L);
         }
-        assertTrue("Explorer Activity lost foreground window focus after "
-            + "bounded recovery; no unrelated overlay was dismissed", hasFocus);
+        if (!hasFocus) {
+            String focus = readForegroundEvidenceOnce();
+            fail("Explorer Activity lost foreground window focus after "
+                + "bounded recovery; no unrelated overlay was dismissed; "
+                + "focusedSystemWindows=" + focus);
+        }
         AccessibilityNodeInfo active = InstrumentationRegistry
             .getInstrumentation().getUiAutomation().getRootInActiveWindow();
         if (active == null) return; // focus + pixel checks remain mandatory
@@ -336,6 +386,20 @@ public final class P7ExplorerPopulatedCaptureInstrumentedTest {
                     + ".NexusLauncherActivity t7}";
                 assertTrue("Exact external-launcher ANR may be recognized",
                     isExactLauncherAnrWindow(exact));
+                String focused = boundedForegroundEvidence(
+                    "irrelevant diagnostic line\n" + exact + "\n");
+                assertTrue("Current focused window must appear in diagnostic",
+                    focused.contains("mCurrentFocus=Window{"));
+                assertTrue("Focused Activity must appear in diagnostic",
+                    focused.contains("mFocusedApp=ActivityRecord{"));
+                assertFalse("Only focused fields may be included",
+                    focused.contains("irrelevant diagnostic line"));
+                assertEquals("unavailable",
+                    boundedForegroundEvidence("not a window report"));
+                String oversized = "mCurrentFocus=" +
+                    new String(new char[700]).replace('\0', 'x');
+                assertTrue("System diagnostic must remain bounded",
+                    boundedForegroundEvidence(oversized).length() <= 240);
                 assertFalse("Unrelated modal cannot be dismissed",
                     isExactLauncherAnrWindow(exact.replace(
                         "Application Not Responding: "

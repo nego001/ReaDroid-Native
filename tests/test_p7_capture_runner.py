@@ -335,6 +335,14 @@ class P7CaptureRunnerTests(unittest.TestCase):
                   "P7ExplorerPopulatedCaptureInstrumentedTest.java").read_text(
                       encoding="utf-8")
         self.assertIn("isExactLauncherAnrWindow(String windowDump)", source)
+        self.assertIn("private static String boundedForegroundEvidence(String dump)",
+                      source)
+        self.assertIn("private static String readForegroundEvidenceOnce()", source)
+        self.assertIn("focusedSystemWindows=", source)
+        self.assertIn("no unrelated overlay was dismissed", source)
+        self.assertIn("focused.contains(\"mCurrentFocus=Window{\")", source)
+        self.assertIn("focused.contains(\"mFocusedApp=ActivityRecord{\")", source)
+        self.assertIn("boundedForegroundEvidence(oversized).length() <= 240", source)
         self.assertIn("com.google.android.apps.nexuslauncher", source)
         self.assertIn("scan.closeCount != 1", source)
         self.assertIn("scan.appAnr", source)
