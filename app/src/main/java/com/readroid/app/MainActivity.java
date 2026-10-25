@@ -821,8 +821,11 @@ public class MainActivity extends Activity {
         shortcutHint.setPadding(0, 0, 0, NegrescoTheme.dp(this, 8));
         TextView shortcutsTitle = new TextView(this);
         shortcutsTitle.setText("ACESSO RÁPIDO");
-        shortcutsTitle.setTextColor(NegrescoTheme.ACCENT);
-        shortcutsTitle.setTextSize(12);
+        // The approved Home uses a readable white section heading; electric
+        // blue is reserved for icons, active navigation and real actions.
+        // Use palette TEXT so graphite/light/custom themes remain legible.
+        shortcutsTitle.setTextColor(NegrescoTheme.TEXT);
+        shortcutsTitle.setTextSize(15 * NegrescoTheme.FONT_SCALE);
         shortcutsTitle.setPadding(0, NegrescoTheme.dp(this, 18), 0, NegrescoTheme.dp(this, 8));
         homeSection.addView(shortcutsTitle);
         homeSection.addView(shortcutHint);
