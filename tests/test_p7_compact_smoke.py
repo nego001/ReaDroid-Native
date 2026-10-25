@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from tools.p7_compact_smoke import (
     parse_wm, viewport_pixels, require_accessible_target,
     require_stacked_explorer_summary, capture_compact_failure_diagnostics,
-    require_applied_compact_settings)
+    require_applied_compact_settings, await_compact_home)
 
 
 class P7CompactViewportTests(unittest.TestCase):
@@ -203,6 +203,49 @@ class P7CompactViewportTests(unittest.TestCase):
         self.assertIn('launch()\n        verify_compact_settings(compact, density)', source)
         self.assertIn("P7_COMPACT_ANDROID_CONFIG_VERIFIED", source)
         self.assertIn("capture_compact_failure_diagnostics(api, failure)", source)
+
+
+    def test_compact_home_settle_is_bounded_and_never_reclassifies_overlay(self):
+        missing = [ET.Element("node", {"package": "com.android.systemui",
+                                        "content-desc": "Unexpected dialog",
+                                        "clickable": "true"})]
+        ready = [ET.Element("node", {"package": "com.readroid.app",
+                                      "content-desc": "Seção Início, selecionada",
+                                      "clickable": "true"})]
+        with patch("tools.p7_compact_smoke.smoke.ensure_foreground") as focus, \
+             patch("tools.p7_compact_smoke.smoke.visible_app_hierarchy",
+                   side_effect=[missing, ready]) as hierarchy, \
+             patch("tools.p7_compact_smoke.time.sleep") as pause:
+            await_compact_home(max_reads=3, settle_seconds=2)
+            self.assertEqual(2, hierarchy.call_count)
+            self.assertEqual(2, focus.call_count)
+            pause.assert_called_once_with(2)
+        with patch("tools.p7_compact_smoke.smoke.ensure_foreground") as focus, \
+             patch("tools.p7_compact_smoke.smoke.visible_app_hierarchy",
+                   return_value=missing) as hierarchy, \
+             patch("tools.p7_compact_smoke.time.sleep") as pause:
+            with self.assertRaisesRegex(AssertionError, "no screenshot accepted"):
+                await_compact_home(max_reads=3, settle_seconds=2)
+            self.assertEqual(3, hierarchy.call_count)
+            self.assertEqual(3, focus.call_count)
+            self.assertEqual(2, pause.call_count)
+
+    def test_compact_home_rejects_wrong_package_and_nonclickable_targets(self):
+        for package, clickable, description in (
+            ("com.android.systemui", "true", "Seção Início, selecionada"),
+            ("com.readroid.app", "false", "Seção Início, selecionada"),
+            ("com.readroid.app", "true", "Seção Início"),
+        ):
+            with self.subTest(package=package, clickable=clickable,
+                              description=description), \
+                 patch("tools.p7_compact_smoke.smoke.ensure_foreground"), \
+                 patch("tools.p7_compact_smoke.smoke.visible_app_hierarchy",
+                       return_value=[ET.Element("node", {
+                           "package": package, "clickable": clickable,
+                           "content-desc": description})]):
+                with self.assertRaisesRegex(AssertionError,
+                                            "no screenshot accepted"):
+                    await_compact_home(max_reads=1)
 
 
 if __name__ == "__main__":
