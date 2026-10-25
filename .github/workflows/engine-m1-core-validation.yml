@@ -27,6 +27,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Guard real APK file actions before Android execution
+        run: python3 -m unittest discover -s tests -p 'test_engine_file_actions_contract.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -69,6 +71,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Guard real APK file actions before Android execution
+        run: python3 -m unittest discover -s tests -p 'test_engine_file_actions_contract.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
