@@ -5,6 +5,7 @@ No user APK or saved project is required for this visual regression capture.
 """
 import subprocess
 import time
+import re
 try:
     from tools import android_ui_smoke as smoke
 except ImportError:
@@ -44,6 +45,44 @@ def applied_theme_preview(nodes):
     return description
 
 
+
+def require_four_theme_previews(nodes, screen_width_px, density):
+    """At the 393dp baseline, four actual selectable themes must fit onscreen.
+
+    This verifies the Android accessibility bounds, not an illustrative bitmap.
+    Bigger text and other viewport families retain their scrollable catalog.
+    """
+    names = ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset")
+    cards = []
+    for name in names:
+        matches = [node for node in nodes
+                   if node.attrib.get("content-desc", "").startswith(
+                       name + ", ")
+                   and node.attrib.get("clickable") == "true"]
+        if len(matches) != 1:
+            raise AssertionError(
+                f"Expected exactly one native theme card {name!r}, "
+                f"found {len(matches)}")
+        match = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            matches[0].attrib.get("bounds", ""))
+        if not match:
+            raise AssertionError(f"No real bounds for theme {name}")
+        x1, y1, x2, y2 = map(int, match.groups())
+        if not (0 <= x1 < x2 <= screen_width_px and y1 < y2):
+            raise AssertionError(f"Theme {name} is clipped: {match.group()}")
+        if (x2 - x1) * 160 < density * 70:
+            raise AssertionError(
+                f"Theme {name} is too narrow or clipped to read")
+        cards.append((x1, y1, x2, y2))
+    for before, after in zip(cards, cards[1:]):
+        if before[2] > after[0] + 2:
+            raise AssertionError("Reference theme previews overlap")
+        if after[1] >= before[3] or before[1] >= after[3]:
+            raise AssertionError("Reference theme previews do not share a row")
+    return cards
+
+
 def check():
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
     time.sleep(2)
@@ -62,6 +101,18 @@ def check():
                    "Temas", "Layout", "Ícones", "Logotipo", "Dark OLED"):
         if needed not in labels:
             raise AssertionError("Missing Design Studio element: " + needed)
+    # The approved 393dp Home/Design board shows four compact previews,
+    # not three tiles and a barely visible sliver of the fourth.
+    size = smoke.adb("shell", "wm", "size")
+    density_info = smoke.adb("shell", "wm", "density")
+    from tools.p7_compact_smoke import parse_wm
+    (width_px, _), _ = parse_wm(size, "size")
+    (density,), _ = parse_wm(density_info, "density")
+    width_dp = width_px * 160 / density
+    if 390 <= width_dp < 420:
+        require_four_theme_previews(nodes, width_px, density)
+        print(f"P7_FOUR_THEMES_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
+              flush=True)
     dialogs = [n for n in nodes if n.attrib.get("content-desc", "") ==
                "Ver todos: Previews de Temas"]
     assert len(dialogs) == 1, "Reference catalog action missing"
