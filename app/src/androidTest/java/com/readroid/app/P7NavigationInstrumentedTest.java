@@ -1379,6 +1379,17 @@ public final class P7NavigationInstrumentedTest {
         assertEquals(120, P7DesignStudio.presetCardWidthDp(393, 1.3f));
         assertEquals(120, P7DesignStudio.presetCardWidthDp(320, 2f));
 
+        assertTrue(P7DesignStudio.referenceFirstViewport(393, 1f));
+        assertFalse(P7DesignStudio.referenceFirstViewport(320, 1f));
+        assertFalse(P7DesignStudio.referenceFirstViewport(393, 2f));
+        assertFalse(P7DesignStudio.referenceFirstViewport(600, 1f));
+        assertEquals(70, P7DesignStudio.referencePreviewHeightDp(0, 393, 1f));
+        assertEquals(53, P7DesignStudio.referencePreviewHeightDp(1, 393, 1f));
+        assertEquals(41, P7DesignStudio.referencePreviewHeightDp(2, 393, 1f));
+        assertEquals(74, P7DesignStudio.referencePreviewHeightDp(0, 320, 1f));
+        assertEquals(57, P7DesignStudio.referencePreviewHeightDp(1, 393, 2f));
+        assertEquals(46, P7DesignStudio.referencePreviewHeightDp(2, 600, 1f));
+
 
         // Real font metrics, not arbitrary character counts, decide whether
         // the reference's same-line compact heading can fit safely.
