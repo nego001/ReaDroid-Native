@@ -145,6 +145,37 @@ def require_preset_labels_above_bottom_nav(nodes, screen_width_px, density,
     return bounds
 
 
+
+def require_unclipped_followup_heading(nodes, bottom_nav_node):
+    """A below-fold section cannot peek halfway above the bottom nav.
+
+    The real controls still exist in the scrollable Studio. This gate only
+    rejects a partially exposed section title in the initial viewport.
+    """
+    nav_match = re.fullmatch(
+        r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+        bottom_nav_node.attrib.get("bounds", ""))
+    if nav_match is None:
+        raise AssertionError("Design navigation lacks real Android bounds")
+    nav_top = int(nav_match.group(2))
+    headings = [n for n in nodes
+                if n.attrib.get("text", "") == "Personalização existente"]
+    if len(headings) > 1:
+        raise AssertionError("Legacy customization heading duplicated")
+    if headings:
+        rect = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            headings[0].attrib.get("bounds", ""))
+        if rect is None:
+            raise AssertionError("Legacy heading has malformed bounds")
+        y1, y2 = int(rect.group(2)), int(rect.group(4))
+        if y1 < nav_top < y2:
+            raise AssertionError(
+                "Legacy customization heading is partially hidden by "
+                "bottom navigation; scrollable content must begin below fold")
+    return True
+
+
 def check():
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
     time.sleep(2)
@@ -178,6 +209,9 @@ def check():
         require_four_theme_previews(nodes, width_px, density)
         require_preset_labels_above_bottom_nav(
             nodes, width_px, density, current)
+        require_unclipped_followup_heading(nodes, current)
+        print(f"P7_FOLD_CLEAN_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
+              flush=True)
         print(f"P7_PRESET_LABELS_VISIBLE_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
               flush=True)
         print(f"P7_FOUR_THEMES_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
