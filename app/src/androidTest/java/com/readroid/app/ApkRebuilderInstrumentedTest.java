@@ -142,6 +142,116 @@ public final class ApkRebuilderInstrumentedTest {
     }
 
 
+
+    /** Corrupt only an entry's central-directory CRC, preserving its payload. */
+    private static void corruptCentralDirectoryCrc(File apk, String target)
+            throws IOException {
+        byte[] bytes = Files.readAllBytes(apk.toPath());
+        for (int pos = 0; pos + 46 <= bytes.length; pos++) {
+            if ((bytes[pos] & 255) != 0x50 || (bytes[pos+1] & 255) != 0x4b
+                    || (bytes[pos+2] & 255) != 0x01
+                    || (bytes[pos+3] & 255) != 0x02) continue;
+            int nameLen = (bytes[pos+28] & 255) | ((bytes[pos+29] & 255) << 8);
+            int extraLen = (bytes[pos+30] & 255) | ((bytes[pos+31] & 255) << 8);
+            int commentLen = (bytes[pos+32] & 255) | ((bytes[pos+33] & 255) << 8);
+            int next = pos + 46 + nameLen + extraLen + commentLen;
+            if (next > bytes.length) throw new IOException("Central directory truncado");
+            String name = new String(bytes, pos + 46, nameLen,
+                StandardCharsets.UTF_8);
+            if (target.equals(name)) {
+                bytes[pos+16] ^= 0x40; // CRC-32 is little-endian at +16.
+                Files.write(apk.toPath(), bytes);
+                return;
+            }
+            pos = next - 1;
+        }
+        throw new IOException("Entrada não encontrada na central directory: " + target);
+    }
+
+    @Test public void malformedZipCrcCannotReplacePreviousUnsignedExport()
+            throws Exception {
+        File original = file(".apk");
+        File destination = file(".apk");
+        try {
+            fixture(original, false);
+            corruptCentralDirectoryCrc(original, "assets/original.bin");
+            byte[] immutable = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("saída anterior preservada contra CRC inválido");
+            Files.write(destination.toPath(), previous);
+            EditPlan edits = new EditPlan();
+            edits.addTextReplacement("assets/config.json", "{\"ok\":true}");
+            try {
+                ApkRebuilder.rebuild(original, destination, edits.snapshot());
+                fail("Central-directory CRC corruption must not be republished");
+            } catch (IOException expected) {
+                assertTrue("CRC failure should be explained",
+                    expected.getMessage().contains("CRC-32"));
+                assertArrayEquals(previous, Files.readAllBytes(destination.toPath()));
+                assertArrayEquals(immutable, Files.readAllBytes(original.toPath()));
+            }
+        } finally {
+            original.delete();
+            destination.delete();
+        }
+    }
+
+    @Test public void nonApkZipCannotOverwriteExistingOutput()
+            throws Exception {
+        File original = file(".apk");
+        File destination = file(".apk");
+        try {
+            // Valid ZIP but not an APK; a matching text entry alone is insufficient.
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(original.toPath()))) {
+                add(out, "assets/config.json", utf8("antes"));
+            }
+            byte[] immutable = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("último export legítimo não deve ser destruído");
+            Files.write(destination.toPath(), previous);
+            EditPlan edits = new EditPlan();
+            edits.addTextReplacement("assets/config.json", "depois");
+            try {
+                ApkRebuilder.rebuild(original, destination, edits.snapshot());
+                fail("A valid ZIP without manifest/DEX is not structurally an APK");
+            } catch (IOException expected) {
+                assertTrue("APK structural failure should be explained",
+                    expected.getMessage().contains("Manifesto")
+                        || expected.getMessage().contains("DEX"));
+                assertArrayEquals(previous, Files.readAllBytes(destination.toPath()));
+                assertArrayEquals(immutable, Files.readAllBytes(original.toPath()));
+            }
+        } finally {
+            original.delete();
+            destination.delete();
+        }
+    }
+
+    @Test public void missingDexAfterValidManifestCannotBeCommitted()
+            throws Exception {
+        File original = file(".apk");
+        File destination = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(original.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("manifest placeholder"));
+                add(out, "assets/config.json", utf8("original"));
+            }
+            byte[] previous = utf8("arquivo anterior intacto");
+            Files.write(destination.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "novo");
+            try {
+                ApkRebuilder.rebuild(original, destination, plan.snapshot());
+                fail("Missing classes.dex must fail before atomic replacement");
+            } catch (IOException expected) {
+                assertArrayEquals(previous, Files.readAllBytes(destination.toPath()));
+            }
+        } finally {
+            original.delete();
+            destination.delete();
+        }
+    }
+
     @Test public void comparisonDetectsTamperedUntouchedEntryEvenWhenEditLooksCorrect()
             throws Exception {
         File original = file(".apk");

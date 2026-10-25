@@ -74,10 +74,30 @@ def open_fixture():
         "-d", "file://" + DEVICE_FIXTURE)
     adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
     time.sleep(2)
-    click_named(desc="Selecionar arquivo APK para analisar")
-    time.sleep(2)
+    # P7 Home now has a real "Abrir APK" quick action; the old
+    # "Selecionar arquivo APK para analisar" label is no longer mounted.
+    # Require the actionable, accessible card rather than tapping coordinates.
     nodes = hierarchy()
-    if match_node(nodes, text=INPUT_APK) is None:
+    openers = [node for node in nodes
+               if node.attrib.get("content-desc") == "Abrir APK"
+               and node.attrib.get("clickable") == "true"]
+    if len(openers) != 1:
+        inspect("Real APK picker action unavailable")
+        raise AssertionError(
+            f"Expected one clickable native Abrir APK action, got {len(openers)}")
+    tap(openers[0])
+    # DocumentsUI may open Recent before its MediaStore listing settles.
+    # The smoke fixture is already in Recent: use that visible real file,
+    # instead of forcing a navigation drawer that may not have populated yet.
+    until = time.monotonic() + 18
+    found_in_recent = False
+    while time.monotonic() < until:
+        nodes = hierarchy()
+        if match_node(nodes, text=INPUT_APK) is not None:
+            found_in_recent = True
+            break
+        time.sleep(1)
+    if not found_in_recent:
         picker_downloads()
     click_text(INPUT_APK)
     wait_project()
@@ -123,7 +143,7 @@ def edit_asset():
 
 
 def review_and_export(source_sha):
-    click_named(desc="Seção Construir", partial=True)
+    click_named(desc="Seção Build", partial=True)
     click_text("Revisar alterações pendentes")
     nodes = inspect("Review edit plan")
     if match_node(nodes, text=ASSET, partial=True) is None:

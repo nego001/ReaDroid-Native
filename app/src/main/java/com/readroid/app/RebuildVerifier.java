@@ -118,6 +118,7 @@ public final class RebuildVerifier {
         }
         byte[] buffer = new byte[65536];
         long total = 0;
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
         try (InputStream in = zip.getInputStream(entry)) {
             int n;
             while ((n = in.read(buffer)) != -1) {
@@ -127,8 +128,15 @@ public final class RebuildVerifier {
                 if (total > 1073741824L)
                     throw new IOException("Entrada acima do limite: " + entry.getName());
                 hash.update(buffer, 0, n);
+                crc.update(buffer, 0, n);
             }
         }
+        if (entry.getSize() >= 0 && total != entry.getSize())
+            throw new IOException("Tamanho descomprimido divergente: "
+                + entry.getName());
+        if (entry.getCrc() < 0 || crc.getValue() != entry.getCrc())
+            throw new IOException("CRC-32 divergente ou ausente: "
+                + entry.getName());
         return hash.digest();
     }
 }

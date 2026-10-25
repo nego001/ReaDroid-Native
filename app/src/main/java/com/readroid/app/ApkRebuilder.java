@@ -87,6 +87,13 @@ public final class ApkRebuilder {
           }
           if (Thread.currentThread().isInterrupted())
               throw new InterruptedIOException("Reconstrução interrompida");
+          // The staged ZIP must pass ALL archive, edit and untouched-content
+          // verification BEFORE replacing the last known-good export.
+          // This also rejects ZIPs with no AndroidManifest.xml/classes.dex.
+          // The verifier checks original ZIP entry CRCs as well as SHA-256.
+          RebuildVerifier.verifyAgainstOriginal(original, staged, safeEdits);
+          if (Thread.currentThread().isInterrupted())
+              throw new InterruptedIOException("Reconstrução interrompida");
           // Fail closed on filesystems without atomic replacement. Never
           // delete or truncate an existing destination on an error.
           try {
