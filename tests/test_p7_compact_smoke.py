@@ -7,7 +7,8 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from tools.p7_compact_smoke import (
     parse_wm, viewport_pixels, require_accessible_target,
-    require_stacked_explorer_summary, capture_compact_failure_diagnostics)
+    require_stacked_explorer_summary, capture_compact_failure_diagnostics,
+    require_inline_design_header)
 
 
 class P7CompactViewportTests(unittest.TestCase):
@@ -68,6 +69,43 @@ class P7CompactViewportTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             require_accessible_target([offscreen], names[-1],
                                       440, (width, 1980))
+
+    def test_compact_design_header_and_chooser_must_share_visible_row(self):
+        def node(text=None, desc=None, bounds="[0,0][1,1]",
+                 package="com.readroid.app"):
+            attrs = {"package": package, "bounds": bounds}
+            if text is not None:
+                attrs["text"] = text
+            if desc is not None:
+                attrs["content-desc"] = desc
+            return ET.Element("node", attrs)
+        title = node(text="Previews de Temas",
+                     bounds="[32,210][486,259]")
+        chooser = node(desc="Ver todos: Previews de Temas",
+                       bounds="[502,184][843,316]")
+        require_inline_design_header(
+            [title, chooser], "Previews de Temas", (880, 1980))
+        for broken in (
+            [title], # chooser disappeared
+            [title, chooser, chooser], # duplicate accessibility target
+            [title, node(desc="Ver todos: Previews de Temas",
+                         bounds="[502,330][843,462]")], # wrapped row
+            [title, node(desc="Ver todos: Previews de Temas",
+                         bounds="[480,184][843,316]")], # horizontal overlap
+            [title, node(desc="Ver todos: Previews de Temas",
+                         bounds="[502,184][901,316]")], # clipped action
+            [title, node(desc="Ver todos: Previews de Temas",
+                         bounds="[502,184][843,316]",
+                         package="com.android.systemui")],
+        ):
+            with self.subTest(broken=[n.attrib for n in broken]):
+                with self.assertRaises(AssertionError):
+                    require_inline_design_header(
+                        broken, "Previews de Temas", (880, 1980))
+        source = (Path(__file__).resolve().parents[1] /
+                  "tools/p7_compact_smoke.py").read_text(encoding="utf-8")
+        self.assertIn('require_inline_design_header(\n'
+                      '            nodes, "Previews de Temas"', source)
 
     def test_important_apk_name_cannot_be_obscured_by_plan_chip(self):
         def item(text=None, desc=None, bounds="[0,0][100,100]"):
