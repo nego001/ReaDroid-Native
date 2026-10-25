@@ -86,9 +86,18 @@ def open_fixture():
         raise AssertionError(
             f"Expected one clickable native Abrir APK action, got {len(openers)}")
     tap(openers[0])
-    time.sleep(2)
-    nodes = hierarchy()
-    if match_node(nodes, text=INPUT_APK) is None:
+    # DocumentsUI may open Recent before its MediaStore listing settles.
+    # The smoke fixture is already in Recent: use that visible real file,
+    # instead of forcing a navigation drawer that may not have populated yet.
+    until = time.monotonic() + 18
+    found_in_recent = False
+    while time.monotonic() < until:
+        nodes = hierarchy()
+        if match_node(nodes, text=INPUT_APK) is not None:
+            found_in_recent = True
+            break
+        time.sleep(1)
+    if not found_in_recent:
         picker_downloads()
     click_text(INPUT_APK)
     wait_project()
