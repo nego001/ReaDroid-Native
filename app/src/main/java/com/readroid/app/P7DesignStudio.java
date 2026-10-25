@@ -25,6 +25,13 @@ public final class P7DesignStudio {
     private int activeTab = 0;
     private int selectedTheme = 0;
     private android.app.AlertDialog themeConfirmation;
+    // The approved Design title includes a three-dot menu. This is a real
+    // native PopupMenu, never a fake visual icon or a saved appearance state.
+    private android.widget.PopupMenu overflowMenu;
+    android.widget.PopupMenu activeOverflowMenu() {
+        return overflowMenu;
+    }
+
 
     /** Inspection of this Studio's actual native dialog for Android tests. */
     android.app.AlertDialog activeThemeConfirmation() {
@@ -209,6 +216,31 @@ public final class P7DesignStudio {
             : "Mostrar abas finais do Design Studio";
     }
 
+    /** Reuses existing operational studios and catalog; no new permission. */
+    private void showDesignOverflow(View anchor) {
+        if (appearanceDialogShowing() || overflowMenu != null) return;
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(a, anchor);
+        popup.getMenu().add(0, 1, 0, "Catálogo de temas");
+        popup.getMenu().add(0, 2, 1, "Criador de ícones");
+        popup.getMenu().add(0, 3, 2, "Logo Studio");
+        popup.setOnMenuItemClickListener(item -> {
+            int choice = item.getItemId();
+            // Let PopupMenu dismiss its window before showing a new dialog
+            // or editor. A stale click never persists an appearance change.
+            anchor.post(() -> {
+                if (choice == 1) showCatalogDialog(0);
+                else if (choice == 2) open(-4);
+                else if (choice == 3) open(-5);
+            });
+            return choice >= 1 && choice <= 3;
+        });
+        popup.setOnDismissListener(dismissed -> {
+            if (overflowMenu == popup) overflowMenu = null;
+        });
+        overflowMenu = popup;
+        popup.show();
+    }
+
     public P7DesignStudio(Activity activity,LinearLayout container,Button[] appearanceActions,
                           int restoredTab) {
         a=activity;root=container;actions=appearanceActions;
@@ -224,13 +256,23 @@ public final class P7DesignStudio {
         NavGlyph palette=new NavGlyph(a,4);palette.setSelectedState(true);
         header.addView(palette,new LinearLayout.LayoutParams(dp(35),dp(35)));
         LinearLayout titles=column();
-        LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,-2);
+        LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1f);
         tp.leftMargin=dp(10);header.addView(titles,tp);
         TextView studioHeading = label("Design Studio",18,NegrescoTheme.TEXT,true);
         if (android.os.Build.VERSION.SDK_INT >= 28)
             studioHeading.setAccessibilityHeading(true);
         titles.addView(studioHeading);
         titles.addView(label("Personalize a aparência do seu app",12,NegrescoTheme.MUTED,false));
+        TextView more = label("⋮", 24, NegrescoTheme.TEXT, false);
+        more.setGravity(Gravity.CENTER);
+        more.setMinimumWidth(dp(48));
+        more.setMinimumHeight(dp(48));
+        more.setContentDescription("Mais opções do Design Studio");
+        more.setClickable(true);
+        more.setFocusable(true);
+        exposeAsButton(more);
+        more.setOnClickListener(v -> showDesignOverflow(more));
+        header.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
         HorizontalScrollView scroll=new HorizontalScrollView(a);
         tabScroller = scroll;
         scroll.setHorizontalScrollBarEnabled(false);
