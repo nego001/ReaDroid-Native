@@ -5,7 +5,8 @@ import xml.etree.ElementTree as ET
 from tools.p7_design_smoke import (saved_identity_preview,
                                    applied_theme_preview,
                                    require_four_theme_previews,
-                                   require_five_preset_previews)
+                                   require_five_preset_previews,
+                                   require_preset_labels_above_bottom_nav)
 
 
 class DesignStudioSavedIdentityTests(unittest.TestCase):
@@ -155,3 +156,48 @@ class FivePresetReferenceGeometryTests(unittest.TestCase):
         self.assertIn("require_five_preset_previews(nodes, width_px, density)",
                       source)
         self.assertIn("P7_FIVE_PRESETS_PASS", source)
+
+
+class PresetCaptionBottomNavTests(unittest.TestCase):
+    def preset(self, name, x1, x2, y1=1230, y2=1450):
+        return ET.Element("node", {
+            "bounds": f"[{x1},{y1}][{x2},{y2}]",
+            "content-desc": name + ", selecionar prévia. tema OLED",
+            "clickable": "true",
+        })
+
+    def nav(self, top):
+        return ET.Element("node", {
+            "bounds": f"[700,{top}][860,1700]",
+            "content-desc": "Seção Design, selecionada"
+        })
+
+    def cards(self, y2=1450):
+        names = ("Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro")
+        return [self.preset(n, 35+i*185, 35+i*185+170, y2=y2)
+                for i, n in enumerate(names)]
+
+    def test_five_captions_fit_above_real_navigation(self):
+        self.assertEqual(5, len(require_preset_labels_above_bottom_nav(
+            self.cards(), 1080, 440, self.nav(1500))))
+
+    def test_bottom_bar_may_not_cover_label_or_lie_on_top_of_card(self):
+        cases = [
+            (self.cards(y2=1550), self.nav(1500)),
+            (self.cards(y2=1500), self.nav(1500)),
+            (self.cards(), self.nav(1450)),
+            (self.cards(), ET.Element("node", {"bounds": "missing"})),
+            (self.cards()[:4], self.nav(1500)),
+        ]
+        for cards, bottom in cases:
+            with self.subTest(bottom=bottom.attrib, count=len(cards)):
+                with self.assertRaises(AssertionError):
+                    require_preset_labels_above_bottom_nav(
+                        cards, 1080, 440, bottom)
+
+    def test_real_emulator_gate_is_mandatory(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "tools/p7_design_smoke.py").read_text(encoding="utf-8")
+        self.assertIn("require_preset_labels_above_bottom_nav(", source)
+        self.assertIn("P7_PRESET_LABELS_VISIBLE_PASS", source)
