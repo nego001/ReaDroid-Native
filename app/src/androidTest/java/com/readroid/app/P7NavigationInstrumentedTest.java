@@ -1202,6 +1202,50 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    /** Reference Home section typography must stay readable on every palette. */
+    @Test public void homeQuickActionsHeadingUsesReferenceTextColorAcrossThemes() {
+        android.content.Context context = InstrumentationRegistry
+            .getInstrumentation().getTargetContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+            "v3_personalizacao", android.content.Context.MODE_PRIVATE);
+        boolean hadTheme = prefs.contains("theme");
+        String previousTheme = prefs.getString("theme", "oled");
+        try {
+            for (String theme : new String[]{"oled", "graphite", "light"}) {
+                assertTrue(prefs.edit().putString("theme", theme).commit());
+                try (ActivityScenario<MainActivity> scenario =
+                        ActivityScenario.launch(MainActivity.class)) {
+                    scenario.onActivity(activity -> {
+                        View root = activity.getWindow().getDecorView();
+                        TextView heading = accessibleHeading(root, "Ações rápidas");
+                        assertNotNull("Real Home quick-actions heading must exist",
+                            heading);
+                        assertEquals("Reference Home uses foreground text, "
+                                + "not the blue accent, for section headings",
+                            NegrescoTheme.TEXT, heading.getCurrentTextColor());
+                        assertTrue("Section title must remain visually readable",
+                            NegrescoTheme.contrastRatio(
+                                heading.getCurrentTextColor(),
+                                NegrescoTheme.BACKGROUND) >= 4.5);
+                        assertTrue("Heading must keep 15sp hierarchy",
+                            heading.getTextSize() >= 14f
+                                * activity.getResources()
+                                    .getDisplayMetrics().scaledDensity
+                                * NegrescoTheme.FONT_SCALE);
+                        assertFalse("Headings are not action buttons",
+                            heading.isClickable());
+                    });
+                }
+            }
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            if (hadTheme) restore.putString("theme", previousTheme);
+            else restore.remove("theme");
+            assertTrue(restore.commit());
+            NegrescoTheme.apply(context);
+        }
+    }
+
     @Test public void actionCardsKeepFullLabelsAndNativeButtonRolesOnEveryDesignTab() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
