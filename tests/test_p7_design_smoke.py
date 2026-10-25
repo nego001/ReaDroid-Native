@@ -153,8 +153,12 @@ class FivePresetReferenceGeometryTests(unittest.TestCase):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] /
                   "tools/p7_design_smoke.py").read_text(encoding="utf-8")
-        self.assertIn("require_five_preset_previews(nodes, width_px, density)",
-                      source)
+        # P7.50.8 routes the five-card gate through the STRICTER real
+        # bottom-navigation collision check. Require both steps to exist.
+        self.assertIn("require_preset_labels_above_bottom_nav(\n"
+                      "            nodes, width_px, density, current)", source)
+        self.assertIn("bounds = require_five_preset_previews("
+                      "nodes, screen_width_px, density)", source)
         self.assertIn("P7_FIVE_PRESETS_PASS", source)
 
 
