@@ -167,7 +167,9 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(44, navigation.count("@Test"))
+        # P7.50.3 adds a REAL instrumented applied-accent badge regression.
+        # Keep the exact count strict; do not skip or weaken navigation tests.
+        self.assertEqual(45, navigation.count("@Test"))
         creator_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
             "P7CreatorCardsLargeFontInstrumentedTest.java").read_text(
                 encoding="utf-8")
