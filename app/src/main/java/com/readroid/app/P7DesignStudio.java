@@ -495,6 +495,16 @@ public final class P7DesignStudio {
             : ", selecionar prévia";
     }
 
+    /**
+     * Match the reference's four adjacent theme thumbnails on a normal
+     * phone. Tablets, narrow phones and large-text settings keep wider cards.
+     * Titles and subtitles wrap rather than losing a saved theme's identity.
+     */
+    static int themeCardWidthDp(int widthDp, float effectiveFontScale) {
+        if (effectiveFontScale > 1.15f) return 144;
+        return widthDp >= 390 && widthDp < 600 ? 80 : 100;
+    }
+
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
@@ -513,7 +523,9 @@ public final class P7DesignStudio {
         // longer theme/preset names actual room when accessibility text grows.
         final int width = kind == 2 ? (enlargedText ? 120 : 71)
             : kind == 1 ? (enlargedText ? 140 : 110)
-            : (enlargedText ? 144 : 100);
+            : themeCardWidthDp(
+                a.getResources().getConfiguration().screenWidthDp,
+                effectiveFontScale);
         // Preserve 48dp controls while keeping the three catalog families
         // visible above the fold at the canonical emulator viewport.
         final int previewHeight = kind == 2 ? 46 : (kind == 1 ? 57 : 74);
@@ -559,17 +571,21 @@ public final class P7DesignStudio {
         }
         TextView title = label(name, kind == 2 ? 9 : 11,
             NegrescoTheme.TEXT, selected);
-        title.setMaxLines(enlargedText ? 3 : kind == 1 ? 2 : 1);
-        title.setEllipsize(enlargedText || kind == 1 ? null
-            : android.text.TextUtils.TruncateAt.END);
+        // When the reference-sized cards fit side by side, allow the whole
+        // theme name to wrap instead of rendering e.g. "Negreco..." alone.
+        boolean compactThemePreview = kind == 0 && width == 80;
+        title.setMaxLines(enlargedText ? 3
+            : (kind == 1 || compactThemePreview) ? 2 : 1);
+        title.setEllipsize(enlargedText || kind == 1 || compactThemePreview
+            ? null : android.text.TextUtils.TruncateAt.END);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2);
         tp.topMargin = dp(3);
         card.addView(title, tp);
         if (kind == 0 && !subtitle.isEmpty()) {
             TextView detail = label(subtitle, 9, NegrescoTheme.MUTED, false);
-            detail.setMaxLines(enlargedText ? 3 : 1);
-            detail.setEllipsize(enlargedText ? null
+            detail.setMaxLines(enlargedText ? 3 : compactThemePreview ? 2 : 1);
+            detail.setEllipsize(enlargedText || compactThemePreview ? null
                 : android.text.TextUtils.TruncateAt.END);
             detail.setGravity(Gravity.CENTER_HORIZONTAL);
             card.addView(detail);
