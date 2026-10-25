@@ -89,6 +89,32 @@ def launch():
     smoke.ensure_foreground()
 
 
+
+def await_compact_home(max_reads=3, settle_seconds=2):
+    """Allow Android configuration relayout to settle, without auto-passing.
+
+    Every probe reads the real accessibility tree. It never taps through any
+    overlay, skips a tab, retries an emulator, or produces evidence. The last
+    XML dump remains on disk if the required app Home never materializes.
+    """
+    for attempt in range(max_reads):
+        smoke.ensure_foreground()
+        nodes = smoke.visible_app_hierarchy()
+        matching = [n for n in nodes
+                    if n.attrib.get("package") == smoke.PKG
+                    and n.attrib.get("content-desc", "")
+                        .startswith("Seção Início")
+                    and n.attrib.get("clickable") == "true"]
+        if len(matching) == 1 and "selecionada" in matching[0].attrib.get(
+                "content-desc", ""):
+            return
+        if attempt + 1 < max_reads:
+            time.sleep(settle_seconds)
+    raise AssertionError(
+        f"Compact Android Home unavailable after {max_reads} "
+        "real accessibility probes; no screenshot accepted")
+
+
 def require_accessible_target(nodes, description, density, viewport):
     """Fail if a visible, clickable UI node misses the 48dp touch contract."""
     controls = [node for node in nodes
@@ -278,6 +304,7 @@ def check():
         verify_compact_settings(compact, density)
         launch()
         verify_compact_settings(compact, density)
+        await_compact_home()
         for section, title in (
                 ("Início", "Olá, Desenvolvedor"),
                 ("Arquivos", "Explorador de Arquivos"),
