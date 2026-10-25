@@ -83,6 +83,40 @@ def require_four_theme_previews(nodes, screen_width_px, density):
     return cards
 
 
+
+def require_five_preset_previews(nodes, screen_width_px, density):
+    """At the reference phone width, all five native preset cards share a rail.
+
+    No screenshot trick: inspect accessible, operable nodes and their bounds.
+    Each tile retains at least a 48dp target. Enlarged text remains scrollable.
+    """
+    names = ("Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro")
+    boxes = []
+    for name in names:
+        matches = [node for node in nodes
+                   if node.attrib.get("content-desc", "").startswith(name + ", ")
+                   and node.attrib.get("clickable") == "true"]
+        if len(matches) != 1:
+            raise AssertionError(f"Missing/duplicated real preset {name}: "
+                                 f"{len(matches)}")
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                             matches[0].attrib.get("bounds", ""))
+        if match is None:
+            raise AssertionError(f"Preset {name} lacks Android bounds")
+        x1, y1, x2, y2 = map(int, match.groups())
+        if not (0 <= x1 < x2 <= screen_width_px and y1 < y2):
+            raise AssertionError(f"Preset {name} clipped: {match.group()}")
+        if (x2 - x1) * 160 < density * 48:
+            raise AssertionError(f"Preset {name} lost 48dp touch target")
+        boxes.append((x1, y1, x2, y2))
+    for left, right in zip(boxes, boxes[1:]):
+        if left[2] > right[0] + 2:
+            raise AssertionError("Native preset cards overlap")
+        if left[1] >= right[3] or right[1] >= left[3]:
+            raise AssertionError("Presets no longer share one reference row")
+    return boxes
+
+
 def check():
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
     time.sleep(2)
@@ -114,7 +148,10 @@ def check():
     width_dp = width_px * 160 / density
     if 390 <= width_dp < 420:
         require_four_theme_previews(nodes, width_px, density)
+        require_five_preset_previews(nodes, width_px, density)
         print(f"P7_FOUR_THEMES_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
+              flush=True)
+        print(f"P7_FIVE_PRESETS_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
               flush=True)
     dialogs = [n for n in nodes if n.attrib.get("content-desc", "") ==
                "Ver todos: Previews de Temas"]
