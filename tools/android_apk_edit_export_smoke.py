@@ -74,7 +74,18 @@ def open_fixture():
         "-d", "file://" + DEVICE_FIXTURE)
     adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
     time.sleep(2)
-    click_named(desc="Selecionar arquivo APK para analisar")
+    # P7 Home now has a real "Abrir APK" quick action; the old
+    # "Selecionar arquivo APK para analisar" label is no longer mounted.
+    # Require the actionable, accessible card rather than tapping coordinates.
+    nodes = hierarchy()
+    openers = [node for node in nodes
+               if node.attrib.get("content-desc") == "Abrir APK"
+               and node.attrib.get("clickable") == "true"]
+    if len(openers) != 1:
+        inspect("Real APK picker action unavailable")
+        raise AssertionError(
+            f"Expected one clickable native Abrir APK action, got {len(openers)}")
+    tap(openers[0])
     time.sleep(2)
     nodes = hierarchy()
     if match_node(nodes, text=INPUT_APK) is None:
