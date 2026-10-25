@@ -117,6 +117,34 @@ def require_five_preset_previews(nodes, screen_width_px, density):
     return boxes
 
 
+
+def require_preset_labels_above_bottom_nav(nodes, screen_width_px, density,
+                                           bottom_nav_node):
+    """Do not accept five horizontally visible cards with obscured captions.
+
+    Tests screen geometry using actual Android hierarchy of ALL 5 cards
+    and the selected bottom navigation tab's top edge. Never scroll or hide
+    the bottom bar to force the reference to pass.
+    """
+    bounds = require_five_preset_previews(nodes, screen_width_px, density)
+    match = re.fullmatch(
+        r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+        bottom_nav_node.attrib.get("bounds", ""))
+    if match is None:
+        raise AssertionError("Actual Design bottom tab has no screen bounds")
+    nav_top = int(match.group(2))
+    for name, (x1, y1, x2, y2) in zip(
+            ("Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro"), bounds):
+        if y2 > nav_top:
+            raise AssertionError(
+                f"Preset {name} is covered by bottom navigation: "
+                f"presetBottom={y2} navTop={nav_top}")
+        if nav_top - y2 < max(2, round(density / 160)):
+            raise AssertionError(
+                f"Preset {name} caption touches bottom navigation")
+    return bounds
+
+
 def check():
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
     time.sleep(2)
@@ -148,7 +176,10 @@ def check():
     width_dp = width_px * 160 / density
     if 390 <= width_dp < 420:
         require_four_theme_previews(nodes, width_px, density)
-        require_five_preset_previews(nodes, width_px, density)
+        require_preset_labels_above_bottom_nav(
+            nodes, width_px, density, current)
+        print(f"P7_PRESET_LABELS_VISIBLE_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
+              flush=True)
         print(f"P7_FOUR_THEMES_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
               flush=True)
         print(f"P7_FIVE_PRESETS_PASS api={smoke.adb('shell', 'getprop', 'ro.build.version.sdk').strip()}",
