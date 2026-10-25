@@ -143,7 +143,7 @@ def edit_asset():
 
 
 def review_and_export(source_sha):
-    click_named(desc="Seção Construir", partial=True)
+    click_named(desc="Seção Build", partial=True)
     click_text("Revisar alterações pendentes")
     nodes = inspect("Review edit plan")
     if match_node(nodes, text=ASSET, partial=True) is None:
