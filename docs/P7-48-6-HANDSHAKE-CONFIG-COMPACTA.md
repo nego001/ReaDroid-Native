@@ -6,6 +6,7 @@ Este estágio **não presume a causa da ausência da aba**. Ele corrige uma lacu
 
 - Após definir tamanho e fonte, conferir por `wm size` que há override exato dos pixels calculados para 320×720 dp; conferir `wm density` sem alteração e `settings get system font_scale` igual a 1.3 (tolerância numérica de 0.002).
 - Repetir a conferência imediatamente após relançar o aplicativo, antes de tocar na aba `Início`.
+- Antes de interagir, fazer até três leituras **reais** e limitadas da hierarquia Android procurando a aba nativa `Seção Início, selecionada`, do pacote do aplicativo e clicável. Se nunca aparecer, falhar com motivo explícito. Não clicar em janelas do sistema, não produzir screenshot, não reiniciar emulador nem repetir a suíte de testes como atalho.
 - Qualquer falha gera o relatório/PNG opcional de diagnóstico P7.48.5, preservando a exceção original e a restauração em `finally`.
 - Testes unitários rejeitam override ausente/incorreto, densidade diferente, escala errada, NaN e dados malformados. O fluxo Android continua exigindo todas as 14 capturas oficiais, 165 testes/API, 8 sessões e auditoria cruzada das 28 imagens.
 
