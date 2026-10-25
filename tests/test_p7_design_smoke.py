@@ -2,7 +2,9 @@
 import unittest
 import xml.etree.ElementTree as ET
 
-from tools.p7_design_smoke import saved_identity_preview, applied_theme_preview
+from tools.p7_design_smoke import (saved_identity_preview,
+                                   applied_theme_preview,
+                                   require_four_theme_previews)
 
 
 class DesignStudioSavedIdentityTests(unittest.TestCase):
@@ -68,3 +70,45 @@ class AppliedThemeContractTests(unittest.TestCase):
             applied_theme_preview([self.card("Negreco Blue, tema aplicado")])
         with self.assertRaises(AssertionError):
             applied_theme_preview([self.card("Negreco Blue, tema aplicado. Estado indefinido")])
+
+
+class FourThemePreviewGeometryTests(unittest.TestCase):
+    def node(self, name, x1, x2, y1=400, y2=640, click="true"):
+        return ET.Element("node", {
+            "content-desc": name + ", selecionar prévia. Neon · QA",
+            "clickable": click,
+            "bounds": f"[{x1},{y1}][{x2},{y2}]",
+        })
+
+    def test_four_full_tiles_fit_canonical_reference_viewport(self):
+        names = ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset")
+        cards = [self.node(name, 35 + i * 238, 35 + i * 238 + 220)
+                 for i, name in enumerate(names)]
+        self.assertEqual(4, len(require_four_theme_previews(
+            cards, 1080, 440)))
+
+    def test_missing_clipped_narrow_duplicate_and_overlapping_tiles_fail(self):
+        names = ("Negreco Blue", "Carbon Dark", "Matrix Green", "Sunset")
+        good = [self.node(name, 35 + i * 238, 35 + i * 238 + 220)
+                for i, name in enumerate(names)]
+        cases = [
+            good[:3],
+            good + [good[-1]],
+            good[:3] + [self.node("Sunset", 990, 1110)],
+            good[:3] + [self.node("Sunset", 800, 947)],
+            good[:3] + [self.node("Sunset", 700, 920)],
+            good[:3] + [self.node("Sunset", 749, 969, y1=700, y2=900)],
+            good[:3] + [self.node("Sunset", 749, 969, click="false")],
+        ]
+        for nodes in cases:
+            with self.subTest(nodes=[n.attrib for n in nodes]):
+                with self.assertRaises(AssertionError):
+                    require_four_theme_previews(nodes, 1080, 440)
+
+    def test_smoke_keeps_real_failing_geometry_gate(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "tools/p7_design_smoke.py").read_text(encoding="utf-8")
+        self.assertIn("require_four_theme_previews(nodes, width_px, density)",
+                      source)
+        self.assertIn("P7_FOUR_THEMES_PASS", source)
