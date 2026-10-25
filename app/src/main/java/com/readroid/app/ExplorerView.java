@@ -590,9 +590,11 @@ public final class ExplorerView {
             ? new String[]{"Ver texto", "Planejar edição", "Detalhes técnicos",
                 "Copiar caminho"}
             : new String[]{"Ver texto", "Detalhes técnicos", "Copiar caminho"};
+        // AlertDialog's message layout takes precedence over setItems:
+        // combining both silently hides "Planejar edição" and other actions.
+        // Keep file metadata in the accessible title and show the REAL list.
         new android.app.AlertDialog.Builder(activity)
-            .setTitle(label)
-            .setMessage("Tipo: " + category + "  •  " + formatBytes(sizeBytes))
+            .setTitle(label + "\nTipo: " + category + "  •  " + formatBytes(sizeBytes))
             .setItems(choices, (dialog, selected) -> {
                 String action = choices[selected];
                 if ("Ver texto".equals(action)) preview(path);
