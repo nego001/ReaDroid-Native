@@ -482,6 +482,12 @@ public final class P7DesignStudio {
             : ", selecionar prévia";
     }
 
+    /** A checkmark is a graphical status icon: keep >=3:1 non-text contrast. */
+    static int appliedBadgeGlyphColor(int fill) {
+        return NegrescoTheme.contrastRatio(fill, android.graphics.Color.WHITE)
+            >= 3.0 ? android.graphics.Color.WHITE : android.graphics.Color.BLACK;
+    }
+
     /** Check badge and spoken state must describe a SAVED choice, not preview. */
     static String appearanceTileState(int kind, boolean selected, boolean applied) {
         return applied ? (kind == 0 ? ", tema aplicado" : ", layout aplicado")
@@ -534,10 +540,11 @@ public final class P7DesignStudio {
                 : committedTheme >= 0
                     && name.equals(P7ThemeCatalog.nameAt(committedTheme));
         if (applied) {
-            // An applied check belongs to the SAVED visual palette, not to
-            // a hardcoded blue mark. The contrasting foreground also keeps
-            // custom bright accents legible in OLED, graphite and light UI.
-            TextView check = label("✓", 11, NegrescoTheme.ON_ACCENT, true);
+            // An applied check belongs to the SAVED palette. White remains
+            // faithful to the approved blue badge, while pale custom colors
+            // automatically use black for non-text indicator visibility.
+            TextView check = label("✓", 11,
+                appliedBadgeGlyphColor(NegrescoTheme.ACCENT), true);
             check.setGravity(Gravity.CENTER);
             GradientDrawable bubble = new GradientDrawable();
             bubble.setColor(NegrescoTheme.ACCENT);
