@@ -105,10 +105,10 @@ class P7CaptureRunnerTests(unittest.TestCase):
             r"gradle --no-daemon :app:connectedDebugAndroidTest "
             r"-Pandroid\.testInstrumentationRunnerArguments\.class=([^\s]+)",
             workflow)
-        self.assertEqual(6, len(commands))
+        self.assertEqual(7, len(commands))
         selections = [name for cmd in commands for name in cmd.split(",")]
-        self.assertEqual(25, len(selections))
-        self.assertEqual(25, len(set(selections)))
+        self.assertEqual(26, len(selections))
+        self.assertEqual(26, len(set(selections)))
         self.assertIn("ram-size: 3072M", workflow)
         self.assertIn("free -m", workflow)
         self.assertEqual(
@@ -124,9 +124,12 @@ class P7CaptureRunnerTests(unittest.TestCase):
             ["com.readroid.app.P7DesignCatalogLargeFontInstrumentedTest"],
             commands[3].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            ["com.readroid.app.P7LogoIdentityLargeFontInstrumentedTest"],
             commands[4].split(","))
-        self.assertEqual(20, len(commands[5].split(",")))
+        self.assertEqual(
+            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            commands[5].split(","))
+        self.assertEqual(20, len(commands[6].split(",")))
         # The runner launches each workflow line as a separate shell.
         # Run the conditional reboot in one guarded executable script.
         marker = "bash tools/p7_api35_reboot.sh ${{ matrix.api }}"
@@ -161,7 +164,22 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(46, navigation.count("@Test"))
+        self.assertEqual(45, navigation.count("@Test"))
+        logo_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
+            "P7LogoIdentityLargeFontInstrumentedTest.java").read_text(
+                encoding="utf-8")
+        self.assertEqual(1, logo_isolated.count("@Test"))
+        self.assertEqual(1, logo_isolated.count(
+            "void logoPreviewAnnouncesSavedNameAndSubtitleWithoutDuplicateNodes()"))
+        self.assertNotIn(
+            "void logoPreviewAnnouncesSavedNameAndSubtitleWithoutDuplicateNodes()",
+            navigation)
+        self.assertIn("display_name", logo_isolated)
+        self.assertIn("display_subtitle", logo_isolated)
+        self.assertIn("font_percent", logo_isolated)
+        self.assertIn("NO_HIDE_DESCENDANTS", logo_isolated)
+        self.assertIn("assertEquals(Integer.MAX_VALUE", logo_isolated)
+        self.assertIn("NegrescoTheme.apply(context)", logo_isolated)
         isolated_design = (ROOT / "app/src/androidTest/java/com/readroid/app/"
             "P7DesignCatalogLargeFontInstrumentedTest.java").read_text(
                 encoding="utf-8")
