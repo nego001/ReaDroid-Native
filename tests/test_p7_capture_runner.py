@@ -167,9 +167,11 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        # P7.50.3 adds a REAL instrumented applied-accent badge regression.
-        # Keep the exact count strict; do not skip or weaken navigation tests.
-        self.assertEqual(45, navigation.count("@Test"))
+        # P7.50.4 adds real palette-aware Home heading checks while keeping
+        # the P7.50.3 applied-badge test. Never skip an Android regression.
+        self.assertEqual(46, navigation.count("@Test"))
+        self.assertEqual(1, navigation.count(
+            "void homeQuickActionsHeadingUsesReferenceTextColorAcrossThemes()"))
         creator_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
             "P7CreatorCardsLargeFontInstrumentedTest.java").read_text(
                 encoding="utf-8")
