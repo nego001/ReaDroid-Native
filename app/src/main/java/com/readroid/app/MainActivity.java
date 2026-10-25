@@ -144,6 +144,23 @@ public class MainActivity extends Activity {
         return full;
     }
 
+    /**
+     * Keep the approved full built-in subtitle without orphaning "APKS"
+     * on 320dp Android displays at enlarged font scales. Saved custom
+     * subtitles are user content: never shorten or reflow them here.
+     */
+    static String brandSubtitleForViewport(String saved, int widthDp,
+            float systemScale, float appScale) {
+        if (!"APK ENGINEERING STUDIO".equals(saved)) return saved;
+        String full = "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS";
+        if (widthDp < 360
+                && Math.max(0.85f, systemScale) * Math.max(0.85f, appScale)
+                    >= 1.18f) {
+            return "ANÁLISE, EDIÇÃO E\nCUSTOMIZAÇÃO DE APKS";
+        }
+        return full;
+    }
+
     @Override public void onCreate(Bundle state) {
         NegrescoTheme.apply(this);
         String activeTheme = getSharedPreferences("v3_personalizacao", MODE_PRIVATE)
@@ -241,8 +258,14 @@ public class MainActivity extends Activity {
         title.setMaxLines(2);
         brandText.addView(title);
         TextView brandSubtitleView = new TextView(this);
-        brandSubtitleView.setText("APK ENGINEERING STUDIO".equals(displaySubtitle)
-            ? "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS" : displaySubtitle);
+        brandSubtitleView.setText(brandSubtitleForViewport(displaySubtitle,
+            getResources().getConfiguration().screenWidthDp,
+            getResources().getConfiguration().fontScale, NegrescoTheme.FONT_SCALE));
+        // The visual break is layout-only. TalkBack receives the original
+        // uninterrupted meaning of the built-in subtitle.
+        brandSubtitleView.setContentDescription(
+            "APK ENGINEERING STUDIO".equals(displaySubtitle)
+                ? "ANÁLISE, EDIÇÃO E CUSTOMIZAÇÃO DE APKS" : displaySubtitle);
         brandSubtitleView.setTextColor(NegrescoTheme.MUTED);
         brandSubtitleView.setTextSize(8.5f * NegrescoTheme.FONT_SCALE);
         brandSubtitleView.setLetterSpacing(0.13f);
