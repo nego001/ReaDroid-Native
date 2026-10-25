@@ -1246,6 +1246,74 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void designOverflowIsRealAccessibleMenuAndCatalogOpensWithoutApplying()
+            throws Exception {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> before = new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<
+            android.widget.PopupMenu> popup = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    assertTrue(byDescription(root, "Abrir seção Design").performClick());
+                    View overflow = byDescription(root, "Mais opções do Design Studio");
+                    assertNotNull("The approved three-dot action must exist", overflow);
+                    assertAccessibleButton(overflow);
+                    int min = NegrescoTheme.dp(activity, 48);
+                    assertTrue("Overflow hit target cannot shrink below 48dp",
+                        overflow.getMinimumWidth() >= min
+                            && overflow.getMinimumHeight() >= min);
+                    assertTrue(overflow.getLayoutParams().width >= min
+                        && overflow.getLayoutParams().height >= min);
+                    android.content.SharedPreferences prefs =
+                        activity.getSharedPreferences("v3_personalizacao", 0);
+                    before.set(new java.util.HashMap<>(prefs.getAll()));
+                    assertTrue("Three-dot menu must open", overflow.performClick());
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    android.widget.PopupMenu menu = studio.activeOverflowMenu();
+                    assertNotNull("Actual Android PopupMenu must be visible", menu);
+                    popup.set(menu);
+                    assertEquals("Only implemented, reusable actions may be listed",
+                        3, menu.getMenu().size());
+                    assertEquals("Catálogo de temas",
+                        menu.getMenu().findItem(1).getTitle().toString());
+                    assertEquals("Criador de ícones",
+                        menu.getMenu().findItem(2).getTitle().toString());
+                    assertEquals("Logo Studio",
+                        menu.getMenu().findItem(3).getTitle().toString());
+                    assertTrue("Click must trigger the actual native catalog",
+                        menu.getMenu().performIdentifierAction(1, 0));
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    P7DesignStudio studio = studioForModalRegression(activity);
+                    android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                    assertNotNull("Overflow choice must open real catalog", chooser);
+                    assertTrue(chooser.isShowing());
+                    assertEquals("Browsing overflow cannot save appearance",
+                        before.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                    chooser.cancel();
+                });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    assertNull("Dismissed catalog cannot leave an active handle",
+                        studioForModalRegression(activity).activeCatalogChooser());
+                    assertEquals("Back/cancel must preserve saved appearance",
+                        before.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                });
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.widget.PopupMenu active = popup.get();
+                    if (active != null) active.dismiss();
+                });
+            }
+        }
+    }
+
     @Test public void actionCardsKeepFullLabelsAndNativeButtonRolesOnEveryDesignTab() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
