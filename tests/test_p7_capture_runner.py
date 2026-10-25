@@ -161,7 +161,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        self.assertEqual(44, navigation.count("@Test"))
+        self.assertEqual(45, navigation.count("@Test"))
         isolated_design = (ROOT / "app/src/androidTest/java/com/readroid/app/"
             "P7DesignCatalogLargeFontInstrumentedTest.java").read_text(
                 encoding="utf-8")
@@ -198,6 +198,14 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertIn("View All cannot replace the current confirmation", navigation)
         self.assertIn("Catalog never persisted unconfirmed options", navigation)
         self.assertIn("Fechar must release the native chooser", navigation)
+        self.assertEqual(1, navigation.count(
+            "void androidBackClosesEveryCatalogWithoutCommittingAppearance()"))
+        self.assertIn("Android Back must dismiss native chooser", navigation)
+        self.assertIn("Android Back must clear native chooser handle", navigation)
+        self.assertIn("Android Back cannot commit catalog values", navigation)
+        self.assertIn("Catalog must reopen after Back", navigation)
+        self.assertIn("Reopening and closing must never save appearance", navigation)
+
 
         self.assertIn("View All must work normally after Cancel", navigation)
         self.assertEqual(1, navigation.count(

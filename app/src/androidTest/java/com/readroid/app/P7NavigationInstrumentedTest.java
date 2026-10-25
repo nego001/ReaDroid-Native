@@ -849,6 +849,100 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    /**
+     * Android Back, unlike the native Fechar button, triggers cancel/dismiss
+     * callbacks. It must release the chooser, preserve every preference and
+     * permit reopening any catalog on the same Activity.
+     */
+    @Test public void androidBackClosesEveryCatalogWithoutCommittingAppearance() {
+        final String[] sections = {
+            "Previews de Temas", "Opções de Layout", "Presets de Aparência"
+        };
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, ?>>
+            original = new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            opened = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertAccessibleButton(design);
+                    assertTrue(design.performClick());
+                    original.set(new java.util.HashMap<>(activity
+                        .getSharedPreferences("v3_personalizacao", 0).getAll()));
+                });
+                for (String section : sections) {
+                    scenario.onActivity(activity -> {
+                        View root = activity.getWindow().getDecorView();
+                        View opener = byDescription(root, "Ver todos: " + section);
+                        assertAccessibleButton(opener);
+                        assertTrue("Native chooser must open before Android Back",
+                            opener.performClick());
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        android.app.AlertDialog chooser = studio.activeCatalogChooser();
+                        opened.set(chooser);
+                        assertNotNull(chooser);
+                        assertTrue(chooser.isShowing());
+                        assertNotNull(chooser.getWindow());
+                        assertTrue(chooser.getWindow().getDecorView()
+                            .isAttachedToWindow());
+                        assertEquals("Opening catalog must not change preferences",
+                            original.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                    });
+                    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
+                        android.view.KeyEvent.KEYCODE_BACK);
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        assertNotNull(opened.get());
+                        assertFalse("Android Back must dismiss native chooser",
+                            opened.get().isShowing());
+                        assertNull("Android Back must clear native chooser handle",
+                            studio.activeCatalogChooser());
+                        assertNull(studio.activeThemeConfirmation());
+                        assertNull(studio.activeLayoutConfirmation());
+                        assertNull(studio.activePresetConfirmation());
+                        assertEquals("Android Back cannot commit catalog values",
+                            original.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                        View opener = byDescription(
+                            activity.getWindow().getDecorView(),
+                            "Ver todos: " + section);
+                        assertAccessibleButton(opener);
+                        assertTrue("Catalog must reopen after Back", opener.performClick());
+                        android.app.AlertDialog reopened = studio.activeCatalogChooser();
+                        opened.set(reopened);
+                        assertNotNull(reopened);
+                        assertTrue(reopened.isShowing());
+                        assertTrue("Reopened chooser must accept Fechar",
+                            reopened.getButton(
+                                android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                    });
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        assertNotNull(opened.get());
+                        assertFalse("Reopened chooser must finish dismissing",
+                            opened.get().isShowing());
+                        assertNull(studio.activeCatalogChooser());
+                        assertEquals("Reopening and closing must never save appearance",
+                            original.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                    });
+                    opened.set(null);
+                }
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = opened.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void designSubtabsAndAllCatalogOpenersAnnounceButtonRoles() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
