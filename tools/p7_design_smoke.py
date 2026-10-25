@@ -105,7 +105,10 @@ def check():
     # not three tiles and a barely visible sliver of the fourth.
     size = smoke.adb("shell", "wm", "size")
     density_info = smoke.adb("shell", "wm", "density")
-    from tools.p7_compact_smoke import parse_wm
+    try:
+        from tools.p7_compact_smoke import parse_wm
+    except ImportError:
+        from p7_compact_smoke import parse_wm
     (width_px, _), _ = parse_wm(size, "size")
     (density,), _ = parse_wm(density_info, "density")
     width_dp = width_px * 160 / density
