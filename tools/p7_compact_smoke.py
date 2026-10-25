@@ -43,6 +43,45 @@ def viewport_pixels(dp_width, dp_height, density):
             round(dp_height * density / 160))
 
 
+
+def require_applied_compact_settings(size_text, density_text, scale_text,
+                                     expected_size, expected_density):
+    """Check actual Android overrides, not just successful input commands.
+
+    The setup must not silently capture a default-sized emulator. Overrides
+    are intentionally required for the temporary 320dp QA viewport.
+    """
+    import math
+    measured_size, size_override = parse_wm(size_text, "size")
+    measured_density, _ = parse_wm(density_text, "density")
+    if size_override != expected_size or measured_size != expected_size:
+        raise AssertionError(
+            f"Android did not apply the required 320dp override: "
+            f"expected={expected_size}, actual={measured_size}, "
+            f"override={size_override}")
+    if measured_density != (expected_density,):
+        raise AssertionError(
+            f"Android density changed during compact QA: "
+            f"expected={expected_density}, actual={measured_density}")
+    try:
+        scale = float(scale_text.strip())
+    except ValueError as error:
+        raise AssertionError("Android font scale is unavailable") from error
+    if not math.isfinite(scale) or abs(scale - 1.3) > 0.002:
+        raise AssertionError(
+            f"Android did not apply 130-percent font scale: actual={scale_text!r}")
+
+
+def verify_compact_settings(expected_size, expected_density):
+    require_applied_compact_settings(
+        smoke.adb("shell", "wm", "size"),
+        smoke.adb("shell", "wm", "density"),
+        smoke.adb("shell", "settings", "get", "system", "font_scale"),
+        expected_size, expected_density)
+    print("P7_COMPACT_ANDROID_CONFIG_VERIFIED size=320dp font=130%",
+          flush=True)
+
+
 def launch():
     smoke.adb("shell", "am", "force-stop", smoke.PKG)
     smoke.adb("shell", "am", "start", "-W", "-n", smoke.ACTIVITY)
@@ -236,7 +275,9 @@ def check():
     try:
         smoke.adb("shell", "wm", "size", f"{width_px}x{height_px}")
         smoke.adb("shell", "settings", "put", "system", "font_scale", "1.3")
+        verify_compact_settings(compact, density)
         launch()
+        verify_compact_settings(compact, density)
         for section, title in (
                 ("Início", "Olá, Desenvolvedor"),
                 ("Arquivos", "Explorador de Arquivos"),
