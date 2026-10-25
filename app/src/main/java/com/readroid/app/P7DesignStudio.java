@@ -553,6 +553,23 @@ public final class P7DesignStudio {
         return widthDp >= 390 && widthDp < 600 ? 63 : 71;
     }
 
+    /**
+     * The official 393dp mockup keeps preset labels above bottom navigation.
+     * Only the normal-font reference viewport uses slightly denser vertical
+     * spacing; 320dp, large text, and tablet layouts keep approved dimensions.
+     */
+    static boolean referenceFirstViewport(int widthDp, float effectiveFontScale) {
+        return widthDp >= 390 && widthDp < 420 && effectiveFontScale <= 1.15f;
+    }
+
+    static int referencePreviewHeightDp(int kind, int widthDp,
+            float effectiveFontScale) {
+        boolean compact = referenceFirstViewport(widthDp, effectiveFontScale);
+        if (kind == 2) return compact ? 41 : 46;
+        if (kind == 1) return compact ? 53 : 57;
+        return compact ? 70 : 74;
+    }
+
     /** Native tiles use separate proportions for themes, layouts and presets. */
     private void tile(String name, String subtitle, int accent, boolean selected,
                       int kind, Runnable click) {
@@ -578,7 +595,9 @@ public final class P7DesignStudio {
                 effectiveFontScale);
         // Preserve 48dp controls while keeping the three catalog families
         // visible above the fold at the canonical emulator viewport.
-        final int previewHeight = kind == 2 ? 46 : (kind == 1 ? 57 : 74);
+        final int previewHeight = referencePreviewHeightDp(kind,
+            a.getResources().getConfiguration().screenWidthDp,
+            effectiveFontScale);
         LinearLayout card = column();
         card.setPadding(dp(5), dp(6), dp(5), dp(7));
         card.setMinimumWidth(dp(width));
@@ -891,10 +910,15 @@ public final class P7DesignStudio {
             String subtitle, int actionIndex, boolean first) {
         LinearLayout card = new LinearLayout(a);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(10), dp(12), dp(8), dp(12));
+        boolean reference = referenceFirstViewport(
+            a.getResources().getConfiguration().screenWidthDp,
+            a.getResources().getConfiguration().fontScale
+                * NegrescoTheme.FONT_SCALE);
+        int verticalPad = reference ? 8 : 12;
+        card.setPadding(dp(10), dp(verticalPad), dp(8), dp(verticalPad));
         card.setBackground(background(false));
         boolean stacked = row.getOrientation() == LinearLayout.VERTICAL;
-        card.setMinimumHeight(dp(88));
+        card.setMinimumHeight(dp(reference ? 80 : 88));
         LinearLayout.LayoutParams cell = stacked
             ? new LinearLayout.LayoutParams(-1, -2)
             : new LinearLayout.LayoutParams(0, -2, 1f);
