@@ -2993,6 +2993,78 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void belowFoldColorActionOpensNativeChooserAndCancelIsNonDestructive()
+            throws Exception {
+        final java.util.concurrent.atomic.AtomicReference<
+            java.util.Map<String, ?>> original = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View color = byDescription(root, "Cores e tons. ");
+                assertNotNull("Below-fold color action must exist", color);
+                assertAccessibleButton(color);
+                assertFullyReachableByScroll(color);
+                original.set(new java.util.HashMap<>(
+                    activity.getSharedPreferences("v3_personalizacao", 0).getAll()));
+                assertTrue("The actual color action must dispatch its handler",
+                    color.performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            // The MainActivity's real AlertDialog owns a *separate* window;
+            // checking Activity.getDecorView() would miss this entirely.
+            android.app.UiAutomation ui =
+                InstrumentationRegistry.getInstrumentation().getUiAutomation();
+            android.view.accessibility.AccessibilityNodeInfo window =
+                ui.getRootInActiveWindow();
+            assertNotNull("Native color chooser has no active Android window",
+                window);
+            for (String expected : new String[]{
+                    "Cor de destaque", "Azul", "Roxo", "Verde",
+                    "Laranja", "Minha cor (HEX)", "Cancelar"}) {
+                java.util.List<android.view.accessibility.AccessibilityNodeInfo> nodes =
+                    window.findAccessibilityNodeInfosByText(expected);
+                boolean exact = false;
+                for (android.view.accessibility.AccessibilityNodeInfo node : nodes)
+                    if (node.getText() != null
+                            && expected.contentEquals(node.getText())) exact = true;
+                assertTrue("Native color chooser is missing " + expected, exact);
+            }
+            android.view.accessibility.AccessibilityNodeInfo cancel = null;
+            for (android.view.accessibility.AccessibilityNodeInfo node :
+                    window.findAccessibilityNodeInfosByText("Cancelar")) {
+                if (node.getText() != null
+                        && "Cancelar".contentEquals(node.getText())
+                        && node.isClickable()) {
+                    cancel = node;
+                    break;
+                }
+            }
+            assertNotNull("Native Cancel button must be clickable", cancel);
+            assertTrue("Cancel must dismiss the real Android dialog",
+                cancel.performAction(
+                    android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertEquals("Cancel cannot overwrite appearance preferences",
+                    original.get(), activity.getSharedPreferences(
+                        "v3_personalizacao", 0).getAll());
+                assertTrue("Return to Design must preserve native color action",
+                    byDescription(root, "Cores e tons. ").isClickable());
+                assertTrue("Return must not switch the bottom navigation",
+                    byDescription(root, "Abrir seção Design").isSelected());
+            });
+        }
+    }
+
     @Test public void homeHeaderOpensActualMenuAndDesignPreferences() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {
