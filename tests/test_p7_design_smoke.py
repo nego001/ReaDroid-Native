@@ -4,7 +4,8 @@ import xml.etree.ElementTree as ET
 
 from tools.p7_design_smoke import (saved_identity_preview,
                                    applied_theme_preview,
-                                   require_four_theme_previews)
+                                   require_four_theme_previews,
+                                   require_five_preset_previews)
 
 
 class DesignStudioSavedIdentityTests(unittest.TestCase):
@@ -112,3 +113,45 @@ class FourThemePreviewGeometryTests(unittest.TestCase):
         self.assertIn("require_four_theme_previews(nodes, width_px, density)",
                       source)
         self.assertIn("P7_FOUR_THEMES_PASS", source)
+
+
+class FivePresetReferenceGeometryTests(unittest.TestCase):
+    def node(self, name, x1, x2, y1=1500, y2=1690, clickable="true"):
+        return ET.Element("node", {
+            "content-desc": name + ", selecionar prévia. tema OLED",
+            "clickable": clickable,
+            "bounds": f"[{x1},{y1}][{x2},{y2}]"
+        })
+
+    def test_all_five_real_presets_are_fully_visible(self):
+        names = ("Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro")
+        cards = [self.node(name, 45 + i * 185, 45 + i * 185 + 170)
+                 for i, name in enumerate(names)]
+        self.assertEqual(5, len(require_five_preset_previews(
+            cards, 1080, 440)))
+
+    def test_fail_closed_for_missing_duplicate_clipped_and_too_small_presets(self):
+        names = ("Dark OLED", "Cyber Neon", "Minimal", "Glass", "Retro")
+        good = [self.node(name, 45 + i * 185, 45 + i * 185 + 170)
+                for i, name in enumerate(names)]
+        broken = [
+            good[:4],
+            good + [good[4]],
+            good[:4] + [self.node("Retro", 985, 1120)],
+            good[:4] + [self.node("Retro", 985, 1060)],
+            good[:4] + [self.node("Retro", 700, 870)],
+            good[:4] + [self.node("Retro", 785, 955, y1=1740, y2=1920)],
+            good[:4] + [self.node("Retro", 785, 955, clickable="false")],
+        ]
+        for cards in broken:
+            with self.subTest(cards=[n.attrib for n in cards]):
+                with self.assertRaises(AssertionError):
+                    require_five_preset_previews(cards, 1080, 440)
+
+    def test_real_smoke_contains_non_optional_geometry_guard(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] /
+                  "tools/p7_design_smoke.py").read_text(encoding="utf-8")
+        self.assertIn("require_five_preset_previews(nodes, width_px, density)",
+                      source)
+        self.assertIn("P7_FIVE_PRESETS_PASS", source)
