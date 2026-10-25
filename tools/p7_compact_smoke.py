@@ -153,6 +153,70 @@ def check_screen(name, required_text, width_px, height_px, api, density):
           f"viewport=320dp font=130% screenshot={filename}", flush=True)
 
 
+
+def capture_compact_failure_diagnostics(api, failure):
+    """Record read-only evidence BEFORE the viewport/font rollback.
+
+    This is NOT a retry or screenshot pass. Unknown system windows, launcher
+    overlays and app crashes must still fail the compact gate.
+    """
+    from pathlib import Path
+    import xml.etree.ElementTree as ET
+
+    report = [
+        "P7_COMPACT_DIAGNOSTIC_ONLY",
+        f"api={api}",
+        f"exception={type(failure).__name__}: {str(failure)[:240]}",
+    ]
+    for name, command, selectors in (
+        ("window_focus", ("shell", "dumpsys", "window"),
+         ("mCurrentFocus=", "mFocusedApp=", "mTopFocusedDisplayId=")),
+        ("activity_resumed", ("shell", "dumpsys", "activity", "activities"),
+         ("topResumedActivity=", "ResumedActivity=", "mResumedActivity=")),
+    ):
+        try:
+            output = smoke.adb(*command)
+            matches = [line.strip()[:280] for line in output.splitlines()
+                       if any(token in line for token in selectors)]
+            report.append(f"[{name}]")
+            report.extend(matches[:12] or ["unavailable"])
+        except Exception as error:
+            report.append(f"[{name}] unavailable ({type(error).__name__})")
+
+    report.append("[visible_hierarchy]")
+    try:
+        # hierarchy() already saved this dump before a failed find_tab().
+        # Do not re-query/dismiss a system overlay merely for diagnostics.
+        root = ET.parse("v3-studio-android-hierarchy.xml").getroot()
+        interesting = []
+        for node in root.iter("node"):
+            description = node.attrib.get("content-desc", "")
+            label = node.attrib.get("text", "")
+            if description.startswith("Seção ") or "isn't responding" in label:
+                package = node.attrib.get("package", "")
+                interesting.append(
+                    f"package={package[:65]!r} "
+                    f"description={description[:110]!r} text={label[:110]!r}")
+        report.extend(interesting[:20] or ["no bottom tabs or ANR labels in XML"])
+    except Exception as error:
+        report.append(f"unavailable ({type(error).__name__})")
+
+    diagnostic = Path(f"p7-diagnostic-compact-android-{api}.txt")
+    diagnostic.write_text("\n".join(report) + "\n", encoding="utf-8")
+    try:
+        screenshot = subprocess.check_output(
+            ["adb", "exec-out", "screencap", "-p"], timeout=25)
+        if not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("Device did not return PNG bytes")
+        Path(f"p7-diagnostic-compact-android-{api}.png").write_bytes(screenshot)
+        print(f"P7_COMPACT_DIAGNOSTIC_IMAGE api={api}", flush=True)
+    except Exception as error:
+        print(f"P7_COMPACT_DIAGNOSTIC_IMAGE_UNAVAILABLE "
+              f"api={api} reason={type(error).__name__}", flush=True)
+    print(f"P7_COMPACT_DIAGNOSTIC_SAVED api={api} "
+          f"path={diagnostic} gate=FAILED", flush=True)
+
+
 def check():
     api = smoke.adb("shell", "getprop", "ro.build.version.sdk").strip()
     if api not in ("29", "35"):
@@ -180,6 +244,14 @@ def check():
             check_screen(section, title, width_px, height_px, api, density)
         print(f"P7_COMPACT_PASS api={api} viewport=320dp font=130%",
               flush=True)
+    except Exception as failure:
+        try:
+            capture_compact_failure_diagnostics(api, failure)
+        except Exception as diagnostic_error:
+            # The original Android assertion remains the cause of failure.
+            print(f"P7_COMPACT_DIAGNOSTIC_UNAVAILABLE api={api} "
+                  f"reason={type(diagnostic_error).__name__}", flush=True)
+        raise
     finally:
         # Never leave a test emulator in an altered configuration, even if
         # UI assertions or screenshots fail.

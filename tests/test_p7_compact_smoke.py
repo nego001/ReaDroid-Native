@@ -1,9 +1,13 @@
 """Unit tests for the compact-device viewport calculations."""
 import unittest
+import os
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from tools.p7_compact_smoke import (
     parse_wm, viewport_pixels, require_accessible_target,
-    require_stacked_explorer_summary)
+    require_stacked_explorer_summary, capture_compact_failure_diagnostics)
 
 
 class P7CompactViewportTests(unittest.TestCase):
@@ -93,6 +97,79 @@ class P7CompactViewportTests(unittest.TestCase):
                     parse_wm(output, "density" if "density" in output else "size")
         with self.assertRaises(ValueError):
             parse_wm("Physical size: 1080x2220", "color")
+
+
+    def test_failure_snapshot_reports_focus_without_approving_or_dismissing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            old = os.getcwd()
+            self.addCleanup(os.chdir, old)
+            os.chdir(temp)
+            root = ET.Element("hierarchy")
+            ET.SubElement(root, "node", {
+                "package": "com.android.systemui",
+                "text": "System UI dialog",
+                "content-desc": ""})
+            ET.SubElement(root, "node", {
+                "package": "com.readroid.app",
+                "text": "",
+                "content-desc": "Seção Arquivos, selecionada"})
+            ET.ElementTree(root).write(
+                "v3-studio-android-hierarchy.xml", encoding="utf-8")
+            def adb_stub(*args):
+                if args == ("shell", "dumpsys", "window"):
+                    return ("some internal state\n"
+                            "mCurrentFocus=Window{u0 com.android.systemui/Dialog}\n"
+                            "mFocusedApp=ActivityRecord{com.readroid.app/.MainActivity}")
+                if args == ("shell", "dumpsys", "activity", "activities"):
+                    return "topResumedActivity=ActivityRecord{com.readroid.app/.MainActivity}"
+                raise AssertionError(f"Unexpected ADB call: {args}")
+            with patch("tools.p7_compact_smoke.smoke.adb", side_effect=adb_stub), \
+                 patch("tools.p7_compact_smoke.subprocess.check_output",
+                       return_value=b"\x89PNG\r\n\x1a\nfixture"):
+                capture_compact_failure_diagnostics(
+                    "35", AssertionError("Tab 'Início' not found"))
+            contents = Path("p7-diagnostic-compact-android-35.txt").read_text(
+                encoding="utf-8")
+            self.assertIn("P7_COMPACT_DIAGNOSTIC_ONLY", contents)
+            self.assertIn("Tab 'Início' not found", contents)
+            self.assertIn("mCurrentFocus=", contents)
+            self.assertIn("topResumedActivity=", contents)
+            self.assertIn("Seção Arquivos, selecionada", contents)
+            self.assertNotIn("some internal state", contents)
+            self.assertNotIn("System UI dialog", contents)
+            self.assertTrue(Path("p7-diagnostic-compact-android-35.png").exists())
+            self.assertFalse(Path("p7-compact-inicio-android-35.png").exists())
+
+    def test_snapshot_adc_failures_do_not_synthesize_success(self):
+        with tempfile.TemporaryDirectory() as temp:
+            old = os.getcwd()
+            self.addCleanup(os.chdir, old)
+            os.chdir(temp)
+            with patch("tools.p7_compact_smoke.smoke.adb",
+                       side_effect=RuntimeError("ADB unavailable")), \
+                 patch("tools.p7_compact_smoke.subprocess.check_output",
+                       side_effect=RuntimeError("No screenshot")):
+                capture_compact_failure_diagnostics(
+                    "35", AssertionError("Tab 'Início' not found"))
+            report = Path("p7-diagnostic-compact-android-35.txt").read_text(
+                encoding="utf-8")
+            self.assertIn("[window_focus] unavailable", report)
+            self.assertIn("[activity_resumed] unavailable", report)
+            self.assertIn("[visible_hierarchy]", report)
+            self.assertFalse(Path("p7-diagnostic-compact-android-35.png").exists())
+            self.assertFalse(Path("p7-compact-inicio-android-35.png").exists())
+
+    def test_workflow_uploads_compact_failures_but_not_as_pass_evidence(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/p7-brand-validation.yml").read_text(
+            encoding="utf-8")
+        self.assertIn("p7-diagnostic-compact-android-*.txt", workflow)
+        self.assertIn("p7-diagnostic-compact-android-*.png", workflow)
+        source = (root / "tools/p7_compact_smoke.py").read_text(
+            encoding="utf-8")
+        self.assertIn("capture_compact_failure_diagnostics(api, failure)", source)
+        self.assertIn("P7_COMPACT_DIAGNOSTIC_ONLY", source)
+        self.assertIn("gate=FAILED", source)
 
 
 if __name__ == "__main__":
