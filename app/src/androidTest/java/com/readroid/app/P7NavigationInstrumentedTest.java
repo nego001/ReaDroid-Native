@@ -1370,6 +1370,15 @@ public final class P7NavigationInstrumentedTest {
         assertEquals(144, P7DesignStudio.themeCardWidthDp(393, 1.3f));
         assertEquals(144, P7DesignStudio.themeCardWidthDp(320, 2f));
 
+        // Five preset previews should fit the approved normal 393dp board,
+        // but enlarged fonts / tablets / 320dp keep their original geometry.
+        assertEquals(63, P7DesignStudio.presetCardWidthDp(393, 1f));
+        assertEquals(63, P7DesignStudio.presetCardWidthDp(390, 1.15f));
+        assertEquals(71, P7DesignStudio.presetCardWidthDp(389, 1f));
+        assertEquals(71, P7DesignStudio.presetCardWidthDp(600, 1f));
+        assertEquals(120, P7DesignStudio.presetCardWidthDp(393, 1.3f));
+        assertEquals(120, P7DesignStudio.presetCardWidthDp(320, 2f));
+
 
         // Real font metrics, not arbitrary character counts, decide whether
         // the reference's same-line compact heading can fit safely.
