@@ -50,10 +50,15 @@ public final class NavGlyph extends View {
                 path.moveTo(5, 10); path.lineTo(5, 7); path.lineTo(15, 7);
                 break;
             case 2:
-                path.moveTo(16, 4); path.lineTo(27, 10); path.lineTo(27, 22);
-                path.lineTo(16, 28); path.lineTo(5, 22); path.lineTo(5, 10); path.close();
-                path.moveTo(5, 10); path.lineTo(16, 16); path.lineTo(27, 10);
-                path.moveTo(16, 16); path.lineTo(16, 28);
+                // Build: an actual wrench glyph, not the previous cube.
+                path.moveTo(25, 5); path.cubicTo(22, 3, 18, 4, 16, 7);
+                path.lineTo(18, 11); path.lineTo(12, 17);
+                path.lineTo(8, 15); path.lineTo(5, 19);
+                path.cubicTo(3, 22, 4, 27, 8, 28);
+                path.cubicTo(11, 29, 14, 27, 15, 24);
+                path.lineTo(14, 20); path.lineTo(20, 14);
+                path.lineTo(24, 16);
+                path.cubicTo(27, 13, 29, 8, 25, 5); path.close();
                 break;
             case 3:
                 path.moveTo(16, 3); path.lineTo(27, 8); path.lineTo(26, 19);
@@ -61,6 +66,21 @@ public final class NavGlyph extends View {
                 path.lineTo(5, 8); path.close();
                 path.moveTo(11, 16); path.lineTo(15, 20); path.lineTo(22, 12);
                 break;
+            case 4:
+                // Design: artist palette and four paint wells, as in the reference.
+                path.addOval(new android.graphics.RectF(4, 5, 28, 27),
+                    Path.Direction.CW);
+                path.moveTo(27, 18);
+                path.cubicTo(24, 14, 19, 16, 20, 20);
+                path.cubicTo(21, 24, 25, 25, 27, 18);
+                canvas.drawPath(path, paint);
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(11, 11, 2, paint);
+                canvas.drawCircle(17, 10, 2, paint);
+                canvas.drawCircle(22, 13, 2, paint);
+                canvas.drawCircle(10, 18, 2, paint);
+                canvas.restore();
+                return;
             default:
                 path.moveTo(16, 3); path.lineTo(19, 13); path.lineTo(29, 16);
                 path.lineTo(19, 19); path.lineTo(16, 29); path.lineTo(13, 19);

@@ -20,6 +20,7 @@ public final class NegrescoTheme {
     public static int ON_ACCENT = 0xffffffff;
     public static float FONT_SCALE = 1f;
     public static boolean COMPACT = false;
+    public static int LAYOUT_VARIANT = 0;
     public static boolean STUDIO_GLOW = true;
     public static int CARD_RADIUS = 18;
     private NegrescoTheme() {}
@@ -39,7 +40,11 @@ public final class NegrescoTheme {
         }
         String accent = prefs.getString("accent", "blue");
         FONT_SCALE = Math.max(0.85f, Math.min(1.35f, prefs.getInt("font_percent", 100) / 100f));
-        COMPACT = prefs.getBoolean("compact", false);
+        LAYOUT_VARIANT = prefs.getInt("layout_variant",
+            prefs.getBoolean("compact", false) ? 1 : 0);
+        if (LAYOUT_VARIANT < 0 || LAYOUT_VARIANT >= P7VisualCatalog.LAYOUT_NAMES.length)
+            LAYOUT_VARIANT = 0;
+        COMPACT = LAYOUT_VARIANT == 1;
         ACCENT = "purple".equals(accent) ? 0xff9b6dff
             : "green".equals(accent) ? 0xff27c99a
             : "orange".equals(accent) ? 0xffffa24a : 0xff1688ff;
@@ -108,14 +113,12 @@ public final class NegrescoTheme {
             Context context, boolean selected, boolean focused) {
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(context, 14));
-        shape.setColor(selected
-            ? mix(SURFACE, ACCENT, STUDIO_GLOW ? 0.24f : 0.12f)
-            : (focused ? SURFACE : Color.TRANSPARENT));
+        // The approved bottom bar is OLED black with a thin neon marker.
+        // An active tab must not be wrapped in a large filled blue pill.
+        shape.setColor(focused ? SURFACE : Color.TRANSPARENT);
         if (focused) {
-            // Visible even if the focused tab is not the selected section.
+            // Keyboard/DPAD users still get a visible 2dp focus outline.
             shape.setStroke(dp(context, 2), ACCENT);
-        } else if (selected) {
-            shape.setStroke(dp(context, 1), mix(ACCENT, BORDER, 0.52f));
         }
         return new android.graphics.drawable.RippleDrawable(
             android.content.res.ColorStateList.valueOf(mix(ACCENT, SURFACE, 0.60f)),
@@ -159,6 +162,52 @@ public final class NegrescoTheme {
         d.setCornerRadius(dp(context, 16));
         d.setStroke(dp(context, 1), BORDER);
         return d;
+    }
+
+
+    /** Shared native workshop chrome; honors the selected dark/light palette. */
+    public static GradientDrawable studioDialogPanel(Context context) {
+        GradientDrawable panel = new GradientDrawable();
+        panel.setColor(SURFACE);
+        panel.setCornerRadius(dp(context, CARD_RADIUS));
+        panel.setStroke(dp(context, 1), mix(ACCENT, BORDER, 0.22f));
+        return panel;
+    }
+
+    /** Native AlertDialog with the same palette as the underlying Design page. */
+    public static void styleStudioDialog(android.app.AlertDialog dialog) {
+        if (dialog == null || !dialog.isShowing()) {
+            throw new IllegalArgumentException("Studio dialog must be showing");
+        }
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(studioDialogPanel(dialog.getContext()));
+        }
+        Button close = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
+        if (close != null) {
+            close.setAllCaps(false);
+            close.setTextColor(ACCENT);
+        }
+    }
+
+    /** Actual export buttons; SVG is secondary, but remains a real action. */
+    public static void styleWorkshopExport(Context context, Button button,
+            boolean primary) {
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(context, 12));
+        if (primary) {
+            background.setOrientation(GradientDrawable.Orientation.TL_BR);
+            background.setColors(new int[]{
+                ACCENT, mix(ACCENT, BACKGROUND, 0.16f)});
+        } else {
+            background.setColor(mix(SURFACE, BACKGROUND, 0.16f));
+            background.setStroke(dp(context, 1),
+                mix(ACCENT, BORDER, 0.27f));
+        }
+        button.setBackground(background);
+        button.setTextColor(primary ? ON_ACCENT : TEXT);
+        button.setAllCaps(false);
+        button.setPadding(dp(context, 12), 0, dp(context, 12), 0);
     }
 
     public static TextView heading(Context context, String title, String subtitle) {
