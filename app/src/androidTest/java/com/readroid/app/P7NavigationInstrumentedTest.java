@@ -1008,6 +1008,35 @@ public final class P7NavigationInstrumentedTest {
                         assertEquals(saved.get(), activity.getSharedPreferences(
                             "v3_personalizacao", 0).getAll());
                     });
+                    // A newly shown AlertDialog can report isShowing()
+                    // before WindowManager attaches and focuses its window.
+                    // Sending BACK then may target the Activity behind it.
+                    // Probe the SAME native dialog with a bounded wait;
+                    // never cancel or retry Back to manufacture success.
+                    java.util.concurrent.atomic.AtomicBoolean backWindowReady =
+                        new java.util.concurrent.atomic.AtomicBoolean(false);
+                    for (int attempt = 0; attempt < 12
+                            && !backWindowReady.get(); attempt++) {
+                        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                        scenario.onActivity(activity -> {
+                            android.app.AlertDialog dialog = pending.get();
+                            assertNotNull("Apply confirmation lost before Back", dialog);
+                            P7DesignStudio studio = studioForModalRegression(activity);
+                            assertSame("Focus probe must target the original Apply dialog",
+                                dialog, kind == 0 ? studio.activeThemeConfirmation()
+                                    : kind == 1 ? studio.activeLayoutConfirmation()
+                                    : studio.activePresetConfirmation());
+                            android.view.Window window = dialog.getWindow();
+                            backWindowReady.set(dialog.isShowing()
+                                && window != null
+                                && window.getDecorView().isAttachedToWindow()
+                                && window.getDecorView().hasWindowFocus());
+                        });
+                        if (!backWindowReady.get())
+                            android.os.SystemClock.sleep(150);
+                    }
+                    assertTrue("Apply confirmation must own a focused and attached "
+                        + "native window BEFORE Android Back", backWindowReady.get());
                     InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
                         android.view.KeyEvent.KEYCODE_BACK);
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync();
