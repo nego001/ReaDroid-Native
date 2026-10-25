@@ -1,0 +1,9 @@
+# P7.49 | Uma proteção para todos os diálogos e Back reversível
+
+**Alteração de produção sem mudança de regra:** o método `P7DesignStudio.showCatalogDialog` deixa de manter uma segunda lista de checks de tema/layout/preset e passa a reutilizar a guarda já presente `appearanceDialogShowing()`, que inclui **todos os quatro handles nativos**, inclusive o seletor `catalogChooser`. Isso previne a divergência futura entre guardas e mantém o impedimento de abrir mais de um diálogo ao mesmo tempo. A proteção é síncrona e continua fail-closed.
+
+**Regressão Android nova:** `androidBackRollsBackThemeLayoutAndPresetConfirmations` usa a MainActivity real e, para cada uma das famílias Tema, Layout e Preset, abre uma confirmação Aplicar a partir de alternativa não salva; manda KEYCODE_BACK do Android; aguarda OnCancel/OnDismiss por `waitForIdleSync`; exige que todos os handles sejam nulos, o rótulo da alternativa volte a 'selecionar prévia' e que o mapa inteiro `v3_personalizacao` permaneça idêntico. Reabre a mesma confirmação e fecha via Cancelar, novamente validando liberação de todos os handles e ausência de persistência. Sem silenciar asserções ou suprimir testes.
+
+**Contratos Python:** exigem exatamente uma guarda compartilhada no seletor e três guardas nos caminhos de aplicação, impedem retorno acidental à lista de verificações duplicadas. Aumentam a classe de navegação para 46 testes, total **166 instrumentados/API** (`1+1+1+1+46+116`); continuam obrigatórias as 14 capturas/API, 28 cross, Source/OTA, compacto 320dp, fonte 200%, reboot da API35 e evidência fail-closed.
+
+**Status:** preparado em branch de staging, sem aprovação até ambas as APIs e auditoria cruzada passarem. PR #13 em draft, main intocada, sem distribuição APK/OTA, sem homologação visual humana 1:1 ou física Galaxy A55/TalkBack.
