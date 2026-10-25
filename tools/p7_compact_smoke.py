@@ -98,6 +98,39 @@ def require_stacked_explorer_summary(nodes):
             f"title={title} action={action}")
 
 
+
+def require_inline_design_header(nodes, title, viewport):
+    """The compact Design title and real 48dp chooser must share a row.
+
+    Never accept a clipped title, absent chooser, vertical spill or overlap.
+    This validates Android accessibility bounds, not a hardcoded screenshot.
+    """
+    def locate(field, value):
+        matches = [n for n in nodes
+                   if n.attrib.get(field) == value
+                   and n.attrib.get("package") == smoke.PKG]
+        if len(matches) != 1:
+            raise AssertionError(
+                f"Expected one visible Design {field}={value!r}, got {len(matches)}")
+        match = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            matches[0].attrib.get("bounds", ""))
+        if not match:
+            raise AssertionError("Design header/action lacks real bounds")
+        return tuple(map(int, match.groups()))
+    heading = locate("text", title)
+    action = locate("content-desc", "Ver todos: " + title)
+    width, height = viewport
+    for box in (heading, action):
+        x1, y1, x2, y2 = box
+        if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
+            raise AssertionError(f"Design heading clipped: {box}")
+    if heading[2] > action[0] + 2:
+        raise AssertionError("Design heading overlaps Ver todos")
+    if heading[1] >= action[3] or action[1] >= heading[3]:
+        raise AssertionError("Design Ver todos fell below its compact heading")
+
+
 def check_screen(name, required_text, width_px, height_px, api, density):
     smoke.tap(smoke.find_tab(smoke.visible_app_hierarchy(), name))
     smoke.ensure_foreground()
@@ -133,6 +166,10 @@ def check_screen(name, required_text, width_px, height_px, api, density):
         print(f"P7_COMPACT_EXPLORER_A11Y_PASS api={api} 48dp targets=2",
               flush=True)
     if name == "Design":
+        # The approved reference places this short title and chooser on one
+        # line, without reducing the chooser's 48dp accessible touch target.
+        require_inline_design_header(
+            nodes, "Previews de Temas", (width_px, height_px))
         # All four real Design subtabs must fit simultaneously in the 320dp
         # viewport at 130% system text. No offscreen-only "Logotipo" action.
         # Each tab still needs a full 48dp target, and no APK is touched.
