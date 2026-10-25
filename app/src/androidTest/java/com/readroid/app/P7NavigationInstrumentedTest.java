@@ -1292,6 +1292,17 @@ public final class P7NavigationInstrumentedTest {
         assertTrue(P7DesignStudio.needsExpandedSectionHeader(393, 1f, 1.35f));
         assertTrue(P7DesignStudio.needsExpandedSectionHeader(320, 1.25f, 1.35f));
 
+        // At the reference viewport, four native theme previews can share
+        // the first rail. Never sacrifice accessibility sizes or tablet
+        // proportions just to fit a promotional screenshot.
+        assertEquals(80, P7DesignStudio.themeCardWidthDp(393, 1f));
+        assertEquals(80, P7DesignStudio.themeCardWidthDp(390, 1.15f));
+        assertEquals(100, P7DesignStudio.themeCardWidthDp(389, 1f));
+        assertEquals(100, P7DesignStudio.themeCardWidthDp(600, 1f));
+        assertEquals(144, P7DesignStudio.themeCardWidthDp(393, 1.3f));
+        assertEquals(144, P7DesignStudio.themeCardWidthDp(320, 2f));
+
+
         // Real font metrics, not arbitrary character counts, decide whether
         // the reference's same-line compact heading can fit safely.
         assertTrue(P7DesignStudio.compactHeadingFitsInOneRow(
