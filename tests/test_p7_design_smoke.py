@@ -6,7 +6,8 @@ from tools.p7_design_smoke import (saved_identity_preview,
                                    applied_theme_preview,
                                    require_four_theme_previews,
                                    require_five_preset_previews,
-                                   require_preset_labels_above_bottom_nav)
+                                   require_preset_labels_above_bottom_nav,
+                                   require_unclipped_followup_heading)
 
 
 class DesignStudioSavedIdentityTests(unittest.TestCase):
@@ -205,3 +206,57 @@ class PresetCaptionBottomNavTests(unittest.TestCase):
                   "tools/p7_design_smoke.py").read_text(encoding="utf-8")
         self.assertIn("require_preset_labels_above_bottom_nav(", source)
         self.assertIn("P7_PRESET_LABELS_VISIBLE_PASS", source)
+
+
+class LegacySettingsFoldVisibilityTests(unittest.TestCase):
+    def node(self, value, y1, y2):
+        return ET.Element("node", {
+            "text": value,
+            "bounds": f"[35,{y1}][830,{y2}]",
+        })
+
+    def tab(self, y1=1600):
+        return ET.Element("node", {
+            "content-desc": "Seção Design, selecionada",
+            "bounds": f"[650,{y1}][840,1770]",
+        })
+
+    def test_clean_first_fold_can_put_followup_entirely_below_or_above_nav(self):
+        self.assertTrue(require_unclipped_followup_heading([], self.tab()))
+        self.assertTrue(require_unclipped_followup_heading(
+            [self.node("Personalização existente", 1640, 1690)], self.tab()))
+        self.assertTrue(require_unclipped_followup_heading(
+            [self.node("Personalização existente", 1500, 1580)], self.tab()))
+
+    def test_partial_heading_duplicate_and_invalid_nav_fail_closed(self):
+        for headings, nav in [
+            ([self.node("Personalização existente", 1580, 1640)],
+             self.tab()),
+            ([self.node("Personalização existente", 1570, 1610),
+              self.node("Personalização existente", 1630, 1670)],
+             self.tab()),
+            ([self.node("Personalização existente", 1530, 1570)],
+             ET.Element("node", {"bounds": "invalid"})),
+            ([ET.Element("node", {
+                "text": "Personalização existente",
+                "bounds": "not-a-real-bound",
+             })], self.tab()),
+        ]:
+            with self.subTest(data=[n.attrib for n in headings]):
+                with self.assertRaises(AssertionError):
+                    require_unclipped_followup_heading(headings, nav)
+
+    def test_real_smoke_requires_legacy_gate_without_removing_actions(self):
+        from pathlib import Path
+        base = Path(__file__).resolve().parents[1]
+        smoke = (base / "tools/p7_design_smoke.py").read_text(
+            encoding="utf-8")
+        java = (base / "app/src/main/java/com/readroid/app/"
+                "P7DesignStudio.java").read_text(encoding="utf-8")
+        self.assertIn("require_unclipped_followup_heading(nodes, current)",
+                      smoke)
+        self.assertIn("P7_FOLD_CLEAN_PASS", smoke)
+        self.assertIn('heading("Personalização existente")', java)
+        self.assertIn('actionCard("Cores e tons"', java)
+        self.assertIn('actionCard("Exportar aparência"', java)
+        self.assertIn('actionCard("Importar aparência"', java)
