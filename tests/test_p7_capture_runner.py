@@ -242,6 +242,15 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(1, navigation.count(
             "void androidBackRollsBackThemeLayoutAndPresetConfirmations()"))
         self.assertIn("Android Back must dismiss Apply confirmation", navigation)
+        self.assertIn("Apply confirmation must own a focused and attached ", navigation)
+        self.assertIn("window.getDecorView().isAttachedToWindow()", navigation)
+        self.assertIn("window.getDecorView().hasWindowFocus()", navigation)
+        self.assertIn("Focus probe must target the original Apply dialog", navigation)
+        self.assertIn("attempt < 12", navigation)
+        self.assertIn("android.os.SystemClock.sleep(150)", navigation)
+        self.assertEqual(1, navigation.count(
+            "void androidBackRollsBackThemeLayoutAndPresetConfirmations()"))
+
         self.assertIn("Android Back cannot save appearance changes", navigation)
         self.assertIn("Back must restore unselected preview", navigation)
         self.assertIn("After Back the same confirmation must reopen", navigation)
