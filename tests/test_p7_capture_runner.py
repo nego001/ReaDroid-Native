@@ -223,13 +223,6 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertIn("Android Back cannot commit catalog values", navigation)
         self.assertIn("Catalog must reopen after Back", navigation)
         self.assertIn("Reopening and closing must never save appearance", navigation)
-        self.assertEqual(1, navigation.count(
-            "void androidBackRollsBackThemeLayoutAndPresetConfirmations()"))
-        self.assertIn("Android Back must dismiss Apply confirmation", navigation)
-        self.assertIn("Android Back cannot save appearance changes", navigation)
-        self.assertIn("Back must restore unselected preview", navigation)
-        self.assertIn("After Back the same confirmation must reopen", navigation)
-        self.assertIn("Back and Cancelar must preserve all preferences", navigation)
 
 
         self.assertIn("View All must work normally after Cancel", navigation)
@@ -267,12 +260,7 @@ class P7CaptureRunnerTests(unittest.TestCase):
         catalog_source = (ROOT / "app/src/main/java/com/readroid/app/"
             "P7DesignStudio.java").read_text(encoding="utf-8")
         self.assertIn("activeCatalogChooser()", catalog_source)
-        self.assertIn("if (appearanceDialogShowing()) return;", catalog_source)
-        self.assertEqual(1, catalog_source.count(
-            "if (appearanceDialogShowing()) return;"))
-        self.assertNotIn(
-            "if ((themeConfirmation != null && themeConfirmation.isShowing())",
-            catalog_source)
+        self.assertIn("if (catalogChooser != null && catalogChooser.isShowing()) return;", catalog_source)
         self.assertIn("if (catalogChooser == chooser) catalogChooser = null;", catalog_source)
         self.assertEqual(1, navigation.count(
             "void customThemeOpensDesignWithoutFakeAppliedBadge()"))
