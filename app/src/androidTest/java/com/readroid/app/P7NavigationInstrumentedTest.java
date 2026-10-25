@@ -956,6 +956,130 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    /**
+     * Hardware/system Back cancellation must roll back the SAME native preview
+     * as Cancelar, across all three appearance families. Never commit on Back.
+     */
+    @Test public void androidBackRollsBackThemeLayoutAndPresetConfirmations() {
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String, ?>>
+            saved = new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog>
+            pending = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            try {
+                scenario.onActivity(activity -> {
+                    View root = activity.getWindow().getDecorView();
+                    View design = byDescription(root, "Abrir seção Design");
+                    assertAccessibleButton(design);
+                    assertTrue(design.performClick());
+                    saved.set(new java.util.HashMap<>(activity
+                        .getSharedPreferences("v3_personalizacao", 0).getAll()));
+                });
+                for (int type = 0; type < 3; type++) {
+                    final int kind = type;
+                    scenario.onActivity(activity -> {
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        int applied = kind == 0
+                            ? P7ThemeCatalog.currentTheme(activity)
+                            : kind == 1 ? P7VisualCatalog.currentLayout(activity)
+                            : P7VisualCatalog.currentPreset(activity);
+                        int alternative = applied == 0 ? 1 : 0;
+                        String[] options = kind == 0
+                            ? P7ThemeCatalog.names()
+                            : kind == 1 ? P7VisualCatalog.LAYOUT_NAMES
+                            : P7VisualCatalog.PRESET_NAMES;
+                        assertTrue(alternative < options.length);
+                        View proposed = byDescription(
+                            activity.getWindow().getDecorView(),
+                            options[alternative] + ", selecionar prévia");
+                        assertAccessibleButton(proposed);
+                        assertTrue("Preview tap opens a real Apply confirmation",
+                            proposed.performClick());
+                        android.app.AlertDialog dialog = kind == 0
+                            ? studio.activeThemeConfirmation()
+                            : kind == 1 ? studio.activeLayoutConfirmation()
+                            : studio.activePresetConfirmation();
+                        pending.set(dialog);
+                        assertNotNull(dialog);
+                        assertTrue("Native confirmation must be visible before Back",
+                            dialog.isShowing());
+                        assertNull(studio.activeCatalogChooser());
+                        assertEquals(saved.get(), activity.getSharedPreferences(
+                            "v3_personalizacao", 0).getAll());
+                    });
+                    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(
+                        android.view.KeyEvent.KEYCODE_BACK);
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        assertNotNull(pending.get());
+                        assertFalse("Android Back must dismiss Apply confirmation",
+                            pending.get().isShowing());
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        assertNull("Back clears theme Apply handle",
+                            studio.activeThemeConfirmation());
+                        assertNull("Back clears layout Apply handle",
+                            studio.activeLayoutConfirmation());
+                        assertNull("Back clears preset Apply handle",
+                            studio.activePresetConfirmation());
+                        assertNull(studio.activeCatalogChooser());
+                        assertEquals("Android Back cannot save appearance changes",
+                            saved.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                        int applied = kind == 0
+                            ? P7ThemeCatalog.currentTheme(activity)
+                            : kind == 1 ? P7VisualCatalog.currentLayout(activity)
+                            : P7VisualCatalog.currentPreset(activity);
+                        int alternative = applied == 0 ? 1 : 0;
+                        String[] options = kind == 0
+                            ? P7ThemeCatalog.names()
+                            : kind == 1 ? P7VisualCatalog.LAYOUT_NAMES
+                            : P7VisualCatalog.PRESET_NAMES;
+                        View restored = byDescription(
+                            activity.getWindow().getDecorView(),
+                            options[alternative] + ", selecionar prévia");
+                        assertAccessibleButton(restored);
+                        assertTrue("Back must restore unselected preview",
+                            restored.getContentDescription().toString().startsWith(
+                                options[alternative] + ", selecionar prévia"));
+                        assertTrue("After Back the same confirmation must reopen",
+                            restored.performClick());
+                        android.app.AlertDialog reopened = kind == 0
+                            ? studio.activeThemeConfirmation()
+                            : kind == 1 ? studio.activeLayoutConfirmation()
+                            : studio.activePresetConfirmation();
+                        pending.set(reopened);
+                        assertNotNull(reopened);
+                        assertTrue(reopened.isShowing());
+                        assertTrue("Reopened Apply must accept Cancelar",
+                            reopened.getButton(
+                                android.app.AlertDialog.BUTTON_NEGATIVE).performClick());
+                    });
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        P7DesignStudio studio = studioForModalRegression(activity);
+                        assertNotNull(pending.get());
+                        assertFalse("Cancelar must dismiss reopened confirmation",
+                            pending.get().isShowing());
+                        assertNull(studio.activeThemeConfirmation());
+                        assertNull(studio.activeLayoutConfirmation());
+                        assertNull(studio.activePresetConfirmation());
+                        assertNull(studio.activeCatalogChooser());
+                        assertEquals("Back and Cancelar must preserve all preferences",
+                            saved.get(), activity.getSharedPreferences(
+                                "v3_personalizacao", 0).getAll());
+                    });
+                    pending.set(null);
+                }
+            } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    android.app.AlertDialog dialog = pending.get();
+                    if (dialog != null && dialog.isShowing()) dialog.cancel();
+                });
+            }
+        }
+    }
+
     @Test public void designSubtabsAndAllCatalogOpenersAnnounceButtonRoles() {
         try (ActivityScenario<MainActivity> scenario =
                 ActivityScenario.launch(MainActivity.class)) {

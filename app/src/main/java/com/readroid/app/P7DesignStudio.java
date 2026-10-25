@@ -416,11 +416,8 @@ public final class P7DesignStudio {
 
     /** All preview families have a real chooser and explicit apply confirmation. */
     private void showCatalogDialog(int type) {
-        if (catalogChooser != null && catalogChooser.isShowing()) return;
-        if ((themeConfirmation != null && themeConfirmation.isShowing())
-                || (layoutConfirmation != null && layoutConfirmation.isShowing())
-                || (presetConfirmation != null && presetConfirmation.isShowing()))
-            return;
+        // A single guard covers chooser, theme, layout and preset dialogs.
+        if (appearanceDialogShowing()) return;
         final String[] names = type == 0 ? P7ThemeCatalog.names() :
             type == 1 ? P7VisualCatalog.LAYOUT_NAMES : P7VisualCatalog.PRESET_NAMES;
         int selected = type == 0 ? selectedTheme :
