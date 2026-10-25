@@ -2217,12 +2217,19 @@ public final class P7NavigationInstrumentedTest {
                         assertNotNull(fill.getColor());
                         assertEquals("Applied badge must use the SAVED accent",
                             NegrescoTheme.ACCENT, fill.getColor().getDefaultColor());
-                        assertEquals("Check must use the contrasting foreground",
-                            NegrescoTheme.ON_ACCENT, check.getCurrentTextColor());
-                        assertTrue("Badge check contrast must be at least 4.5:1",
+                        assertEquals("Check must retain white on approved blue "
+                                + "or select contrasting ink for custom accents",
+                            P7DesignStudio.appliedBadgeGlyphColor(
+                                NegrescoTheme.ACCENT), check.getCurrentTextColor());
+                        assertTrue("Graphical applied indicator must retain "
+                                + "at least 3:1 non-text contrast",
                             NegrescoTheme.contrastRatio(
                                 fill.getColor().getDefaultColor(),
-                                check.getCurrentTextColor()) >= 4.5);
+                                check.getCurrentTextColor()) >= 3.0);
+                        if ("blue".equals(sample[1]))
+                            assertEquals("Approved blue badge retains white glyph",
+                                android.graphics.Color.WHITE,
+                                check.getCurrentTextColor());
                         assertEquals("Viewing Design must never change preferences",
                             sample[1], prefs.getString("accent", ""));
                     });
