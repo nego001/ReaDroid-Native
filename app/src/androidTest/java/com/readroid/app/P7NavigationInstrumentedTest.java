@@ -1247,6 +1247,20 @@ public final class P7NavigationInstrumentedTest {
         assertTrue(P7DesignStudio.needsExpandedSectionHeader(393, 1.25f, 1f));
         assertTrue(P7DesignStudio.needsExpandedSectionHeader(393, 1f, 1.35f));
         assertTrue(P7DesignStudio.needsExpandedSectionHeader(320, 1.25f, 1.35f));
+
+        // Real font metrics, not arbitrary character counts, decide whether
+        // the reference's same-line compact heading can fit safely.
+        assertTrue(P7DesignStudio.compactHeadingFitsInOneRow(
+            320, 1.3f, 1f, 135f, 80f, 1f));
+        assertFalse(P7DesignStudio.compactHeadingFitsInOneRow(
+            320, 1.3f, 1f, 225f, 95f, 1f));
+        assertFalse(P7DesignStudio.compactHeadingFitsInOneRow(
+            320, 2f, 1f, 135f, 80f, 1f));
+        assertFalse(P7DesignStudio.compactHeadingFitsInOneRow(
+            393, 1.3f, 1f, 135f, 80f, 1f));
+        assertFalse(P7DesignStudio.compactHeadingFitsInOneRow(
+            320, 1.3f, 1.35f, 135f, 80f, 1f));
+
     }
 
     @Test public void largeTextReflowsAllCatalogHeadingsAndViewAllButtons() {
