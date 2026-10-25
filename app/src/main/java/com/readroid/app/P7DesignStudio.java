@@ -534,10 +534,13 @@ public final class P7DesignStudio {
                 : committedTheme >= 0
                     && name.equals(P7ThemeCatalog.nameAt(committedTheme));
         if (applied) {
-            TextView check = label("✓", 11, android.graphics.Color.WHITE, true);
+            // An applied check belongs to the SAVED visual palette, not to
+            // a hardcoded blue mark. The contrasting foreground also keeps
+            // custom bright accents legible in OLED, graphite and light UI.
+            TextView check = label("✓", 11, NegrescoTheme.ON_ACCENT, true);
             check.setGravity(Gravity.CENTER);
             GradientDrawable bubble = new GradientDrawable();
-            bubble.setColor(0xff1688ff);
+            bubble.setColor(NegrescoTheme.ACCENT);
             bubble.setCornerRadius(dp(20));
             bubble.setStroke(dp(1), 0xff061524);
             check.setBackground(bubble);
