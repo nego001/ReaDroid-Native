@@ -47,6 +47,34 @@ public final class P7NavigationInstrumentedTest {
         return null;
     }
 
+    /** Resolve the actual native heading, including below the initial fold. */
+    private static TextView findNativeHeading(View node, String name) {
+        if (node instanceof TextView
+                && name.contentEquals(((TextView) node).getText()))
+            return (TextView) node;
+        if (node instanceof ViewGroup) {
+            ViewGroup children = (ViewGroup) node;
+            for (int i = 0; i < children.getChildCount(); i++) {
+                TextView found = findNativeHeading(children.getChildAt(i), name);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    /** Ensure scrolling, rather than mere view-tree existence, exposes it. */
+    private static void assertFullyReachableByScroll(View target) {
+        assertTrue("Legacy action is detached or hidden", target.isShown());
+        assertTrue("Legacy action has no actual height", target.getHeight() > 0);
+        target.requestRectangleOnScreen(new android.graphics.Rect(
+            0, 0, target.getWidth(), target.getHeight()), true);
+        android.graphics.Rect exposed = new android.graphics.Rect();
+        assertTrue("Scrolling did not expose the actual target",
+            target.getGlobalVisibleRect(exposed));
+        assertEquals("Legacy target remains vertically clipped after scroll",
+            target.getHeight(), exposed.height());
+    }
+
     private static boolean hasText(View view,String value) {
         if(view instanceof TextView && value.equals(((TextView)view).getText().toString())
             && view.isShown()) return true;
@@ -2915,6 +2943,52 @@ public final class P7NavigationInstrumentedTest {
                     "Abrir seção Design");
                 assertNotNull(design);
                 assertTrue(design.isSelected());
+            });
+        }
+    }
+
+    @Test public void hiddenBelowFoldAppearanceToolsRemainReachableAndUnchanged()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                View design = byDescription(decor, "Abrir seção Design");
+                assertNotNull(design);
+                assertTrue(design.performClick());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                android.content.SharedPreferences prefs =
+                    activity.getSharedPreferences("v3_personalizacao", 0);
+                java.util.Map<String, ?> before =
+                    new java.util.HashMap<>(prefs.getAll());
+                TextView heading = findNativeHeading(root,
+                    "Personalização existente");
+                assertNotNull("The below-fold heading must remain real", heading);
+                if (android.os.Build.VERSION.SDK_INT >= 28)
+                    assertTrue("Legacy section must be a heading for TalkBack",
+                        heading.isAccessibilityHeading());
+                assertFullyReachableByScroll(heading);
+                for (String title : new String[]{
+                        "Cores e tons", "Exportar aparência",
+                        "Importar aparência"}) {
+                    View action = byDescription(root, title + ". ");
+                    assertNotNull("Legacy appearance action disappeared: " + title,
+                        action);
+                    assertAccessibleButton(action);
+                    assertTrue("Legacy action lost its click handler",
+                        action.isClickable() && action.isFocusable());
+                    assertTrue("Legacy action lost 48dp touch height",
+                        action.getMinimumHeight() >= NegrescoTheme.dp(activity, 48));
+                    assertFullyReachableByScroll(action);
+                }
+                assertEquals("Navigating below fold must not change preferences",
+                    before, prefs.getAll());
+                View design = byDescription(root, "Abrir seção Design");
+                assertNotNull("Bottom navigation must remain accessible", design);
+                assertTrue(design.isShown());
             });
         }
     }
