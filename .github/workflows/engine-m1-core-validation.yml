@@ -45,8 +45,7 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
-            gradle --no-daemon :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkRebuilderInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkRebuilderInstrumentedTest
       - name: Preserve actual test reports, never installable APK artifacts
         if: always()
         uses: actions/upload-artifact@v4
