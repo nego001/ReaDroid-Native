@@ -167,13 +167,15 @@ class P7CaptureRunnerTests(unittest.TestCase):
         method = "void bottomNavigationScalesWithoutClippingOrChangingLabels()"
         self.assertNotIn(method, navigation)
         self.assertEqual(1, isolated.count(method))
-        # P7.50.6 adds a real native overflow/menu rollback regression.
-        # Keep the exact set and never skip existing Android navigation tests.
-        self.assertEqual(47, navigation.count("@Test"))
+        # P7.50.10 proves below-fold controls remain fully reachable through
+        # real Android scrolling, alongside the prior overflow/menu rollback.
+        self.assertEqual(48, navigation.count("@Test"))
         self.assertEqual(1, navigation.count(
             "void homeQuickActionsHeadingUsesReferenceTextColorAcrossThemes()"))
         self.assertEqual(1, navigation.count(
             "void designOverflowIsRealAccessibleMenuAndCatalogOpensWithoutApplying()"))
+        self.assertEqual(1, navigation.count(
+            "void hiddenBelowFoldAppearanceToolsRemainReachableAndUnchanged()"))
         creator_isolated = (ROOT / "app/src/androidTest/java/com/readroid/app/"
             "P7CreatorCardsLargeFontInstrumentedTest.java").read_text(
                 encoding="utf-8")
