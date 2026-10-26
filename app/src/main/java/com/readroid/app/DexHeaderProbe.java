@@ -25,9 +25,15 @@ final class DexHeaderProbe {
         final long fieldIds;
         final long methodIds;
         final long classDefs;
+        final long mapOffset;
+        final long dataOffset;
+        final long dataBytes;
+        final long[] sectionOffsets;
 
         Header(String version, long sizeBytes, long stringIds, long typeIds,
-                long protoIds, long fieldIds, long methodIds, long classDefs) {
+                long protoIds, long fieldIds, long methodIds, long classDefs,
+                long mapOffset, long dataOffset, long dataBytes,
+                long[] sectionOffsets) {
             this.version = version;
             this.sizeBytes = sizeBytes;
             this.stringIds = stringIds;
@@ -36,6 +42,10 @@ final class DexHeaderProbe {
             this.fieldIds = fieldIds;
             this.methodIds = methodIds;
             this.classDefs = classDefs;
+            this.mapOffset = mapOffset;
+            this.dataOffset = dataOffset;
+            this.dataBytes = dataBytes;
+            this.sectionOffsets = sectionOffsets.clone();
         }
     }
 
@@ -96,7 +106,10 @@ final class DexHeaderProbe {
         long classes = requireSection("classes", u32(bytes, 96),
             u32(bytes, 100), 32, fileSize);
         return new Header(version, fileSize, strings, types, protos, fields,
-            methods, classes);
+            methods, classes, mapOff, dataOff, dataSize, new long[] {
+                u32(bytes, 60), u32(bytes, 68), u32(bytes, 76),
+                u32(bytes, 84), u32(bytes, 92), u32(bytes, 100)
+            });
     }
 
     private static long requireSection(String label, long count, long offset,
