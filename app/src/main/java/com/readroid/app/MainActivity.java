@@ -2054,9 +2054,11 @@ public class MainActivity extends Activity {
             // JSON enumeration, or SQLite indexing can process their contents.
             // Verifies actual inflated bytes/CRCs, not provider or ZIP claims.
             ApkArchiveSafety.verify(file);
+            // Keep report arrays bounded. Exact counts remain separate from
+            // these 120-entry previews, so large inputs cannot create 150k JSON nodes.
             JSONArray dex = new JSONArray();
             JSONArray libraries = new JSONArray();
-            int entries = 0, assets = 0;
+            int entries = 0, assets = 0, dexCount = 0, libraryCount = 0;
             boolean manifest = false;
             try (ZipFile zip = new ZipFile(file)) {
                 Enumeration<? extends ZipEntry> items = zip.entries();
@@ -2066,8 +2068,14 @@ public class MainActivity extends Activity {
                     ZipEntry entry = items.nextElement();
                     String name = entry.getName();
                     if (++entries > 150000) throw new IOException("Entradas demais");
-                    if (name.matches("classes([0-9]+)?\\.dex")) dex.put(name);
-                    if (name.startsWith("lib/") && name.endsWith(".so")) libraries.put(name);
+                    if (name.matches("classes([0-9]+)?\\.dex")) {
+                        dexCount++;
+                        if (dex.length() < ApkExplorer.PREVIEW_LIMIT) dex.put(name);
+                    }
+                    if (name.startsWith("lib/") && name.endsWith(".so")) {
+                        libraryCount++;
+                        if (libraries.length() < ApkExplorer.PREVIEW_LIMIT) libraries.put(name);
+                    }
                     if (name.startsWith("assets/") && !entry.isDirectory()) assets++;
                     if (name.equals("AndroidManifest.xml")) manifest = true;
                 }
@@ -2081,12 +2089,17 @@ public class MainActivity extends Activity {
             formatHint.put("recognized", header.recognized);
             json.put("fileHeader", formatHint);
             json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
-            json.put("explorer", ApkExplorer.inspect(file));
+            // The safety gate already verified this exact private-cache file.
+            // Do not repeat expensive inflation or materialize every file path.
+            JSONObject explorerReport = ApkExplorer.inspectVerified(file);
+            json.put("explorer", explorerReport);
             json.put("sizeBytes", size);
             json.put("sha256", importHash);
             json.put("entries", entries);
             json.put("dexFiles", dex);
+            json.put("dexFileCount", dexCount);
             json.put("nativeLibraries", libraries);
+            json.put("nativeLibraryCount", libraryCount);
             json.put("assets", assets);
             json.put("hasManifest", manifest);
             try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
@@ -2094,16 +2107,14 @@ public class MainActivity extends Activity {
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Análise interrompida");
-            // Experimental UI indexing only; legacy JSON analysis retained.
+            // Full SQLite navigation is mandatory if the JSON preview cannot
+            // represent all archive entries. Fail closed, never accept a project
+            // with silently missing files or an unusable partial index.
             File diskIndex = null;
-            if (entries >= 200) {
+            if (entries > ApkExplorer.PREVIEW_LIMIT) {
                 File candidate = new File(file.getAbsolutePath() + ".idx.db");
-                try {
-                    ApkDiskIndex.build(file, candidate);
-                    diskIndex = candidate;
-                } catch (IOException optionalIndexError) {
-                    android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate);
-                }
+                ApkDiskIndex.build(file, candidate);
+                diskIndex = candidate;
             }
             return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
