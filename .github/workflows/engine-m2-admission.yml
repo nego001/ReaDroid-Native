@@ -50,11 +50,14 @@ jobs:
             set -eu
             gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest,com.readroid.app.ApkReportBudgetInstrumentedTest,com.readroid.app.ApkCapacityProfileInstrumentedTest
-            # Test writes only measured counters. No fixture APK leaves device.
-            adb exec-out run-as com.readroid.app cat cache/m2_capacity_metrics.json \
-              > "m2-capacity-api-${{ matrix.api }}.json"
+            # connectedDebugAndroidTest can uninstall its app before returning.
+            # Read narrow logcat filter; only validated synthetic JSON is kept.
+            adb logcat -d -s M2Capacity:I '*:S' > m2-capacity-logcat.tmp
+            python3 tools/extract_m2_capacity_logcat.py \
+              m2-capacity-logcat.tmp "m2-capacity-api-${{ matrix.api }}.json" ${{ matrix.api }}
+            rm -f m2-capacity-logcat.tmp
+            # Print the validated small JSON for visible numerical evidence.
             python3 -m json.tool "m2-capacity-api-${{ matrix.api }}.json"
-            # Log only synthetic metrics; no APK bytes, paths or fixtures.
       - name: Preserve test evidence, never test APK binaries
         if: always()
         uses: actions/upload-artifact@v4
