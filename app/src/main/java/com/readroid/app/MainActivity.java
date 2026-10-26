@@ -2142,7 +2142,12 @@ public class MainActivity extends Activity {
         out.append("Tamanho: ").append(data.optLong("sizeBytes") / 1024).append(" KB\\n");
         out.append("SHA-256: ").append(data.optString("sha256")).append("\\n\\n");
         JSONObject explorer = data.optJSONObject("explorer");
-        if (explorer != null) out.append("Arquivos no APK: ").append(explorer.optInt("fileCount")).append("\\n");
+        if (explorer != null) {
+            out.append("Arquivos no APK: ").append(explorer.optInt("fileCount")).append("\\n");
+            if (explorer.optBoolean("previewTruncated"))
+                out.append("O JSON contém prévia de até 120 arquivos; "
+                    + "pesquisa e navegação completas pelo índice SQLite.\\n");
+        }
         out.append("\\nNavegue pelas pastas e pesquise os arquivos abaixo.\\n");
         out.append("\\nRelatório completo disponível em Compartilhar JSON.");
         return out.toString();
