@@ -20,7 +20,8 @@ class SandboxUnavailable(RuntimeError):
     pass
 
 def build_command(ghidra_home: Path, working: Path,
-                  timeout_seconds: int, *, bwrap_path: str | None = None) -> list[str]:
+                  timeout_seconds: int, *, bwrap_path: str | None = None,
+                  deep_preview: bool = False) -> list[str]:
     """Produce a deterministic Bubblewrap argv. No subprocess is started here."""
     if not isinstance(timeout_seconds, int) or timeout_seconds < 1:
         raise SandboxUnavailable("Timeout inválido para sandbox")
@@ -40,6 +41,8 @@ def build_command(ghidra_home: Path, working: Path,
         raise SandboxUnavailable("Workspace não pode sobrepor instalação do Ghidra")
     if not (workspace / "scripts" / "NegrescoFunctionInventory.java").is_file():
         raise SandboxUnavailable("Exportador Ghidra não preparado no workspace")
+    if deep_preview and not (workspace / "scripts" / "NegrescoDeepPreview.java").is_file():
+        raise SandboxUnavailable("Exportador de pseudocódigo não preparado")
     if not (root / "support" / "analyzeHeadless").is_file():
         raise SandboxUnavailable("Instalação Ghidra incompleta")
     if not Path("/usr").is_dir():
@@ -93,4 +96,9 @@ def build_command(ghidra_home: Path, working: Path,
         "-max-cpu", "2", "-readOnly", "-deleteProject",
         "-log", "/work/ghidra.log",
     ]
+    if deep_preview:
+        before = argv.index("-analysisTimeoutPerFile")
+        argv[before:before] = [
+            "-postScript", "NegrescoDeepPreview.java", "/work/ghidra-deep.json",
+        ]
     return argv
