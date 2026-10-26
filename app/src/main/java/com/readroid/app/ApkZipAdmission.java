@@ -50,7 +50,9 @@ public final class ApkZipAdmission {
             throw new IOException("Entrada ZIP com tamanho desconhecido: "
                 + entry.getName());
         if (entry.isDirectory()) {
-            if (size != 0 || compressed != 0)
+            // Empty DEFLATED folders often consume a couple of compressed
+            // bytes, unlike STORED directories (zero). Allow both formats.
+            if (size != 0 || compressed > 4096)
                 throw new IOException("Diretório ZIP com dados inesperados");
             return;
         }
