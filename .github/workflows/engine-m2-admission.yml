@@ -31,6 +31,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_engine_m2_contract.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m2_capacity_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_engine_m2_capacity_extractor.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
