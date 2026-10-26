@@ -91,7 +91,28 @@ if MODE == "incomplete":
 if MODE == "schema":
     data["schema"] = "wrong_schema"
 output.write_text(json.dumps(data), encoding="utf-8")
-"""
+if args.count("-postScript") == 2:
+    deep_index = [i for i, value in enumerate(args) if value == "-postScript"][1]
+    if args[deep_index + 1] != "NegrescoDeepPreview.java":
+        sys.exit(18)
+    deep_path = pathlib.Path(args[deep_index + 2])
+    deep = {
+        "schema": "ghidra_deep_preview_v1",
+        "functions": [{
+            "entry_point": "00401000",
+            "name": "add_numbers",
+            "calls": ["00402000"],
+            "calls_truncated": False,
+            "decompile_status": "ok",
+            "pseudocode": "int add_numbers(int a, int b) {return a+b;}",
+            "pseudocode_truncated": False,
+        }],
+        "candidates_scanned": 1, "eligible_non_thunks": 1,
+        "sample_truncated": False,
+        "provenance": "ghidra_heuristic_not_original_source",
+    }
+    deep_path.write_text(json.dumps(deep), encoding="utf-8")
+""""""
         self.launcher.write_text(source.replace("@MODE@", repr(mode)), encoding="utf-8")
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
 
@@ -108,6 +129,19 @@ output.write_text(json.dumps(data), encoding="utf-8")
         self.assertEqual(json.loads(self.output.read_text()), report)
         self.assertEqual(len(report["source_sha256"]), 64)
         self.assertEqual(list(self.workspace.glob("negresco-pe-a2-*")), [])
+
+    def test_deep_preview_end_to_end_with_trusted_synthetic_mock(self):
+        report = self.run_synthetic(self.input, self.home, self.output,
+                                    3, deep_preview=True)
+        self.assertEqual(report["limitations"]["pseudocode"],
+                         "bounded_heuristic_preview")
+        self.assertEqual(report["limitations"]["call_graph"],
+                         "bounded_direct_references")
+        self.assertEqual(report["deep_preview"]["functions"][0]["name"],
+                         "add_numbers")
+        self.assertEqual(report["deep_preview"]["functions"][0]["calls"],
+                         ["00402000"])
+        self.assertTrue(self.output.is_file())
 
     def test_never_overwrites_existing_report(self):
         self.output.write_text("existing-user-data", encoding="utf-8")
