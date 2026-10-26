@@ -21,6 +21,7 @@ public final class SecurityScanner {
         JSONArray dexHeaders = new JSONArray();
         JSONArray dexMaps = new JSONArray();
         JSONArray dexClasses = new JSONArray();
+        JSONArray dexNames = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
         int dexCount = 0;
@@ -135,6 +136,34 @@ public final class SecurityScanner {
                     }
                     dexClasses.put(classPreview);
                 }
+                // M3.4: do not expose raw DEX contents. Resolve at most six
+                // descriptor strings from each of the first two DEX entries.
+                if (dexNames.length() < 2) {
+                    JSONObject namePreview = new JSONObject();
+                    namePreview.put("name", name);
+                    try {
+                        DexClassNameProbe.Result names = DexClassNameProbe.inspect(
+                            () -> zip.getInputStream(e), e.getSize());
+                        namePreview.put("status", "class-names-preview");
+                        namePreview.put("declaredClasses", names.declaredClasses);
+                        namePreview.put("previewTruncated", names.truncated);
+                        JSONArray listed = new JSONArray();
+                        for (DexClassNameProbe.Item item : names.items) {
+                            JSONObject record = new JSONObject();
+                            record.put("classTypeIdx", item.classTypeIdx);
+                            record.put("descriptor", item.descriptor);
+                            record.put("name", item.name);
+                            listed.put(record);
+                        }
+                        namePreview.put("resolvedClasses", listed);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
+                    } catch (IOException invalid) {
+                        namePreview.put("status", "unreadable-class-names");
+                        namePreview.put("reason", "Descritores de classes DEX inválidos ou não suportados");
+                    }
+                    dexNames.put(namePreview);
+                }
             }
             if (name.startsWith("lib/") && name.endsWith(".so")) {
                 nativeLibraryCount++;
@@ -160,13 +189,15 @@ public final class SecurityScanner {
         report.put("dexMapPreviewTruncated", dexCount > dexMaps.length());
         report.put("dexClassPreview", dexClasses);
         report.put("dexClassPreviewTruncated", dexCount > dexClasses.length());
+        report.put("dexClassNamePreview", dexNames);
+        report.put("dexClassNamePreviewTruncated", dexCount > dexNames.length());
         report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
         report.put("fileExplorerPreview", files);
         report.put("findings", findings);
-        report.put("limitations", "Prévia estrutural limitada de cabeçalho, mapa e índices class_def DEX v035-v040. Sem resolver nomes, validar todas as classes, decodificar bytecode/recursos ou verificar assinatura v2/v3.");
+        report.put("limitations", "Prévia limitada de cabeçalho, mapa, índices e até seis nomes de classes DEX v035-v040, sem validar todas as classes ou decodificar instruções, recursos, métodos ou assinatura.");
         return report;
     }
 
