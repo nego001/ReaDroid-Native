@@ -126,22 +126,16 @@ public final class ApkDiskIndex {
                         ZipEntry entry = entries.nextElement();
                         if (++seen > MAX_ENTRIES)
                             throw new IOException("Arquivo ZIP excede 150 mil entradas");
+                        // Must match the JSON explorer's admission rules.
+                        // Invalid metadata aborts the SQLite transaction and
+                        // deletes the partial index in the outer finally.
+                        uncompressed = ApkZipAdmission.cumulativeBytes(
+                            uncompressed, entry);
                         String path = entry.getName();
-                        validatePath(path);
                         boolean dir = entry.isDirectory();
                         long size = entry.getSize();
-                        if (!dir) {
-                            if (size > MAX_ENTRY_BYTES)
-                                throw new IOException("Entrada maior que 1 GiB");
-                            if (size > 0) {
-                                if (uncompressed > MAX_TOTAL_BYTES - size)
-                                    throw new IOException("Total descompactado excede 2 GiB");
-                                uncompressed += size;
-                            }
-                            files++;
-                        } else {
-                            dirs++;
-                        }
+                        if (!dir) files++;
+                        else dirs++;
                         int slash = path.indexOf('/');
                         while (slash >= 0 && slash < path.length() - 1) {
                             putImplicitDirectory(db, path.substring(0, slash + 1));
@@ -436,20 +430,9 @@ public final class ApkDiskIndex {
         return values;
     }
 
-    // Package-private for platform-independent path-security regression tests.
+    // Retain the established API for index and regression callers while
+    // enforcing the shared ZIP path policy in both independent explorers.
     static void validatePath(String path) throws IOException {
-        if (path == null || path.isEmpty() || path.length() > MAX_PATH_CHARS
-                || path.startsWith("/") || path.indexOf('\\') >= 0
-                || path.indexOf(0) >= 0)
-            throw new IOException("Caminho ZIP inseguro ou grande demais");
-        String[] segments = path.split("/", -1);
-        if (segments.length > MAX_DEPTH + 1)
-            throw new IOException("Profundidade excessiva de diretórios");
-        for (int i = 0; i < segments.length; i++) {
-            if (segments[i].isEmpty() && i == segments.length - 1) continue;
-            if (segments[i].isEmpty() || ".".equals(segments[i])
-                    || "..".equals(segments[i]))
-                throw new IOException("Caminho ZIP potencialmente inseguro");
-        }
+        ApkZipAdmission.validatePath(path);
     }
 }
