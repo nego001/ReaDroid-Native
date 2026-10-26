@@ -167,6 +167,16 @@ public final class DexPrototypeProbeInstrumentedTest {
         assertEquals("()V", none.signatures.get(0).descriptor);
         DexPrototypeProbe.Result two = inspect(fixture(2, "abrir"));
         assertEquals("(ILjava/lang/String;)V", two.signatures.get(0).descriptor);
+        // Arrays become 'L' in the shorty, even when the full type is [I.
+        Fixture array = fixture(1, "abrir");
+        int arrayString = TEXT_OFF + SLOT * 4;
+        array.bytes[arrayString] = 2; // UTF-16 length
+        array.bytes[arrayString + 1] = '[';
+        array.bytes[arrayString + 2] = 'I';
+        array.bytes[arrayString + 3] = 0;
+        array.bytes[TEXT_OFF + SLOT + 2] = 'L'; // shorty V(L)
+        u16(array.bytes, PARAMETERS_OFF + 4, 3);
+        assertEquals("([I)V", inspect(array).signatures.get(0).descriptor);
         Fixture five = fixture(1, "a", "b", "c", "d", "e");
         DexPrototypeProbe.Result sampled = inspect(five);
         assertEquals(5L, sampled.totalMethodIds);
