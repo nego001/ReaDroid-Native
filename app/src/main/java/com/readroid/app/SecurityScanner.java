@@ -19,6 +19,7 @@ public final class SecurityScanner {
         JSONArray files = new JSONArray();
         JSONArray dex = new JSONArray();
         JSONArray dexHeaders = new JSONArray();
+        JSONArray dexMaps = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
         int dexCount = 0;
@@ -71,6 +72,34 @@ public final class SecurityScanner {
                     }
                     dexHeaders.put(preview);
                 }
+                // M3.2: only four maps; at most 16 MiB stream-read each.
+                // Header preview remains independent if map data is unsupported.
+                if (dexMaps.length() < 4) {
+                    JSONObject mapPreview = new JSONObject();
+                    mapPreview.put("name", name);
+                    try (InputStream mapInput = zip.getInputStream(e)) {
+                        DexMapProbe.Result map = DexMapProbe.inspect(mapInput, e.getSize());
+                        mapPreview.put("status", "map-only");
+                        mapPreview.put("version", map.version);
+                        mapPreview.put("mapOffset", map.mapOffset);
+                        mapPreview.put("declaredSections", map.items.size());
+                        JSONArray sections = new JSONArray();
+                        for (DexMapProbe.Item item : map.items) {
+                            JSONObject section = new JSONObject();
+                            section.put("type", item.label);
+                            section.put("count", item.count);
+                            section.put("offset", item.offset);
+                            sections.put(section);
+                        }
+                        mapPreview.put("sections", sections);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
+                    } catch (IOException invalid) {
+                        mapPreview.put("status", "unreadable-map");
+                        mapPreview.put("reason", "Mapa DEX inválido ou não suportado");
+                    }
+                    dexMaps.put(mapPreview);
+                }
             }
             if (name.startsWith("lib/") && name.endsWith(".so")) {
                 nativeLibraryCount++;
@@ -92,13 +121,15 @@ public final class SecurityScanner {
         report.put("dexFileCount", dexCount);
         report.put("dexHeaderPreview", dexHeaders);
         report.put("dexHeaderPreviewTruncated", dexCount > dexHeaders.length());
+        report.put("dexMapPreview", dexMaps);
+        report.put("dexMapPreviewTruncated", dexCount > dexMaps.length());
         report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
         report.put("fileExplorerPreview", files);
         report.put("findings", findings);
-        report.put("limitations", "Inspeção estática inicial; cabeçalho DEX v035-v040 é lido, mas classes, instruções e recursos compilados não são decodificados. Certificado v2/v3 requer análise própria.");
+        report.put("limitations", "Prévia estrutural limitada de cabeçalho e mapa DEX v035-v040, sem validação do corpo, classes, instruções, recursos compilados ou certificado v2/v3.");
         return report;
     }
 
