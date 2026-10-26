@@ -99,8 +99,8 @@ public final class DexMapProbeInstrumentedTest {
         item(data, 2, 0x1000, 1, 128);
         assertEquals(3, DexMapProbe.inspect(
             new ByteArrayInputStream(data), data.length).items.size());
-        u32(data, 136, 2);
-        rejected(data); // table count mismatch
+        u32(data, 148, 2);
+        rejected(data); // string_ids count disagrees with header
     }
 
     @Test public void rejectDuplicateTypeUnsortedOffsetsOrMissingMap()
@@ -121,7 +121,7 @@ public final class DexMapProbeInstrumentedTest {
         u32(dex, 128, 64);
         rejected(dex); // 64 map items cannot fit in remaining bytes
         dex = fixture();
-        u32(dex, 148, 250); // map_list starts at 250, not at 128
+        u32(dex, 152, 250); // map_list starts at 250, not at 128
         rejected(dex);
     }
 
