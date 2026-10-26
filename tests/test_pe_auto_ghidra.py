@@ -175,6 +175,8 @@ output.write_text(json.dumps(data), encoding="utf-8")
         java = (ROOT / "tools/ghidra_scripts/NegrescoFunctionInventory.java").read_text("utf-8")
         self.assertIn("MAX_FUNCTIONS = 256", java)
         self.assertIn("getFunctionManager().getFunctions(true)", java)
+        self.assertIn("extends HeadlessScript", java)
+        self.assertIn("analysisTimeoutOccurred()", java)
         self.assertNotIn("getDecompiler", java)
         self.assertNotIn("getPcode", java)
 

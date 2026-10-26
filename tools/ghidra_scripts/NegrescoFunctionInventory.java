@@ -2,7 +2,7 @@
 // PE-A2: bounded metadata export after Ghidra Headless auto-analysis.
 // The imported program is not run. Generated function names are not guaranteed
 // to be original names. A full decompiler or call graph comes in PE-A3.
-import ghidra.app.script.GhidraScript;
+import ghidra.app.util.headless.HeadlessScript;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import java.io.BufferedWriter;
@@ -11,7 +11,7 @@ import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 
-public class NegrescoFunctionInventory extends GhidraScript {
+public class NegrescoFunctionInventory extends HeadlessScript {
     private static final int MAX_FUNCTIONS = 256;
     private static final int MAX_NAME_CHARS = 160;
 
@@ -40,6 +40,8 @@ public class NegrescoFunctionInventory extends GhidraScript {
         String[] args = getScriptArgs();
         if (args == null || args.length != 1 || currentProgram == null)
             throw new IllegalArgumentException("Expected one output path and a loaded program");
+        if (analysisTimeoutOccurred())
+            throw new IllegalStateException("Ghidra automatic analysis timed out; reject partial function report");
 
         File target = new File(args[0]);
         // The Python runner creates a unique private directory and owns the
