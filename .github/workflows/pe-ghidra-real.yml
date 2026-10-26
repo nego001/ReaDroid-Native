@@ -6,6 +6,7 @@ on:
       - feature/pe-auto-ghidra-real
       - feature/pe-auto-ghidra-sandbox
       - feature/pe-auto-pseudocode
+      - feature/pe-auto-function-ranking
   workflow_dispatch:
 
 permissions:
@@ -79,18 +80,25 @@ jobs:
           assert 1 <= len(report["evidence"]["functions"]) <= 256
           assert report["limitations"]["executable_launched"] is False
           assert report["limitations"]["pseudocode"] == "bounded_heuristic_preview"
-          assert report["limitations"]["call_graph"] == "bounded_direct_references"
+          assert report["limitations"]["call_graph"] == "ranked_bounded_direct_references"
           deep = report["deep_preview"]
           assert deep["provenance"] == "ghidra_heuristic_not_original_source"
-          assert 1 <= len(deep["functions"]) <= 8
+          assert 1 <= len(deep["functions"]) <= 12
+          assert deep["selection_method"] == "bounded_call_connectivity_and_name_hints_v1"
+          assert deep["graph_scope"] == "scanned_functions_only"
+          assert deep["candidates_scanned"] <= 384
+          assert all(x["selection_rank"] == i for i, x in enumerate(deep["functions"], 1))
+          assert all(a["selection_score"] >= b["selection_score"]
+                     for a, b in zip(deep["functions"], deep["functions"][1:]))
           assert any(record["decompile_status"] == "ok"
                      and record["pseudocode"] for record in deep["functions"])
-          assert all(len(record["calls"]) <= 12
+          assert all(len(record["calls"]) <= 24
                      and len(record["pseudocode"]) <= 1800
                      for record in deep["functions"])
           assert report["limitations"]["os_sandbox"] == "not_implemented"
           print("Ghidra 12.2 REAL: function-count=", report["evidence"]["total_discovered"],
                 "preview=", len(report["evidence"]["functions"]),
+                "ranked_sample=", len(deep["functions"]),
                 "pseudocode=", sum(f["decompile_status"] == "ok"
                                    for f in deep["functions"]),
                 "sha256-verified=true, no Windows binary executed")

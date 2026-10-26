@@ -18,16 +18,21 @@ spec.loader.exec_module(runner)
 
 def sample():
     return {
-        "schema": "ghidra_deep_preview_v1",
+        "schema": "ghidra_deep_preview_v2",
+        "selection_method": "bounded_call_connectivity_and_name_hints_v1",
         "functions": [{
             "entry_point": "00401000", "name": "add_numbers",
             "calls": ["00402000"], "calls_truncated": False,
+            "calls_status": "ok", "direct_callee_count": 1,
+            "sample_inbound_count": 0, "selection_score": 7,
+            "selection_rank": 1,
             "decompile_status": "ok",
             "pseudocode": "int add_numbers(int a, int b) { return a + b; }",
             "pseudocode_truncated": False,
         }],
         "candidates_scanned": 1, "eligible_non_thunks": 1,
-        "sample_truncated": False,
+        "sample_truncated": False, "scan_truncated": False,
+        "graph_scope": "scanned_functions_only",
         "provenance": "ghidra_heuristic_not_original_source",
     }
 
@@ -86,6 +91,8 @@ class DeepPreviewTests(unittest.TestCase):
         first = dict(data["functions"][0])
         data["functions"].append(first)
         data["eligible_non_thunks"] = 2
+        data["functions"][1]["selection_rank"] = 2
+        data["sample_truncated"] = False
         self.rejected(data)
 
     def test_rejects_status_that_claims_c_when_unavailable(self):
@@ -119,6 +126,41 @@ class DeepPreviewTests(unittest.TestCase):
         data["sample_truncated"] = True
         self.rejected(data)
 
+    def test_rejects_forged_ranking_and_call_counters(self):
+        for field, replacement in (
+            ("selection_score", 100),
+            ("selection_rank", 0),
+            ("sample_inbound_count", 385),
+            ("direct_callee_count", 25),
+            ("calls_status", "guessed"),
+        ):
+            with self.subTest(field=field):
+                item = sample()
+                item["functions"][0][field] = replacement
+                self.rejected(item)
+
+    def test_rejects_wrong_graph_scope_and_selection_method(self):
+        for key, replacement in (
+            ("graph_scope", "complete"),
+            ("selection_method", "ai_classified"),
+            ("scan_truncated", True),
+        ):
+            with self.subTest(key=key):
+                item = sample()
+                item[key] = replacement
+                self.rejected(item)
+
+    def test_rejects_unsorted_ranks_or_duplicate_calls(self):
+        item = sample()
+        another = dict(item["functions"][0])
+        another["entry_point"] = "00401001"
+        another["selection_rank"] = 2
+        another["selection_score"] = 8  # should precede the lower score
+        item["functions"].append(another)
+        item["candidates_scanned"] = 2
+        item["eligible_non_thunks"] = 2
+        self.rejected(item)
+
     def test_rejects_missing_or_oversized_evidence(self):
         with self.assertRaises(runner.HeadlessError):
             runner._validated_deep_evidence(self.path)
@@ -130,9 +172,9 @@ class DeepPreviewTests(unittest.TestCase):
         script = (ROOT / "tools/ghidra_scripts/NegrescoDeepPreview.java").read_text()
         source = (ROOT / "tools/pe_auto_ghidra.py").read_text()
         for expected in (
-            "MAX_SCANNED = 256", "MAX_DECOMPILED = 8",
-            "MAX_CALLEES = 12", "MAX_PSEUDOCODE_CHARS = 1800",
-            "DECOMPILE_SECONDS = 12", "analysisTimeoutOccurred()",
+            "MAX_SCANNED = 384", "MAX_DECOMPILED = 12",
+            "MAX_CALLEES = 24", "MAX_PSEUDOCODE_CHARS = 1800",
+            "DECOMPILE_SECONDS = 10", "analysisTimeoutOccurred()",
             "getCalledFunctions(monitor)", "decompileFunction(",
             "decompiler.dispose()",
         ):

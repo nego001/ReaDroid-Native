@@ -97,10 +97,16 @@ if args.count("-postScript") == 2:
         sys.exit(18)
     deep_path = pathlib.Path(args[deep_index + 2])
     deep = {
-        "schema": "ghidra_deep_preview_v1",
+        "schema": "ghidra_deep_preview_v2",
+        "selection_method": "bounded_call_connectivity_and_name_hints_v1",
         "functions": [{
             "entry_point": "00401000",
             "name": "add_numbers",
+            "selection_rank": 1,
+            "selection_score": 7,
+            "sample_inbound_count": 0,
+            "direct_callee_count": 1,
+            "calls_status": "ok",
             "calls": ["00402000"],
             "calls_truncated": False,
             "decompile_status": "ok",
@@ -108,7 +114,8 @@ if args.count("-postScript") == 2:
             "pseudocode_truncated": False,
         }],
         "candidates_scanned": 1, "eligible_non_thunks": 1,
-        "sample_truncated": False,
+        "scan_truncated": False, "sample_truncated": False,
+        "graph_scope": "scanned_functions_only",
         "provenance": "ghidra_heuristic_not_original_source",
     }
     deep_path.write_text(json.dumps(deep), encoding="utf-8")
@@ -136,7 +143,7 @@ if args.count("-postScript") == 2:
         self.assertEqual(report["limitations"]["pseudocode"],
                          "bounded_heuristic_preview")
         self.assertEqual(report["limitations"]["call_graph"],
-                         "bounded_direct_references")
+                         "ranked_bounded_direct_references")
         self.assertEqual(report["deep_preview"]["functions"][0]["name"],
                          "add_numbers")
         self.assertEqual(report["deep_preview"]["functions"][0]["calls"],
