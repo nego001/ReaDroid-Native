@@ -1,4 +1,4 @@
-name: Engine M2 | Bounded APK archive admission
+name: Engine M2 | Bounded APK analysis pipeline
 on:
   push:
     branches: [feature/engine-m2-*]
@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   archive-admission:
-    name: Hostile ZIP admission Android ${{ matrix.api }}
+    name: ZIP and report memory Android ${{ matrix.api }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -47,7 +47,7 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest,com.readroid.app.ApkReportBudgetInstrumentedTest
       - name: Preserve test evidence, never test APK binaries
         if: always()
         uses: actions/upload-artifact@v4
