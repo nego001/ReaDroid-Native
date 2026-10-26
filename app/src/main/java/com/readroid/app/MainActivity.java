@@ -2050,9 +2050,16 @@ public class MainActivity extends Activity {
                 byte[] buffer = new byte[65536];
                 int count;
                 long lastStorageCheck = 0;
+                int emptyReads = 0;
                 while ((count = in.read(buffer)) != -1) {
                     if (Thread.currentThread().isInterrupted())
                         throw new java.io.InterruptedIOException("Análise interrompida");
+                    if (count == 0) {
+                        if (++emptyReads > 16)
+                            throw new IOException("Provedor SAF parou de fornecer dados");
+                        continue;
+                    }
+                    emptyReads = 0;
                     size += count;
                     if (size > ApkImportPreflight.MAX_APK_BYTES)
                         throw new IOException("Limite seguro atual de 1 GiB excedido.");
@@ -2065,6 +2072,9 @@ public class MainActivity extends Activity {
                     }
                 }
             }
+            // Reject hostile/oversized ZIP directory metadata before parsing
+            // the manifest, DEX, security report or building a SQLite index.
+            ApkArchiveBudget.verifyArchive(file);
             StringBuilder hash = new StringBuilder();
             for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
             JSONArray dex = new JSONArray();
