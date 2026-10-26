@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -24,6 +25,7 @@ import sys
 import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
+from pe_ghidra_sandbox import build_command, SandboxUnavailable
 
 MAX_RESULT_BYTES = 128 * 1024
 MAX_FUNCTIONS = 256
@@ -125,12 +127,15 @@ def _locate_ghidra(home: Path) -> Path:
 
 
 def inspect_functions(binary: str | Path, ghidra_home: str | Path,
-                      output: str | Path, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS) -> dict:
+                      output: str | Path, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+                      *, sandbox_mode: str = "bwrap") -> dict:
     """Run trusted Ghidra tooling and atomically write bounded JSON evidence."""
     if sys.platform != "linux":
         raise HeadlessError("PE-A2 suporta somente Linux; Windows será validado depois")
     if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= MAX_TIMEOUT_SECONDS:
         raise HeadlessError("Timeout fora de 1 a 1800 segundos")
+    if sandbox_mode not in ("bwrap", "trusted-fixture"):
+        raise HeadlessError("Modo de isolamento inválido")
     target = Path(binary)
     destination = Path(output)
     if destination.exists() or destination.is_symlink():
@@ -160,16 +165,28 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         }
         if os.environ.get("JAVA_HOME"):
             env["JAVA_HOME"] = os.environ["JAVA_HOME"]
-        command = [
-            str(launcher), str(project), "NegrescoAutomaticPE",
-            "-import", str(snapshot),
-            "-scriptPath", str(SCRIPT_FOLDER),
-            "-postScript", SCRIPT_NAME, str(raw_result),
-            "-analysisTimeoutPerFile", str(min(timeout_seconds, MAX_TIMEOUT_SECONDS)),
-            "-max-cpu", "2",
-            "-readOnly", "-deleteProject",
-            "-log", str(log_path),
-        ]
+        if sandbox_mode == "bwrap":
+            scripts = working / "scripts"
+            scripts.mkdir(mode=0o700)
+            shutil.copyfile(SCRIPT_FOLDER / SCRIPT_NAME, scripts / SCRIPT_NAME)
+            # Fail closed if Bubblewrap or the host user namespace is unavailable.
+            try:
+                command = build_command(Path(ghidra_home), working, timeout_seconds)
+            except (SandboxUnavailable, OSError) as exc:
+                raise HeadlessError("Isolamento Bubblewrap indisponível; análise recusada") from exc
+        else:
+            # Explicit test-only compatibility path for synthetic fixtures in
+            # CI. Never choose this automatically when inspecting unknown files.
+            command = [
+                str(launcher), str(project), "NegrescoAutomaticPE",
+                "-import", str(snapshot),
+                "-scriptPath", str(SCRIPT_FOLDER),
+                "-postScript", SCRIPT_NAME, str(raw_result),
+                "-analysisTimeoutPerFile", str(max(1, timeout_seconds - 30)),
+                "-max-cpu", "2",
+                "-readOnly", "-deleteProject",
+                "-log", str(log_path),
+            ]
         # Pass a fixed argv array, without a shell. The inspected program is only
         # file passed to Ghidra: this process is trusted local Ghidra itself.
         try:
@@ -205,7 +222,8 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "call_graph": "not_implemented",
                 "behavioral_classification": "not_implemented",
                 "executable_launched": False,
-                "os_sandbox": "not_implemented",
+                "os_sandbox": ("bubblewrap_profile" if sandbox_mode == "bwrap"
+                               else "not_implemented"),
             },
         }
         encoded = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
@@ -238,10 +256,15 @@ def main(argv=None) -> int:
     parser.add_argument("--ghidra-home", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--timeout-seconds", default=DEFAULT_TIMEOUT_SECONDS, type=int)
+    parser.add_argument("--allow-unisolated-synthetic-fixture", action="store_true",
+                        help="Somente para CI com PE sintético confiável; desativa isolamento")
     args = parser.parse_args(argv)
     try:
         report = inspect_functions(args.binary, args.ghidra_home, args.output,
-                                   args.timeout_seconds)
+                                   args.timeout_seconds,
+                                   sandbox_mode=("trusted-fixture"
+                                       if args.allow_unisolated_synthetic_fixture
+                                       else "bwrap"))
     except (HeadlessError, PEProbeError, OSError) as exc:
         print(json.dumps({"status": "rejected", "reason": str(exc)}, ensure_ascii=False),
               file=sys.stderr)
