@@ -41,6 +41,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_engine_m3_dex_header_contract.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m3_dex_map_contract.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m3_class_def_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_engine_m3_class_names_contract.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -59,7 +60,7 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest,com.readroid.app.ApkReportBudgetInstrumentedTest,com.readroid.app.ApkCapacityProfileInstrumentedTest,com.readroid.app.ApkPathFingerprintInstrumentedTest,com.readroid.app.ApkPathBenchmarkInstrumentedTest,com.readroid.app.ApkPathBudgetInstrumentedTest,com.readroid.app.ApkPrimitiveFingerprintInstrumentedTest,com.readroid.app.ApkPathLengthProfileInstrumentedTest,com.readroid.app.DexHeaderProbeInstrumentedTest,com.readroid.app.DexMapProbeInstrumentedTest,com.readroid.app.DexClassDefProbeInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest,com.readroid.app.ApkReportBudgetInstrumentedTest,com.readroid.app.ApkCapacityProfileInstrumentedTest,com.readroid.app.ApkPathFingerprintInstrumentedTest,com.readroid.app.ApkPathBenchmarkInstrumentedTest,com.readroid.app.ApkPathBudgetInstrumentedTest,com.readroid.app.ApkPrimitiveFingerprintInstrumentedTest,com.readroid.app.ApkPathLengthProfileInstrumentedTest,com.readroid.app.DexHeaderProbeInstrumentedTest,com.readroid.app.DexMapProbeInstrumentedTest,com.readroid.app.DexClassDefProbeInstrumentedTest,com.readroid.app.DexClassNameProbeInstrumentedTest
             # connectedDebugAndroidTest can uninstall its app before returning.
             # Read narrow logcat filter; only validated synthetic JSON is kept.
             adb logcat -d -s M2Capacity:I M2Fingerprint:I '*:S' > m2-capacity-logcat.tmp
