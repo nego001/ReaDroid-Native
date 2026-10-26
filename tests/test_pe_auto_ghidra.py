@@ -36,6 +36,10 @@ class HeadlessRunnerTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def run_synthetic(self, *args, **kwargs):
+        return runner.inspect_functions(
+            *args, sandbox_mode="trusted-fixture", **kwargs)
+
     def _fake(self, mode):
         # Arguments are parsed exactly like Ghidra -import/-postScript.
         # The mock never executes or loads the synthetic PE.
@@ -92,7 +96,7 @@ output.write_text(json.dumps(data), encoding="utf-8")
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
 
     def test_full_offline_handoff_returns_bounded_function_evidence(self):
-        report = runner.inspect_functions(self.input, self.home, self.output, 3)
+        report = self.run_synthetic(self.input, self.home, self.output, 3)
         self.assertEqual(report["schema"], "pe_ghidra_headless_v1")
         self.assertEqual(report["format"], "PE32")
         self.assertEqual(report["architecture"], "x86")
@@ -108,28 +112,28 @@ output.write_text(json.dumps(data), encoding="utf-8")
     def test_never_overwrites_existing_report(self):
         self.output.write_text("existing-user-data", encoding="utf-8")
         with self.assertRaisesRegex(runner.HeadlessError, "Destino já existe"):
-            runner.inspect_functions(self.input, self.home, self.output, 2)
+            self.run_synthetic(self.input, self.home, self.output, 2)
         self.assertEqual(self.output.read_text(), "existing-user-data")
 
     def test_rejects_input_symlink_before_analyzing(self):
         link = self.workspace / "symlink.exe"
         link.symlink_to(self.input)
         with self.assertRaisesRegex(runner.HeadlessError, "link simbólico"):
-            runner.inspect_functions(link, self.home, self.output, 2)
+            self.run_synthetic(link, self.home, self.output, 2)
         self.assertFalse(self.output.exists())
 
     def test_rejects_missing_or_untrusted_launcher(self):
         self.launcher.unlink()
         with self.assertRaisesRegex(runner.HeadlessError, "Ghidra Headless"):
-            runner.inspect_functions(self.input, self.home, self.output, 2)
+            self.run_synthetic(self.input, self.home, self.output, 2)
         self.launcher.symlink_to(self.input)
         with self.assertRaisesRegex(runner.HeadlessError, "Ghidra Headless"):
-            runner.inspect_functions(self.input, self.home, self.output, 2)
+            self.run_synthetic(self.input, self.home, self.output, 2)
 
     def test_refuses_invalid_pe_before_mock_ghidra_exec(self):
         self.input.write_bytes(b"THIS IS NOT A PE HEADER"*15)
         with self.assertRaises(Exception):
-            runner.inspect_functions(self.input, self.home, self.output, 2)
+            self.run_synthetic(self.input, self.home, self.output, 2)
         self.assertFalse(self.output.exists())
 
     def test_fails_closed_on_invalid_or_missing_evidence(self):
@@ -138,29 +142,36 @@ output.write_text(json.dumps(data), encoding="utf-8")
             with self.subTest(mode=mode):
                 self._fake(mode)
                 with self.assertRaises(runner.HeadlessError):
-                    runner.inspect_functions(self.input, self.home, self.output, 2)
+                    self.run_synthetic(self.input, self.home, self.output, 2)
                 self.assertFalse(self.output.exists())
 
     def test_nonzero_ghidra_status_is_not_a_success(self):
         self._fake("exit")
         with self.assertRaisesRegex(runner.HeadlessError, "não concluiu"):
-            runner.inspect_functions(self.input, self.home, self.output, 2)
+            self.run_synthetic(self.input, self.home, self.output, 2)
         self.assertFalse(self.output.exists())
 
     def test_timeout_kills_ghidra_process_group_and_does_not_write_report(self):
         self._fake("sleep")
         with self.assertRaisesRegex(runner.HeadlessError, "excedeu o tempo"):
-            runner.inspect_functions(self.input, self.home, self.output, 1)
+            self.run_synthetic(self.input, self.home, self.output, 1)
         self.assertFalse(self.output.exists())
 
     def test_timeout_range_and_output_parent(self):
         for seconds in (0, 1801, -1, "1"):
             with self.subTest(seconds=seconds):
                 with self.assertRaises(runner.HeadlessError):
-                    runner.inspect_functions(self.input, self.home, self.output, seconds)
+                    self.run_synthetic(self.input, self.home, self.output, seconds)
         with self.assertRaisesRegex(runner.HeadlessError, "Diretório de saída"):
-            runner.inspect_functions(self.input, self.home,
+            self.run_synthetic(self.input, self.home,
                                      self.workspace / "missing" / "result.json", 2)
+
+    def test_default_runner_requires_isolation_for_unknown_files(self):
+        from unittest import mock
+        with mock.patch("pe_ghidra_sandbox.shutil.which", return_value=None):
+            with self.assertRaisesRegex(runner.HeadlessError, "Isolamento Bubblewrap"):
+                runner.inspect_functions(self.input, self.home, self.output, 2)
+        self.assertFalse(self.output.exists())
 
     def test_postscript_is_pinned_and_no_shell_invocation(self):
         source = (ROOT / "tools/pe_auto_ghidra.py").read_text("utf-8")
