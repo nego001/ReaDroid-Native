@@ -100,8 +100,16 @@ public class NegrescoDeepPreview extends HeadlessScript {
             try {
                 Set<Function> refs = fn.getCalledFunctions(monitor);
                 if (refs != null) {
-                    directCount = refs.size();
-                    called.addAll(refs);
+                    // Ghidra can return EXTERNAL/REGISTER references. These
+                    // are not file-backed function entry points. This graph
+                    // covers only directly referenced, normal memory addresses;
+                    // imported calls are handled separately by PE-A1.
+                    for (Function ref : refs) {
+                        if (ref == null || ref.getEntryPoint() == null) continue;
+                        String entry = ref.getEntryPoint().toString();
+                        if (entry.matches("[0-9a-fA-F]{1,16}")) called.add(ref);
+                    }
+                    directCount = called.size();
                     Collections.sort(called, Comparator.comparing(
                         x -> x.getEntryPoint().toString()));
                     if (called.size() > MAX_RANKING_EDGES)
@@ -111,6 +119,7 @@ public class NegrescoDeepPreview extends HeadlessScript {
                 if (monitor.isCancelled()) throw error;
                 available = false; // Missing xrefs never become invented calls.
                 called.clear();
+                directCount = 0;
             }
             candidates.add(new Candidate(fn, called, directCount, available));
         }
