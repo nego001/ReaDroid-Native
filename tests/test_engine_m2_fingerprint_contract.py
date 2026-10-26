@@ -22,19 +22,20 @@ class M25PathFingerprintContract(unittest.TestCase):
     def test_128_bit_fingerprints_are_conservative_on_collision(self):
         source = PATHS.read_text(encoding="utf-8")
         self.assertIn('MessageDigest.getInstance("SHA-256")', source)
-        self.assertIn("sha256.digest(path.getBytes(StandardCharsets.UTF_8))",
-                      source)
-        self.assertIn("new Fingerprint(readLong(digest, 0)", source)
-        self.assertIn("FINGERPRINT_BYTES / 2", source)
-        self.assertIn("private final Set<Fingerprint> seen", source)
-        self.assertIn("if (!seen.add(fingerprint))", source)
+        self.assertIn("sha256.update(path.getBytes(StandardCharsets.UTF_8))", source)
+        self.assertIn("sha256.digest(digestBuffer, 0, DIGEST_BYTES)", source)
+        self.assertIn("long first = readLong(digestBuffer, 0)", source)
+        self.assertIn("long second = readLong(digestBuffer, 8)", source)
+        self.assertIn("high[index] == first && low[index] == second", source)
         self.assertIn("throw new IOException", source)
         self.assertNotIn("Set<String>", source)
-        # No raw source path retained in the Fingerprint object.
-        record = source.split("private static final class Fingerprint", 1)[1]
-        self.assertIn("final long high;", record)
-        self.assertIn("final long low;", record)
-        self.assertNotIn("final String", record)
+        self.assertNotIn("HashSet", source)
+        self.assertIn("private long[] high", source)
+        self.assertIn("private long[] low", source)
+        self.assertIn("private byte[] occupied", source)
+        self.assertIn("int capacity()", source)
+        self.assertIn("if (count >= MAX_ENTRIES)", source)
+        self.assertIn("occupied.length * 7L", source)
 
     def test_android_10_and_15_exercise_long_paths(self):
         workflow = CI.read_text(encoding="utf-8")
