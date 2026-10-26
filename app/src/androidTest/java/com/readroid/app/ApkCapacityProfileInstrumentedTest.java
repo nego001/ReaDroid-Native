@@ -137,6 +137,10 @@ public final class ApkCapacityProfileInstrumentedTest {
             assertEquals("Original APK must remain byte-identical",
                 before, ApkIntegrity.sha256(apk));
             metrics.put("result", "PASS");
+            // connectedDebugAndroidTest can uninstall its target app after tests.
+            // Emit only small, synthetic metrics to logcat so CI can collect
+            // evidence without run-as access after instrumentation teardown.
+            Log.i(TAG, "RESULT_JSON:" + metrics.toString());
             try (FileOutputStream out = new FileOutputStream(evidence)) {
                 out.write(metrics.toString(2).getBytes(StandardCharsets.UTF_8));
             }
