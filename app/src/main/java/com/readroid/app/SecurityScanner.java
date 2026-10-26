@@ -20,6 +20,7 @@ public final class SecurityScanner {
         JSONArray dex = new JSONArray();
         JSONArray dexHeaders = new JSONArray();
         JSONArray dexMaps = new JSONArray();
+        JSONArray dexClasses = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
         int dexCount = 0;
@@ -100,6 +101,40 @@ public final class SecurityScanner {
                     }
                     dexMaps.put(mapPreview);
                 }
+                // M3.3: only numeric class_def indices; no strings or bytecode.
+                // Maximum four DEX files and 24 class records per file.
+                if (dexClasses.length() < 4) {
+                    JSONObject classPreview = new JSONObject();
+                    classPreview.put("name", name);
+                    try (InputStream classInput = zip.getInputStream(e)) {
+                        DexClassDefProbe.Result classes =
+                            DexClassDefProbe.inspect(classInput, e.getSize());
+                        classPreview.put("status", "class-index-only");
+                        classPreview.put("version", classes.version);
+                        classPreview.put("declaredClasses", classes.declaredClasses);
+                        classPreview.put("previewTruncated", classes.previewTruncated);
+                        JSONArray sampled = new JSONArray();
+                        for (DexClassDefProbe.Item item : classes.items) {
+                            JSONObject row = new JSONObject();
+                            row.put("classTypeIdx", item.classTypeIdx);
+                            row.put("accessFlags", item.accessFlags);
+                            row.put("superclassTypeIdx", item.superclassTypeIdx);
+                            row.put("interfacesOff", item.interfacesOff);
+                            row.put("sourceFileStringIdx", item.sourceFileStringIdx);
+                            row.put("annotationsOff", item.annotationsOff);
+                            row.put("classDataOff", item.classDataOff);
+                            row.put("staticValuesOff", item.staticValuesOff);
+                            sampled.put(row);
+                        }
+                        classPreview.put("classDefinitions", sampled);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
+                    } catch (IOException invalid) {
+                        classPreview.put("status", "unreadable-class-index");
+                        classPreview.put("reason", "Índices class_def inválidos ou não suportados");
+                    }
+                    dexClasses.put(classPreview);
+                }
             }
             if (name.startsWith("lib/") && name.endsWith(".so")) {
                 nativeLibraryCount++;
@@ -123,13 +158,15 @@ public final class SecurityScanner {
         report.put("dexHeaderPreviewTruncated", dexCount > dexHeaders.length());
         report.put("dexMapPreview", dexMaps);
         report.put("dexMapPreviewTruncated", dexCount > dexMaps.length());
+        report.put("dexClassPreview", dexClasses);
+        report.put("dexClassPreviewTruncated", dexCount > dexClasses.length());
         report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
         report.put("fileExplorerPreview", files);
         report.put("findings", findings);
-        report.put("limitations", "Prévia estrutural limitada de cabeçalho e mapa DEX v035-v040, sem validação do corpo, classes, instruções, recursos compilados ou certificado v2/v3.");
+        report.put("limitations", "Prévia estrutural limitada de cabeçalho, mapa e índices class_def DEX v035-v040. Sem resolver nomes, validar todas as classes, decodificar bytecode/recursos ou verificar assinatura v2/v3.");
         return report;
     }
 
