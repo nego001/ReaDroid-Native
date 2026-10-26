@@ -23,6 +23,7 @@ public final class SecurityScanner {
         JSONArray dexClasses = new JSONArray();
         JSONArray dexNames = new JSONArray();
         JSONArray dexMethods = new JSONArray();
+        JSONArray dexPrototypes = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
         int dexCount = 0;
@@ -197,6 +198,40 @@ public final class SecurityScanner {
                     }
                     dexMethods.put(methodPreview);
                 }
+                // M3.6: a method_id can be an EXTERNAL reference. Signatures
+                // describe its declared proto, never a local method body.
+                if (dexPrototypes.length() < 2) {
+                    JSONObject protoPreview = new JSONObject();
+                    protoPreview.put("name", name);
+                    try {
+                        DexPrototypeProbe.Result protos = DexPrototypeProbe.inspect(
+                            () -> zip.getInputStream(e), e.getSize());
+                        protoPreview.put("status", "prototype-signatures-preview");
+                        protoPreview.put("totalMethodIds", protos.totalMethodIds);
+                        protoPreview.put("previewTruncated", protos.truncated);
+                        JSONArray entriesPreview = new JSONArray();
+                        for (DexPrototypeProbe.MethodSignature item : protos.signatures) {
+                            JSONObject entryPreview = new JSONObject();
+                            entryPreview.put("methodIndex", item.methodIndex);
+                            entryPreview.put("methodName", item.methodName);
+                            entryPreview.put("protoIdx", item.prototypeIndex);
+                            entryPreview.put("returnType", item.returnType);
+                            JSONArray parameters = new JSONArray();
+                            for (String type : item.parameterTypes) parameters.put(type);
+                            entryPreview.put("parameters", parameters);
+                            entryPreview.put("signature", item.descriptor);
+                            entriesPreview.put(entryPreview);
+                        }
+                        protoPreview.put("methodSignatures", entriesPreview);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
+                    } catch (IOException invalid) {
+                        protoPreview.put("status", "unreadable-prototypes");
+                        protoPreview.put("reason",
+                            "Protótipos ou assinaturas DEX inválidos/não suportados");
+                    }
+                    dexPrototypes.put(protoPreview);
+                }
             }
             if (name.startsWith("lib/") && name.endsWith(".so")) {
                 nativeLibraryCount++;
@@ -226,13 +261,15 @@ public final class SecurityScanner {
         report.put("dexClassNamePreviewTruncated", dexCount > dexNames.length());
         report.put("dexMethodPreview", dexMethods);
         report.put("dexMethodPreviewTruncated", dexCount > dexMethods.length());
+        report.put("dexPrototypePreview", dexPrototypes);
+        report.put("dexPrototypePreviewTruncated", dexCount > dexPrototypes.length());
         report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
         report.put("fileExplorerPreview", files);
         report.put("findings", findings);
-        report.put("limitations", "Prévia limitada de cabeçalho, mapa, classes e method_ids DEX v035-v040. method_ids podem referenciar métodos externos; não decodifica assinaturas completas, corpos de métodos, recursos ou assinaturas APK.");
+        report.put("limitations", "Prévia limitada de cabeçalho, mapa, nomes, method_ids e protótipos DEX v035-v040. method_ids podem referenciar métodos externos; não decodifica corpos de métodos, recursos compilados ou assinaturas APK.");
         return report;
     }
 
