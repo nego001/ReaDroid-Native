@@ -12,6 +12,7 @@ import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -20,32 +21,62 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 public class NegrescoDeepPreview extends HeadlessScript {
     private static final int MAX_SCANNED = 384;
     private static final int MAX_DECOMPILED = 12;
     private static final int MAX_CALLEES = 24;
+    private static final int MAX_API_REFERENCES = 8;
     private static final int MAX_RANKING_EDGES = 64;
     private static final int MAX_PSEUDOCODE_CHARS = 1800;
     private static final int MAX_NAME_CHARS = 160;
     private static final int DECOMPILE_SECONDS = 10;
     private static final String SELECTION_METHOD =
-        "bounded_call_connectivity_and_name_hints_v1";
+        "bounded_api_references_and_call_connectivity_v2";
+    private static final Set<String> WIN_APIS = new HashSet<>(Arrays.asList(
+        "getfileattributesa", "getfileattributesw", "findfirstfilea",
+        "findfirstfilew", "findnextfilea", "findnextfilew",
+        "getfileinformationbyhandle", "deletefilea", "deletefilew",
+        "removedirectorya", "removedirectoryw", "movefileexa",
+        "movefileexw", "setfileattributesa", "setfileattributesw",
+        "copyfilea", "copyfilew", "createdirectorya", "createdirectoryw",
+        "regopenkeyexa", "regopenkeyexw", "regqueryvalueexa",
+        "regqueryvalueexw", "regenumkeyexa", "regenumkeyexw",
+        "reggetvaluea", "reggetvaluew", "regsetvalueexa",
+        "regsetvalueexw", "regdeletekeya", "regdeletekeyw",
+        "regdeletevaluea", "regdeletevaluew", "regcreatekeyexa",
+        "regcreatekeyexw", "openscmanagera", "openscmanagerw",
+        "openservicea", "openservicew", "deleteservice",
+        "controlservice", "createservicea", "createservicew",
+        "startservicea", "startservicew", "createprocessa",
+        "createprocessw", "terminateprocess", "openprocess",
+        "enumprocesses", "winhttpconnect", "winhttpsendrequest",
+        "winhttpreceiveresponse", "internetconnecta", "internetconnectw",
+        "httpsendrequesta", "httpsendrequestw", "msiconfigureproducta",
+        "msiconfigureproductw", "msiconfigureproductexa",
+        "msiconfigureproductexw", "msiinstallproducta",
+        "msiinstallproductw"
+    ));
 
     private static final class Candidate {
         final Function function;
         final List<Function> callees;
         final int directCalleeCount;
         final boolean callsAvailable;
+        final List<String> apiReferences;
+        final int apiReferenceCount;
         int inboundSample;
         int rankScore;
 
         Candidate(Function function, List<Function> callees, int directCount,
-                  boolean available) {
+                  boolean available, List<String> apiReferences, int apiRefCount) {
             this.function = function;
             this.callees = callees;
             this.directCalleeCount = directCount;
             this.callsAvailable = available;
+            this.apiReferences = apiReferences;
+            this.apiReferenceCount = apiRefCount;
         }
     }
 
@@ -97,6 +128,7 @@ public class NegrescoDeepPreview extends HeadlessScript {
             List<Function> called = new ArrayList<>();
             boolean available = true;
             int directCount = 0;
+            TreeSet<String> referencedApis = new TreeSet<>();
             try {
                 Set<Function> refs = fn.getCalledFunctions(monitor);
                 if (refs != null) {
@@ -106,6 +138,21 @@ public class NegrescoDeepPreview extends HeadlessScript {
                     // imported calls are handled separately by PE-A1.
                     for (Function ref : refs) {
                         if (ref == null || ref.getEntryPoint() == null) continue;
+                        // Keep external WinAPI evidence separate from the
+                        // internal call graph. Resolve Ghidra import thunks
+                        // only if their destination is confirmed external.
+                        Function linked = ref;
+                        if (ref.isThunk()) {
+                            Function resolved = ref.getThunkedFunction(true);
+                            if (resolved != null) linked = resolved;
+                        }
+                        if (linked.isExternal()) {
+                            String name = linked.getName();
+                            if (name.startsWith("__imp_"))
+                                name = name.substring(6);
+                            if (WIN_APIS.contains(name.toLowerCase(Locale.ROOT)))
+                                referencedApis.add(name);
+                        }
                         String entry = ref.getEntryPoint().toString();
                         if (entry.matches("[0-9a-fA-F]{1,16}")) called.add(ref);
                     }
@@ -120,8 +167,14 @@ public class NegrescoDeepPreview extends HeadlessScript {
                 available = false; // Missing xrefs never become invented calls.
                 called.clear();
                 directCount = 0;
+                referencedApis.clear();
             }
-            candidates.add(new Candidate(fn, called, directCount, available));
+            List<String> apiSample = new ArrayList<>(referencedApis);
+            int apiCount = apiSample.size();
+            if (apiSample.size() > MAX_API_REFERENCES)
+                apiSample = new ArrayList<>(apiSample.subList(0, MAX_API_REFERENCES));
+            candidates.add(new Candidate(
+                fn, called, directCount, available, apiSample, apiCount));
         }
         boolean scanTruncated = iter.hasNext();
 
@@ -141,7 +194,8 @@ public class NegrescoDeepPreview extends HeadlessScript {
         for (Candidate candidate : candidates) {
             candidate.rankScore = Math.min(16, candidate.inboundSample) * 4
                 + Math.min(16, candidate.directCalleeCount) * 2
-                + symbolHint(candidate.function.getName());
+                + symbolHint(candidate.function.getName())
+                + (candidate.apiReferenceCount > 0 ? 128 : 0);
         }
         Collections.sort(candidates, Comparator
             .comparingInt((Candidate x) -> x.rankScore).reversed()
@@ -177,6 +231,16 @@ public class NegrescoDeepPreview extends HeadlessScript {
                     writer.write(Integer.toString(candidate.inboundSample));
                     writer.write(",\"direct_callee_count\":");
                     writer.write(Integer.toString(candidate.directCalleeCount));
+                    writer.write(",\"api_call_reference_count\":");
+                    writer.write(Integer.toString(candidate.apiReferenceCount));
+                    writer.write(",\"api_call_references\":[");
+                    for (int i = 0; i < candidate.apiReferences.size(); i++) {
+                        if (i > 0) writer.write(",");
+                        writer.write(json(candidate.apiReferences.get(i), 80));
+                    }
+                    writer.write("],\"api_call_references_truncated\":");
+                    writer.write(Boolean.toString(
+                        candidate.apiReferenceCount > MAX_API_REFERENCES));
                     writer.write(",\"calls_status\":");
                     writer.write(json(candidate.callsAvailable ? "ok" : "unavailable", 16));
                     writer.write(",\"calls\":[");
