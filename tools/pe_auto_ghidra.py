@@ -29,8 +29,8 @@ from pe_ghidra_sandbox import build_command, SandboxUnavailable
 
 MAX_RESULT_BYTES = 128 * 1024
 MAX_DEEP_BYTES = 64 * 1024
-MAX_DEEP_FUNCTIONS = 8
-MAX_DEEP_CALLS = 12
+MAX_DEEP_FUNCTIONS = 12
+MAX_DEEP_CALLS = 24
 MAX_DEEP_PSEUDOCODE = 1800
 DEEP_SCRIPT_NAME = "NegrescoDeepPreview.java"
 MAX_FUNCTIONS = 256
@@ -122,29 +122,36 @@ def _validated_function_evidence(path: Path) -> dict:
 
 
 def _validated_deep_evidence(path: Path) -> dict:
-    """Fail closed on malformed or exaggerated Ghidra pseudocode evidence."""
+    """Validate ranked, bounded and provenance-labeled Ghidra evidence."""
     try:
         if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_DEEP_BYTES:
             raise HeadlessError("Prévia de pseudocódigo ausente ou acima do orçamento")
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HeadlessError("Prévia de pseudocódigo indisponível ou corrompida") from exc
-    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v1":
+    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v2":
         raise HeadlessError("Esquema de pseudocódigo inesperado")
+    method = "bounded_call_connectivity_and_name_hints_v1"
     records = raw.get("functions")
     scanned = raw.get("candidates_scanned")
     eligible = raw.get("eligible_non_thunks")
     truncated = raw.get("sample_truncated")
-    if (not isinstance(records, list) or len(records) > MAX_DEEP_FUNCTIONS
-            or type(scanned) is not int or not 0 <= scanned <= 256
+    scan_truncated = raw.get("scan_truncated")
+    if (raw.get("selection_method") != method
+            or not isinstance(records, list) or len(records) > MAX_DEEP_FUNCTIONS
+            or type(scanned) is not int or not 0 <= scanned <= 384
             or type(eligible) is not int or not len(records) <= eligible <= scanned
             or type(truncated) is not bool
-            or truncated != (eligible > len(records) or scanned == 256)
+            or truncated != (eligible > len(records))
+            or type(scan_truncated) is not bool
+            or (scan_truncated and scanned != 384)
+            or raw.get("graph_scope") != "scanned_functions_only"
             or raw.get("provenance") != "ghidra_heuristic_not_original_source"):
-        raise HeadlessError("Contagens de pseudocódigo inconsistentes")
+        raise HeadlessError("Contagens e método de seleção inconsistentes")
     seen = set()
     cleaned = []
-    for record in records:
+    last_key = None
+    for rank, record in enumerate(records, start=1):
         if not isinstance(record, dict):
             raise HeadlessError("Entrada de função inválida")
         addr = record.get("entry_point")
@@ -154,23 +161,50 @@ def _validated_deep_evidence(path: Path) -> dict:
         pseudocode = record.get("pseudocode")
         cut = record.get("pseudocode_truncated")
         calls_cut = record.get("calls_truncated")
+        calls_status = record.get("calls_status")
+        out_count = record.get("direct_callee_count")
+        inbound = record.get("sample_inbound_count")
+        score = record.get("selection_score")
+        position = record.get("selection_rank")
         if (not isinstance(addr, str) or not ADDRESS.fullmatch(addr)
                 or addr.lower() in seen
                 or not isinstance(name, str) or not 1 <= len(name) <= 160
-                or any(ord(c) < 32 or ord(c) == 127 for c in name)
+                or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
+                or type(position) is not int or position != rank
+                or type(out_count) is not int or not 0 <= out_count <= 100000
+                or type(inbound) is not int or not 0 <= inbound <= 384
+                or type(score) is not int or not 0 <= score <= 116
+                or calls_status not in ("ok", "unavailable")
                 or not isinstance(calls, list) or len(calls) > MAX_DEEP_CALLS
                 or any(not isinstance(x, str) or not ADDRESS.fullmatch(x) for x in calls)
                 or len(set(x.lower() for x in calls)) != len(calls)
                 or type(calls_cut) is not bool
+                or calls_cut != (out_count > MAX_DEEP_CALLS)
+                or len(calls) != min(out_count, MAX_DEEP_CALLS)
+                or (calls_status == "unavailable" and (out_count != 0 or calls))
                 or status not in ("ok", "unavailable", "timed_out")
                 or not isinstance(pseudocode, str) or len(pseudocode) > MAX_DEEP_PSEUDOCODE
                 or type(cut) is not bool
                 or (status != "ok" and (pseudocode or cut))
                 or (status == "ok" and not pseudocode)):
-            raise HeadlessError("Pseudocódigo, referências ou endereço inválido")
+            raise HeadlessError("Ranking, chamadas ou pseudocódigo inconsistentes")
+        value = name.lower()
+        hint = (20 if value in ("main", "winmain", "wmain",
+                 "maincrtstartup", "winmaincrtstartup")
+                else 0 if value.startswith(("fun_", "sub_", "thunk_"))
+                else 5)
+        expected_score = min(16, inbound) * 4 + min(16, out_count) * 2 + hint
+        if score != expected_score:
+            raise HeadlessError("Pontuação de relevância não reproduzível")
+        key = (-score, addr.lower())
+        if last_key is not None and key < last_key:
+            raise HeadlessError("Ranking não está em ordem determinística")
+        last_key = key
         seen.add(addr.lower())
         cleaned.append({
-            "entry_point": addr, "name": name,
+            "entry_point": addr, "name": name, "selection_rank": position,
+            "selection_score": score, "sample_inbound_count": inbound,
+            "direct_callee_count": out_count, "calls_status": calls_status,
             "calls": calls, "calls_truncated": calls_cut,
             "decompile_status": status,
             "pseudocode": pseudocode, "pseudocode_truncated": cut,
@@ -179,9 +213,13 @@ def _validated_deep_evidence(path: Path) -> dict:
         "functions": cleaned,
         "candidates_scanned": scanned,
         "eligible_non_thunks": eligible,
+        "scan_truncated": scan_truncated,
         "sample_truncated": truncated,
+        "selection_method": method,
+        "graph_scope": "scanned_functions_only",
         "provenance": "ghidra_heuristic_not_original_source",
     }
+
 
 def _locate_ghidra(home: Path) -> Path:
     if not home.is_absolute():
@@ -305,7 +343,7 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "original_names_guaranteed": False,
                 "pseudocode": ("bounded_heuristic_preview" if deep_preview
                                else "not_implemented"),
-                "call_graph": ("bounded_direct_references" if deep_preview
+                "call_graph": ("ranked_bounded_direct_references" if deep_preview
                               else "not_implemented"),
                 "behavioral_classification": "not_implemented",
                 "executable_launched": False,
