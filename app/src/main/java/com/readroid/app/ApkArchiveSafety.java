@@ -5,8 +5,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -55,7 +53,7 @@ public final class ApkArchiveSafety {
         long declaredTotal = 0;
         long measuredTotal = 0;
         long pathChars = 0;
-        Set<String> paths = new HashSet<>();
+        ApkPathFingerprintSet paths = new ApkPathFingerprintSet();
         byte[] buffer = new byte[BUFFER_BYTES];
 
         try (ZipFile zip = new ZipFile(apk)) {
@@ -70,8 +68,7 @@ public final class ApkArchiveSafety {
                 pathChars += name.length();
                 if (pathChars > MAX_PATH_CHARS_TOTAL)
                     throw new IOException("Metadados de caminhos excedem o orçamento de memória");
-                if (!paths.add(name))
-                    throw new IOException("Entrada ZIP duplicada: " + name);
+                paths.requireUnique(name);
 
                 long size = entry.getSize();
                 long compressed = entry.getCompressedSize();
