@@ -62,6 +62,7 @@ jobs:
             rm -f m2-capacity-logcat.tmp
             # Print the validated small JSON for visible numerical evidence.
             python3 -m json.tool "m2-capacity-api-${{ matrix.api }}.json"
+            python3 -m json.tool "m2-fingerprint-api-${{ matrix.api }}.json"
       - name: Preserve test evidence, never test APK binaries
         if: always()
         uses: actions/upload-artifact@v4
