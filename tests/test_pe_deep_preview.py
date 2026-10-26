@@ -19,11 +19,14 @@ spec.loader.exec_module(runner)
 def sample():
     return {
         "schema": "ghidra_deep_preview_v2",
-        "selection_method": "bounded_call_connectivity_and_name_hints_v1",
+        "selection_method": "bounded_api_references_and_call_connectivity_v2",
         "functions": [{
             "entry_point": "00401000", "name": "add_numbers",
             "calls": ["00402000"], "calls_truncated": False,
             "calls_status": "ok", "direct_callee_count": 1,
+            "api_call_references": [],
+            "api_call_reference_count": 0,
+            "api_call_references_truncated": False,
             "sample_inbound_count": 0, "selection_score": 7,
             "selection_rank": 1,
             "decompile_status": "ok",
@@ -160,6 +163,26 @@ class DeepPreviewTests(unittest.TestCase):
         item["candidates_scanned"] = 2
         item["eligible_non_thunks"] = 2
         self.rejected(item)
+
+    def test_external_api_references_are_strictly_validated(self):
+        item = sample()
+        record = item["functions"][0]
+        record["api_call_references"] = ["GetFileAttributesA"]
+        record["api_call_reference_count"] = 1
+        record["selection_score"] = 135
+        self.assertEqual(self.load(item)["functions"][0]["api_call_references"],
+                         ["GetFileAttributesA"])
+        for corrupt in ("UninstallAll", "DeleteFileW; rm -rf", "NotAnApi"):
+            with self.subTest(corrupt=corrupt):
+                bad = sample()
+                bad["functions"][0]["api_call_references"] = [corrupt]
+                bad["functions"][0]["api_call_reference_count"] = 1
+                bad["functions"][0]["selection_score"] = 135
+                self.rejected(bad)
+        bad = sample()
+        bad["functions"][0]["api_call_references"] = ["GetFileAttributesA"]
+        bad["functions"][0]["api_call_reference_count"] = 1
+        self.rejected(bad)  # missing priority bonus must not pass
 
     def test_rejects_missing_or_oversized_evidence(self):
         with self.assertRaises(runner.HeadlessError):

@@ -27,12 +27,13 @@ import tempfile
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_auto_symbols import inspect_symbols
-from pe_auto_behavior import classify
+from pe_auto_behavior import classify, API_TO_RULE
 
 MAX_RESULT_BYTES = 128 * 1024
 MAX_DEEP_BYTES = 64 * 1024
 MAX_DEEP_FUNCTIONS = 12
 MAX_DEEP_CALLS = 24
+MAX_DEEP_API_REFS = 8
 MAX_DEEP_PSEUDOCODE = 1800
 DEEP_SCRIPT_NAME = "NegrescoDeepPreview.java"
 MAX_FUNCTIONS = 256
@@ -133,7 +134,7 @@ def _validated_deep_evidence(path: Path) -> dict:
         raise HeadlessError("Prévia de pseudocódigo indisponível ou corrompida") from exc
     if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v2":
         raise HeadlessError("Esquema de pseudocódigo inesperado")
-    method = "bounded_call_connectivity_and_name_hints_v1"
+    method = "bounded_api_references_and_call_connectivity_v2"
     records = raw.get("functions")
     scanned = raw.get("candidates_scanned")
     eligible = raw.get("eligible_non_thunks")
@@ -168,14 +169,25 @@ def _validated_deep_evidence(path: Path) -> dict:
         inbound = record.get("sample_inbound_count")
         score = record.get("selection_score")
         position = record.get("selection_rank")
+        api_names = record.get("api_call_references")
+        api_count = record.get("api_call_reference_count")
+        api_cut = record.get("api_call_references_truncated")
         if (not isinstance(addr, str) or not ADDRESS.fullmatch(addr)
                 or addr.lower() in seen
                 or not isinstance(name, str) or not 1 <= len(name) <= 160
                 or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
                 or type(position) is not int or position != rank
+                or type(api_count) is not int or not 0 <= api_count <= len(API_TO_RULE)
+                or not isinstance(api_names, list) or len(api_names) > MAX_DEEP_API_REFS
+                or len(api_names) != min(api_count, MAX_DEEP_API_REFS)
+                or any(not isinstance(api, str) or api.lower() not in API_TO_RULE
+                       or len(api) > 80 for api in api_names)
+                or len(set(api.lower() for api in api_names)) != len(api_names)
+                or type(api_cut) is not bool
+                or api_cut != (api_count > MAX_DEEP_API_REFS)
                 or type(out_count) is not int or not 0 <= out_count <= 100000
                 or type(inbound) is not int or not 0 <= inbound <= 384
-                or type(score) is not int or not 0 <= score <= 116
+                or type(score) is not int or not 0 <= score <= 244
                 or calls_status not in ("ok", "unavailable")
                 or not isinstance(calls, list) or len(calls) > MAX_DEEP_CALLS
                 or any(not isinstance(x, str) or not ADDRESS.fullmatch(x) for x in calls)
@@ -195,7 +207,8 @@ def _validated_deep_evidence(path: Path) -> dict:
                  "maincrtstartup", "winmaincrtstartup")
                 else 0 if value.startswith(("fun_", "sub_", "thunk_"))
                 else 5)
-        expected_score = min(16, inbound) * 4 + min(16, out_count) * 2 + hint
+        expected_score = (min(16, inbound) * 4 + min(16, out_count) * 2 + hint
+                          + (128 if api_count > 0 else 0))
         if score != expected_score:
             raise HeadlessError("Pontuação de relevância não reproduzível")
         key = (-score, addr.lower())
@@ -207,6 +220,9 @@ def _validated_deep_evidence(path: Path) -> dict:
             "entry_point": addr, "name": name, "selection_rank": position,
             "selection_score": score, "sample_inbound_count": inbound,
             "direct_callee_count": out_count, "calls_status": calls_status,
+            "api_call_references": api_names,
+            "api_call_reference_count": api_count,
+            "api_call_references_truncated": api_cut,
             "calls": calls, "calls_truncated": calls_cut,
             "decompile_status": status,
             "pseudocode": pseudocode, "pseudocode_truncated": cut,

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""PE-A4: conservative, OFFLINE classification from bounded Ghidra evidence.
+"""PE-A4.1: conservative offline behavior hypotheses from Ghidra evidence.
 
-Every hypothesis requires a call to a specific Windows API visible in recovered
-pseudocode. Global PE imports only corroborate and never prove that a function
-calls an API or that any action occurs at runtime.
+Require either a recognized call expression in recovered C or a verified
+external callee reference from the Ghidra call graph. Global PE imports
+are corroboration ONLY. Neither implies runtime behavior.
 """
 from __future__ import annotations
 
@@ -156,9 +156,21 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
                 or not isinstance(source, str) or len(source) > MAX_SNIPPET_CHARS
                 or status not in ("ok", "unavailable", "timed_out")):
             raise ValueError("Função Ghidra adulterada ou fora do limite")
+        api_refs = item.get("api_call_references", [])
+        if (not isinstance(api_refs, list) or len(api_refs) > 8
+                or any(not isinstance(api, str) or api.lower() not in API_TO_RULE
+                       for api in api_refs)
+                or len({api.lower() for api in api_refs}) != len(api_refs)):
+            raise ValueError("Referências externas de API adulteradas")
         hypotheses = []
+        # Maintain provenance for each API. Do not turn an import table entry
+        # or a function name into a call when no Ghidra evidence exists.
+        observed: dict[str, dict[str, set[str]]] = {}
+        for api in api_refs:
+            category, _ = API_TO_RULE[api.lower()]
+            observed.setdefault(category, {}).setdefault(
+                api.lower(), set()).add("ghidra_external_callee")
         if status == "ok" and source:
-            calls_by_category: dict[str, dict[str, str]] = {}
             scrubbed = _remove_comments_and_literals(source)
             # The first signature in generated C can be a function
             # declaration, not a call. Require a body before matching.
@@ -169,12 +181,13 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
                 if not label:
                     continue
                 category, _ = label
-                calls_by_category.setdefault(category, {})[api_name.lower()] = api_name
-            for category, label, _apis in RULES:
-                evidence = calls_by_category.get(category, {})
+                observed.setdefault(category, {}).setdefault(
+                    api_name.lower(), set()).add("pseudocode_call")
+        for category, label, _apis in RULES:
+                evidence = observed.get(category, {})
                 if not evidence:
                     continue
-                api_names = [evidence[k] for k in sorted(evidence)]
+                api_names = sorted(evidence)
                 corroborated = [api for api in api_names if api.lower() in imports]
                 hypotheses.append({
                     "category": category,
@@ -184,7 +197,13 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
                                    not item.get("pseudocode_truncated")
                                    else "baixa"),
                     "evidence": [
-                        {"kind": "pseudocode_api_call", "api": api,
+                        {"kind": (
+                            "pseudocode_api_call"
+                            if evidence[api] == {"pseudocode_call"}
+                            else "ghidra_external_callee"
+                            if evidence[api] == {"ghidra_external_callee"}
+                            else "pseudocode_and_ghidra_callee"
+                        ), "api": api,
                          "import_table_corrob": api.lower() in imports}
                         for api in api_names[:MAX_EVIDENCE_PER_CATEGORY]
                     ],

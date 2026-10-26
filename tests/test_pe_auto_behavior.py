@@ -62,6 +62,31 @@ class ConservativeBehaviorTests(unittest.TestCase):
         self.assertFalse(h[0]["evidence"][0]["import_table_corrob"])
         self.assertEqual(h[0]["inference"], "static_call_pattern_not_runtime_proof")
 
+    def test_confirmed_external_callee_can_support_low_confidence_inference(self):
+        data = sample("void f(void) { return; }")
+        data["functions"][0]["api_call_references"] = ["GetFileAttributesA"]
+        inferred = behavior.classify(data)
+        record = inferred["functions"][0]
+        self.assertEqual(record["status"], "hypotheses")
+        item = record["hypotheses"][0]
+        self.assertEqual(item["category"], "filesystem_inspection")
+        self.assertEqual(item["confidence"], "baixa")
+        self.assertEqual(item["evidence"][0]["kind"], "ghidra_external_callee")
+
+    def test_imports_do_not_become_calls_even_with_fake_name(self):
+        data = sample(name="DeleteFileW")
+        inferred = behavior.classify(data, pe_imports("DeleteFileW"))
+        self.assertEqual(inferred["functions_with_hypotheses"], 0)
+
+    def test_unrecognized_or_duplicate_external_refs_fail_closed(self):
+        for names in (["FunctionPretendingToBeDeleteFileW"],
+                      ["DeleteFileW", "deletefilew"], ["NoApi()"]):
+            with self.subTest(names=names):
+                data = sample()
+                data["functions"][0]["api_call_references"] = names
+                with self.assertRaises(ValueError):
+                    behavior.classify(data)
+
     def test_multiple_apis_and_matching_imports_raise_only_moderate_confidence(self):
         src = ("int worker(void) {\n"
                "  GetFileAttributesW(file);\n"

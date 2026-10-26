@@ -8,6 +8,7 @@ on:
       - feature/pe-auto-pseudocode
       - feature/pe-auto-function-ranking
       - feature/pe-auto-function-behavior
+      - feature/pe-auto-winapi-evidence
   workflow_dispatch:
 
 permissions:
@@ -85,7 +86,7 @@ jobs:
           deep = report["deep_preview"]
           assert deep["provenance"] == "ghidra_heuristic_not_original_source"
           assert 1 <= len(deep["functions"]) <= 12
-          assert deep["selection_method"] == "bounded_call_connectivity_and_name_hints_v1"
+          assert deep["selection_method"] == "bounded_api_references_and_call_connectivity_v2"
           assert deep["graph_scope"] == "scanned_functions_only"
           assert deep["candidates_scanned"] <= 384
           assert all(x["selection_rank"] == i for i, x in enumerate(deep["functions"], 1))
@@ -102,10 +103,21 @@ jobs:
           assert behavior["schema"] == "pe_behavior_hypotheses_v1"
           assert behavior["engine"] == "deterministic_local_rules_not_ai"
           assert len(behavior["functions"]) == len(deep["functions"])
+          print("PE-A4.1 selected external API references:", [
+              {"name": f["name"], "api_refs": f["api_call_references"],
+               "score": f["selection_score"]} for f in deep["functions"]])
           print("PE-A4 behavior hypotheses:", behavior["functions_with_hypotheses"],
                 "categories=", [h["category"] for f in behavior["functions"]
                                 for h in f["hypotheses"]])
           assert behavior["functions_unidentified"] + behavior["functions_with_hypotheses"] == len(deep["functions"])
+          categories = [h["category"] for record in behavior["functions"]
+                        for h in record["hypotheses"]]
+          assert "filesystem_inspection" in categories, (
+              "Expected synthetic GetFileAttributesA classification not found")
+          assert any("getfileattributesa" in
+                     [api.lower() for api in record["api_call_references"]]
+                     for record in deep["functions"]), (
+              "Ghidra did not link the synthetic file-attribute API call")
           assert all(h["confidence"] in ("baixa", "moderada") and
                      h["inference"] == "static_call_pattern_not_runtime_proof"
                      for item in behavior["functions"] for h in item["hypotheses"])
