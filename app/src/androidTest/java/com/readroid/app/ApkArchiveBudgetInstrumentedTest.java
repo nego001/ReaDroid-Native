@@ -157,7 +157,7 @@ public final class ApkArchiveBudgetInstrumentedTest {
         }
         for (String unsafe : new String[]{
                 "../escape.bin", "assets/../escape.bin", "assets//bad.bin",
-                "assets/./bad.bin", "/root.bin", "assets\\evil", "assets/\u0000hidden"}) {
+                "assets/./bad.bin", "/root.bin", "assets\\evil", "assets/" + ((char) 0) + "hidden"}) {
             ZipEntry bad = new ZipEntry(unsafe);
             bad.setSize(3);
             bad.setCompressedSize(3);
