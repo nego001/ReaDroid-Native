@@ -30,7 +30,15 @@ Etapas medidas: geração de corpus; admissão ZIP com CRC; prévia JSON limitad
 - scanner limitado a 120 nomes;
 - SHA-256 da origem igual antes e depois; exclusão de corpus e SQLite ao terminar.
 
-O workflow M2 disponibiliza apenas relatórios de testes e **métricas JSON**, não publica o ZIP usado no teste. O contrato estático `tests/test_engine_m2_capacity_contract.py` impede regressões de ordem ou criação de artefatos indevidos.
+O workflow M2 disponibiliza apenas relatórios de testes e **métricas JSON**, não publica o ZIP usado no teste.
+
+### Correção da coleta pós-instrumentação
+
+Na primeira execução, os **22 testes Android 10 passaram**, mas a etapa de evidências falhou com `run-as: unknown package: com.readroid.app`, pois `connectedDebugAndroidTest` já havia removido o pacote do emulador antes da leitura do cache privado. A falha foi do coletor pós-teste, não uma reprovação desses 22 casos.
+
+Agora a instrumentação emite uma linha `M2Capacity: RESULT_JSON:{...}` pelo `android.util.Log` antes de finalizar. A CI coleta o filtro estrito de `logcat` e o parser `tools/extract_m2_capacity_logcat.py` aceita **exatamente um** resultado com esquema fechado, corpus sintético, API correta e contagens esperadas. Log bruto não é publicado; somente o JSON filtrado é preservado. Casos negativos do parser rejeitam logs ausentes, duplicados, truncados, de API incorreta e com dados privados extras.
+
+A coleta não depende mais da existência do aplicativo depois que o Gradle desmonta o ambiente instrumentado. O contrato estático `tests/test_engine_m2_capacity_contract.py` impede regressões de ordem ou criação de artefatos indevidos.
 
 ## Limitações da evidência
 
