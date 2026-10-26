@@ -6,7 +6,9 @@ on:
   pull_request:
     paths:
       - 'tools/pe_auto_inventory.py'
+      - 'tools/pe_auto_symbols.py'
       - 'tests/test_pe_auto_inventory.py'
+      - 'tests/test_pe_auto_symbols.py'
       - 'docs/PE-ZERO-TOUCH-REVERSE-ROADMAP.md'
       - '.github/workflows/pe-auto-triage.yml'
   workflow_dispatch:
@@ -25,10 +27,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile bounded PE inventory
-        run: python3 -m py_compile tools/pe_auto_inventory.py tests/test_pe_auto_inventory.py
+        run: python3 -m py_compile tools/pe_auto_inventory.py tools/pe_auto_symbols.py tests/test_pe_auto_inventory.py tests/test_pe_auto_symbols.py
       - name: Reject forged PE headers using synthetic fixtures
         run: python3 -m unittest discover -s tests -p 'test_pe_auto_inventory.py' -v
+      - name: Inspect synthetic PE32/PE32+ imports and exports
+        run: python3 -m unittest discover -s tests -p 'test_pe_auto_symbols.py' -v
       - name: Confirm no binary execution or upload is invoked
         run: |
           ! grep -Eq 'subprocess\.run|os\.system\(|requests\.post\(' tools/pe_auto_inventory.py
+          ! grep -Eq 'subprocess\.run|os\.system\(|requests\.post\(' tools/pe_auto_symbols.py
           echo "PE: no executable was run or uploaded"
