@@ -9,6 +9,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = ROOT / "app/src/main/java/com/readroid/app/MainActivity.java"
 GUARD = ROOT / "app/src/main/java/com/readroid/app/ApkArchiveSafety.java"
+EXPLORER = ROOT / "app/src/main/java/com/readroid/app/ApkExplorer.java"
+SECURITY = ROOT / "app/src/main/java/com/readroid/app/SecurityScanner.java"
 STREAM = ROOT / "app/src/main/java/com/readroid/app/SafImportStream.java"
 
 
@@ -20,7 +22,7 @@ class M2ImportContract(unittest.TestCase):
         copy_complete = block.index("copied = SafImportStream.copyAndHash(in, out,")
         gate = block.index("ApkArchiveSafety.verify(file);")
         manifest = block.index("ManifestInspector.inspect(this, file)")
-        explorer = block.index("ApkExplorer.inspect(file)")
+        explorer = block.index("ApkExplorer.inspectVerified(file)")
         index = block.index("ApkDiskIndex.build(file, candidate)")
         self.assertLess(copy_complete, gate)
         self.assertIn('json.put("sha256", importHash);', block)
@@ -28,6 +30,30 @@ class M2ImportContract(unittest.TestCase):
         self.assertLess(gate, manifest)
         self.assertLess(gate, explorer)
         self.assertLess(gate, index)
+
+    def test_large_report_requires_index_and_bounded_preview(self):
+        main = MAIN.read_text(encoding="utf-8")
+        method = main.split("private AnalyzedApk analyze(Uri uri)", 1)[1]
+        method = method.split("private String formatReport(", 1)[0]
+        self.assertIn("ApkArchiveSafety.verify(file);", method)
+        self.assertIn("ApkExplorer.inspectVerified(file);", method)
+        self.assertIn("if (entries > ApkExplorer.PREVIEW_LIMIT)", method)
+        self.assertIn("ApkDiskIndex.build(file, candidate);", method)
+        self.assertNotIn("catch (IOException optionalIndexError)", method)
+        self.assertIn("dex.length() < ApkExplorer.PREVIEW_LIMIT", method)
+        self.assertIn("libraries.length() < ApkExplorer.PREVIEW_LIMIT", method)
+
+        explorer = EXPLORER.read_text(encoding="utf-8")
+        self.assertIn("public static final int PREVIEW_LIMIT = 120;", explorer)
+        self.assertIn("preview.length() < PREVIEW_LIMIT", explorer)
+        self.assertIn('result.put("fileCount", fileCount);', explorer)
+        self.assertIn('result.put("previewTruncated"', explorer)
+        self.assertIn("ApkArchiveSafety.verify(apk);", explorer)
+
+        security = SECURITY.read_text(encoding="utf-8")
+        self.assertIn("files.length() < ApkExplorer.PREVIEW_LIMIT", security)
+        self.assertIn("dex.length() < ApkExplorer.PREVIEW_LIMIT", security)
+        self.assertIn("nativeLibraries.length() < ApkExplorer.PREVIEW_LIMIT", security)
 
     def test_saf_copy_is_bounded_and_checks_free_space_at_finish(self):
         source = STREAM.read_text(encoding="utf-8")

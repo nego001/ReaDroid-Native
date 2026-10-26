@@ -18,6 +18,8 @@ public final class SecurityScanner {
         JSONArray dex = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
+        int dexCount = 0;
+        int nativeLibraryCount = 0;
         long expanded = 0;
         boolean manifest = false;
         boolean signature = false;
@@ -27,7 +29,7 @@ public final class SecurityScanner {
             ZipEntry e = entries.nextElement();
             if (++count > 150000) throw new IllegalArgumentException("APK com entradas demais");
             String name = e.getName();
-            if (files.length() < 3000) files.put(name);
+            if (files.length() < ApkExplorer.PREVIEW_LIMIT) files.put(name);
             if (e.getSize() > 0) {
                 expanded += e.getSize();
                 if (expanded > 4L * 1024 * 1024 * 1024) {
@@ -37,19 +39,29 @@ public final class SecurityScanner {
                 }
             }
             if (name.equals("AndroidManifest.xml")) manifest = true;
-            if (name.matches("classes([0-9]+)?\\.dex")) dex.put(name);
-            if (name.startsWith("lib/") && name.endsWith(".so")) nativeLibraries.put(name);
+            if (name.matches("classes([0-9]+)?\\.dex")) {
+                dexCount++;
+                if (dex.length() < ApkExplorer.PREVIEW_LIMIT) dex.put(name);
+            }
+            if (name.startsWith("lib/") && name.endsWith(".so")) {
+                nativeLibraryCount++;
+                if (nativeLibraries.length() < ApkExplorer.PREVIEW_LIMIT)
+                    nativeLibraries.put(name);
+            }
             if (signatureFile.matcher(name).matches()) signature = true;
             if (name.contains("../") || name.startsWith("/") || name.contains("\\")) {
                 add(findings, "high", "Caminho suspeito no arquivo", name);
             }
         }
         if (!manifest) add(findings, "high", "Manifesto ausente", "AndroidManifest.xml não encontrado.");
-        if (dex.length() == 0) add(findings, "info", "Sem DEX", "Pode ser um APK de recursos ou um pacote incompleto.");
+        if (dexCount == 0) add(findings, "info", "Sem DEX", "Pode ser um APK de recursos ou um pacote incompleto.");
         if (!signature) add(findings, "info", "Sem assinatura v1 detectada",
             "Isso não prova ausência de assinatura: v2/v3 usam o bloco de assinatura do APK.");
         JSONObject report = new JSONObject();
         report.put("entries", count);
+        report.put("filePreviewTruncated", count > files.length());
+        report.put("dexFileCount", dexCount);
+        report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
