@@ -4,52 +4,81 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.io.InterruptedIOException;
 import java.util.Enumeration;
-import java.util.List;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/** Read-only, bounded ZIP explorer. Never extracts untrusted paths to disk. */
+/**
+ * M2.3 bounded metadata preview. The complete archive is browsed through
+ * ApkDiskIndex when the entry count exceeds the preview budget.
+ * No file content is extracted and no unbounded JSON path list is retained.
+ */
 public final class ApkExplorer {
+    public static final int PREVIEW_LIMIT = 120;
+    private static final int MAX_ENTRIES = 150000;
+    private static final long MAX_ENTRY_BYTES = 1073741824L;
+    private static final long MAX_TOTAL_BYTES = 2147483648L;
+
     private ApkExplorer() {}
 
+    /**
+     * Public standalone entrypoint always verifies the untrusted ZIP first.
+     * MainActivity calls inspectVerified only after ApkArchiveSafety.verify.
+     */
     public static JSONObject inspect(File apk) throws Exception {
-        JSONArray files = new JSONArray();
+        ApkArchiveSafety.verify(apk);
+        return inspectVerified(apk);
+    }
+
+    /** Caller must have admitted the same private cache file via ApkArchiveSafety. */
+    static JSONObject inspectVerified(File apk) throws Exception {
+        JSONArray preview = new JSONArray();
         int directories = 0;
+        int fileCount = 0;
+        int entryCount = 0;
         long totalUncompressed = 0;
+        boolean[] engineSignals = new boolean[4];
         try (ZipFile zip = new ZipFile(apk)) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
-            int count = 0;
-            Set<String> seen = new HashSet<>();
             while (entries.hasMoreElements()) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Prévia de APK cancelada");
                 ZipEntry entry = entries.nextElement();
-                if (++count > 150000) throw new IOException("APK com entradas demais");
+                if (++entryCount > MAX_ENTRIES)
+                    throw new IOException("APK com entradas demais");
                 String name = entry.getName();
-                if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
-                    throw new IOException("Caminho ZIP potencialmente inseguro: " + name);
-                if (!seen.add(name)) throw new IOException("Entrada ZIP duplicada: " + name);
-                if (entry.isDirectory()) { directories++; continue; }
-                long size = entry.getSize();
-                if (size > 1073741824L) throw new IOException("Entrada maior que 1 GB: " + name);
-                if (size > 0) {
-                    if (totalUncompressed > 2147483648L - size)
-                        throw new IOException("APK excede o limite total de 2 GB descomprimidos");
-                    totalUncompressed += size;
+                ApkDiskIndex.validatePath(name);
+                if (entry.isDirectory()) {
+                    directories++;
+                    continue;
                 }
-                JSONObject item = new JSONObject();
-                item.put("path", name);
-                item.put("sizeBytes", size);
-                item.put("category", category(name));
-                files.put(item);
+                fileCount++;
+                ApkIntelligence.mark(name, engineSignals);
+                long size = entry.getSize();
+                if (size < 0 || size > MAX_ENTRY_BYTES)
+                    throw new IOException("Entrada ZIP com tamanho inválido: " + name);
+                if (totalUncompressed > MAX_TOTAL_BYTES - size)
+                    throw new IOException("APK excede 2 GiB descomprimidos");
+                totalUncompressed += size;
+                if (preview.length() < PREVIEW_LIMIT) {
+                    JSONObject item = new JSONObject();
+                    item.put("path", name);
+                    item.put("sizeBytes", size);
+                    item.put("category", category(name));
+                    preview.put(item);
+                }
             }
         }
+        JSONArray hints = new JSONArray();
+        for (boolean signal : engineSignals) hints.put(signal);
         JSONObject result = new JSONObject();
-        result.put("files", files);
-        result.put("fileCount", files.length());
+        result.put("files", preview);
+        result.put("fileCount", fileCount);
+        result.put("entryCount", entryCount);
+        result.put("previewCount", preview.length());
+        result.put("previewTruncated", fileCount > preview.length());
+        result.put("engineSignals", hints);
         result.put("directoryCount", directories);
         result.put("uncompressedBytes", totalUncompressed);
         result.put("readOnly", true);
