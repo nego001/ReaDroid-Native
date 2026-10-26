@@ -17,7 +17,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import signal
 import stat
 import subprocess
@@ -171,7 +170,7 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
             "-readOnly", "-deleteProject",
             "-log", str(log_path),
         ]
-        # argv array, never shell=True. The program being inspected is only a
+        # Pass a fixed argv array, without a shell. The inspected program is only
         # file passed to Ghidra: this process is trusted local Ghidra itself.
         try:
             process = subprocess.Popen(
@@ -212,13 +211,24 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         encoded = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
         if len(encoded) > MAX_RESULT_BYTES:
             raise HeadlessError("Relatório final acima do limite")
+        # Write into the destination filesystem, then link atomically with
+        # exclusive creation. A failed write cannot expose partial JSON.
+        staging = None
         try:
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            with os.fdopen(os.open(destination, flags, 0o600), "wb") as saved:
+            with tempfile.NamedTemporaryFile(
+                    mode="wb", prefix=".negresco-a2-", suffix=".tmp",
+                    dir=destination.parent, delete=False) as saved:
+                staging = Path(saved.name)
                 saved.write(encoded)
                 saved.write(b"\n")
+                saved.flush()
+                os.fsync(saved.fileno())
+            os.link(staging, destination)  # fails if destination already exists
         except OSError as exc:
             raise HeadlessError("Não foi possível criar relatório sem sobrescrever arquivos") from exc
+        finally:
+            if staging is not None:
+                staging.unlink(missing_ok=True)
         return report
 
 
