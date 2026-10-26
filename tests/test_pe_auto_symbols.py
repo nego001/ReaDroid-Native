@@ -49,7 +49,7 @@ def build_pe(*, is64=False):
         struct.pack_into("<Q" if is64 else "<I",
                          b, at(0x1090)+idx*width, thunk)
     struct.pack_into("<H", b, at(0x10b0), 5)
-    b[at(0x10b2):at(0x10b2)+14] = b"ReadRegistry\x00"
+    b[at(0x10b2):at(0x10b2)+13] = b"ReadRegistry\x00"
 
     # IMAGE_EXPORT_DIRECTORY + arrays: one named local export and one forwarder.
     struct.pack_into("<IIHHIIIIIII", b, at(0x1300),
