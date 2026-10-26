@@ -1,0 +1,57 @@
+name: Engine M2 | Hostile APK metadata guards
+on:
+  push:
+    branches: [feature/engine-m2-*]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engine-m2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hostile-zip:
+    name: M2 ZIP bomb guards Android ${{ matrix.api }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Enable emulator acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Exercise archive admission and rollback against real Android ZipFile
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 3072M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            set -eu
+            gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveBudgetInstrumentedTest
+      - name: Preserve evidence without distributing APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-m2-archive-test-report-api-${{ matrix.api }}
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: warn
