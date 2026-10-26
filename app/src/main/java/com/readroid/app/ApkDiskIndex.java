@@ -106,8 +106,6 @@ public final class ApkDiskIndex {
                 + "parent TEXT NOT NULL, name TEXT NOT NULL,"
                 + "is_dir INTEGER NOT NULL, explicit INTEGER NOT NULL,"
                 + "size_bytes INTEGER NOT NULL, category TEXT NOT NULL)");
-            db.execSQL("CREATE INDEX browse_parent ON entries"
-                + "(parent, is_dir DESC, name COLLATE NOCASE)");
             db.execSQL("CREATE TABLE meta (source_bytes INTEGER NOT NULL,"
                 + "source_modified INTEGER NOT NULL)");
             ContentValues meta = new ContentValues();
@@ -159,6 +157,14 @@ public final class ApkDiskIndex {
                     if (db.inTransaction()) db.endTransaction();
                 }
             }
+            // M2.4: build the browse index once after bulk insertion.
+            // Keeping it during every write amplifies SQLite index-page churn
+            // on archives with thousands of paths. Failure is still fail-closed:
+            // build() deletes the entire partial DB in its finally block.
+            if (Thread.currentThread().isInterrupted())
+                throw new java.io.InterruptedIOException("Indexação cancelada");
+            db.execSQL("CREATE INDEX browse_parent ON entries"
+                + "(parent, is_dir DESC, name COLLATE NOCASE)");
             // Detect changes during the index build. Not a cryptographic source
             // identity check; the private workspace will own the cache file.
             try (Cursor m = db.rawQuery("SELECT source_bytes, source_modified FROM meta", null)) {
