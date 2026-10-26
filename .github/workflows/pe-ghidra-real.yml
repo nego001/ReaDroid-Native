@@ -102,6 +102,9 @@ jobs:
           assert behavior["schema"] == "pe_behavior_hypotheses_v1"
           assert behavior["engine"] == "deterministic_local_rules_not_ai"
           assert len(behavior["functions"]) == len(deep["functions"])
+          print("PE-A4 behavior hypotheses:", behavior["functions_with_hypotheses"],
+                "categories=", [h["category"] for f in behavior["functions"]
+                                for h in f["hypotheses"]])
           assert behavior["functions_unidentified"] + behavior["functions_with_hypotheses"] == len(deep["functions"])
           assert all(h["confidence"] in ("baixa", "moderada") and
                      h["inference"] == "static_call_pattern_not_runtime_proof"
