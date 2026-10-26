@@ -31,3 +31,18 @@ O importador já conta os bytes copiados pelo SAF e respeita o limite de 1 GiB, 
 ## Critério de aceitação
 
 A M2.1 só estará **validada** após aprovação dos testes instrumentados em API 29 e 35 e dos contratos da CI no SHA exato. Sem merge ou distribuição automática. A M2 seguirá com medição de memória, limites de processamento do índice, relatório de progresso e testes negativos de falha de SAF/recuperação.
+
+
+## M2.2: Cópia SAF resiliente
+
+- A cópia para cache privado utiliza `SafImportStream.copyAndHash`, que produz SHA-256 durante o streaming sem carregar o APK inteiro na RAM.
+- Bytes **reais**, não o tamanho anunciado pelo provedor, respeitam um limite rígido de 1 GiB, com leitura de um byte sentinela depois do limite exato.
+- A implementação não permite ciclos infinitos quando um provedor retorna continuamente `read() == 0`; 17 leituras consecutivas sem progresso encerram o fluxo com erro.
+- Verifica a disponibilidade de espaço antes de escrever, periodicamente em cópias grandes, **e obrigatoriamente após a leitura final**. Preserva a reserva já existente de 64 MiB.
+- Cancela antes e depois de cada leitura sem apagar o flag de interrupção. Erros de leitura/escrita propagam-se para a análise transacional, que remove o cache temporário e mantém o projeto anterior.
+- Suite de 9 cenários novos: hash completo, arquivo no limite exato, um byte além, provedor travado em zero, recuperação após zeros intermitentes, espaço que acaba no final, espaço insuficiente no início, interrupção e erro real de I/O.
+- A CI executa as suites de admissão ZIP e cópia SAF em Android 10/API 29 e Android 15/API 35.
+
+**Restrições:** não resolve um `ContentProvider` que permaneça bloqueado dentro de uma chamada de leitura sem retorno; o fluxo só pode observar cancelamento quando `read()` devolve controle. Também não transforma o limite de 1 GiB em suporte multi-GB. O SHA-256 emitido comprova os bytes copiados, não a instalação do APK.
+
+**Critério:** M2.2 só é homologada quando o workflow M2 atualizado, regressões M1, Source checks e validação OTA passam no mesmo commit da PR.
