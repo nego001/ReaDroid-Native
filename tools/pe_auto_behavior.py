@@ -159,7 +159,11 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
         hypotheses = []
         if status == "ok" and source:
             calls_by_category: dict[str, dict[str, str]] = {}
-            for match in _CALL.finditer(_remove_comments_and_literals(source)):
+            scrubbed = _remove_comments_and_literals(source)
+            # The first signature in generated C can be a function
+            # declaration, not a call. Require a body before matching.
+            function_body = scrubbed.partition("{")[2]
+            for match in _CALL.finditer(function_body):
                 api_name = match.group(1)
                 label = API_TO_RULE.get(api_name.lower())
                 if not label:
