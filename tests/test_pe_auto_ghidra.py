@@ -112,7 +112,7 @@ if args.count("-postScript") == 2:
         "provenance": "ghidra_heuristic_not_original_source",
     }
     deep_path.write_text(json.dumps(deep), encoding="utf-8")
-""""""
+"""
         self.launcher.write_text(source.replace("@MODE@", repr(mode)), encoding="utf-8")
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
 
