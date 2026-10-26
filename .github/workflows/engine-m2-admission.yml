@@ -33,6 +33,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_engine_m2_capacity_contract.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m2_capacity_extractor.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m2_fingerprint_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_engine_m2_fingerprint_benchmark_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_engine_m2_fingerprint_extractor.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -51,14 +53,16 @@ jobs:
           script: |
             set -eu
             gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest,com.readroid.app.ApkReportBudgetInstrumentedTest,com.readroid.app.ApkCapacityProfileInstrumentedTest,com.readroid.app.ApkPathFingerprintInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.ApkArchiveSafetyInstrumentedTest,com.readroid.app.SafImportStreamInstrumentedTest,com.readroid.app.ApkReportBudgetInstrumentedTest,com.readroid.app.ApkCapacityProfileInstrumentedTest,com.readroid.app.ApkPathFingerprintInstrumentedTest,com.readroid.app.ApkPathBenchmarkInstrumentedTest,com.readroid.app.ApkPathBudgetInstrumentedTest
             # connectedDebugAndroidTest can uninstall its app before returning.
             # Read narrow logcat filter; only validated synthetic JSON is kept.
-            adb logcat -d -s M2Capacity:I '*:S' > m2-capacity-logcat.tmp
+            adb logcat -d -s M2Capacity:I M2Fingerprint:I '*:S' > m2-capacity-logcat.tmp
             python3 tools/extract_m2_capacity_logcat.py m2-capacity-logcat.tmp "m2-capacity-api-${{ matrix.api }}.json" ${{ matrix.api }}
+            python3 tools/extract_m2_fingerprint_logcat.py m2-capacity-logcat.tmp "m2-fingerprint-api-${{ matrix.api }}.json" ${{ matrix.api }}
             rm -f m2-capacity-logcat.tmp
             # Print the validated small JSON for visible numerical evidence.
             python3 -m json.tool "m2-capacity-api-${{ matrix.api }}.json"
+            python3 -m json.tool "m2-fingerprint-api-${{ matrix.api }}.json"
       - name: Preserve test evidence, never test APK binaries
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,4 +72,5 @@ jobs:
             app/build/outputs/androidTest-results/connected/**
             app/build/reports/androidTests/connected/**
             m2-capacity-api-*.json
+            m2-fingerprint-api-*.json
           if-no-files-found: warn
