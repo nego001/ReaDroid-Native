@@ -118,6 +118,9 @@ if args.count("-postScript") == 2:
         "graph_scope": "scanned_functions_only",
         "provenance": "ghidra_heuristic_not_original_source",
     }
+    if MODE == "behavior":
+        deep["functions"][0]["pseudocode"] = (
+            "int add_numbers(void) { RegSetValueExW(a,b,c,d,e,f); return 1; }")
     deep_path.write_text(json.dumps(deep), encoding="utf-8")
 """
         self.launcher.write_text(source.replace("@MODE@", repr(mode)), encoding="utf-8")
@@ -148,6 +151,22 @@ if args.count("-postScript") == 2:
                          "add_numbers")
         self.assertEqual(report["deep_preview"]["functions"][0]["calls"],
                          ["00402000"])
+        self.assertTrue(self.output.is_file())
+        self.assertEqual(report["behavior_preview"]["schema"],
+                         "pe_behavior_hypotheses_v1")
+        self.assertEqual(report["behavior_preview"]["functions"][0]["status"],
+                         "unidentified")
+        self.assertEqual(report["limitations"]["behavioral_classification"],
+                         "deterministic_offline_hypotheses")
+
+    def test_automatically_labels_explicit_static_api_call_from_mock(self):
+        self._fake("behavior")
+        report = self.run_synthetic(self.input, self.home, self.output,
+                                    3, deep_preview=True)
+        item = report["behavior_preview"]["functions"][0]
+        self.assertEqual(item["status"], "hypotheses")
+        self.assertEqual(item["hypotheses"][0]["category"], "registry_write")
+        self.assertEqual(item["hypotheses"][0]["confidence"], "baixa")
         self.assertTrue(self.output.is_file())
 
     def test_never_overwrites_existing_report(self):

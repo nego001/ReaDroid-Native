@@ -26,6 +26,8 @@ import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
+from pe_auto_symbols import inspect_symbols
+from pe_auto_behavior import classify
 
 MAX_RESULT_BYTES = 128 * 1024
 MAX_DEEP_BYTES = 64 * 1024
@@ -331,6 +333,18 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         evidence = _validated_function_evidence(raw_result)
         deep = (_validated_deep_evidence(working / "ghidra-deep.json")
                 if deep_preview else None)
+        symbols = None
+        import_context_status = "not_requested"
+        if deep_preview:
+            try:
+                symbols = inspect_symbols(snapshot)
+                import_context_status = "available"
+            except (PEProbeError, OSError):
+                # Many valid PE formats contain import variants not yet
+                # supported by our conservative PE-A1 reader. Do not invent
+                # import corroboration or cancel otherwise valid decompilation.
+                import_context_status = "unreadable_or_unsupported"
+        behavior = classify(deep, symbols) if deep_preview else None
         report = {
             "schema": "pe_ghidra_headless_v1",
             "source_sha256": sha256,
@@ -338,6 +352,8 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
             "architecture": header["architecture"],
             "evidence": evidence,
             "deep_preview": deep,
+            "behavior_preview": behavior,
+            "behavior_import_context": import_context_status,
             "limitations": {
                 "status": "function-entrypoints-preview-only",
                 "original_names_guaranteed": False,
@@ -345,7 +361,9 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                                else "not_implemented"),
                 "call_graph": ("ranked_bounded_direct_references" if deep_preview
                               else "not_implemented"),
-                "behavioral_classification": "not_implemented",
+                "behavioral_classification": (
+                    "deterministic_offline_hypotheses" if deep_preview
+                    else "not_implemented"),
                 "executable_launched": False,
                 "os_sandbox": ("bubblewrap_profile" if sandbox_mode == "bwrap"
                                else "not_implemented"),

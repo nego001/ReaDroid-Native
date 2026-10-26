@@ -7,6 +7,7 @@ on:
       - feature/pe-auto-ghidra-sandbox
       - feature/pe-auto-pseudocode
       - feature/pe-auto-function-ranking
+      - feature/pe-auto-function-behavior
   workflow_dispatch:
 
 permissions:
@@ -96,6 +97,18 @@ jobs:
                      and len(record["pseudocode"]) <= 1800
                      for record in deep["functions"])
           assert report["limitations"]["os_sandbox"] == "not_implemented"
+          assert report["limitations"]["behavioral_classification"] == "deterministic_offline_hypotheses"
+          behavior = report["behavior_preview"]
+          assert behavior["schema"] == "pe_behavior_hypotheses_v1"
+          assert behavior["engine"] == "deterministic_local_rules_not_ai"
+          assert len(behavior["functions"]) == len(deep["functions"])
+          print("PE-A4 behavior hypotheses:", behavior["functions_with_hypotheses"],
+                "categories=", [h["category"] for f in behavior["functions"]
+                                for h in f["hypotheses"]])
+          assert behavior["functions_unidentified"] + behavior["functions_with_hypotheses"] == len(deep["functions"])
+          assert all(h["confidence"] in ("baixa", "moderada") and
+                     h["inference"] == "static_call_pattern_not_runtime_proof"
+                     for item in behavior["functions"] for h in item["hypotheses"])
           print("Ghidra 12.2 REAL: function-count=", report["evidence"]["total_discovered"],
                 "preview=", len(report["evidence"]["functions"]),
                 "ranked_sample=", len(deep["functions"]),
@@ -110,3 +123,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_deep_preview.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_auto_behavior.py' -v
