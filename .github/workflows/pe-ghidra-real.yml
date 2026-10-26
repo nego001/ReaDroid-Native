@@ -1,0 +1,87 @@
+name: PE A2.1 | Real Ghidra Headless integration
+
+on:
+  push:
+    branches:
+      - feature/pe-auto-ghidra-real
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pe-ghidra-real-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-headless-linux:
+    name: Ghidra 12.2 + synthetic Windows executable (no execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install cross compiler for a harmless Windows PE fixture
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+      - name: Download official Ghidra 12.2 and verify publisher SHA-256
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/ghidra_12.2.zip"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/ghidra_12.2_PUBLIC_20261016.zip \
+            --output "$archive"
+          echo "2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67  $archive" \
+            | sha256sum --check --status
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          test -x "$RUNNER_TEMP/ghidra_12.2_PUBLIC/support/analyzeHeadless"
+          java -version
+      - name: Build a Windows executable, without running it
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -O0 -g0 \
+            tests/fixtures/pe_headless_smoke.c \
+            -o "$RUNNER_TEMP/pe_headless_smoke.exe"
+          python3 tools/pe_auto_inventory.py "$RUNNER_TEMP/pe_headless_smoke.exe" \
+            > "$RUNNER_TEMP/pe-inventory.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["format"]=="PE32+" and r["architecture"]=="x86_64"' \
+            "$RUNNER_TEMP/pe-inventory.json"
+      - name: Run actual Ghidra auto-analysis with bounded function export
+        run: |
+          set -euo pipefail
+          python3 tools/pe_auto_ghidra.py \
+            "$RUNNER_TEMP/pe_headless_smoke.exe" \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --output "$RUNNER_TEMP/real-ghidra-functions.json" \
+            --timeout-seconds 420
+      - name: Verify real report, evidence count, provenance, hash and privacy
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path(os.environ["RUNNER_TEMP"])
+          report = json.loads((root / "real-ghidra-functions.json").read_text())
+          sample = root / "pe_headless_smoke.exe"
+          assert report["schema"] == "pe_ghidra_headless_v1"
+          assert report["architecture"] == "x86_64"
+          assert report["source_sha256"] == hashlib.sha256(sample.read_bytes()).hexdigest()
+          assert report["evidence"]["total_discovered"] >= 1
+          assert 1 <= len(report["evidence"]["functions"]) <= 256
+          assert report["limitations"]["executable_launched"] is False
+          assert report["limitations"]["pseudocode"] == "not_implemented"
+          assert report["limitations"]["os_sandbox"] == "not_implemented"
+          print("Ghidra 12.2 REAL: function-count=", report["evidence"]["total_discovered"],
+                "preview=", len(report["evidence"]["functions"]),
+                "sha256-verified=true, no Windows binary executed")
+          PY
+      - name: Retain PE-A0/PE-A1/PE-A2 isolated mock regression suites
+        run: |
+          python3 -m unittest discover -s tests -p 'test_pe_auto_inventory.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_auto_symbols.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
