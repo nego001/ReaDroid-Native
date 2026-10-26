@@ -5,6 +5,7 @@ on:
     branches:
       - feature/pe-auto-ghidra-real
       - feature/pe-auto-ghidra-sandbox
+      - feature/pe-auto-pseudocode
   workflow_dispatch:
 
 permissions:
@@ -62,7 +63,8 @@ jobs:
             --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
             --output "$RUNNER_TEMP/real-ghidra-functions.json" \
             --timeout-seconds 420 \
-            --allow-unisolated-synthetic-fixture
+            --allow-unisolated-synthetic-fixture \
+            --deep-preview
       - name: Verify real report, evidence count, provenance, hash and privacy
         run: |
           python3 - <<'PY'
@@ -76,10 +78,21 @@ jobs:
           assert report["evidence"]["total_discovered"] >= 1
           assert 1 <= len(report["evidence"]["functions"]) <= 256
           assert report["limitations"]["executable_launched"] is False
-          assert report["limitations"]["pseudocode"] == "not_implemented"
+          assert report["limitations"]["pseudocode"] == "bounded_heuristic_preview"
+          assert report["limitations"]["call_graph"] == "bounded_direct_references"
+          deep = report["deep_preview"]
+          assert deep["provenance"] == "ghidra_heuristic_not_original_source"
+          assert 1 <= len(deep["functions"]) <= 8
+          assert any(record["decompile_status"] == "ok"
+                     and record["pseudocode"] for record in deep["functions"])
+          assert all(len(record["calls"]) <= 12
+                     and len(record["pseudocode"]) <= 1800
+                     for record in deep["functions"])
           assert report["limitations"]["os_sandbox"] == "not_implemented"
           print("Ghidra 12.2 REAL: function-count=", report["evidence"]["total_discovered"],
                 "preview=", len(report["evidence"]["functions"]),
+                "pseudocode=", sum(f["decompile_status"] == "ok"
+                                   for f in deep["functions"]),
                 "sha256-verified=true, no Windows binary executed")
           PY
       - name: Retain PE-A0/PE-A1/PE-A2 isolated mock regression suites
@@ -87,3 +100,5 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_auto_inventory.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_auto_symbols.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_deep_preview.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
