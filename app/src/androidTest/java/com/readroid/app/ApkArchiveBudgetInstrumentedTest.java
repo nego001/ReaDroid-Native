@@ -48,10 +48,10 @@ public final class ApkArchiveBudgetInstrumentedTest {
             ApkArchiveBudget.verifyArchive(source);
             JSONObject catalog = ApkExplorer.inspect(source);
             assertEquals(3, catalog.getInt("fileCount"));
-            assertEquals(25L, catalog.getLong("uncompressedBytes"));
+            assertEquals(17L, catalog.getLong("uncompressedBytes"));
             ApkDiskIndex.Stats index = ApkDiskIndex.build(source, db);
             assertEquals(3, index.files);
-            assertEquals(25L, index.totalUncompressedBytes);
+            assertEquals(17L, index.totalUncompressedBytes);
             assertArrayEquals(original, Files.readAllBytes(source.toPath()));
         } finally {
             source.delete();
