@@ -121,7 +121,7 @@ public final class DexPrototypeProbeInstrumentedTest {
         for (int i = 0; i < names.length; i++) {
             int at = TEXT_OFF + i * SLOT;
             byte[] utf8 = names[i].getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            if (names[i].length() > 120 || utf8.length() >= SLOT - 4)
+            if (names[i].length() > 120 || utf8.length >= SLOT - 4)
                 throw new IllegalArgumentException("Synthetic string too long");
             u32(bytes, STRING_OFF + i * 4, at);
             bytes[at] = (byte) names[i].length(); // one-byte ULEB128
