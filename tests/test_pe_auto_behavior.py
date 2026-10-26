@@ -1,0 +1,162 @@
+"""PE-A4: evidence-driven offline hypotheses; no claims beyond static evidence."""
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+spec = importlib.util.spec_from_file_location(
+    "pe_auto_behavior", ROOT / "tools/pe_auto_behavior.py")
+behavior = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(behavior)
+
+
+def sample(code="int f(void) { return 0; }", *, status="ok", truncated=False,
+           address="00401000", name="FUN_00401000"):
+    return {
+        "schema": "ghidra_deep_preview_v2",
+        "provenance": "ghidra_heuristic_not_original_source",
+        "functions": [{
+            "entry_point": address, "name": name,
+            "decompile_status": status, "pseudocode": code,
+            "pseudocode_truncated": truncated,
+        }],
+    }
+
+
+def pe_imports(*names):
+    return {
+        "schema": "pe_symbol_inventory_v1",
+        "imports": [{
+            "dll": "KERNEL32.dll",
+            "functions": [{"by": "name", "name": name} for name in names],
+        }],
+    }
+
+
+class ConservativeBehaviorTests(unittest.TestCase):
+    def test_unknown_is_default_even_with_suggestive_method_name(self):
+        result = behavior.classify(sample(name="UninstallEverything"))
+        self.assertEqual(result["functions"][0]["status"], "unidentified")
+        self.assertEqual(result["functions_unidentified"], 1)
+        self.assertEqual(result["engine"], "deterministic_local_rules_not_ai")
+
+    def test_import_table_alone_does_not_infer_local_calls(self):
+        result = behavior.classify(sample(), pe_imports(
+            "DeleteFileW", "RegDeleteKeyW", "DeleteService"))
+        self.assertEqual(result["functions_with_hypotheses"], 0)
+        self.assertEqual(result["functions"][0]["hypotheses"], [])
+
+    def test_direct_api_call_supports_only_low_confidence_without_corroboration(self):
+        result = behavior.classify(
+            sample('void f(void) { DeleteFileW((LPCWSTR)path); }'))
+        h = result["functions"][0]["hypotheses"]
+        self.assertEqual(len(h), 1)
+        self.assertEqual(h[0]["category"], "filesystem_modification")
+        self.assertEqual(h[0]["confidence"], "baixa")
+        self.assertEqual(h[0]["evidence"][0]["kind"], "pseudocode_api_call")
+        self.assertFalse(h[0]["evidence"][0]["import_table_corrob"])
+        self.assertEqual(h[0]["inference"], "static_call_pattern_not_runtime_proof")
+
+    def test_multiple_apis_and_matching_imports_raise_only_moderate_confidence(self):
+        src = ("int worker(void) {\n"
+               "  GetFileAttributesW(file);\n"
+               "  FindFirstFileW(pattern, &data);\n"
+               "  return 1;\n}")
+        result = behavior.classify(sample(src), pe_imports(
+            "GetFileAttributesW", "FindFirstFileW"))
+        h = result["functions"][0]["hypotheses"][0]
+        self.assertEqual(h["category"], "filesystem_inspection")
+        self.assertEqual(h["confidence"], "moderada")
+        self.assertEqual(h["evidence_count"], 2)
+        self.assertTrue(all(item["import_table_corrob"] for item in h["evidence"]))
+
+    def test_truncated_c_never_gets_moderate_confidence(self):
+        src = "void f(void) { DeleteFileW(file); RemoveDirectoryW(folder); }"
+        result = behavior.classify(sample(src, truncated=True), pe_imports(
+            "DeleteFileW", "RemoveDirectoryW"))
+        self.assertEqual(result["functions"][0]["hypotheses"][0]["confidence"], "baixa")
+        self.assertEqual(result["functions"][0]["evidence_quality"], "partial_pseudocode")
+
+    def test_allows_registry_services_process_network_and_msi_only_from_calls(self):
+        cases = (
+            ("RegOpenKeyExW", "registry_read"),
+            ("RegDeleteValueW", "registry_write"),
+            ("OpenSCManagerW", "service_management"),
+            ("CreateProcessW", "process_management"),
+            ("WinHttpSendRequest", "network_request"),
+            ("MsiConfigureProductW", "msi_package_management"),
+        )
+        for api, category in cases:
+            with self.subTest(api=api):
+                h = behavior.classify(sample("void f(void) { " + api + "(arg); }"))
+                self.assertEqual(h["functions"][0]["hypotheses"][0]["category"], category)
+
+    def test_lexer_removes_literals_comments_and_function_signature(self):
+        src = (r'''void DeleteFileW(void) {
+            /* DeleteFileW(old); */
+            // RegDeleteValueW(name);
+            const char *text = "DeleteFileW(file);";
+            char x = 'Q';
+            return;
+        }''')
+        data = behavior.classify(sample(src))
+        self.assertEqual(data["functions_with_hypotheses"], 0)
+
+    def test_no_classification_when_decompilation_is_unavailable(self):
+        for status in ("unavailable", "timed_out"):
+            with self.subTest(status=status):
+                data = behavior.classify(sample(
+                    "void f(void) { RegDeleteKeyW(arg); }", status=status))
+                self.assertEqual(data["functions"][0]["status"], "unidentified")
+
+    def test_api_name_occurrence_without_invocation_is_insufficient(self):
+        for source in (
+            "void f(void) { void *fn = DeleteFileW; }",
+            'void f(void) { char *str = "RegSetValueExW("; }',
+            "void f(void) { // DeleteService()\n return; }",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    behavior.classify(sample(source))["functions_with_hypotheses"], 0)
+
+    def test_categories_are_independent_and_truncated_at_three(self):
+        source = """void f(void) {
+            DeleteFileW(a); RegSetValueExW(b); CreateProcessW(c);
+            MsiConfigureProductW(d); WinHttpSendRequest(e);
+        }"""
+        data = behavior.classify(sample(source))
+        record = data["functions"][0]
+        self.assertEqual(len(record["hypotheses"]), 3)
+        self.assertTrue(record["hypotheses_truncated"])
+        self.assertEqual(record["status"], "hypotheses")
+
+    def test_names_and_binaries_never_leave_process_and_output_is_bounded(self):
+        src = (ROOT / "tools/pe_auto_behavior.py").read_text("utf-8")
+        for disallowed in ("requests.post", "urllib.request", "subprocess.",
+                           "os.system(", "openai.", "eval(", "exec("):
+            self.assertNotIn(disallowed, src)
+        self.assertIn("MAX_FUNCTIONS = 12", src)
+        self.assertIn("MAX_SNIPPET_CHARS = 1800", src)
+        self.assertIn("MAX_EVIDENCE_PER_CATEGORY = 4", src)
+
+    def test_refuses_missing_provenance_and_out_of_budget(self):
+        data = sample()
+        data["provenance"] = "trusted_source"
+        with self.assertRaises(ValueError):
+            behavior.classify(data)
+        data = sample("int f(void) {" + "x" * 1801 + "}")
+        with self.assertRaises(ValueError):
+            behavior.classify(data)
+        data = sample()
+        data["functions"] *= 13
+        with self.assertRaises(ValueError):
+            behavior.classify(data)
+
+
+if __name__ == "__main__":
+    unittest.main()
