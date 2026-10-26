@@ -37,6 +37,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_engine_m2_fingerprint_extractor.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m2_primitive_fingerprint_contract.py' -v
           python3 -m unittest discover -s tests -p 'test_engine_m2_pathlength_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_engine_m2_pathlength_extractor.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
