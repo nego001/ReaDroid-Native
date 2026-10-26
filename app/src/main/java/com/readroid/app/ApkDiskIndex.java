@@ -117,27 +117,19 @@ public final class ApkDiskIndex {
 
             try (ZipFile zip = new ZipFile(archive)) {
                 Enumeration<? extends ZipEntry> entries = zip.entries();
-                int seen = 0;
+                ApkArchiveBudget.Scan budget = new ApkArchiveBudget.Scan();
                 db.beginTransaction();
                 try {
                     while (entries.hasMoreElements()) {
                         if (Thread.currentThread().isInterrupted())
                             throw new java.io.InterruptedIOException("Indexação cancelada");
                         ZipEntry entry = entries.nextElement();
-                        if (++seen > MAX_ENTRIES)
-                            throw new IOException("Arquivo ZIP excede 150 mil entradas");
+                        budget.accept(entry);
                         String path = entry.getName();
-                        validatePath(path);
                         boolean dir = entry.isDirectory();
                         long size = entry.getSize();
                         if (!dir) {
-                            if (size > MAX_ENTRY_BYTES)
-                                throw new IOException("Entrada maior que 1 GiB");
-                            if (size > 0) {
-                                if (uncompressed > MAX_TOTAL_BYTES - size)
-                                    throw new IOException("Total descompactado excede 2 GiB");
-                                uncompressed += size;
-                            }
+                            uncompressed = budget.uncompressedBytes();
                             files++;
                         } else {
                             dirs++;
@@ -148,7 +140,7 @@ public final class ApkDiskIndex {
                             slash = path.indexOf('/', slash + 1);
                         }
                         putExplicit(db, path, dir, dir ? 0 : size);
-                        if ((seen % 256) == 0) {
+                        if ((budget.entries() % 256) == 0) {
                             db.setTransactionSuccessful();
                             db.endTransaction();
                             db.beginTransaction();

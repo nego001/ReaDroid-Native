@@ -20,26 +20,15 @@ public final class ApkExplorer {
     public static JSONObject inspect(File apk) throws Exception {
         JSONArray files = new JSONArray();
         int directories = 0;
-        long totalUncompressed = 0;
+        ApkArchiveBudget.Scan budget = new ApkArchiveBudget.Scan();
         try (ZipFile zip = new ZipFile(apk)) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
-            int count = 0;
-            Set<String> seen = new HashSet<>();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                if (++count > 150000) throw new IOException("APK com entradas demais");
+                budget.accept(entry);
                 String name = entry.getName();
-                if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
-                    throw new IOException("Caminho ZIP potencialmente inseguro: " + name);
-                if (!seen.add(name)) throw new IOException("Entrada ZIP duplicada: " + name);
                 if (entry.isDirectory()) { directories++; continue; }
                 long size = entry.getSize();
-                if (size > 1073741824L) throw new IOException("Entrada maior que 1 GB: " + name);
-                if (size > 0) {
-                    if (totalUncompressed > 2147483648L - size)
-                        throw new IOException("APK excede o limite total de 2 GB descomprimidos");
-                    totalUncompressed += size;
-                }
                 JSONObject item = new JSONObject();
                 item.put("path", name);
                 item.put("sizeBytes", size);
@@ -51,7 +40,7 @@ public final class ApkExplorer {
         result.put("files", files);
         result.put("fileCount", files.length());
         result.put("directoryCount", directories);
-        result.put("uncompressedBytes", totalUncompressed);
+        result.put("uncompressedBytes", budget.uncompressedBytes());
         result.put("readOnly", true);
         return result;
     }
