@@ -2067,6 +2067,10 @@ public class MainActivity extends Activity {
             }
             StringBuilder hash = new StringBuilder();
             for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
+            // M2: refuse malicious/corrupt ZIPs before PackageManager,
+            // JSON enumeration, or SQLite indexing can process their contents.
+            // Verifies actual inflated bytes/CRCs, not provider or ZIP claims.
+            ApkArchiveSafety.verify(file);
             JSONArray dex = new JSONArray();
             JSONArray libraries = new JSONArray();
             int entries = 0, assets = 0;
