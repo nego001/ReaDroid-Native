@@ -22,6 +22,7 @@ public final class SecurityScanner {
         JSONArray dexMaps = new JSONArray();
         JSONArray dexClasses = new JSONArray();
         JSONArray dexNames = new JSONArray();
+        JSONArray dexMethods = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
         int dexCount = 0;
@@ -164,6 +165,38 @@ public final class SecurityScanner {
                     }
                     dexNames.put(namePreview);
                 }
+                // M3.5: method_ids contain references AND definitions. Never
+                // claim these are methods implemented by this APK.
+                if (dexMethods.length() < 2) {
+                    JSONObject methodPreview = new JSONObject();
+                    methodPreview.put("name", name);
+                    try {
+                        DexMethodProbe.Result methods = DexMethodProbe.inspect(
+                            () -> zip.getInputStream(e), e.getSize());
+                        methodPreview.put("status", "method-ids-preview");
+                        methodPreview.put("version", methods.version);
+                        methodPreview.put("totalMethodIds", methods.totalMethodIds);
+                        methodPreview.put("previewTruncated", methods.truncated);
+                        JSONArray items = new JSONArray();
+                        for (DexMethodProbe.Item method : methods.methods) {
+                            JSONObject item = new JSONObject();
+                            item.put("methodIndex", method.methodIndex);
+                            item.put("classTypeIdx", method.declaringTypeIdx);
+                            item.put("protoIdx", method.prototypeIdx);
+                            item.put("nameStringIdx", method.nameStringIdx);
+                            item.put("methodName", method.name);
+                            items.put(item);
+                        }
+                        methodPreview.put("methodIds", items);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
+                    } catch (IOException invalid) {
+                        methodPreview.put("status", "unreadable-method-ids");
+                        methodPreview.put("reason",
+                            "Tabela method_ids ou nomes inválidos/não suportados");
+                    }
+                    dexMethods.put(methodPreview);
+                }
             }
             if (name.startsWith("lib/") && name.endsWith(".so")) {
                 nativeLibraryCount++;
@@ -191,13 +224,15 @@ public final class SecurityScanner {
         report.put("dexClassPreviewTruncated", dexCount > dexClasses.length());
         report.put("dexClassNamePreview", dexNames);
         report.put("dexClassNamePreviewTruncated", dexCount > dexNames.length());
+        report.put("dexMethodPreview", dexMethods);
+        report.put("dexMethodPreviewTruncated", dexCount > dexMethods.length());
         report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
         report.put("fileExplorerPreview", files);
         report.put("findings", findings);
-        report.put("limitations", "Prévia limitada de cabeçalho, mapa, índices e até seis nomes de classes DEX v035-v040, sem validar todas as classes ou decodificar instruções, recursos, métodos ou assinatura.");
+        report.put("limitations", "Prévia limitada de cabeçalho, mapa, classes e method_ids DEX v035-v040. method_ids podem referenciar métodos externos; não decodifica assinaturas completas, corpos de métodos, recursos ou assinaturas APK.");
         return report;
     }
 
