@@ -61,6 +61,8 @@ public final class SecurityScanner {
                         preview.put("fields", header.fieldIds);
                         preview.put("methods", header.methodIds);
                         preview.put("classes", header.classDefs);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
                     } catch (IOException invalid) {
                         preview.put("status", "unreadable-header");
                         // Do not persist arbitrary ZIP paths or parser errors
