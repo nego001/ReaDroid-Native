@@ -28,7 +28,9 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Assert import cannot bypass M2 gate
-        run: python3 -m unittest discover -s tests -p 'test_engine_m2_contract.py' -v
+        run: |
+          python3 -m unittest discover -s tests -p 'test_engine_m2_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_engine_m2_capacity_contract.py' -v
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -51,7 +53,8 @@ jobs:
             # Test writes only measured counters. No fixture APK leaves device.
             adb exec-out run-as com.readroid.app cat cache/m2_capacity_metrics.json \
               > "m2-capacity-api-${{ matrix.api }}.json"
-            python3 -m json.tool "m2-capacity-api-${{ matrix.api }}.json" >/dev/null
+            python3 -m json.tool "m2-capacity-api-${{ matrix.api }}.json"
+            # Log only synthetic metrics; no APK bytes, paths or fixtures.
       - name: Preserve test evidence, never test APK binaries
         if: always()
         uses: actions/upload-artifact@v4
