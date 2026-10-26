@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/pe-auto-ghidra-real
+      - feature/pe-auto-ghidra-sandbox
   workflow_dispatch:
 
 permissions:
@@ -60,7 +61,8 @@ jobs:
             "$RUNNER_TEMP/pe_headless_smoke.exe" \
             --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
             --output "$RUNNER_TEMP/real-ghidra-functions.json" \
-            --timeout-seconds 420
+            --timeout-seconds 420 \
+            --allow-unisolated-synthetic-fixture
       - name: Verify real report, evidence count, provenance, hash and privacy
         run: |
           python3 - <<'PY'
