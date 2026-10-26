@@ -2,6 +2,8 @@ package com.readroid.app;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Enumeration;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -16,6 +18,7 @@ public final class SecurityScanner {
         JSONArray findings = new JSONArray();
         JSONArray files = new JSONArray();
         JSONArray dex = new JSONArray();
+        JSONArray dexHeaders = new JSONArray();
         JSONArray nativeLibraries = new JSONArray();
         int count = 0;
         int dexCount = 0;
@@ -42,6 +45,32 @@ public final class SecurityScanner {
             if (name.matches("classes([0-9]+)?\\.dex")) {
                 dexCount++;
                 if (dex.length() < ApkExplorer.PREVIEW_LIMIT) dex.put(name);
+                // M3.1: inspect at most 12 DEX headers; never read the DEX
+                // body or turn malformed/unsupported DEX into a scan crash.
+                if (dexHeaders.length() < 12) {
+                    JSONObject preview = new JSONObject();
+                    preview.put("name", name);
+                    try (InputStream input = zip.getInputStream(e)) {
+                        DexHeaderProbe.Header header = DexHeaderProbe.inspect(input, e.getSize());
+                        preview.put("status", "header-only");
+                        preview.put("version", header.version);
+                        preview.put("sizeBytes", header.sizeBytes);
+                        preview.put("strings", header.stringIds);
+                        preview.put("types", header.typeIds);
+                        preview.put("prototypes", header.protoIds);
+                        preview.put("fields", header.fieldIds);
+                        preview.put("methods", header.methodIds);
+                        preview.put("classes", header.classDefs);
+                    } catch (java.io.InterruptedIOException cancelled) {
+                        throw cancelled;
+                    } catch (IOException invalid) {
+                        preview.put("status", "unreadable-header");
+                        // Do not persist arbitrary ZIP paths or parser errors
+                        // inside the diagnostic explanation.
+                        preview.put("reason", "Cabeçalho DEX inválido ou não suportado");
+                    }
+                    dexHeaders.put(preview);
+                }
             }
             if (name.startsWith("lib/") && name.endsWith(".so")) {
                 nativeLibraryCount++;
@@ -61,13 +90,15 @@ public final class SecurityScanner {
         report.put("entries", count);
         report.put("filePreviewTruncated", count > files.length());
         report.put("dexFileCount", dexCount);
+        report.put("dexHeaderPreview", dexHeaders);
+        report.put("dexHeaderPreviewTruncated", dexCount > dexHeaders.length());
         report.put("nativeLibraryCount", nativeLibraryCount);
         report.put("manifestPresent", manifest);
         report.put("dexFiles", dex);
         report.put("nativeLibraries", nativeLibraries);
         report.put("fileExplorerPreview", files);
         report.put("findings", findings);
-        report.put("limitations", "Inspeção estática inicial; permissões, certificado v2/v3 e DEX não são decodificados.");
+        report.put("limitations", "Inspeção estática inicial; cabeçalho DEX v035-v040 é lido, mas classes, instruções e recursos compilados não são decodificados. Certificado v2/v3 requer análise própria.");
         return report;
     }
 
