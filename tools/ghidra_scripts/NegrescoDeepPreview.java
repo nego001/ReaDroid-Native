@@ -7,6 +7,10 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.decompiler.DecompiledFunction;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.InstructionIterator;
+import ghidra.program.model.symbol.Reference;
 import java.io.BufferedWriter;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
@@ -19,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -28,6 +33,10 @@ public class NegrescoDeepPreview extends HeadlessScript {
     private static final int MAX_DECOMPILED = 12;
     private static final int MAX_CALLEES = 24;
     private static final int MAX_API_REFERENCES = 8;
+    private static final int MAX_STRING_REFERENCES = 8;
+    private static final int MAX_STRING_TEXT_CHARS = 96;
+    private static final int MAX_STRING_SCAN_INSTRUCTIONS = 2048;
+    private static final int MAX_REFS_PER_INSTRUCTION = 16;
     private static final int MAX_RANKING_EDGES = 64;
     private static final int MAX_PSEUDOCODE_CHARS = 1800;
     private static final int MAX_NAME_CHARS = 160;
@@ -58,6 +67,82 @@ public class NegrescoDeepPreview extends HeadlessScript {
         "msiconfigureproductexw", "msiinstallproducta",
         "msiinstallproductw"
     ));
+
+    private static final class StringEvidence {
+        final String value;
+        final String dataAddress;
+        final String sourceAddress;
+        StringEvidence(String value, String dataAddress, String sourceAddress) {
+            this.value = value;
+            this.dataAddress = dataAddress;
+            this.sourceAddress = sourceAddress;
+        }
+    }
+
+    private static final class StringResults {
+        final List<StringEvidence> entries = new ArrayList<>();
+        boolean truncated = false;
+        boolean scanTruncated = false;
+        int instructionsScanned = 0;
+    }
+
+    // Never scrape arbitrary printable bytes: only Ghidra-defined string
+    // data reached by an instruction reference from THIS function's body.
+    private StringResults findReferencedStrings(Function fn) throws Exception {
+        StringResults result = new StringResults();
+        LinkedHashMap<String, StringEvidence> seen = new LinkedHashMap<>();
+        InstructionIterator iterator =
+            currentProgram.getListing().getInstructions(fn.getBody(), true);
+        while (iterator.hasNext() &&
+               result.instructionsScanned < MAX_STRING_SCAN_INSTRUCTIONS) {
+            monitor.checkCancelled();
+            Instruction instruction = iterator.next();
+            result.instructionsScanned++;
+            Reference[] references = instruction.getReferencesFrom();
+            if (references.length > MAX_REFS_PER_INSTRUCTION)
+                result.scanTruncated = true;
+            for (int i = 0; i < Math.min(MAX_REFS_PER_INSTRUCTION, references.length); i++) {
+                Reference ref = references[i];
+                if (ref.getToAddress() == null ||
+                    !ref.getToAddress().isMemoryAddress()) continue;
+                Data defined = currentProgram.getListing().getDefinedDataContaining(
+                    ref.getToAddress());
+                if (defined == null || !defined.hasStringValue()) continue;
+                Object raw = defined.getValue();
+                if (!(raw instanceof String)) continue;
+                String value = (String) raw;
+                if (value.length() < 6 || value.length() > MAX_STRING_TEXT_CHARS)
+                    continue;
+                boolean printable = true;
+                for (int ch = 0; ch < value.length(); ch++) {
+                    if (value.charAt(ch) < 32 || value.charAt(ch) > 126) {
+                        printable = false;
+                        break;
+                    }
+                }
+                if (!printable) continue;
+                String dataAddress = defined.getAddress().toString();
+                String sourceAddress = ref.getFromAddress().toString();
+                if (!dataAddress.matches("[0-9a-fA-F]{1,16}") ||
+                    !sourceAddress.matches("[0-9a-fA-F]{1,16}")) continue;
+                if (!seen.containsKey(dataAddress))
+                    seen.put(dataAddress, new StringEvidence(
+                        value, dataAddress, sourceAddress));
+                if (seen.size() > MAX_STRING_REFERENCES) {
+                    result.truncated = true;
+                    break;
+                }
+            }
+            if (result.truncated) break;
+        }
+        if (iterator.hasNext()) result.scanTruncated = true;
+        int exported = 0;
+        for (StringEvidence entry : seen.values()) {
+            if (exported++ >= MAX_STRING_REFERENCES) break;
+            result.entries.add(entry);
+        }
+        return result;
+    }
 
     private static final class Candidate {
         final Function function;
@@ -209,7 +294,7 @@ public class NegrescoDeepPreview extends HeadlessScript {
             boolean ready = decompiler.openProgram(currentProgram);
             try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
                     new FileOutputStream(args[0]), StandardCharsets.UTF_8))) {
-                writer.write("{\"schema\":\"ghidra_deep_preview_v2\",");
+                writer.write("{\"schema\":\"ghidra_deep_preview_v3\",");
                 writer.write("\"selection_method\":");
                 writer.write(json(SELECTION_METHOD, 80));
                 writer.write(",\"functions\":[");
@@ -276,6 +361,25 @@ public class NegrescoDeepPreview extends HeadlessScript {
                     writer.write(json(c, MAX_PSEUDOCODE_CHARS));
                     writer.write(",\"pseudocode_truncated\":");
                     writer.write(Boolean.toString(c.length() > MAX_PSEUDOCODE_CHARS));
+                    StringResults strings = findReferencedStrings(fn);
+                    writer.write(",\"strings\":[");
+                    for (int i = 0; i < strings.entries.size(); i++) {
+                        if (i != 0) writer.write(",");
+                        StringEvidence evidence = strings.entries.get(i);
+                        writer.write("{\"text\":");
+                        writer.write(json(evidence.value, MAX_STRING_TEXT_CHARS));
+                        writer.write(",\"data_address\":");
+                        writer.write(json(evidence.dataAddress, 32));
+                        writer.write(",\"reference_from\":");
+                        writer.write(json(evidence.sourceAddress, 32));
+                        writer.write("}");
+                    }
+                    writer.write("],\"strings_truncated\":");
+                    writer.write(Boolean.toString(strings.truncated));
+                    writer.write(",\"string_scan_truncated\":");
+                    writer.write(Boolean.toString(strings.scanTruncated));
+                    writer.write(",\"instructions_scanned_for_strings\":");
+                    writer.write(Integer.toString(strings.instructionsScanned));
                     writer.write("}");
                 }
                 writer.write("],\"candidates_scanned\":");
