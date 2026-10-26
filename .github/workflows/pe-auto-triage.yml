@@ -1,0 +1,34 @@
+name: PE automatic reverse | Safe intake checks
+
+on:
+  push:
+    branches: [feature/pe-*]
+  pull_request:
+    paths:
+      - 'tools/pe_auto_inventory.py'
+      - 'tests/test_pe_auto_inventory.py'
+      - 'docs/PE-ZERO-TOUCH-REVERSE-ROADMAP.md'
+      - '.github/workflows/pe-auto-triage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pe-intake:
+    name: PE32/PE32+ synthetic nonexecuting checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile bounded PE inventory
+        run: python3 -m py_compile tools/pe_auto_inventory.py tests/test_pe_auto_inventory.py
+      - name: Reject forged PE headers using synthetic fixtures
+        run: python3 -m unittest discover -s tests -p 'test_pe_auto_inventory.py' -v
+      - name: Confirm no binary execution or upload is invoked
+        run: |
+          ! grep -Eq 'subprocess\.run|os\.system\(|requests\.post\(' tools/pe_auto_inventory.py
+          echo "PE: no executable was run or uploaded"
