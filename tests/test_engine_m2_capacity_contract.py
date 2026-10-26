@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "app/src/main/java/com/readroid/app/ApkDiskIndex.java"
 CI = ROOT / ".github/workflows/engine-m2-admission.yml"
 PROFILE = ROOT / "app/src/androidTest/java/com/readroid/app/ApkCapacityProfileInstrumentedTest.java"
+EXTRACTOR = ROOT / "tools/extract_m2_capacity_logcat.py"
 
 
 class EngineM24CapacityContract(unittest.TestCase):
@@ -26,7 +27,11 @@ class EngineM24CapacityContract(unittest.TestCase):
         source = PROFILE.read_text(encoding="utf-8")
         self.assertIn("ApkCapacityProfileInstrumentedTest", ci)
         self.assertIn("m2-capacity-api-*.json", ci)
-        self.assertIn("run-as com.readroid.app cat cache/m2_capacity_metrics.json", ci)
+        self.assertIn("adb logcat -d -s M2Capacity:I '*:S'", ci)
+        self.assertIn("tools/extract_m2_capacity_logcat.py", ci)
+        self.assertNotIn("run-as com.readroid.app", ci)
+        self.assertIn('Log.i(TAG, "RESULT_JSON:" + metrics.toString());', source)
+        self.assertIn('if len(matches) != 1:', EXTRACTOR.read_text(encoding="utf-8"))
         self.assertNotIn("app/build/outputs/apk/", ci)
         for field in ("processCpuMs", "wallMs", "javaHeapUsedBytes",
                       "nativeHeapAllocatedBytes", "processPssKib"):
