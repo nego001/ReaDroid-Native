@@ -28,6 +28,14 @@ public final class ApkIntelligence {
                 if (file != null) mark(file.optString("path", ""), signals);
             }
         }
+        // The explorer JSON is only a 120-entry preview on large APKs.
+        // Merge four fixed-size signals collected from EVERY verified path.
+        JSONArray exhaustiveSignals = explorer == null ? null
+            : explorer.optJSONArray("engineSignals");
+        if (exhaustiveSignals != null && exhaustiveSignals.length() == signals.length)
+            for (int i = 0; i < signals.length; i++)
+                signals[i] |= exhaustiveSignals.optBoolean(i, false);
+
         JSONArray libs = analysis.optJSONArray("nativeLibraries");
         if (libs != null) for (int i = 0; i < libs.length(); i++)
             mark(libs.optString(i, ""), signals);
@@ -82,7 +90,7 @@ public final class ApkIntelligence {
         return profile;
     }
 
-    private static void mark(String value, boolean[] flags) {
+    static void mark(String value, boolean[] flags) {
         String path = value.toLowerCase(Locale.ROOT);
         if (path.endsWith("/libunity.so") || path.endsWith("/libil2cpp.so")
                 || path.startsWith("assets/bin/data/")) flags[0] = true;
