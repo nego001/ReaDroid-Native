@@ -28,6 +28,11 @@ from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 
 MAX_RESULT_BYTES = 128 * 1024
+MAX_DEEP_BYTES = 64 * 1024
+MAX_DEEP_FUNCTIONS = 8
+MAX_DEEP_CALLS = 12
+MAX_DEEP_PSEUDOCODE = 1800
+DEEP_SCRIPT_NAME = "NegrescoDeepPreview.java"
 MAX_FUNCTIONS = 256
 DEFAULT_TIMEOUT_SECONDS = 600
 MAX_TIMEOUT_SECONDS = 1800
@@ -114,6 +119,70 @@ def _validated_function_evidence(path: Path) -> dict:
     }
 
 
+
+
+def _validated_deep_evidence(path: Path) -> dict:
+    """Fail closed on malformed or exaggerated Ghidra pseudocode evidence."""
+    try:
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_DEEP_BYTES:
+            raise HeadlessError("Prévia de pseudocódigo ausente ou acima do orçamento")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise HeadlessError("Prévia de pseudocódigo indisponível ou corrompida") from exc
+    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v1":
+        raise HeadlessError("Esquema de pseudocódigo inesperado")
+    records = raw.get("functions")
+    scanned = raw.get("candidates_scanned")
+    eligible = raw.get("eligible_non_thunks")
+    truncated = raw.get("sample_truncated")
+    if (not isinstance(records, list) or len(records) > MAX_DEEP_FUNCTIONS
+            or type(scanned) is not int or not 0 <= scanned <= 256
+            or type(eligible) is not int or not len(records) <= eligible <= scanned
+            or type(truncated) is not bool
+            or truncated != (eligible > len(records) or scanned == 256)
+            or raw.get("provenance") != "ghidra_heuristic_not_original_source"):
+        raise HeadlessError("Contagens de pseudocódigo inconsistentes")
+    seen = set()
+    cleaned = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise HeadlessError("Entrada de função inválida")
+        addr = record.get("entry_point")
+        name = record.get("name")
+        calls = record.get("calls")
+        status = record.get("decompile_status")
+        pseudocode = record.get("pseudocode")
+        cut = record.get("pseudocode_truncated")
+        calls_cut = record.get("calls_truncated")
+        if (not isinstance(addr, str) or not ADDRESS.fullmatch(addr)
+                or addr.lower() in seen
+                or not isinstance(name, str) or not 1 <= len(name) <= 160
+                or any(ord(c) < 32 or ord(c) == 127 for c in name)
+                or not isinstance(calls, list) or len(calls) > MAX_DEEP_CALLS
+                or any(not isinstance(x, str) or not ADDRESS.fullmatch(x) for x in calls)
+                or len(set(x.lower() for x in calls)) != len(calls)
+                or type(calls_cut) is not bool
+                or status not in ("ok", "unavailable", "timed_out")
+                or not isinstance(pseudocode, str) or len(pseudocode) > MAX_DEEP_PSEUDOCODE
+                or type(cut) is not bool
+                or (status != "ok" and (pseudocode or cut))
+                or (status == "ok" and not pseudocode)):
+            raise HeadlessError("Pseudocódigo, referências ou endereço inválido")
+        seen.add(addr.lower())
+        cleaned.append({
+            "entry_point": addr, "name": name,
+            "calls": calls, "calls_truncated": calls_cut,
+            "decompile_status": status,
+            "pseudocode": pseudocode, "pseudocode_truncated": cut,
+        })
+    return {
+        "functions": cleaned,
+        "candidates_scanned": scanned,
+        "eligible_non_thunks": eligible,
+        "sample_truncated": truncated,
+        "provenance": "ghidra_heuristic_not_original_source",
+    }
+
 def _locate_ghidra(home: Path) -> Path:
     if not home.is_absolute():
         raise HeadlessError("GHIDRA_HOME deve ser um caminho absoluto")
@@ -123,17 +192,22 @@ def _locate_ghidra(home: Path) -> Path:
     script = SCRIPT_FOLDER / SCRIPT_NAME
     if script.is_symlink() or not script.is_file():
         raise HeadlessError("Script de exportação Ghidra indisponível")
+    deep_script = SCRIPT_FOLDER / DEEP_SCRIPT_NAME
+    if deep_script.is_symlink() or not deep_script.is_file():
+        raise HeadlessError("Script de pseudocódigo Ghidra indisponível")
     return launcher
 
 
 def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                       output: str | Path, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
-                      *, sandbox_mode: str = "bwrap") -> dict:
+                      *, sandbox_mode: str = "bwrap", deep_preview: bool = False) -> dict:
     """Run trusted Ghidra tooling and atomically write bounded JSON evidence."""
     if sys.platform != "linux":
         raise HeadlessError("PE-A2 suporta somente Linux; Windows será validado depois")
     if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= MAX_TIMEOUT_SECONDS:
         raise HeadlessError("Timeout fora de 1 a 1800 segundos")
+    if type(deep_preview) is not bool:
+        raise HeadlessError("Configuração de pseudocódigo inválida")
     if sandbox_mode not in ("bwrap", "trusted-fixture"):
         raise HeadlessError("Modo de isolamento inválido")
     target = Path(binary)
@@ -169,9 +243,12 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
             scripts = working / "scripts"
             scripts.mkdir(mode=0o700)
             shutil.copyfile(SCRIPT_FOLDER / SCRIPT_NAME, scripts / SCRIPT_NAME)
+            if deep_preview:
+                shutil.copyfile(SCRIPT_FOLDER / DEEP_SCRIPT_NAME, scripts / DEEP_SCRIPT_NAME)
             # Fail closed if Bubblewrap or the host user namespace is unavailable.
             try:
-                command = build_command(Path(ghidra_home), working, timeout_seconds)
+                command = build_command(Path(ghidra_home), working, timeout_seconds,
+                                        deep_preview=deep_preview)
             except (SandboxUnavailable, OSError) as exc:
                 raise HeadlessError("Isolamento Bubblewrap indisponível; análise recusada") from exc
         else:
@@ -187,6 +264,11 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "-readOnly", "-deleteProject",
                 "-log", str(log_path),
             ]
+            if deep_preview:
+                insert_at = command.index("-analysisTimeoutPerFile")
+                command[insert_at:insert_at] = [
+                    "-postScript", DEEP_SCRIPT_NAME, str(working / "ghidra-deep.json"),
+                ]
         # Pass a fixed argv array, without a shell. The inspected program is only
         # file passed to Ghidra: this process is trusted local Ghidra itself.
         try:
@@ -209,17 +291,22 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         if code != 0:
             raise HeadlessError("O Ghidra não concluiu a análise; nenhum relatório foi aceito")
         evidence = _validated_function_evidence(raw_result)
+        deep = (_validated_deep_evidence(working / "ghidra-deep.json")
+                if deep_preview else None)
         report = {
             "schema": "pe_ghidra_headless_v1",
             "source_sha256": sha256,
             "format": header["format"],
             "architecture": header["architecture"],
             "evidence": evidence,
+            "deep_preview": deep,
             "limitations": {
                 "status": "function-entrypoints-preview-only",
                 "original_names_guaranteed": False,
-                "pseudocode": "not_implemented",
-                "call_graph": "not_implemented",
+                "pseudocode": ("bounded_heuristic_preview" if deep_preview
+                               else "not_implemented"),
+                "call_graph": ("bounded_direct_references" if deep_preview
+                              else "not_implemented"),
                 "behavioral_classification": "not_implemented",
                 "executable_launched": False,
                 "os_sandbox": ("bubblewrap_profile" if sandbox_mode == "bwrap"
@@ -256,12 +343,15 @@ def main(argv=None) -> int:
     parser.add_argument("--ghidra-home", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--timeout-seconds", default=DEFAULT_TIMEOUT_SECONDS, type=int)
+    parser.add_argument("--deep-preview", action="store_true",
+                        help="Recuperar amostra limitada de chamadas e pseudocódigo")
     parser.add_argument("--allow-unisolated-synthetic-fixture", action="store_true",
                         help="Somente para CI com PE sintético confiável; desativa isolamento")
     args = parser.parse_args(argv)
     try:
         report = inspect_functions(args.binary, args.ghidra_home, args.output,
                                    args.timeout_seconds,
+                                   deep_preview=args.deep_preview,
                                    sandbox_mode=("trusted-fixture"
                                        if args.allow_unisolated_synthetic_fixture
                                        else "bwrap"))
