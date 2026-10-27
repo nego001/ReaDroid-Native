@@ -45,6 +45,40 @@ class ScopedSeccompLauncherTests(unittest.TestCase):
                             bridge.launch_scoped_bwrap(self.unit, self.argv)
         compile_fd.assert_not_called()
 
+    def test_real_kernel_scope_check_rejects_unscoped_ci_process(self):
+        """Do not mock the kernel quota check: never compile a filter outside scope."""
+        with mock.patch.object(bridge.os, "geteuid", return_value=1000):
+            with mock.patch.object(bridge.shutil, "which",
+                                   return_value=str(self.binary)):
+                with mock.patch.object(bridge, "compile_seccomp_bpf_fd") as compiler:
+                    with mock.patch.object(bridge.subprocess, "Popen") as spawn:
+                        with self.assertRaisesRegex(
+                                bridge.ScopedSeccompUnavailable, "not verified"):
+                            bridge.launch_scoped_bwrap(
+                                self.unit, self.argv, timeout_seconds=10)
+        compiler.assert_not_called()
+        spawn.assert_not_called()
+
+    def test_filter_fd_closed_if_bwrap_arg_attachment_rejects(self):
+        fd = os.memfd_create("synthetic-rejected-filter", flags=os.MFD_CLOEXEC)
+        with mock.patch.object(bridge.os, "geteuid", return_value=1000):
+            with mock.patch.object(bridge.shutil, "which",
+                                   return_value=str(self.binary)):
+                with mock.patch.object(bridge, "verify_cgroup_limits",
+                                       return_value={"verified": True}):
+                    with mock.patch.object(bridge, "compile_seccomp_bpf_fd",
+                                           return_value=fd):
+                        with mock.patch.object(bridge, "attach_seccomp_fd",
+                                               side_effect=bridge.SeccompUnavailable(
+                                                   "bad seccomp descriptor")):
+                            with mock.patch.object(bridge.subprocess, "Popen") as spawn:
+                                with self.assertRaises(bridge.ScopedSeccompUnavailable):
+                                    bridge.launch_scoped_bwrap(
+                                        self.unit, self.argv, timeout_seconds=10)
+                                spawn.assert_not_called()
+        with self.assertRaises(OSError):
+            os.fstat(fd)
+
     def test_compiles_filter_inside_scope_and_only_bwrap_inherits(self):
         fd = os.memfd_create("synthetic-scope-filter", flags=os.MFD_CLOEXEC)
         fake_child = mock.Mock()
