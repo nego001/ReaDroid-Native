@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap gcc-mingw-w64-x86-64
+          sudo apt-get install -y --no-install-recommends bubblewrap gcc-mingw-w64-x86-64 libseccomp2
           bwrap --version
           java -version
           for key in kernel.unprivileged_userns_clone kernel.apparmor_restrict_unprivileged_userns; do
@@ -153,6 +153,63 @@ jobs:
                   raise RuntimeError(
                       "REAL BUBBLEWRAP FD/NAMESPACE PROBE FAILED CLOSED")
           PY
+      - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/ghidra_12.2_PUBLIC" "$RUNNER_TEMP/pe_sandbox_fixture.exe" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+          sys.path.insert(0, str(Path("tools").resolve()))
+          from pe_ghidra_sandbox import build_command
+          from pe_seccomp_filter import (
+              attach_seccomp_fd, compile_seccomp_bpf_fd, seccomp_filter_count)
+          ghidra, fixture = map(Path, sys.argv[1:])
+          with tempfile.TemporaryDirectory(prefix="negresco-real-seccomp-") as temp:
+              root = Path(temp)
+              canary = root / "private-host-file"
+              canary.write_text("synthetic host canary", encoding="utf-8")
+              workspace = root / "work"
+              (workspace / "scripts").mkdir(parents=True, mode=0o700)
+              (workspace / "project").mkdir(mode=0o700)
+              shutil.copyfile("tools/ghidra_scripts/NegrescoFunctionInventory.java",
+                              workspace / "scripts/NegrescoFunctionInventory.java")
+              shutil.copyfile("tests/pe_sandbox_probe.py",
+                              workspace / "pe_sandbox_probe.py")
+              shutil.copyfile(fixture, workspace / "input.exe")
+              baseline = seccomp_filter_count()
+              argv = build_command(ghidra, workspace, 120)
+              fd = compile_seccomp_bpf_fd()
+              host_fd = os.open(canary, os.O_RDONLY)
+              try:
+                  os.set_inheritable(host_fd, True)
+                  identity = os.fstat(host_fd)
+                  argv = attach_seccomp_fd(argv, fd)
+                  boundary = argv.index("--")
+                  argv = argv[:boundary + 1] + [
+                      "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+                      os.readlink("/proc/self/ns/net"), str(canary),
+                      str(identity.st_dev), str(identity.st_ino), str(baseline)]
+                  result = subprocess.run(
+                      argv, stdin=subprocess.DEVNULL, capture_output=True,
+                      text=True, timeout=35, check=False, close_fds=True,
+                      pass_fds=(fd,))
+              finally:
+                  os.close(host_fd)
+                  os.close(fd)
+              print((result.stdout + result.stderr)[:4000])
+              if result.returncode != 0:
+                  raise RuntimeError("REAL SECCOMP SANDBOX PROBE FAILED")
+              record = json.loads(result.stdout.strip())
+              assert record["isolation_probe"] == "passed"
+              assert record["inherited_host_fd_hidden"] is True
+              assert record["seccomp_enforced"] is True
+              print("SECCOMP_DENY_PTRACE_AND_NAMESPACE_PROBE: PASS")
+          PY
       - name: Run real Ghidra in REQUIRED Bubblewrap profile
         run: |
           set -euo pipefail
@@ -199,6 +256,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_arch_descendant_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_seccomp_filter.py' -v
 
   arch-userspace-contract:
     name: Arch Linux userspace | sandbox and cgroup contracts
@@ -211,7 +269,7 @@ jobs:
       - name: Install official Arch packages
         run: |
           set -euo pipefail
-          pacman -Syu --noconfirm --needed python bubblewrap util-linux
+          pacman -Syu --noconfirm --needed python bubblewrap util-linux libseccomp
           python --version
           bwrap --version
           cat /etc/os-release
@@ -226,4 +284,5 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_descendant_smoke.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_filter.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
