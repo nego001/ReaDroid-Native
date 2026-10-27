@@ -50,13 +50,19 @@ class CgroupScopeTests(unittest.TestCase):
             with mock.patch("pe_resource_limits.Path.is_file", return_value=True):
                 argv = wrap_in_cgroup_scope(self.command,
                                             systemd_run_path=str(self.launcher))
-        self.assertEqual(argv, [
+        self.assertEqual(argv[:8], [
             str(self.launcher), "--user", "--scope", "--quiet",
             "--property=MemoryMax=" + str(MEMORY_MAX_BYTES),
             "--property=TasksMax=" + str(TASKS_MAX),
             "--property=CPUQuota=" + str(CPU_QUOTA_PERCENT) + "%",
-            "--", *self.command,
+            "--",
         ])
+        self.assertEqual(argv[8:10], [sys.executable, "-I"])
+        self.assertTrue(argv[10].endswith("/tools/pe_cgroup_guard.py"))
+        self.assertEqual(argv[11:15],
+                         [str(MEMORY_MAX_BYTES), str(TASKS_MAX),
+                          str(CPU_QUOTA_PERCENT), "--"])
+        self.assertEqual(argv[15:], self.command)
         self.assertNotIn("--system", argv)
         self.assertNotIn("--shell", argv)
 
