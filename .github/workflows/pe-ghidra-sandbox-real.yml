@@ -361,6 +361,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_arch_scoped_ghidra_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_scoped_ghidra_bridge_real_ci.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_scope_cleanup_evidence.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_vm_evidence.py' -v
 
   arch-userspace-contract:
@@ -396,5 +397,6 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_scoped_ghidra_smoke.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scoped_ghidra_bridge_real_ci.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scope_cleanup_evidence.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_evidence.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
