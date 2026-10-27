@@ -210,6 +210,30 @@ jobs:
               assert record["seccomp_enforced"] is True
               print("SECCOMP_DENY_PTRACE_AND_NAMESPACE_PROBE: PASS")
           PY
+      - name: Real in-scope seccomp bridge, with cgroup verifier explicitly mocked
+        run: |
+          set -euo pipefail
+          python3 tests/pe_scoped_seccomp_bridge_real_ci.py \
+            "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            > "$RUNNER_TEMP/bridge-real-mocked-cgroup.jsonl"
+          python3 - "$RUNNER_TEMP/bridge-real-mocked-cgroup.jsonl" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.startswith("{")]
+          assert any(item.get("isolation_probe") == "passed"
+                     and item.get("seccomp_enforced") is True
+                     and item.get("inherited_host_fd_hidden") is True
+                     and item.get("network_namespace_separate") is True
+                     for item in records)
+          assert any(item.get("status") == "PASS_REAL_BRIDGE_WITH_MOCKED_CGROUP"
+                     and item.get("cgroup_enforcement_real") is False
+                     and item.get("seccomp_and_bubblewrap_real") is True
+                     for item in records)
+          print("REAL FILTER/FD BRIDGE: PASS; CGROUP QUOTAS: MOCKED (NOT HOMOLOGATED)")
+          PY
       - name: Run real Ghidra in REQUIRED Bubblewrap profile
         run: |
           set -euo pipefail
