@@ -111,7 +111,8 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             incomplete = {
                 "isolation_probe": "passed", "host_home_canary_hidden": True,
                 "network_namespace_separate": False, "host_etc_hidden": True,
-                "usr_runtime_read_only": True, "private_work_writable": True}
+                "usr_runtime_read_only": True, "private_work_writable": True,
+                "inherited_host_fd_hidden": True}
             with mock.patch.object(validation, "build_command", return_value=cmd):
                 with mock.patch.object(
                         validation.subprocess, "run",
@@ -135,6 +136,8 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                     result = validation.native_bwrap_probe(
                         Path("/unused-ghidra"), pe, second)
             self.assertEqual(result["status"], "PASS_NATIVE_ARCH_BWRAP_PROBE")
+            self.assertTrue(result["inherited_host_fd_hidden"])
+            self.assertTrue(run.call_args.kwargs["close_fds"])
 
     def test_real_ghidra_requires_private_quota_proof(self):
         with tempfile.TemporaryDirectory() as temp:
