@@ -129,3 +129,39 @@ precisam de execução e observação no Arch instalado, inclusive
 com janela do gerenciador do usuário e CPU/memória sob pressão
 controlada. CI continua usando Ubuntu e userspace Arch sobre Ubuntu.
 A PR continua em Draft, sem APK, OTA nem merge.
+
+## PE-S1.3 | Teste nativo de encerramento de descendentes (implementado; execução Arch pendente)
+
+O modo `--require-cgroup-limits` agora solicita explicitamente
+`KillMode=control-group` e `SendSIGKILL=yes` no escopo systemd. Isso
+pretende atingir todos os processos pertencentes ao cgroup, inclusive
+descendentes que criaram sua própria sessão, em vez de depender apenas
+de `killpg`. Esses valores são parte do contrato de CI; seu comportamento
+real **ainda exige confirmação no host Arch**.
+
+O teste de laboratório `tools/pe_arch_descendant_smoke.py` pode ser
+executado no **Arch Linux instalado** como usuário normal:
+
+```sh
+python3 tools/pe_arch_cgroup_smoke.py
+python3 tools/pe_arch_descendant_smoke.py
+```
+
+O segundo teste inicia **somente processos Python controlados**. Um deles
+cria uma nova sessão e ignora SIGTERM; ambos permanecem dentro do cgroup
+dessa análise. O diagnóstico verifica quotas de memória/processos/CPU,
+a identidade do escopo, a vida do descendente, e só aprova se
+`systemctl --user stop` eliminar esse descendente. Usa um diretório
+temporário privado, protege contra PID reutilizado comparando o tempo de
+início do processo e recusa execução fora de host Arch. Em falhas,
+tenta limpeza adicional, mas essa limpeza **não conta como aprovação**.
+O teste tem teto de duração e nenhum executável Windows é iniciado.
+
+O workflow GitHub Actions testa os casos de aprovação e rejeição por mocks
+no Ubuntu e no contêiner Arch, **sem fingir que executou esse teste nativo**.
+
+Seguem pendentes: executar os dois diagnósticos em Arch real ou VM Arch,
+repetir o Ghidra real com quotas sobre o mesmo kernel, observar OOM,
+verificar limpeza de projetos temporários, testar seccomp e resistência
+a fuga de sandbox. **Não usar binários hostis em uma estação pessoal
+apenas com estes testes.** A PR segue Draft.
