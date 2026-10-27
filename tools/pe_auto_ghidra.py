@@ -455,11 +455,15 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 process.wait(timeout=5)
             raise HeadlessError("Ghidra excedeu o tempo e foi interrompido") from exc
         finally:
-            if scope_unit is not None:
-                # A systemd scope tracks all descendants, including processes
-                # that leave the launcher's process group. RuntimeMaxSec is an
-                # independent backstop if this best-effort stop request fails.
-                stop_scope(scope_unit)
+            scope_stop_accepted = (stop_scope(scope_unit)
+                                   if scope_unit is not None else None)
+        if scope_unit is not None and not scope_stop_accepted:
+            # Even a successful Ghidra exit is insufficient if systemd did not
+            # accept the attempt to stop the full process cgroup. Never publish
+            # evidence in strict mode when that cleanup request failed.
+            raise HeadlessError(
+                "Não foi possível confirmar a solicitação de parada do cgroup; "
+                "relatório recusado")
         if code != 0:
             raise HeadlessError("O Ghidra não concluiu a análise; nenhum relatório foi aceito")
         evidence = _validated_function_evidence(raw_result)
