@@ -217,6 +217,22 @@ jobs:
             --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
             --output "$RUNNER_TEMP/real-bwrap-ghidra.json" \
             --deep-preview --timeout-seconds 420
+      - name: Real Ghidra 12.2 with experimental seccomp (synthetic PE only)
+        run: |
+          set -euo pipefail
+          python3 tools/pe_seccomp_ghidra_smoke.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --ghidra-archive "$RUNNER_TEMP/ghidra_12.2.zip" \
+            > "$RUNNER_TEMP/real-seccomp-ghidra-proof.json"
+          python3 - "$RUNNER_TEMP/real-seccomp-ghidra-proof.json" <<'PY'
+          import json, sys
+          proof = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert proof["status"] == "PASS_REAL_GHIDRA_SECCOMP_SMOKE"
+          assert proof["ghidra_12_2_pinned_install"] is True
+          assert proof["ghidra_functions_discovered"] > 0
+          assert proof["windows_binary_executed"] is False
+          print("REAL GHIDRA 12.2 WITH EXPERIMENTAL SECCOMP: PASS")
+          PY
       - name: Check actual sandboxed Ghidra evidence
         run: |
           python3 - <<'PY'
@@ -257,6 +273,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_seccomp_filter.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_seccomp_ghidra_smoke.py' -v
 
   arch-userspace-contract:
     name: Arch Linux userspace | sandbox and cgroup contracts
@@ -285,4 +302,5 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_filter.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_ghidra_smoke.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
