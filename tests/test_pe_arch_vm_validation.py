@@ -108,7 +108,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             (home / "support" / "analyzeHeadless").write_text("mock")
             (home / "Ghidra").mkdir()
             (home / "Ghidra" / "application.properties").write_text(
-                "application.name=Ghidra\\napplication.version=12.2\\n",
+                "application.name=Ghidra\napplication.version=12.2\n",
                 encoding="utf-8")
             incomplete = {"evidence": {"total_discovered": 2},
                           "deep_preview": {"functions": [{"decompile_status": "ok"}]},
