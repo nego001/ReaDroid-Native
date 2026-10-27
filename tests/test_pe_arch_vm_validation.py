@@ -53,7 +53,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             with mock.patch.object(validation, "run_smoke") as quotas:
                 with mock.patch.object(validation, "validate_real_ghidra") as ghidra:
                     with self.assertRaises(gate.ArchVmUnavailable):
-                        validation.run_acceptance(Path("/sample/ghidra"))
+                        validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         quotas.assert_not_called()
         ghidra.assert_not_called()
 
@@ -66,7 +66,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                     with mock.patch.object(validation, "validate_real_ghidra") as ghidra:
                         with self.assertRaisesRegex(
                                 validation.ArchVmValidationError, "not approved"):
-                            validation.run_acceptance(Path("/sample/ghidra"))
+                            validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         ghidra.assert_not_called()
 
     def test_acceptance_requires_ghidra_and_two_real_smokes(self):
@@ -81,7 +81,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                        return_value=descendant):
                     with mock.patch.object(validation, "validate_real_ghidra",
                                            return_value={"status": "PASS_REAL_ARCH_VM_GHIDRA"}):
-                        result = validation.run_acceptance(Path("/sample/ghidra"))
+                        result = validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
         self.assertFalse(result["windows_binary_executed"])
 
@@ -158,16 +158,20 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                 self.assertTrue(opts["deep_preview"])
                 return incomplete
 
-            with mock.patch.object(validation, "java25_preflight"):
-                with mock.patch.object(validation.subprocess, "run",
+            with mock.patch.object(validation, "verify_pinned_ghidra_tree",
+                                   return_value={"verified": True}):
+                with mock.patch.object(validation, "java25_preflight"):
+                    with mock.patch.object(validation.subprocess, "run",
                                        return_value=mock.Mock(returncode=0)):
-                    with mock.patch.object(validation, "native_bwrap_probe",
-                                           return_value={"status": "PASS_NATIVE_ARCH_BWRAP_PROBE"}):
-                        with mock.patch.object(validation, "inspect_functions",
-                                               side_effect=fake_inspect):
-                            with self.assertRaisesRegex(
-                                    validation.ArchVmValidationError, "incomplete"):
-                                validation.validate_real_ghidra(home, timeout_seconds=420)
+                        with mock.patch.object(validation, "native_bwrap_probe",
+                                               return_value={"status": "PASS_NATIVE_ARCH_BWRAP_PROBE"}):
+                            with mock.patch.object(validation, "inspect_functions",
+                                                   side_effect=fake_inspect):
+                                with self.assertRaisesRegex(
+                                        validation.ArchVmValidationError, "incomplete"):
+                                    validation.validate_real_ghidra(
+                                        home, Path("/fake/release.zip"),
+                                        timeout_seconds=420)
 
 
 if __name__ == "__main__":
