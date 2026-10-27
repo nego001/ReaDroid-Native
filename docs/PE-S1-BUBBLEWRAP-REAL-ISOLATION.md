@@ -471,3 +471,46 @@ a terminação de cada processo.
 como homologação Arch VM real, e a combinação
 `--require-cgroup-limits --require-seccomp` no runner de
 produção continua recusada. Sem mudanças na `main`, APK ou OTA.
+
+## PE-S1.10 | Ghidra real com cgroup e seccomp no MESMO escopo Arch VM
+
+A PE-S1.9 validou o transporte interno do filtro e os controles de
+cgroup separadamente. Agora `tools/pe_arch_scoped_ghidra_smoke.py`
+foi adicionado **à sequência obrigatória** de
+`tools/pe_arch_vm_validation.py` para validar também Ghidra 12.2
+executando realmente com ambos os controles no mesmo escopo nativo.
+
+Na VM Arch descartável, depois de verificar a integridade SHA-256 do
+Ghidra e compilar um PE sintético pertencente ao repositório:
+
+1. O verificador cria um workspace `0700` e prova cgroup isolada
+   em outro diretório privado; só o workspace é vinculado ao Bubblewrap.
+2. `systemd-run --user --scope` cria um escopo novo, com limites de
+   memória, CPU, tarefas e timeout; `pe_cgroup_guard.py` confirma os
+   valores **do kernel** e grava prova privada antes do Ghidra iniciar.
+3. Dentro desse escopo, `pe_scoped_seccomp_launcher.py` revalida os
+   cgroups, compila o filtro cBPF selado e passa seu único descritor
+   via `pass_fds` ao Bubblewrap, que inicia **Ghidra 12.2 real**
+   sobre o PE sintético. Nenhum PE Windows é executado.
+4. O diagnóstico exige exit code zero, as confirmações JSON de escopo
+   e ponte, prova cgroup privada com limites finitos e inventário
+   Ghidra validado com pelo menos uma função efetivamente decompilada.
+   A solicitação de parada do escopo **também precisa ser aceita**.
+5. Apenas com todas essas condições poderá retornar
+   `PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP`.
+   O `PASS_PE_S1_5_ARCH_VM` global passou a depender igualmente
+   desse novo resultado. A prova funcional de `ptrace` negado,
+   namespaces e descendent cleanup permanece exigida à parte.
+
+Os testes `tests/test_pe_arch_scoped_ghidra_smoke.py` simulam
+somente a infraestrutura indisponível na CI, e rejeitam ausência de
+escopo, falta de relatório, nenhuma decompilação, processo com erro
+e falha ao solicitar parada do cgroup. Esses testes são **contratos**
+e não constituem homologação real do kernel Arch.
+
+**Status:** implementação e roteiro disponíveis na PR Draft.
+Até o roteiro ser executado em uma VM Arch independente com
+evidência verificável, a CLI principal mantém
+`--require-seccomp --require-cgroup-limits` BLOQUEADO. O teste de
+aceitação habilita a combinação apenas dentro do harness de VM
+restrito a um PE sintético. Sem alterações à main, APK ou OTA.
