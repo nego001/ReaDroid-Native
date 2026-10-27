@@ -36,6 +36,13 @@ class RealBridgeGhidraContracts(unittest.TestCase):
             self.assertTrue(kw["timeout_seconds"] >= 90)
             self.assertIn("-postScript", argv)
             self.assertIn("NegrescoDeepPreview.java", argv)
+            # The mocked launcher must model its real cgroup verification;
+            # only the Ubuntu end-to-end smoke executes the real launcher.
+            ci.bridge.verify_cgroup_limits(
+                ci.bridge.MEMORY_MAX_BYTES,
+                ci.bridge.TASKS_MAX,
+                ci.bridge.CPU_QUOTA_PERCENT,
+                expected_scope=ci.SCOPE_UNIT)
             if receipt:
                 print('{"scope_seccomp_guard":"passed",'
                       '"scope":"' + ci.SCOPE_UNIT + '",'
