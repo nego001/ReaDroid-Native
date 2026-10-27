@@ -22,6 +22,9 @@ from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope, stop_scope,
                                 ResourceLimitsUnavailable)
 from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
+from pe_seccomp_runtime_evidence import (baseline_from_scope_receipts,
+                                         read_ghidra_seccomp_proof,
+                                         SeccompRuntimeEvidenceError)
 
 SCRIPT_HOME = Path(__file__).resolve().parent / "ghidra_scripts"
 BRIDGE = Path(__file__).resolve().parent / "pe_scoped_seccomp_launcher.py"
@@ -47,7 +50,8 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             or any(path.is_symlink() or not path.is_file()
                    for path in (BRIDGE,
                                 SCRIPT_HOME / "NegrescoFunctionInventory.java",
-                                SCRIPT_HOME / "NegrescoDeepPreview.java"))):
+                                SCRIPT_HOME / "NegrescoDeepPreview.java",
+                                SCRIPT_HOME / "NegrescoSeccompRuntimeProof.java"))):
         raise ScopedGhidraError("Missing private workspace or trusted synthetic fixture")
 
     unit = new_scope_unit()
@@ -58,7 +62,8 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
         scripts = workspace / "scripts"
         scripts.mkdir(parents=True, mode=0o700)
         (workspace / "project").mkdir(mode=0o700)
-        for name in ("NegrescoFunctionInventory.java", "NegrescoDeepPreview.java"):
+        for name in ("NegrescoFunctionInventory.java", "NegrescoDeepPreview.java",
+                     "NegrescoSeccompRuntimeProof.java"):
             shutil.copyfile(SCRIPT_HOME / name, scripts / name)
         shutil.copyfile(synthetic_pe, workspace / "input.exe")
         proof_folder = root / "private-cgroup-proof"
@@ -70,6 +75,12 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
         # Bubblewrap receives the only explicitly passed FD -> real Ghidra.
         command = build_command(
             ghidra_home, workspace, timeout_seconds, deep_preview=True)
+        if command.count("-analysisTimeoutPerFile") != 1:
+            raise ScopedGhidraError("Missing trusted seccomp postScript insertion point")
+        before = command.index("-analysisTimeoutPerFile")
+        command[before:before] = [
+            "-postScript", "NegrescoSeccompRuntimeProof.java",
+            "/work/ghidra-seccomp-runtime.json"]
         bridge = [sys.executable, "-I", str(BRIDGE), "--scope", unit,
                   "--timeout", str(timeout_seconds), "--", *command]
         wrapped = wrap_in_cgroup_scope(
@@ -111,11 +122,15 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             raise ScopedGhidraError(
                 "Ghidra cgroup membership and seccomp bridge receipts missing")
         try:
+            baseline = baseline_from_scope_receipts(lines, unit)
+            runtime = read_ghidra_seccomp_proof(
+                workspace / "ghidra-seccomp-runtime.json", baseline)
             limits = read_scope_proof(proof_path, unit)
             inventory = _validated_function_evidence(
                 workspace / "ghidra-functions.json")
             preview = _validated_deep_evidence(workspace / "ghidra-deep.json")
-        except (InvalidResourceEvidence, HeadlessError, OSError) as exc:
+        except (InvalidResourceEvidence, SeccompRuntimeEvidenceError,
+                HeadlessError, OSError) as exc:
             raise ScopedGhidraError(
                 "Private cgroup proof or real Ghidra evidence missing") from exc
         if (limits.get("verification") != "guard_verified_before_bwrap"
@@ -129,6 +144,7 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             "scope": unit, "scope_stop_accepted": True,
             "filter_compiled_inside_scope": True,
             "quotas_verified_before_bwrap": limits,
+            "ghidra_jvm_seccomp_evidence": runtime,
             "ghidra_functions_discovered": inventory["total_discovered"],
             "decompiled_functions": sum(
                 item.get("decompile_status") == "ok"
