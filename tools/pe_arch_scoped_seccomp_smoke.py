@@ -84,8 +84,13 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
                     "Native scoped seccomp probe timed out or could not start") from exc
         finally:
             os.close(host_fd)
-            stop_scope(unit)
+            # Request termination of the *whole* transient unit. A successful
+            # process exit alone is not a valid scope cleanup receipt.
+            scope_stop_accepted = stop_scope(unit)
 
+        if not scope_stop_accepted:
+            raise ScopedSeccompSmokeError(
+                "systemd did not accept a stop request for the scoped probe")
         if proc.returncode != 0:
             raise ScopedSeccompSmokeError(
                 "Scoped seccomp/bwrap child rejected probe (exit nonzero)")
