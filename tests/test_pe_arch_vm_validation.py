@@ -125,13 +125,15 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             self.assertIn("/work/pe_sandbox_probe.py", argv)
             self.assertIn("network_namespace_separate", incomplete)
             incomplete["network_namespace_separate"] = True
+            second = root / "second-attempt"
+            second.mkdir()
             with mock.patch.object(validation, "build_command", return_value=cmd):
                 with mock.patch.object(
                         validation.subprocess, "run",
                         return_value=mock.Mock(returncode=0,
                                                stdout=json.dumps(incomplete))):
                     result = validation.native_bwrap_probe(
-                        Path("/unused-ghidra"), pe, root)
+                        Path("/unused-ghidra"), pe, second)
             self.assertEqual(result["status"], "PASS_NATIVE_ARCH_BWRAP_PROBE")
 
     def test_real_ghidra_requires_private_quota_proof(self):
