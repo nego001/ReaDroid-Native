@@ -181,6 +181,52 @@ if args.count("-postScript") == 2:
         self.assertTrue(options["start_new_session"])
         self.assertFalse(self.output.exists())
 
+    def test_seccomp_opt_in_requires_bwrap_and_refuses_unvalidated_scope_chain(self):
+        with self.assertRaisesRegex(runner.HeadlessError, "Seccomp exige Bubblewrap"):
+            self.run_synthetic(self.input, self.home, self.output, 3,
+                               require_seccomp=True)
+        with self.assertRaisesRegex(runner.HeadlessError, "ainda não homologado"):
+            runner.inspect_functions(
+                self.input, self.home, self.output, 3, sandbox_mode="bwrap",
+                require_seccomp=True, require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
+    def test_opt_in_seccomp_passes_only_filter_fd_to_bwrap_and_closes_it(self):
+        fd = os.memfd_create("negresco-synthetic-policy", flags=os.MFD_CLOEXEC)
+        original = runner.subprocess.Popen
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "compile_seccomp_bpf_fd",
+                                   return_value=fd):
+                with mock.patch.object(runner, "attach_seccomp_fd",
+                                       side_effect=lambda command, fd: command) as attach:
+                    with mock.patch.object(runner.subprocess, "Popen",
+                                           wraps=original) as popen:
+                        report = runner.inspect_functions(
+                            self.input, self.home, self.output, 3,
+                            sandbox_mode="bwrap", require_seccomp=True)
+        self.assertTrue(self.output.exists())
+        self.assertEqual(report["limitations"]["seccomp_policy"],
+                         "bwrap_narrow_cBPF_requested")
+        self.assertEqual(popen.call_args.kwargs["pass_fds"], (fd,))
+        self.assertTrue(popen.call_args.kwargs["close_fds"])
+        attach.assert_called_once()
+        with self.assertRaises(OSError):
+            os.fstat(fd)
+
+    def test_seccomp_compile_failure_does_not_launch_or_publish(self):
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "compile_seccomp_bpf_fd",
+                                   side_effect=runner.SeccompUnavailable("no libseccomp")):
+                with mock.patch.object(runner.subprocess, "Popen") as launch:
+                    with self.assertRaisesRegex(runner.HeadlessError, "seccomp obrigatório"):
+                        runner.inspect_functions(
+                            self.input, self.home, self.output, 3,
+                            sandbox_mode="bwrap", require_seccomp=True)
+        launch.assert_not_called()
+        self.assertFalse(self.output.exists())
+
     def test_strict_scope_requests_limits_and_stops_scope_on_success(self):
         unit = "negresco-pe-0123456789abcdef01234567.scope"
         with mock.patch.object(runner, "build_command",
