@@ -31,12 +31,13 @@ from pe_auto_behavior import classify, API_TO_RULE
 
 MAX_RESULT_BYTES = 128 * 1024
 MAX_DEEP_BYTES = 64 * 1024
-MAX_DEEP_FUNCTIONS = 12
+MAX_DEEP_FUNCTIONS = 16
 MAX_DEEP_CALLS = 24
 MAX_DEEP_API_REFS = 8
 MAX_DEEP_STRINGS = 8
 MAX_STRING_LEN = 96
 MAX_STRING_INSTRUCTIONS = 2048
+MAX_COMPUTED_SITES = 8
 MAX_DEEP_PSEUDOCODE = 1800
 DEEP_SCRIPT_NAME = "NegrescoDeepPreview.java"
 MAX_FUNCTIONS = 256
@@ -135,7 +136,7 @@ def _validated_deep_evidence(path: Path) -> dict:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HeadlessError("Prévia de pseudocódigo indisponível ou corrompida") from exc
-    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v3":
+    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v4":
         raise HeadlessError("Esquema de pseudocódigo inesperado")
     method = "bounded_api_references_and_call_connectivity_v2"
     records = raw.get("functions")
@@ -145,12 +146,12 @@ def _validated_deep_evidence(path: Path) -> dict:
     scan_truncated = raw.get("scan_truncated")
     if (raw.get("selection_method") != method
             or not isinstance(records, list) or len(records) > MAX_DEEP_FUNCTIONS
-            or type(scanned) is not int or not 0 <= scanned <= 384
+            or type(scanned) is not int or not 0 <= scanned <= 512
             or type(eligible) is not int or not len(records) <= eligible <= scanned
             or type(truncated) is not bool
             or truncated != (eligible > len(records))
             or type(scan_truncated) is not bool
-            or (scan_truncated and scanned != 384)
+            or (scan_truncated and scanned != 512)
             or raw.get("graph_scope") != "scanned_functions_only"
             or raw.get("provenance") != "ghidra_heuristic_not_original_source"):
         raise HeadlessError("Contagens e método de seleção inconsistentes")
@@ -179,6 +180,22 @@ def _validated_deep_evidence(path: Path) -> dict:
         strings_cut = record.get("strings_truncated")
         string_scan_cut = record.get("string_scan_truncated")
         string_instructions = record.get("instructions_scanned_for_strings")
+        computed_sites = record.get("computed_call_sites")
+        computed_count = record.get("computed_call_count")
+        computed_cut = record.get("computed_calls_truncated")
+        destinations = record.get("computed_call_destinations")
+        if (type(computed_count) is not int
+                or not 0 <= computed_count <= MAX_STRING_INSTRUCTIONS
+                or not isinstance(computed_sites, list)
+                or len(computed_sites) > MAX_COMPUTED_SITES
+                or len(computed_sites) != min(computed_count, MAX_COMPUTED_SITES)
+                or type(computed_cut) is not bool
+                or computed_cut != (computed_count > MAX_COMPUTED_SITES)
+                or destinations != "not_inferred"
+                or any(not isinstance(s, str) or not ADDRESS.fullmatch(s)
+                       for s in computed_sites)
+                or len(set(s.lower() for s in computed_sites)) != len(computed_sites)):
+            raise HeadlessError("Chamadas indiretas sem endereços confiáveis")
         if (not isinstance(string_records, list)
                 or len(string_records) > MAX_DEEP_STRINGS
                 or type(strings_cut) is not bool
@@ -186,7 +203,8 @@ def _validated_deep_evidence(path: Path) -> dict:
                 or type(string_scan_cut) is not bool
                 or type(string_instructions) is not int
                 or not 0 <= string_instructions <= MAX_STRING_INSTRUCTIONS
-                or (string_records and string_instructions == 0)):
+                or (string_records and string_instructions == 0)
+                or computed_count > string_instructions):
             raise HeadlessError("Strings de função sem limites ou proveniência")
         safe_strings = []
         seen_data = set()
@@ -262,6 +280,10 @@ def _validated_deep_evidence(path: Path) -> dict:
             "strings_truncated": strings_cut,
             "string_scan_truncated": string_scan_cut,
             "instructions_scanned_for_strings": string_instructions,
+            "computed_call_sites": computed_sites,
+            "computed_call_count": computed_count,
+            "computed_calls_truncated": computed_cut,
+            "computed_call_destinations": "not_inferred",
             "calls": calls, "calls_truncated": calls_cut,
             "decompile_status": status,
             "pseudocode": pseudocode, "pseudocode_truncated": cut,

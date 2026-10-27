@@ -18,8 +18,13 @@ __declspec(dllexport) int compare_numbers(int first, int second) {
  * Ghidra pseudocode rather than in a function name or global import.
  */
 __declspec(dllexport) int inspect_path(const char *path) {
+    /* Volatile function-pointer call: must be represented as an INDIRECT
+     * call site, with no guessed destination, by the static analyzer. */
+    int (* volatile invoke_by_pointer)(int, int) = add_numbers;
+    int computed_result = invoke_by_pointer(2, 3);
     DWORD flags = GetFileAttributesA("negresco_evidence_2026.txt");
-    return flags != INVALID_FILE_ATTRIBUTES && path != 0;
+    return flags != INVALID_FILE_ATTRIBUTES && path != 0
+        && computed_result == 5;
 }
 __declspec(dllexport) int path_check_one(void) {
     return inspect_path("example-one.txt");

@@ -154,6 +154,30 @@ class ConservativeBehaviorTests(unittest.TestCase):
         )
         self.assertEqual(result["functions_with_hypotheses"], 0)
 
+    def test_computed_call_sites_remain_unresolved_not_behavior(self):
+        data = sample("int f(void) { return 1; }")
+        data["functions"][0].update({
+            "computed_call_sites": ["0040100a"],
+            "computed_call_count": 1,
+            "computed_calls_truncated": False,
+        })
+        result = behavior.classify(data)
+        function = result["functions"][0]
+        self.assertEqual(function["status"], "unidentified")
+        self.assertEqual(function["indirect_call_context"]["sites"],
+                         ["0040100a"])
+        self.assertEqual(function["indirect_call_context"]["targets"],
+                         "not_inferred")
+
+    def test_rejects_fabricated_computed_site_locations(self):
+        for site in ("EXTERNAL:001", "/tmp/a", "0xBAD") :
+            with self.subTest(site=site):
+                data = sample()
+                data["functions"][0]["computed_call_sites"] = [site]
+                data["functions"][0]["computed_call_count"] = 1
+                with self.assertRaises(ValueError):
+                    behavior.classify(data)
+
     def test_lexer_removes_literals_comments_and_function_signature(self):
         src = (r'''void DeleteFileW(void) {
             /* DeleteFileW(old); */
@@ -198,7 +222,7 @@ class ConservativeBehaviorTests(unittest.TestCase):
         for disallowed in ("requests.post", "urllib.request", "subprocess.",
                            "os.system(", "openai.", "eval(", "exec("):
             self.assertNotIn(disallowed, src)
-        self.assertIn("MAX_FUNCTIONS = 12", src)
+        self.assertIn("MAX_FUNCTIONS = 16", src)
         self.assertIn("MAX_SNIPPET_CHARS = 1800", src)
         self.assertIn("MAX_EVIDENCE_PER_CATEGORY = 4", src)
 
@@ -211,7 +235,7 @@ class ConservativeBehaviorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             behavior.classify(data)
         data = sample()
-        data["functions"] *= 13
+        data["functions"] *= 17
         with self.assertRaises(ValueError):
             behavior.classify(data)
 

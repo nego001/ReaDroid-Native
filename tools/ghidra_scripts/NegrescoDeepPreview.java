@@ -29,11 +29,12 @@ import java.util.Set;
 import java.util.TreeSet;
 
 public class NegrescoDeepPreview extends HeadlessScript {
-    private static final int MAX_SCANNED = 384;
-    private static final int MAX_DECOMPILED = 12;
+    private static final int MAX_SCANNED = 512;
+    private static final int MAX_DECOMPILED = 16;
     private static final int MAX_CALLEES = 24;
     private static final int MAX_API_REFERENCES = 8;
     private static final int MAX_STRING_REFERENCES = 8;
+    private static final int MAX_COMPUTED_SITES = 8;
     private static final int MAX_STRING_TEXT_CHARS = 96;
     private static final int MAX_STRING_SCAN_INSTRUCTIONS = 2048;
     private static final int MAX_REFS_PER_INSTRUCTION = 16;
@@ -81,6 +82,9 @@ public class NegrescoDeepPreview extends HeadlessScript {
 
     private static final class StringResults {
         final List<StringEvidence> entries = new ArrayList<>();
+        final List<String> computedSites = new ArrayList<>();
+        int computedCallsObserved = 0;
+        boolean computedCallsTruncated = false;
         boolean truncated = false;
         boolean scanTruncated = false;
         int instructionsScanned = 0;
@@ -98,6 +102,19 @@ public class NegrescoDeepPreview extends HeadlessScript {
             monitor.checkCancelled();
             Instruction instruction = iterator.next();
             result.instructionsScanned++;
+            // A computed CALL is a genuine control-flow uncertainty. Report
+            // the instruction address ONLY, never a guessed call destination.
+            if (instruction.getFlowType().isCall() &&
+                    instruction.getFlowType().isComputed()) {
+                String computedSite = instruction.getAddress().toString();
+                if (computedSite.matches("[0-9a-fA-F]{1,16}")) {
+                    result.computedCallsObserved++;
+                    if (result.computedSites.size() < MAX_COMPUTED_SITES)
+                        result.computedSites.add(computedSite);
+                    else
+                        result.computedCallsTruncated = true;
+                }
+            }
             Reference[] references = instruction.getReferencesFrom();
             if (references.length > MAX_REFS_PER_INSTRUCTION)
                 result.scanTruncated = true;
@@ -294,7 +311,7 @@ public class NegrescoDeepPreview extends HeadlessScript {
             boolean ready = decompiler.openProgram(currentProgram);
             try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
                     new FileOutputStream(args[0]), StandardCharsets.UTF_8))) {
-                writer.write("{\"schema\":\"ghidra_deep_preview_v3\",");
+                writer.write("{\"schema\":\"ghidra_deep_preview_v4\",");
                 writer.write("\"selection_method\":");
                 writer.write(json(SELECTION_METHOD, 80));
                 writer.write(",\"functions\":[");
@@ -380,6 +397,16 @@ public class NegrescoDeepPreview extends HeadlessScript {
                     writer.write(Boolean.toString(strings.scanTruncated));
                     writer.write(",\"instructions_scanned_for_strings\":");
                     writer.write(Integer.toString(strings.instructionsScanned));
+                    writer.write(",\"computed_call_sites\":[");
+                    for (int i = 0; i < strings.computedSites.size(); i++) {
+                        if (i > 0) writer.write(",");
+                        writer.write(json(strings.computedSites.get(i), 32));
+                    }
+                    writer.write("],\"computed_call_count\":");
+                    writer.write(Integer.toString(strings.computedCallsObserved));
+                    writer.write(",\"computed_calls_truncated\":");
+                    writer.write(Boolean.toString(strings.computedCallsTruncated));
+                    writer.write(",\"computed_call_destinations\":\"not_inferred\"");
                     writer.write("}");
                 }
                 writer.write("],\"candidates_scanned\":");

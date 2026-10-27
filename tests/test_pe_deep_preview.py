@@ -18,7 +18,7 @@ spec.loader.exec_module(runner)
 
 def sample():
     return {
-        "schema": "ghidra_deep_preview_v3",
+        "schema": "ghidra_deep_preview_v4",
         "selection_method": "bounded_api_references_and_call_connectivity_v2",
         "functions": [{
             "entry_point": "00401000", "name": "add_numbers",
@@ -36,6 +36,10 @@ def sample():
             "strings_truncated": False,
             "string_scan_truncated": False,
             "instructions_scanned_for_strings": 0,
+            "computed_call_sites": [],
+            "computed_call_count": 0,
+            "computed_calls_truncated": False,
+            "computed_call_destinations": "not_inferred",
         }],
         "candidates_scanned": 1, "eligible_non_thunks": 1,
         "sample_truncated": False, "scan_truncated": False,
@@ -231,6 +235,36 @@ class DeepPreviewTests(unittest.TestCase):
         v["functions"][0]["instructions_scanned_for_strings"] = 0
         self.rejected(v)
 
+    def test_annotates_indirect_call_sites_without_target_guesses(self):
+        item = sample()
+        record = item["functions"][0]
+        record["computed_call_sites"] = ["0040100a"]
+        record["computed_call_count"] = 1
+        record["instructions_scanned_for_strings"] = 10
+        result = self.load(item)["functions"][0]
+        self.assertEqual(result["computed_call_sites"], ["0040100a"])
+        self.assertEqual(result["computed_call_destinations"], "not_inferred")
+
+    def test_rejects_fabricated_indirect_call_sites(self):
+        def good():
+            item = sample()
+            record = item["functions"][0]
+            record["computed_call_sites"] = ["0040100a"]
+            record["computed_call_count"] = 1
+            record["instructions_scanned_for_strings"] = 10
+            return item
+        for key, replacement in (
+            ("computed_call_sites", ["EXTERNAL:0"]),
+            ("computed_call_count", 0),
+            ("computed_call_count", 100),
+            ("computed_calls_truncated", True),
+            ("computed_call_destinations", "add_numbers"),
+        ):
+            with self.subTest(key=key):
+                sample_bad = good()
+                sample_bad["functions"][0][key] = replacement
+                self.rejected(sample_bad)
+
     def test_rejects_missing_or_oversized_evidence(self):
         with self.assertRaises(runner.HeadlessError):
             runner._validated_deep_evidence(self.path)
@@ -242,7 +276,7 @@ class DeepPreviewTests(unittest.TestCase):
         script = (ROOT / "tools/ghidra_scripts/NegrescoDeepPreview.java").read_text()
         source = (ROOT / "tools/pe_auto_ghidra.py").read_text()
         for expected in (
-            "MAX_SCANNED = 384", "MAX_DECOMPILED = 12",
+            "MAX_SCANNED = 512", "MAX_DECOMPILED = 16",
             "MAX_CALLEES = 24", "MAX_PSEUDOCODE_CHARS = 1800",
             "DECOMPILE_SECONDS = 10", "analysisTimeoutOccurred()",
             "getCalledFunctions(monitor)", "decompileFunction(",

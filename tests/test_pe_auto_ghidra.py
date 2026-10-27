@@ -97,7 +97,7 @@ if args.count("-postScript") == 2:
         sys.exit(18)
     deep_path = pathlib.Path(args[deep_index + 2])
     deep = {
-        "schema": "ghidra_deep_preview_v3",
+        "schema": "ghidra_deep_preview_v4",
         "selection_method": "bounded_api_references_and_call_connectivity_v2",
         "functions": [{
             "entry_point": "00401000",
@@ -119,6 +119,10 @@ if args.count("-postScript") == 2:
             "strings_truncated": False,
             "string_scan_truncated": False,
             "instructions_scanned_for_strings": 0,
+            "computed_call_sites": [],
+            "computed_call_count": 0,
+            "computed_calls_truncated": False,
+            "computed_call_destinations": "not_inferred",
         }],
         "candidates_scanned": 1, "eligible_non_thunks": 1,
         "scan_truncated": False, "sample_truncated": False,
