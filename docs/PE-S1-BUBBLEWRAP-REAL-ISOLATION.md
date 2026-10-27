@@ -514,3 +514,35 @@ evidência verificável, a CLI principal mantém
 `--require-seccomp --require-cgroup-limits` BLOQUEADO. O teste de
 aceitação habilita a combinação apenas dentro do harness de VM
 restrito a um PE sintético. Sem alterações à main, APK ou OTA.
+
+## PE-S1.10.1 | Ghidra real através da ponte seccomp (CI Ubuntu)
+
+A CI passou a executar `tests/pe_scoped_ghidra_bridge_real_ci.py`,
+um teste adicional que usa o **Ghidra 12.2 oficial real** (ZIP original
+e árvore verificados contra o SHA-256 fixado), Bubblewrap real e
+`pe_scoped_seccomp_launcher.launch_scoped_bwrap` real, incluindo a
+compilação e passagem do filtro libseccomp cBPF selado.
+O Ghidra lê exclusivamente um PE sintético produzido por
+`tests/fixtures/pe_headless_smoke.c`. A evidência real exige
+`ghidra-functions.json` com inventário válido e
+`ghidra-deep.json` com pelo menos uma função decompilada, validados
+pelas rotinas de leitura do próprio NegrescoDroid.
+
+Nesse teste **somente `bridge.verify_cgroup_limits` é mockado**
+porque o runner Ubuntu não possui um escopo systemd de usuário
+com quotas nativas Arch. A resposta inclui, obrigatoriamente,
+`cgroup_verification=MOCK_ONLY_NOT_HOMOLOGATED` e
+`native_arch_vm_executed=false`; nunca emite o token reservado
+`PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP`.
+Os testes negativos rejeitam pacote Ghidra não verificado, erro
+do Bubblewrap, falta do recibo da ponte, inventário vazio e
+ausência de decompilação.
+
+Isso demonstra compatibilidade da integração real
+**lançador → filtro seccomp → Bubblewrap → Ghidra → decompilação**,
+mas **NÃO demonstra quotas reais no kernel Arch**. A aceitação
+final continua condicionada ao roteiro `pe_arch_vm_validation.py`
+executado em VM Arch Linux descartável com systemd/cgroups reais.
+Até isso acontecer, a combinação de seccomp+cgroup no analisador
+principal segue deliberadamente recusada. Sem merge na main,
+publicação APK/OTA ou execução de amostras desconhecidas no host.
