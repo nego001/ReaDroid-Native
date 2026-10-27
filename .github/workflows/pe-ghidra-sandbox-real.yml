@@ -1,0 +1,140 @@
+name: PE Sandbox | Real Bubblewrap and Ghidra
+
+on:
+  push:
+    branches:
+      - feature/pe-bubblewrap-real-smoke
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pe-bwrap-smoke
+  cancel-in-progress: true
+
+jobs:
+  sandbox-proof:
+    name: Probe real namespace and run Ghidra 12.2
+    runs-on: ubuntu-22.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Bubblewrap and Windows cross-compiler
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap gcc-mingw-w64-x86-64
+          bwrap --version
+          java -version
+          for key in kernel.unprivileged_userns_clone kernel.apparmor_restrict_unprivileged_userns; do
+            sysctl "$key" || true
+          done
+      - name: Download Ghidra 12.2 from official GitHub release with pinned SHA256
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/ghidra_12.2.zip"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/ghidra_12.2_PUBLIC_20261016.zip \
+            --output "$archive"
+          echo "2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67  $archive" \
+            | sha256sum --check --status
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          test -x "$RUNNER_TEMP/ghidra_12.2_PUBLIC/support/analyzeHeadless"
+      - name: Compile harmless nonexecuting PE fixture
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -O0 -g0 \
+            tests/fixtures/pe_headless_smoke.c -o "$RUNNER_TEMP/pe_sandbox_fixture.exe"
+          python3 tools/pe_auto_inventory.py "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            > "$RUNNER_TEMP/pe_inventory_sandbox.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["format"]=="PE32+" and r["architecture"]=="x86_64"' \
+            "$RUNNER_TEMP/pe_inventory_sandbox.json"
+      - name: Verify real Bubblewrap mounts, host home isolation and network namespace
+        run: |
+          set -euo pipefail
+          marker="$HOME/.negresco-bwrap-host-canary-$GITHUB_RUN_ID"
+          printf 'synthetic-marker' > "$marker"
+          chmod 600 "$marker"
+          trap 'rm -f "$marker"' EXIT
+          python3 - "$RUNNER_TEMP/ghidra_12.2_PUBLIC" "$RUNNER_TEMP/pe_sandbox_fixture.exe" "$marker" <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+
+          sys.path.insert(0, str(Path("tools").resolve()))
+          from pe_ghidra_sandbox import build_command
+
+          ghidra, fixture, canary = map(Path, sys.argv[1:])
+          with tempfile.TemporaryDirectory(prefix="negresco-bwrap-probe-") as root:
+              workspace = Path(root)
+              (workspace / "scripts").mkdir(mode=0o700)
+              shutil.copyfile("tools/ghidra_scripts/NegrescoFunctionInventory.java",
+                              workspace / "scripts/NegrescoFunctionInventory.java")
+              shutil.copyfile("tools/ghidra_scripts/NegrescoDeepPreview.java",
+                              workspace / "scripts/NegrescoDeepPreview.java")
+              shutil.copyfile(fixture, workspace / "input.exe")
+              (workspace / "project").mkdir(mode=0o700)
+              shutil.copyfile("tests/pe_sandbox_probe.py",
+                              workspace / "pe_sandbox_probe.py")
+              argv = build_command(ghidra, workspace, 120, deep_preview=True)
+              boundary = argv.index("--")
+              argv = argv[:boundary+1] + [
+                  "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+                  os.readlink("/proc/self/ns/net"), str(canary)]
+              result = subprocess.run(argv, capture_output=True,
+                                      text=True, timeout=35, check=False)
+              print((result.stdout + result.stderr)[:4000])
+              if result.returncode != 0 or '"isolation_probe": "passed"' not in result.stdout:
+                  raise RuntimeError(
+                      "REAL BUBBLEWRAP PROBE FAILED CLOSED: no policy relaxation")
+          PY
+      - name: Run real Ghidra in REQUIRED Bubblewrap profile
+        run: |
+          set -euo pipefail
+          python3 tools/pe_auto_ghidra.py "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --output "$RUNNER_TEMP/real-bwrap-ghidra.json" \
+            --deep-preview --timeout-seconds 420
+      - name: Check actual sandboxed Ghidra evidence
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          sample = root / "pe_sandbox_fixture.exe"
+          report = json.loads((root / "real-bwrap-ghidra.json").read_text())
+          assert report["source_sha256"] == hashlib.sha256(sample.read_bytes()).hexdigest()
+          assert report["architecture"] == "x86_64"
+          assert report["limitations"]["os_sandbox"] == "bubblewrap_profile"
+          assert report["limitations"]["executable_launched"] is False
+          assert report["evidence"]["total_discovered"] >= 1
+          functions = report["deep_preview"]["functions"]
+          assert any(f["decompile_status"] == "ok" for f in functions)
+          assert any(s["text"] == "negresco_evidence_2026.txt"
+                     for f in functions if f["name"] == "inspect_path"
+                     for s in f["strings"])
+          assert any(f["name"] == "inspect_path" and f["computed_call_count"] >= 1
+                     for f in functions)
+          assert any(h["category"] == "filesystem_inspection"
+                     for f in report["behavior_preview"]["functions"]
+                     for h in f["hypotheses"])
+          print("Ghidra 12.2 inside Bubblewrap: PASS",
+                "functions=", report["evidence"]["total_discovered"],
+                "decompiled=", len(functions),
+                "network namespace / home / readonly JDK tested separately")
+          PY
+      - name: Retain sandbox profile and mocked Ghidra regression suites
+        run: |
+          python3 -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
