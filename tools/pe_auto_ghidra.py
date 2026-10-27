@@ -435,8 +435,9 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         try:
             process = subprocess.Popen(
                 command, cwd=working, env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                close_fds=True, start_new_session=True,
             )
         except OSError as exc:
             raise HeadlessError("Não foi possível iniciar o Ghidra instalado") from exc
