@@ -2,7 +2,7 @@
 
 No host home, project repositories, or network namespaces are exposed to the
 analyzer. Only read-only system runtime, a read-only verified Ghidra tree,
-and one private, writable work directory are mounted.
+one pinned read-only JDK, and one private, writable work directory are mounted.
 
 This is not a hardware VM or an absolute security guarantee. Requires
 unprivileged user namespaces supported by the Linux host. Fail closed when
@@ -76,14 +76,30 @@ def build_command(ghidra_home: Path, working: Path,
              "--setenv", "HOME", "/work",
              "--setenv", "XDG_CACHE_HOME", "/work",
              "--setenv", "TMPDIR", "/tmp",
-             "--setenv", "PATH", "/usr/bin:/bin",
              "--setenv", "LANG", "C.UTF-8"]
-    # JDK installed through pacman usually lives under /usr/lib/jvm.
+
+    # Arch typically installs the JDK under /usr/lib/jvm, whereas GitHub
+    # setup-java installs it beneath /opt/hostedtoolcache. Only the single
+    # configured, verified JDK directory may cross the isolation boundary.
+    # This never exposes the runner's home or all of /opt.
     java_home = os.environ.get("JAVA_HOME", "")
+    path_inside = "/usr/bin:/bin"
     if java_home:
-        resolved = Path(java_home).resolve(strict=False)
-        if resolved == Path("/usr") or Path("/usr") in resolved.parents:
-            argv += ["--setenv", "JAVA_HOME", str(resolved)]
+        java_root = Path(java_home).resolve(strict=True)
+        java_exe = java_root / "bin" / "java"
+        if (not java_root.is_dir() or not java_exe.is_file()
+                or not os.access(java_exe, os.X_OK)):
+            raise SandboxUnavailable("JAVA_HOME não aponta para um JDK executável")
+        if java_root == Path("/usr") or Path("/usr") in java_root.parents:
+            inside_java = str(java_root)
+        else:
+            if java_root == root or java_root in root.parents or root in java_root.parents:
+                raise SandboxUnavailable("JAVA_HOME e GHIDRA_HOME não podem se sobrepor")
+            inside_java = "/opt/negresco-jdk"
+            argv += ["--ro-bind", str(java_root), inside_java]
+        argv += ["--setenv", "JAVA_HOME", inside_java]
+        path_inside = inside_java + "/bin:" + path_inside
+    argv += ["--setenv", "PATH", path_inside]
     argv += [
         "--chdir", "/work", "--",
         "/opt/negresco-ghidra/support/analyzeHeadless",
