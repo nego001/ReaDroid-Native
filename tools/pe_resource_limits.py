@@ -98,5 +98,5 @@ def wrap_in_cgroup_scope(command: list[str], *, timeout_seconds: int = 600,
         "--property=CPUQuota=" + str(CPU_QUOTA_PERCENT) + "%",
         "--", sys.executable, "-I", str(verifier.resolve(strict=True)),
         str(MEMORY_MAX_BYTES), str(TASKS_MAX), str(CPU_QUOTA_PERCENT),
-        "--", *command,
+        unit_name, "--", *command,
     ]
