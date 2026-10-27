@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 
-from pe_arch_vm_gate import verify_arch_vm
+from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 from pe_auto_ghidra import (_validated_function_evidence,
                             _validated_deep_evidence, HeadlessError)
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
