@@ -202,14 +202,23 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                     return_value={
                                         "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
                                         "filter_compiled_after_guard": True,
-                                        "cgroup_verification": {"verification": "guard_verified_before_bwrap"}
+                                        "cgroup_verification": {"verification": "guard_verified_before_bwrap"},
+                                        "scope_cleanup_evidence": {
+                                            "verified": True, "scope_quiescent": True,
+                                            "cgroup_unpopulated": True}
                                     }):
                                 with (mock.patch.object(validation, "inspect_functions",
                                                        side_effect=fake_inspect),
                                       mock.patch.object(validation,
                                           "run_native_scoped_ghidra", return_value={
                                               "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
-                                              "scope_stop_accepted": True,
+                                              "scope_cleanup_verified": True,
+                                              "scope_cleanup_evidence": {
+                                                  "verified": True,
+                                                  "scope_quiescent": True,
+                                                  "cgroup_unpopulated": True,
+                                                  "active_state": "inactive",
+                                                  "sub_state": "dead"},
                                               "filter_compiled_inside_scope": True,
                                               "quotas_verified_before_bwrap": {
                                                   "verification": "guard_verified_before_bwrap"},
