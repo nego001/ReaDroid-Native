@@ -64,10 +64,10 @@ class CgroupScopeTests(unittest.TestCase):
         ])
         self.assertEqual(argv[11:13], [sys.executable, "-I"])
         self.assertTrue(argv[13].endswith("/tools/pe_cgroup_guard.py"))
-        self.assertEqual(argv[14:18],
+        self.assertEqual(argv[14:19],
                          [str(MEMORY_MAX_BYTES), str(TASKS_MAX),
-                          str(CPU_QUOTA_PERCENT), "--"])
-        self.assertEqual(argv[18:], self.command)
+                          str(CPU_QUOTA_PERCENT), self.unit_name, "--"])
+        self.assertEqual(argv[19:], self.command)
         self.assertNotIn("--system", argv)
         self.assertNotIn("--shell", argv)
 
