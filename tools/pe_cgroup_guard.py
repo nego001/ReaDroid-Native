@@ -64,7 +64,7 @@ def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 8 or argv[5] != "--" or not argv[6]:
+    if len(argv) < 7 or argv[5] != "--" or not argv[6]:
         print("cgroup verifier: invalid arguments", file=sys.stderr)
         return 2
     try:
