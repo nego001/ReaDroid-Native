@@ -22,6 +22,7 @@ from pe_arch_cgroup_smoke import run_smoke
 from pe_arch_descendant_smoke import run_native_descendant_smoke
 from pe_auto_ghidra import inspect_functions, HeadlessError
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
+from pe_ghidra_integrity import verify_pinned_ghidra_tree, GhidraIntegrityError
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
 PROBE = Path(__file__).resolve().parents[1] / "tests/pe_sandbox_probe.py"
@@ -117,10 +118,12 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
             **{field: True for field in fields}}
 
 
-def validate_real_ghidra(ghidra_home: Path, *, timeout_seconds: int = 420) -> dict:
+def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
+                         timeout_seconds: int = 420) -> dict:
     if (not ghidra_home.is_absolute() or ghidra_home.is_symlink()
             or not (ghidra_home / "support/analyzeHeadless").is_file()):
         raise ArchVmValidationError("Trusted absolute Ghidra directory required")
+    integrity = verify_pinned_ghidra_tree(ghidra_home, release_zip)
     validate_ghidra_122_install(ghidra_home)
     if not FIXTURE.is_file() or FIXTURE.is_symlink():
         raise ArchVmValidationError("Synthetic PE fixture source is absent")
@@ -162,10 +165,12 @@ def validate_real_ghidra(ghidra_home: Path, *, timeout_seconds: int = 420) -> di
                 "cpu_quota": proof["cpu_quota"],
                 "cpu_period": proof["cpu_period"],
                 "pe_executed": False, "sandbox": "bubblewrap",
+                "ghidra_integrity": integrity,
                 "arch_isolation_probe": isolation}
 
 
-def run_acceptance(ghidra_home: Path, *, timeout_seconds: int = 420) -> dict:
+def run_acceptance(ghidra_home: Path, release_zip: Path, *,
+                   timeout_seconds: int = 420) -> dict:
     environment = verify_arch_vm()
     quotas = run_smoke()
     descendants = run_native_descendant_smoke()
@@ -173,7 +178,8 @@ def run_acceptance(ghidra_home: Path, *, timeout_seconds: int = 420) -> dict:
             or descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
             or descendants.get("detached_sigterm_ignoring_child_terminated") is not True):
         raise ArchVmValidationError("Native cgroup and descendant checks not approved")
-    ghidra = validate_real_ghidra(ghidra_home, timeout_seconds=timeout_seconds)
+    ghidra = validate_real_ghidra(ghidra_home, release_zip,
+                                 timeout_seconds=timeout_seconds)
     return {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
             "cgroup": {k: quotas[k] for k in
                        ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
@@ -185,14 +191,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Strict PE-S1.5 Arch VM acceptance, synthetic executable only")
     parser.add_argument("--ghidra-home", required=True, type=Path)
+    parser.add_argument("--ghidra-archive", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=420)
     args = parser.parse_args()
     try:
-        proof = run_acceptance(args.ghidra_home,
+        proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
         print(json.dumps(proof, sort_keys=True))
         return 0
-    except (ArchVmUnavailable, ArchVmValidationError, HeadlessError,
+    except (ArchVmUnavailable, ArchVmValidationError, GhidraIntegrityError,
+            HeadlessError,
             RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "REJECTED_NOT_HOMOLOGATED",
                           "reason": str(exc)}, sort_keys=True), file=sys.stderr)
