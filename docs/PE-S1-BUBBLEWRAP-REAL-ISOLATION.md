@@ -437,3 +437,37 @@ python3 tools/pe_arch_vm_validation.py \
 Instalar `libseccomp` da distribuição Arch antes da validação. A VM
 deve ser descartável, sem pastas pessoais do host montadas e com
 sistema, JDK e Bubblewrap verificados.
+
+### PE-S1.9.1 | Ponte real testável sem fingir que Ubuntu é Arch
+
+A CI Ubuntu executa `tests/pe_scoped_seccomp_bridge_real_ci.py`
+como uma verificação **funcional da ponte**, distinta dos testes
+simulados do código. Ela chama o próprio
+`pe_scoped_seccomp_launcher.launch_scoped_bwrap`, cria um filtro
+libseccomp cBPF real selado, passa seu FD ao Bubblewrap real e
+executa dentro da sandbox o probe de rede/filesystem, descritores
+do host, incremento de `Seccomp_filters` e `ptrace` recusado.
+O pipeline só aceita os campos do probe e
+`PASS_REAL_BRIDGE_WITH_MOCKED_CGROUP` com
+`cgroup_enforcement_real=false`.
+
+**Exatamente um controle é simulado:** a função
+`verify_cgroup_limits` é substituída por mock nesse teste Ubuntu,
+porque o runner não possui a sessão de escopo systemd de usuário
+de uma VM Arch. Portanto, o teste comprova a criação do BPF
+dentro do lançador e a transferência do FD, **não comprova
+limites reais de cgroup ou pertencimento a uma unidade**.
+Separadamente, o CI também exige que o kernel real recuse um
+processo fora do escopo antes de compilar qualquer filtro.
+
+O diagnóstico nativo `pe_arch_scoped_seccomp_smoke.py` agora exige
+que a solicitação `systemctl --user stop` do escopo seja aceita.
+Uma recusa da parada invalida toda a prova conjunta, mesmo que o
+Bubblewrap termine com código zero. O teste original de descendentes
+continua necessário, já que aceitar a parada não equivale a provar
+a terminação de cada processo.
+
+**Bloqueios mantidos:** nenhum resultado deste CI deve ser rotulado
+como homologação Arch VM real, e a combinação
+`--require-cgroup-limits --require-seccomp` no runner de
+produção continua recusada. Sem mudanças na `main`, APK ou OTA.
