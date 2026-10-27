@@ -204,8 +204,17 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                         "filter_compiled_after_guard": True,
                                         "cgroup_verification": {"verification": "guard_verified_before_bwrap"}
                                     }):
-                                with mock.patch.object(validation, "inspect_functions",
-                                                       side_effect=fake_inspect):
+                                with (mock.patch.object(validation, "inspect_functions",
+                                                       side_effect=fake_inspect),
+                                      mock.patch.object(validation,
+                                          "run_native_scoped_ghidra", return_value={
+                                              "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
+                                              "scope_stop_accepted": True,
+                                              "filter_compiled_inside_scope": True,
+                                              "quotas_verified_before_bwrap": {
+                                                  "verification": "guard_verified_before_bwrap"},
+                                              "decompiled_functions": 2,
+                                              "windows_binary_executed": False})):
                                     with self.assertRaisesRegex(
                                             validation.ArchVmValidationError, "incomplete"):
                                         validation.validate_real_ghidra(
