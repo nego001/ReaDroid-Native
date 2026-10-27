@@ -56,6 +56,10 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 return ["systemd-run-synthetic", *command]
 
             with ExitStack() as stack:
+                vm = stack.enter_context(mock.patch.object(
+                    scoped, "verify_arch_vm", return_value={
+                        "status": "ARCH_VM_PREFLIGHT_PASSED",
+                        "vm_confirmed": True, "container": False}))
                 stack.enter_context(mock.patch.object(
                     scoped, "new_scope_unit", return_value=self.UNIT))
                 stack.enter_context(mock.patch.object(
@@ -93,6 +97,7 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                     with self.assertRaises(scoped.ScopedSeccompSmokeError):
                         scoped.run_scoped_seccomp_probe(
                             Path("/trusted-ghidra"), pe, root)
+                vm.assert_called_once()
                 wrap.assert_called_once()
                 process.assert_called_once()
                 self.assertTrue(process.call_args.kwargs["close_fds"])
@@ -115,6 +120,37 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
 
     def test_rejects_scope_stop_refusal_even_with_all_other_proofs(self):
         self.run_fixture(valid_seccomp=True, stop_accepted=False)
+
+    def test_direct_probe_refuses_to_run_outside_real_arch_vm(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ synthetic test")
+            with mock.patch.object(scoped, "verify_arch_vm",
+                                   side_effect=scoped.ArchVmUnavailable("not native")):
+                with mock.patch.object(scoped, "new_scope_unit") as unit:
+                    with mock.patch.object(scoped.subprocess, "run") as launch:
+                        with self.assertRaises(scoped.ArchVmUnavailable):
+                            scoped.run_scoped_seccomp_probe(
+                                Path("/trusted-ghidra"), pe, root)
+                    unit.assert_not_called()
+                    launch.assert_not_called()
+
+    def test_mocked_vm_claim_without_real_confirmation_is_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ synthetic")
+            with mock.patch.object(scoped, "verify_arch_vm",
+                                   return_value={
+                                       "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                       "vm_confirmed": False, "container": True}):
+                with mock.patch.object(scoped, "new_scope_unit") as unit:
+                    with self.assertRaisesRegex(
+                            scoped.ScopedSeccompSmokeError, "gate not attested"):
+                        scoped.run_scoped_seccomp_probe(
+                            Path("/trusted-ghidra"), pe, root)
+                    unit.assert_not_called()
 
     def test_requires_private_absolute_workspace(self):
         with tempfile.TemporaryDirectory() as temp:
