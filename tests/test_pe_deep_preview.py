@@ -215,7 +215,7 @@ class DeepPreviewTests(unittest.TestCase):
             ("reference_from", "EXTERNAL:001"),
             ("text", "hi"),
             ("text", "x" * 97),
-            ("text", "line\\nattack"),
+            ("text", "line" + chr(10) + "attack"),
         ):
             with self.subTest(key=bad_key):
                 v = valid()
