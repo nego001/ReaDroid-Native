@@ -6,6 +6,7 @@ network, privilege escalation, or fallback command is used.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import sys
@@ -16,7 +17,7 @@ class CgroupVerificationError(RuntimeError):
 
 
 def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
-                         cpu_percent: int, *,
+                         cpu_percent: int, *, expected_scope: str | None = None,
                          proc_cgroup: Path = Path("/proc/self/cgroup"),
                          mount_root: Path = Path("/sys/fs/cgroup")) -> dict:
     if any(type(x) is not int or x <= 0 for x in
@@ -30,6 +31,9 @@ def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
         parts = Path(entries[0]).parts
         if not any(part.endswith(".scope") for part in parts):
             raise CgroupVerificationError("not running in systemd scope")
+        if expected_scope is not None and (not expected_scope.endswith(".scope")
+                or "/" in expected_scope or parts[-1] != expected_scope):
+            raise CgroupVerificationError("running outside assigned scope")
         mount = mount_root.resolve(strict=True)
         group = (mount / entries[0].lstrip("/")).resolve(strict=True)
         if group == mount or mount not in group.parents:
@@ -60,16 +64,19 @@ def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 7 or argv[4] != "--" or not argv[5]:
+    if len(argv) < 8 or argv[5] != "--" or not argv[6]:
         print("cgroup verifier: invalid arguments", file=sys.stderr)
         return 2
     try:
-        verify_cgroup_limits(int(argv[1]), int(argv[2]), int(argv[3]))
+        proof = verify_cgroup_limits(int(argv[1]), int(argv[2]), int(argv[3]),
+                                     expected_scope=argv[4])
     except (CgroupVerificationError, ValueError) as exc:
         print("cgroup verifier: " + str(exc), file=sys.stderr)
         return 2
+    print(json.dumps({"cgroup_verification": "passed", **proof},
+                     sort_keys=True), flush=True)
     try:
-        os.execvpe(argv[5], argv[5:], os.environ)
+        os.execvpe(argv[6], argv[6:], os.environ)
     except OSError as exc:
         print("cgroup verifier: command unavailable: " + str(exc), file=sys.stderr)
         return 2
