@@ -85,11 +85,31 @@ class ArchVmAcceptanceTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
         self.assertFalse(result["windows_binary_executed"])
 
+    def test_rejects_unsupported_ghidra_release_even_with_launch_script(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            (home / "Ghidra").mkdir()
+            meta = home / "Ghidra/application.properties"
+            meta.write_text("application.name=Ghidra\napplication.version=12.3\n")
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "exactly 12.2"):
+                validation.validate_ghidra_122_install(home)
+            meta.write_text("application.name=Ghidra\napplication.version=12.2\n")
+            validation.validate_ghidra_122_install(home)
+            meta.write_text("application.name=Ghidra\napplication.version=12.2\napplication.version=12.2\n")
+            with self.assertRaisesRegex(validation.ArchVmValidationError,
+                                        "Duplicate"):
+                validation.validate_ghidra_122_install(home)
+
     def test_real_ghidra_requires_private_quota_proof(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp) / "ghidra"
             (home / "support").mkdir(parents=True)
             (home / "support" / "analyzeHeadless").write_text("mock")
+            (home / "Ghidra").mkdir()
+            (home / "Ghidra" / "application.properties").write_text(
+                "application.name=Ghidra\\napplication.version=12.2\\n",
+                encoding="utf-8")
             incomplete = {"evidence": {"total_discovered": 2},
                           "deep_preview": {"functions": [{"decompile_status": "ok"}]},
                           "limitations": {"os_sandbox": "bubblewrap_profile",
