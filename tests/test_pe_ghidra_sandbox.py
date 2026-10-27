@@ -52,6 +52,7 @@ class SandboxProfileTests(unittest.TestCase):
         self.assertIn("--ro-bind", command)
         self.assertIn("--bind", command)
         self.assertIn("--tmpfs", command)
+        self.assertEqual(command[command.index("GHIDRA_HEADLESS_MAXMEM") + 1], "2G")
         self.assertEqual(command[command.index("--bind") + 2], "/work")
         self.assertIn("/usr", command)
         self.assertIn("/opt/negresco-ghidra", command)
