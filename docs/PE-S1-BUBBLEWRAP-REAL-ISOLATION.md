@@ -586,3 +586,56 @@ impossível; a prova funcional de `ptrace=EPERM` em Python dentro
 do Bubblewrap continua exigida separadamente.
 A PR permanece Draft; a CLI normal continua recusando a
 combinação `--require-seccomp --require-cgroup-limits`.
+
+## PE-S1.12 | VM Arch exigida em cada entrada e recibo de auditoria local
+
+Os métodos `run_scoped_seccomp_probe()` e
+`run_native_scoped_ghidra()` passaram a chamar
+`verify_arch_vm()` **dentro da própria função**, antes de
+criar unidade systemd, compilar filtro seccomp ou iniciar Ghidra.
+Antes, ambos pressupunham que o método pai já havia feito isso.
+Uma importação direta por engano agora recusa containers, host sem
+VM, root e sessão systemd de usuário inadequada. Testes positivos
+e negativos exercitam esse contrato em Ubuntu e Arch userspace
+**sem executar testes destrutivos de escopo no CI**.
+
+O comando original de aceitação nativa continua suportado. Para
+registrar os resultados numa VM Arch descartável com login de
+usuário comum e diretório privado já criado:
+
+```bash
+mkdir -m 700 -p "$HOME/negresco-arch-proof"
+python3 tools/pe_arch_vm_validation.py \
+  --ghidra-home /caminho/ghidra_12.2_PUBLIC \
+  --ghidra-archive /caminho/ghidra_12.2_PUBLIC_20261016.zip \
+  --timeout-seconds 420 \
+  --evidence-output "$HOME/negresco-arch-proof/acceptance.json"
+```
+
+O destino precisa ser **absoluto, novo e dentro de um diretório
+pertencente ao usuário e inacessível a grupo/outros (0700)**.
+O arquivo é criado com modo `0600`, com `O_EXCL` e
+`O_NOFOLLOW`, sem shell, sem privilégios e sem sobrescrever
+resultados anteriores. Se já existir, a operação falha em vez
+de modificar a prova.
+
+Somente uma aceitação real com `PASS_PE_S1_5_ARCH_VM`,
+`ARCH_VM_PREFLIGHT_PASSED`, encerramento de descendentes,
+Ghidra verificado, quotas privadas válidas, escopo terminado,
+decompilação presente e seccomp comprovado **dentro da JVM**
+pode gerar o recibo. O JSON armazena o relatório, SHA-256 canônico
+desse relatório e hashes/tamanhos do código de validação, ponte,
+exportadores Ghidra e fixture sintética. Isso permite detectar
+corrupção acidental e vincular o relato aos arquivos analisados.
+
+**Limitação importante:** o recibo é um autorrelato LOCAL
+(`LOCAL_SELF_REPORT_NOT_SIGNED`), não um atestado assinado ou
+verificação independente de hipervisor/kernel. Hashes podem ser
+recalculados ou forjados por alguém que controle a VM.
+Guardar a prova e os logs originais fora da VM é uma etapa manual,
+antes de descartar a VM; nenhuma transferência/upload acontece
+automaticamente. Não acrescenta autorização para executar
+amostras hostis e não ativa `--require-seccomp --require-cgroup-limits`
+na aplicação principal.
+
+A PR permanece Draft até homologação nativa independente.
