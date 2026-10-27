@@ -295,7 +295,7 @@ class DeepPreviewTests(unittest.TestCase):
         for field, bad in (
             ("site", "0040101b"),
             ("entry_point", "EXTERNAL:0001"),
-            ("name", "x\\nmalicious"),
+            ("name", "x" + chr(10) + "malicious"),
             ("basis", "guessed_by_llm"),
         ):
             with self.subTest(field=field):
