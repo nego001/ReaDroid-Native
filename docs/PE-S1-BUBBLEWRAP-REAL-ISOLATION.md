@@ -546,3 +546,43 @@ executado em VM Arch Linux descartável com systemd/cgroups reais.
 Até isso acontecer, a combinação de seccomp+cgroup no analisador
 principal segue deliberadamente recusada. Sem merge na main,
 publicação APK/OTA ou execução de amostras desconhecidas no host.
+
+## PE-S1.11 | Medição seccomp NA JVM real do Ghidra
+
+O teste anterior provava que um probe Python isolado recebia
+`seccomp`, e que o Ghidra decompilava dentro da ponte. Agora há uma
+terceira medição feita pelo **próprio processo Java do Ghidra**.
+
+- O lançador `pe_scoped_seccomp_launcher.py` lê, após a validação
+  de cgroups e **antes** de compilar/anexar o BPF, a contagem
+  `Seccomp_filters` do kernel em `/proc/self/status`. O recibo
+  inclui `seccomp_filters_before_bwrap`, ligado ao escopo aleatório.
+- O postScript confiável
+  `NegrescoSeccompRuntimeProof.java`, rodando **dentro da JVM
+  Ghidra headless**, lê o próprio `/proc/self/status` e recusa
+  `Seccomp != 2` ou nenhum filtro. Ele só grava
+  `ghidra-seccomp-runtime.json` em `/work` se houver programa
+  carregado e a análise não tiver expirado.
+- `pe_seccomp_runtime_evidence.py` lê o arquivo por FD
+  `O_NOFOLLOW`, com limites de tamanho, proprietário, estrutura,
+  tipos exatos, sem chaves duplicadas; exige **número de filtros
+  na JVM estritamente maior que o baseline do lançador**, evitando
+  confundir filtros herdados do host com o novo filtro.
+- O teste Ubuntu `pe_scoped_ghidra_bridge_real_ci.py` exige essa
+  prova além do inventário e pseudocódigo reais, mas continua
+  declarando cgroups como `MOCK_ONLY_NOT_HOMOLOGATED`.
+  `pe_arch_scoped_ghidra_smoke.py` exige a mesma prova, junto com
+  quotas efetivas do kernel Arch, assim que a VM independente
+  executar o roteiro.
+- Testes rejeitam caminhos symlink, provas com permissões de
+  escrita inseguras, dados alterados, contagem sem aumento,
+  declaração de processo diferente da JVM, campos repetidos
+  e modo seccomp incorreto.
+
+Isso confirma o **estado registrado pelo kernel da JVM testada**.
+Não equivale a provar ausência de todas as possibilidades de
+escape do kernel ou que cada syscall de uma denylist seja
+impossível; a prova funcional de `ptrace=EPERM` em Python dentro
+do Bubblewrap continua exigida separadamente.
+A PR permanece Draft; a CLI normal continua recusando a
+combinação `--require-seccomp --require-cgroup-limits`.
