@@ -235,7 +235,7 @@ class ConservativeBehaviorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             behavior.classify(data)
         data = sample()
-        data["functions"] *= 13
+        data["functions"] *= 17
         with self.assertRaises(ValueError):
             behavior.classify(data)
 
