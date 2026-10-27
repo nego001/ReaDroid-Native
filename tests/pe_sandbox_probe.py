@@ -14,8 +14,8 @@ def require(statement: bool, message: str) -> None:
         raise RuntimeError("sandbox probe failed: " + message)
 
 def main(argv: list[str]) -> int:
-    require(len(argv) == 3, "host net namespace and canary path are required")
-    parent_net_ns, host_canary = argv[1:]
+    require(len(argv) in (3, 5), "host net namespace, canary and optional fd identity required")
+    parent_net_ns, host_canary = argv[1:3]
     require(parent_net_ns.startswith("net:[") and parent_net_ns.endswith("]"),
             "invalid host namespace marker")
     sandbox_ns = os.readlink("/proc/self/ns/net")
@@ -23,6 +23,22 @@ def main(argv: list[str]) -> int:
             "process is sharing host network namespace")
     require(not Path(host_canary).exists(),
             "host-private marker unexpectedly visible")
+    inherited_host_fd_hidden = None
+    if len(argv) == 5:
+        require(all(part.isdecimal() for part in argv[3:5]),
+                "invalid host fd inode identity")
+        host_dev, host_inode = (int(arg) for arg in argv[3:5])
+        require(host_dev > 0 and host_inode > 0, "invalid host fd stat")
+        for entry in Path("/proc/self/fd").iterdir():
+            if not entry.name.isdecimal():
+                continue
+            try:
+                candidate = os.stat(entry)
+            except OSError:
+                continue
+            require((candidate.st_dev, candidate.st_ino) != (host_dev, host_inode),
+                    "inherited descriptor leaked host-private canary")
+        inherited_host_fd_hidden = True
     require(not Path("/etc/passwd").exists(),
             "host account database unexpectedly visible")
     require(not any(Path("/home").iterdir()),
@@ -61,6 +77,7 @@ def main(argv: list[str]) -> int:
         "host_etc_hidden": True,
         "usr_runtime_read_only": True,
         "private_work_writable": True,
+        "inherited_host_fd_hidden": inherited_host_fd_hidden,
     }, sort_keys=True))
     return 0
 
