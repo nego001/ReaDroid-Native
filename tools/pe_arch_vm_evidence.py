@@ -17,7 +17,15 @@ import stat
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
+    "tools/pe_arch_vm_evidence.py",
     "tools/pe_arch_vm_gate.py",
+    "tools/pe_arch_cgroup_smoke.py",
+    "tools/pe_arch_descendant_smoke.py",
+    "tools/pe_auto_ghidra.py",
+    "tools/pe_auto_inventory.py",
+    "tools/pe_auto_symbols.py",
+    "tools/pe_auto_behavior.py",
+    "tools/pe_ghidra_integrity.py",
     "tools/pe_arch_vm_validation.py",
     "tools/pe_arch_scoped_ghidra_smoke.py",
     "tools/pe_arch_scoped_seccomp_smoke.py",
@@ -32,6 +40,7 @@ SOURCE_FILES = (
     "tools/ghidra_scripts/NegrescoDeepPreview.java",
     "tools/ghidra_scripts/NegrescoSeccompRuntimeProof.java",
     "tests/fixtures/pe_headless_smoke.c",
+    "tests/pe_sandbox_probe.py",
 )
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_REPORT_BYTES = 512 * 1024
