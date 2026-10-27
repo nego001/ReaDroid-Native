@@ -27,6 +27,8 @@ from pe_arch_scoped_seccomp_smoke import (run_scoped_seccomp_probe,
                                           ScopedSeccompSmokeError)
 from pe_arch_scoped_ghidra_smoke import (run_native_scoped_ghidra,
                                          ScopedGhidraError)
+from pe_arch_vm_evidence import (write_receipt_no_overwrite,
+                                 AcceptanceReceiptError)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
 PROBE = Path(__file__).resolve().parents[1] / "tests/pe_sandbox_probe.py"
@@ -228,15 +230,22 @@ def main() -> int:
     parser.add_argument("--ghidra-home", required=True, type=Path)
     parser.add_argument("--ghidra-archive", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=420)
+    parser.add_argument("--evidence-output", type=Path,
+                        help="Optional new JSON receipt file inside an owner-only 0700 directory; never overwrites")
     args = parser.parse_args()
     try:
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
+        if args.evidence_output is not None:
+            receipt = write_receipt_no_overwrite(proof, args.evidence_output)
+            # Printed acknowledgement is separate from the hashed source
+            # report inside the receipt. A digest is NOT a digital signature.
+            proof = {**proof, "local_receipt": receipt}
         print(json.dumps(proof, sort_keys=True))
         return 0
     except (ArchVmUnavailable, ArchVmValidationError, GhidraIntegrityError,
             ScopedSeccompSmokeError, ScopedGhidraError,
-            HeadlessError,
+            HeadlessError, AcceptanceReceiptError,
             RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "REJECTED_NOT_HOMOLOGATED",
                           "reason": str(exc)}, sort_keys=True), file=sys.stderr)
