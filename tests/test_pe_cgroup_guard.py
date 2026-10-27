@@ -2,10 +2,13 @@
 from pathlib import Path
 import sys
 import tempfile
+import json
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from pe_cgroup_guard import verify_cgroup_limits, CgroupVerificationError
+import pe_cgroup_guard as guard
 
 
 class CgroupVerificationTests(unittest.TestCase):
@@ -68,6 +71,29 @@ class CgroupVerificationTests(unittest.TestCase):
                 self.proc.write_text(line)
                 with self.assertRaises(CgroupVerificationError):
                     self.verify()
+
+    def test_guard_writes_private_exclusive_proof_before_exec(self):
+        proof = Path(self.temp.name) / "proof.json"
+        argv = ["guard.py", "4294967296", "128", "200",
+                "run-negresco.scope", str(proof), "--", "/usr/bin/true"]
+        evidence = {"verified": True, "memory_max": 4294967296,
+                    "pids_max": 128, "cpu_quota": 200000,
+                    "cpu_period": 100000}
+        with mock.patch.object(guard, "verify_cgroup_limits", return_value=evidence):
+            with mock.patch.object(guard.os, "execvpe",
+                                   side_effect=OSError("mock never executes")) as execute:
+                self.assertEqual(guard.main(argv), 2)
+        execute.assert_called_once()
+        data = json.loads(proof.read_text())
+        self.assertEqual(data["scope"], "run-negresco.scope")
+        self.assertEqual(data["schema"], "negresco_cgroup_v2_proof_v1")
+        self.assertEqual(proof.stat().st_mode & 0o077, 0)
+        proof.write_text("existing", encoding="utf-8")
+        with mock.patch.object(guard, "verify_cgroup_limits", return_value=evidence):
+            with mock.patch.object(guard.os, "execvpe") as execute:
+                self.assertEqual(guard.main(argv), 2)
+                execute.assert_not_called()
+        self.assertEqual(proof.read_text(), "existing")
 
     def test_rejects_unreadable_control_file_and_invalid_budget(self):
         (self.group / "memory.max").unlink()
