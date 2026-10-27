@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-MAX_FUNCTIONS = 12
+MAX_FUNCTIONS = 16
 MAX_SNIPPET_CHARS = 1800
 MAX_HYPOTHESES_PER_FUNCTION = 3
 MAX_EVIDENCE_PER_CATEGORY = 4
@@ -175,6 +175,17 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
         # into a behavioral category. These bytes stay in the LOCAL report.
         strings = item.get("strings", [])
         calls = item.get("calls", [])
+        computed_sites = item.get("computed_call_sites", [])
+        computed_count = item.get("computed_call_count", 0)
+        computed_cut = item.get("computed_calls_truncated", False)
+        if (not isinstance(computed_sites, list) or len(computed_sites) > 8
+                or any(not isinstance(s, str) or
+                       not re.fullmatch(r"[a-fA-F0-9]{1,16}", s)
+                       for s in computed_sites)
+                or type(computed_count) is not int
+                or computed_count < len(computed_sites)
+                or type(computed_cut) is not bool):
+            raise ValueError("Destinos indiretos não fundamentados")
         if (not isinstance(strings, list) or len(strings) > 8
                 or not isinstance(calls, list) or len(calls) > 24):
             raise ValueError("Contexto de strings/chamadas fora do limite")
@@ -258,6 +269,12 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
             "string_context": context_strings,
             "strings_are_behavior_evidence": False,
             "linked_selected_callees": related,
+            "indirect_call_context": {
+                "sites": computed_sites,
+                "observed_count": computed_count,
+                "truncated": computed_cut,
+                "targets": "not_inferred",
+            },
             "context_provenance": "ghidra_direct_static_references_only",
             "evidence_quality": ("partial_pseudocode"
                 if item.get("pseudocode_truncated") else "bounded_pseudocode"),
