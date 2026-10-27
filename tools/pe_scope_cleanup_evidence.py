@@ -99,7 +99,7 @@ def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
     accepted = stop_scope(unit_name, systemctl_path=executable)
     try:
         result = subprocess.run([
-            executable, "--user", "--no-ask-password", "--no-pager",
+            executable, "--user", "--no-ask-password", "--no-pager", "--all",
             "show", unit_name,
             "--property=LoadState,ActiveState,SubState,ControlGroup",
         ], stdin=subprocess.DEVNULL, capture_output=True, text=True,
