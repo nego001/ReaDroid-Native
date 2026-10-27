@@ -229,6 +229,7 @@ export JAVA_HOME=/caminho/do/jdk25
 python3 tools/pe_arch_vm_gate.py
 python3 tools/pe_arch_vm_validation.py \
   --ghidra-home /caminho/ghidra_12.2_PUBLIC \
+  --ghidra-archive /caminho/ghidra_12.2_PUBLIC_20261016.zip \
   --timeout-seconds 420
 ```
 
@@ -265,3 +266,16 @@ e kernel específicos. Ela não prova resistência a exploit do kernel,
 fuga de sandbox, seccomp nem segurança universal contra executáveis
 hostis. A integração em uma interface gráfica, o IObit real, APK e OTA
 continuam fora do escopo. PR Draft; `main` não alterada.
+
+### Integridade obrigatória da instalação do Ghidra
+
+Para a aceitação nativa a PE-S1.5 passou a exigir **o ZIP oficial
+original** via `--ghidra-archive`. Antes de executar qualquer arquivo da
+instalação, o validador verifica o SHA-256 fixado do ZIP inteiro, confirma
+todos os arquivos descompactados comparando seus SHA-256 com as entradas
+correspondentes do ZIP, rejeita links simbólicos, caminhos malformados,
+duplicatas e arquivos adicionais no diretório do Ghidra. Não aceita apenas
+`application.version=12.2` como prova de origem. Essa verificação é
+intencionalmente rígida: use uma extração nova da release original. Isso
+**não impede** que um administrador mal-intencionado modifique o host
+durante a execução e tampouco substitui uma VM descartável.
