@@ -11,6 +11,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -137,6 +138,52 @@ if args.count("-postScript") == 2:
 """
         self.launcher.write_text(source.replace("@MODE@", repr(mode)), encoding="utf-8")
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
+
+    def _mocked_bwrap_command(self, ghidra, working, timeout, deep_preview=False):
+        """Build a synthetic Ghidra launch, not a real Bubblewrap bypass."""
+        return [
+            str(self.launcher), str(working / "project"), "NegrescoAutomaticPE",
+            "-import", str(working / "input.exe"),
+            "-scriptPath", str(working / "scripts"),
+            "-postScript", "NegrescoFunctionInventory.java",
+            str(working / "ghidra-functions.json"),
+            "-analysisTimeoutPerFile", "1", "-max-cpu", "2",
+            "-readOnly", "-deleteProject", "-log", str(working / "ghidra.log"),
+        ]
+
+    def test_strict_scope_requests_limits_and_stops_scope_on_success(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command) as wrap:
+                    with mock.patch.object(runner, "stop_scope", return_value=True) as stop:
+                        report = runner.inspect_functions(
+                            self.input, self.home, self.output, 3,
+                            sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertEqual(report["limitations"]["resource_scope"],
+                         "systemd_user_cgroup_v2_requested")
+        self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 3)
+        self.assertEqual(wrap.call_args.kwargs["unit_name"], unit)
+        stop.assert_called_once_with(unit)
+        self.assertTrue(self.output.exists())
+
+    def test_strict_scope_stops_on_timeout_without_publishing_report(self):
+        self._fake("sleep")
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(runner, "stop_scope", return_value=True) as stop:
+                        with self.assertRaisesRegex(runner.HeadlessError, "excedeu"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 1,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        stop.assert_called_once_with(unit)
+        self.assertFalse(self.output.exists())
 
     def test_strict_cgroup_never_uses_unisolated_fixture_mode(self):
         with self.assertRaisesRegex(runner.HeadlessError, "exigem Bubblewrap"):
