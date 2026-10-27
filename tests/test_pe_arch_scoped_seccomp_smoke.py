@@ -114,11 +114,14 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
         self.run_fixture(valid_seccomp=True, include_private_proof=False)
 
     def test_requires_private_absolute_workspace(self):
-        with self.assertRaisesRegex(
-                scoped.ScopedSeccompSmokeError, "absolute"):
-            scoped.run_scoped_seccomp_probe(
-                Path("/trusted-ghidra"), Path("/synthetic.exe"),
-                Path("relative/path"))
+        with tempfile.TemporaryDirectory() as temp:
+            synthetic = Path(temp) / "synthetic.exe"
+            synthetic.write_bytes(b"MZ synthetic fixture")
+            with self.assertRaisesRegex(
+                    scoped.ScopedSeccompSmokeError, "absolute"):
+                scoped.run_scoped_seccomp_probe(
+                    Path("/trusted-ghidra"), synthetic,
+                    Path("relative/path"))
 
 
 if __name__ == "__main__":
