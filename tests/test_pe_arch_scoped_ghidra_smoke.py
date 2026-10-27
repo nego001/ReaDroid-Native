@@ -31,7 +31,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
             if scope:
                 records.append({
                     "scope_seccomp_guard": "passed", "scope": self.UNIT,
-                    "filters_compiled_inside_scope": True})
+                    "filters_compiled_inside_scope": True,
+                    "seccomp_filters_before_bwrap": 1})
             report = "\n".join(json.dumps(rec) for rec in records)
 
             def intercept_wrap(argv, **kwargs):
@@ -44,6 +45,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                     "--scope", self.UNIT, "--timeout", "420", "--"])
                 self.assertIn("--unshare-all", argv)
                 self.assertIn("NegrescoDeepPreview.java", argv)
+                self.assertIn("NegrescoSeccompRuntimeProof.java", argv)
                 return ["systemd-run-mocked", *argv]
 
             good_proof = {"verification": "guard_verified_before_bwrap",
@@ -61,7 +63,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                         "/usr/bin/bwrap", "--unshare-all", "--",
                         "/usr/bin/ghidra-fixture",
                         "NegrescoFunctionInventory.java",
-                        "NegrescoDeepPreview.java"]))
+                        "NegrescoDeepPreview.java",
+                        "-analysisTimeoutPerFile", "390"]))
                 wrap = stack.enter_context(mock.patch.object(
                     native, "wrap_in_cgroup_scope", side_effect=intercept_wrap))
                 run = stack.enter_context(mock.patch.object(
@@ -73,6 +76,11 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                     native, "read_scope_proof",
                     side_effect=(lambda path, unit: good_proof)
                     if limit_proof else native.InvalidResourceEvidence("missing")))
+                runtime = stack.enter_context(mock.patch.object(
+                    native, "read_ghidra_seccomp_proof",
+                    return_value={
+                        "verified": True, "seccomp_mode": 2,
+                        "filters_before_bwrap": 1, "filters_in_ghidra": 2}))
                 inventory = stack.enter_context(mock.patch.object(
                     native, "_validated_function_evidence",
                     return_value={"total_discovered": 2}))
@@ -90,6 +98,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                         "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP")
                     self.assertEqual(report_value["decompiled_functions"], 1)
                     self.assertTrue(report_value["scope_stop_accepted"])
+                    self.assertTrue(report_value["ghidra_jvm_seccomp_evidence"]["verified"])
+                    runtime.assert_called_once()
                     self.assertFalse(report_value["windows_binary_executed"])
                     inventory.assert_called_once()
                     preview.assert_called_once()
