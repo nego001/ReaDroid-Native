@@ -28,6 +28,7 @@ from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_resource_limits import (wrap_in_cgroup_scope, new_scope_unit, stop_scope,
                                 ResourceLimitsUnavailable)
+from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
 from pe_auto_symbols import inspect_symbols
 from pe_auto_behavior import classify, API_TO_RULE
 
@@ -372,8 +373,10 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         raise HeadlessError("Arquivo de entrada não pode ser link simbólico")
     launcher = _locate_ghidra(Path(ghidra_home))
 
-    with tempfile.TemporaryDirectory(prefix="negresco-pe-a2-") as private:
+    with (tempfile.TemporaryDirectory(prefix="negresco-pe-a2-") as private,
+          tempfile.TemporaryDirectory(prefix="negresco-pe-proof-") as proof_private):
         working = Path(private)
+        proof_path = Path(proof_private) / "limits.json"
         snapshot = working / "input.exe"
         sha256 = _binary_snapshot(target, snapshot)
         header = inspect_pe(snapshot)
@@ -409,7 +412,7 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                     scope_unit = new_scope_unit()
                     command = wrap_in_cgroup_scope(
                         command, timeout_seconds=timeout_seconds,
-                        unit_name=scope_unit)
+                        unit_name=scope_unit, proof_path=proof_path)
                 except (ResourceLimitsUnavailable, OSError) as exc:
                     raise HeadlessError("Limites cgroup obrigatórios indisponíveis; análise recusada") from exc
         else:
@@ -466,6 +469,13 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "relatório recusado")
         if code != 0:
             raise HeadlessError("O Ghidra não concluiu a análise; nenhum relatório foi aceito")
+        strict_resource_proof = None
+        if scope_unit is not None:
+            try:
+                strict_resource_proof = read_scope_proof(proof_path, scope_unit)
+            except (InvalidResourceEvidence, OSError) as exc:
+                raise HeadlessError(
+                    "Limites de cgroup não comprovados; relatório recusado") from exc
         evidence = _validated_function_evidence(raw_result)
         deep = (_validated_deep_evidence(working / "ghidra-deep.json")
                 if deep_preview else None)
@@ -503,8 +513,10 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "executable_launched": False,
                 "os_sandbox": ("bubblewrap_profile" if sandbox_mode == "bwrap"
                                else "not_implemented"),
-                "resource_scope": ("systemd_user_cgroup_v2_requested"
-                                   if require_cgroup_limits else "not_enforced"),
+                "resource_scope": ("systemd_user_cgroup_v2_verified_at_start"
+                                   if strict_resource_proof is not None
+                                   else "not_enforced"),
+                "resource_limits": strict_resource_proof,
             },
         }
         encoded = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
