@@ -32,6 +32,14 @@ def _validated_systemctl(systemctl_path: str | None) -> str:
     if (not path.is_absolute() or path.is_symlink()
             or not path.is_file() or not os.access(path, os.X_OK)):
         raise ScopeCleanupUnavailable("Untrusted systemctl executable")
+    # When discovered from PATH, never treat a user-writable script as a
+    # systemd authority. Explicit paths are only an injectable test seam;
+    # native acceptance always calls this without a path override.
+    if systemctl_path is None:
+        metadata = path.stat()
+        if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+            raise ScopeCleanupUnavailable(
+                "Discovered systemctl is not a trusted system binary")
     return str(path)
 
 
