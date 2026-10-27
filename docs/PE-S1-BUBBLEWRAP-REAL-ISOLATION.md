@@ -88,3 +88,44 @@ Os testes são com sistema de arquivos cgroup **sintético**, tanto no Ubuntu
 quanto no contêiner Arch. O teste de aplicação efetiva no host Arch real
 continua pendente. Nenhum desses testes tenta disparar OOM nem saturar
 processos no runner compartilhado.
+
+## PE-S1.2 | Ciclo de vida e diagnóstico Arch nativo (sem homologação do host)
+
+O modo estrito agora gera um `negresco-pe-<token>.scope` imprevisível por análise.
+Solicita `RuntimeMaxSec=timeout+20s` e `TimeoutStopSec=5s` ao
+gerenciador de usuário systemd. Ao encerrar a análise, com sucesso,
+falha ou timeout, o executor tenta `systemctl --user stop` **somente**
+naquele escopo, em vez de depender exclusivamente do grupo de processos
+do lançador. Caso o gerenciador pare de responder, o `RuntimeMaxSec` é
+uma proteção independente **quando o próprio systemd segue funcional**;
+não existe garantia absoluta de eliminação de processos em um host
+comprometido.
+
+Antes de executar o Ghidra, o verificador exige que o processo esteja
+no **exato escopo aleatório requisitado**, além de comparar
+`memory.max`, `pids.max` e `cpu.max`. Ele escreve uma prova JSON
+`cgroup_verification=passed` no stdout do *scope* para diagnósticos
+(é suprimida no executor normal, que usa stdout DEVNULL).
+
+### Rodar o probe em um Arch Linux físico/VM instalado
+
+Em uma sessão comum do seu usuário (sem sudo), com systemd como PID 1,
+cgroup v2, `systemd-run`, `systemctl` e Python disponíveis:
+
+```sh
+python3 tools/pe_arch_cgroup_smoke.py
+```
+
+A saída `PASS_NATIVE_ARCH_CGROUP` contém os valores efetivos de
+`memory_max`, `pids_max`, `cpu_quota` e `cpu_period`.
+`REJECTED_NOT_HOMOLOGATED` é uma recusa segura, não uma instrução
+para desativar proteções. O teste recusa root, Ubuntu, contêineres
+com marcas usuais e hosts sem systemd como PID 1. **Não analisa
+binários Windows** e não muda políticas do host.
+
+O probe **não** comprova que o Ghidra real roda no Arch nem
+que todo processo filho morre sob qualquer falha: esses testes ainda
+precisam de execução e observação no Arch instalado, inclusive
+com janela do gerenciador do usuário e CPU/memória sob pressão
+controlada. CI continua usando Ubuntu e userspace Arch sobre Ubuntu.
+A PR continua em Draft, sem APK, OTA nem merge.
