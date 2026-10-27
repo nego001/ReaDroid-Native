@@ -17,8 +17,10 @@ import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
-from pe_resource_limits import (new_scope_unit, stop_scope, wrap_in_cgroup_scope,
+from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope,
                                 ResourceLimitsUnavailable)
+from pe_scope_cleanup_evidence import (stop_and_attest_scope,
+                                       ScopeCleanupUnavailable)
 from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
 from pe_seccomp_filter import seccomp_filter_count, SeccompUnavailable
 
@@ -91,13 +93,11 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
                     "Native scoped seccomp probe timed out or could not start") from exc
         finally:
             os.close(host_fd)
-            # Request termination of the *whole* transient unit. A successful
-            # process exit alone is not a valid scope cleanup receipt.
-            scope_stop_accepted = stop_scope(unit)
-
-        if not scope_stop_accepted:
-            raise ScopedSeccompSmokeError(
-                "systemd did not accept a stop request for the scoped probe")
+            # A transient unit can already be garbage-collected on exit.
+            # Accept only systemd-confirmed inactive/dead and unpopulated state.
+            scope_cleanup = stop_and_attest_scope(unit)
+        if scope_cleanup.get("verified") is not True or scope_cleanup.get("cgroup_unpopulated") is not True:
+            raise ScopedSeccompSmokeError("Scope cleanup attestation incomplete")
         if proc.returncode != 0:
             raise ScopedSeccompSmokeError(
                 "Scoped seccomp/bwrap child rejected probe (exit nonzero)")
@@ -139,6 +139,7 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
             "scope": unit,
             "filter_compiled_after_guard": True,
             "cgroup_verification": quota_proof,
+            "scope_cleanup_evidence": scope_cleanup,
             "sandbox_checks": list(bwrap_fields),
             "windows_pe_executed": False,
             "ghidra_executed": False,
