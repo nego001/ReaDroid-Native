@@ -75,7 +75,19 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                     native.subprocess, "run",
                     return_value=mock.Mock(returncode=code, stdout=report)))
                 stop = stack.enter_context(mock.patch.object(
-                    native, "stop_scope", return_value=stop_accepted))
+                    native, "stop_and_attest_scope",
+                    side_effect=(
+                        lambda unit: {
+                            "verified": True, "scope_quiescent": True,
+                            "cgroup_unpopulated": True,
+                            "stop_request_accepted": True,
+                            "load_state": "loaded",
+                            "active_state": "inactive",
+                            "sub_state": "dead",
+                            "scope_collected": False
+                        }
+                    ) if stop_accepted else native.ScopeCleanupUnavailable(
+                        "scope still active")))
                 read = stack.enter_context(mock.patch.object(
                     native, "read_scope_proof",
                     side_effect=(lambda path, unit: good_proof)
@@ -101,7 +113,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                         report_value["status"],
                         "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP")
                     self.assertEqual(report_value["decompiled_functions"], 1)
-                    self.assertTrue(report_value["scope_stop_accepted"])
+                    self.assertTrue(report_value["scope_cleanup_verified"])
+                    self.assertTrue(report_value["scope_cleanup_evidence"]["cgroup_unpopulated"])
                     self.assertTrue(report_value["ghidra_jvm_seccomp_evidence"]["verified"])
                     runtime.assert_called_once()
                     self.assertFalse(report_value["windows_binary_executed"])
