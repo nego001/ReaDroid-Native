@@ -67,6 +67,36 @@ class SandboxProfileTests(unittest.TestCase):
                                     if v in ("--bind", "--ro-bind")])
 
     @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
+    def test_explicit_external_jdk_is_pinned_read_only(self):
+        jdk = Path(self.temp.name) / "jdk25"
+        (jdk / "bin").mkdir(parents=True)
+        java = jdk / "bin" / "java"
+        java.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        java.chmod(java.stat().st_mode | stat.S_IXUSR)
+        with mock.patch.dict(os.environ, {"JAVA_HOME": str(jdk)}):
+            args = build_command(
+                self.ghidra, self.working, 420, bwrap_path=str(self.fake))
+        self.assertIn("--ro-bind", args)
+        self.assertIn(str(jdk), args)
+        idx = args.index(str(jdk))
+        self.assertEqual(args[idx + 1], "/opt/negresco-jdk")
+        self.assertEqual(args[idx - 1], "--ro-bind")
+        self.assertIn("JAVA_HOME", args)
+        self.assertEqual(args[args.index("JAVA_HOME") + 1], "/opt/negresco-jdk")
+        self.assertEqual(
+            args[args.index("PATH") + 1].split(":")[0],
+            "/opt/negresco-jdk/bin")
+        self.assertNotIn(str(Path.home()), args)
+
+    @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
+    def test_missing_external_jdk_is_not_silently_used(self):
+        missing = Path(self.temp.name) / "does-not-exist"
+        with mock.patch.dict(os.environ, {"JAVA_HOME": str(missing)}):
+            with self.assertRaises((OSError, SandboxUnavailable)):
+                build_command(self.ghidra, self.working, 420,
+                              bwrap_path=str(self.fake))
+
+    @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
     def test_missing_export_script_is_rejected(self):
         (self.working / "scripts" / "NegrescoFunctionInventory.java").unlink()
         with self.assertRaisesRegex(SandboxUnavailable, "Exportador"):
