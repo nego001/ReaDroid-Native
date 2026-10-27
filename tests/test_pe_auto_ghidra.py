@@ -151,6 +151,19 @@ if args.count("-postScript") == 2:
             "-readOnly", "-deleteProject", "-log", str(working / "ghidra.log"),
         ]
 
+    def test_launcher_never_inherits_host_stdin_or_extra_fds(self):
+        with mock.patch.object(runner.subprocess, "Popen",
+                               side_effect=OSError("synthetic rejection")) as launch:
+            with self.assertRaisesRegex(runner.HeadlessError, "iniciar"):
+                self.run_synthetic(self.input, self.home, self.output, 3)
+        options = launch.call_args.kwargs
+        self.assertEqual(options["stdin"], runner.subprocess.DEVNULL)
+        self.assertEqual(options["stdout"], runner.subprocess.DEVNULL)
+        self.assertEqual(options["stderr"], runner.subprocess.DEVNULL)
+        self.assertTrue(options["close_fds"])
+        self.assertTrue(options["start_new_session"])
+        self.assertFalse(self.output.exists())
+
     def test_strict_scope_requests_limits_and_stops_scope_on_success(self):
         unit = "negresco-pe-0123456789abcdef01234567.scope"
         with mock.patch.object(runner, "build_command",
