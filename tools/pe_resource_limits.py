@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shutil
+import sys
 
 MEMORY_MAX_BYTES = 4 * 1024 * 1024 * 1024
 TASKS_MAX = 128
@@ -41,11 +42,15 @@ def wrap_in_cgroup_scope(command: list[str], *,
     launcher = Path(executable)
     if launcher.is_symlink() or not launcher.is_file() or not os.access(launcher, os.X_OK):
         raise ResourceLimitsUnavailable("systemd-run indisponível ou não confiável")
+    verifier = Path(__file__).with_name("pe_cgroup_guard.py")
+    if verifier.is_symlink() or not verifier.is_file():
+        raise ResourceLimitsUnavailable("Verificador cgroup ausente ou não confiável")
     return [
         str(launcher), "--user", "--scope", "--quiet",
         "--property=MemoryMax=" + str(MEMORY_MAX_BYTES),
         "--property=TasksMax=" + str(TASKS_MAX),
         "--property=CPUQuota=" + str(CPU_QUOTA_PERCENT) + "%",
-        "--",
-        *command,
+        "--", sys.executable, "-I", str(verifier.resolve(strict=True)),
+        str(MEMORY_MAX_BYTES), str(TASKS_MAX), str(CPU_QUOTA_PERCENT),
+        "--", *command,
     ]
