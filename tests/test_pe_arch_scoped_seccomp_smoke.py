@@ -19,7 +19,7 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
 
     def run_fixture(self, *, valid_seccomp: bool,
                     include_guard: bool = True, include_scope: bool = True,
-                    include_private_proof: bool = True):
+                    include_private_proof: bool = True, stop_accepted: bool = True):
         with tempfile.TemporaryDirectory(prefix="negresco-scope-contract-") as temp:
             root = Path(temp)
             pe = root / "synthetic.exe"
@@ -80,9 +80,9 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                         else (_ for _ in ()).throw(
                             scoped.InvalidResourceEvidence("absent")))))
                 stop = stack.enter_context(mock.patch.object(
-                    scoped, "stop_scope", return_value=True))
+                    scoped, "stop_scope", return_value=stop_accepted))
                 if (valid_seccomp and include_guard and include_scope
-                        and include_private_proof):
+                        and include_private_proof and stop_accepted):
                     result = scoped.run_scoped_seccomp_probe(
                         Path("/trusted-ghidra"), pe, root)
                     self.assertEqual(
@@ -112,6 +112,9 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
 
     def test_rejects_missing_private_cgroup_proof(self):
         self.run_fixture(valid_seccomp=True, include_private_proof=False)
+
+    def test_rejects_scope_stop_refusal_even_with_all_other_proofs(self):
+        self.run_fixture(valid_seccomp=True, stop_accepted=False)
 
     def test_requires_private_absolute_workspace(self):
         with tempfile.TemporaryDirectory() as temp:
