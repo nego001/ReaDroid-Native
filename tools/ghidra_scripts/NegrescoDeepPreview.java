@@ -80,9 +80,21 @@ public class NegrescoDeepPreview extends HeadlessScript {
         }
     }
 
+    private static final class VerifiedTarget {
+        final String callSite;
+        final String targetAddress;
+        final String targetName;
+        VerifiedTarget(String callSite, String targetAddress, String targetName) {
+            this.callSite = callSite;
+            this.targetAddress = targetAddress;
+            this.targetName = targetName;
+        }
+    }
+
     private static final class StringResults {
         final List<StringEvidence> entries = new ArrayList<>();
         final List<String> computedSites = new ArrayList<>();
+        final List<VerifiedTarget> explicitTargets = new ArrayList<>();
         int computedCallsObserved = 0;
         boolean computedCallsTruncated = false;
         boolean truncated = false;
@@ -116,6 +128,39 @@ public class NegrescoDeepPreview extends HeadlessScript {
                 }
             }
             Reference[] references = instruction.getReferencesFrom();
+            // Computed instructions usually have unknown targets. Accept only
+            // ONE uniquely referenced internal function entry point, explicitly
+            // marked as a CALL reference by Ghidra. This is a reference claim,
+            // NEVER proof that the computed CALL runs with that destination.
+            if (instruction.getFlowType().isCall() &&
+                    instruction.getFlowType().isComputed() &&
+                    result.computedSites.contains(instruction.getAddress().toString())) {
+                Function unique = null;
+                boolean conflict = false;
+                for (int r = 0; r < Math.min(MAX_REFS_PER_INSTRUCTION, references.length); r++) {
+                    Reference codeRef = references[r];
+                    if (!codeRef.getReferenceType().isCall() ||
+                        codeRef.getToAddress() == null ||
+                        !codeRef.getToAddress().isMemoryAddress()) continue;
+                    Function dest = currentProgram.getListing().getFunctionAt(
+                        codeRef.getToAddress());
+                    if (dest == null || dest.isExternal() || dest.isThunk()) continue;
+                    if (unique != null &&
+                        !unique.getEntryPoint().equals(dest.getEntryPoint())) {
+                        conflict = true;
+                        break;
+                    }
+                    unique = dest;
+                }
+                if (!conflict && unique != null &&
+                    references.length <= MAX_REFS_PER_INSTRUCTION) {
+                    String destAddress = unique.getEntryPoint().toString();
+                    if (destAddress.matches("[0-9a-fA-F]{1,16}"))
+                        result.explicitTargets.add(new VerifiedTarget(
+                            instruction.getAddress().toString(), destAddress,
+                            unique.getName()));
+                }
+            }
             if (references.length > MAX_REFS_PER_INSTRUCTION)
                 result.scanTruncated = true;
             for (int i = 0; i < Math.min(MAX_REFS_PER_INSTRUCTION, references.length); i++) {
@@ -311,7 +356,7 @@ public class NegrescoDeepPreview extends HeadlessScript {
             boolean ready = decompiler.openProgram(currentProgram);
             try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
                     new FileOutputStream(args[0]), StandardCharsets.UTF_8))) {
-                writer.write("{\"schema\":\"ghidra_deep_preview_v4\",");
+                writer.write("{\"schema\":\"ghidra_deep_preview_v5\",");
                 writer.write("\"selection_method\":");
                 writer.write(json(SELECTION_METHOD, 80));
                 writer.write(",\"functions\":[");
@@ -406,8 +451,20 @@ public class NegrescoDeepPreview extends HeadlessScript {
                     writer.write(Integer.toString(strings.computedCallsObserved));
                     writer.write(",\"computed_calls_truncated\":");
                     writer.write(Boolean.toString(strings.computedCallsTruncated));
-                    writer.write(",\"computed_call_destinations\":\"not_inferred\"");
-                    writer.write("}");
+                    writer.write(",\"computed_call_destinations\":\"explicit_references_only\"");
+                    writer.write(",\"explicit_computed_targets\":[");
+                    for (int i = 0; i < strings.explicitTargets.size(); i++) {
+                        if (i > 0) writer.write(",");
+                        VerifiedTarget found = strings.explicitTargets.get(i);
+                        writer.write("{\"site\":");
+                        writer.write(json(found.callSite, 32));
+                        writer.write(",\"entry_point\":");
+                        writer.write(json(found.targetAddress, 32));
+                        writer.write(",\"name\":");
+                        writer.write(json(found.targetName, MAX_NAME_CHARS));
+                        writer.write(",\"basis\":\"ghidra_unique_explicit_internal_call_reference\"}");
+                    }
+                    writer.write("]}");
                 }
                 writer.write("],\"candidates_scanned\":");
                 writer.write(Integer.toString(scanned));

@@ -211,6 +211,27 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
                 related.append({"entry_point": address, "name": selected_names[key]})
             if len(related) >= 8:
                 break
+        target_records = item.get("explicit_computed_targets", [])
+        if not isinstance(target_records, list) or len(target_records) > 8:
+            raise ValueError("Referências calculadas verificadas fora do limite")
+        validated_targets = []
+        for target in target_records:
+            if (not isinstance(target, dict)
+                    or not isinstance(target.get("site"), str)
+                    or target["site"].lower() not in
+                       {site.lower() for site in computed_sites}
+                    or not isinstance(target.get("entry_point"), str)
+                    or not re.fullmatch(r"[0-9a-fA-F]{1,16}", target["entry_point"])
+                    or not isinstance(target.get("name"), str)
+                    or not 1 <= len(target["name"]) <= 160
+                    or target.get("basis") !=
+                       "ghidra_unique_explicit_internal_call_reference"):
+                raise ValueError("Destino de ponteiro sem prova estática explícita")
+            validated_targets.append({
+                "site": target["site"], "entry_point": target["entry_point"],
+                "name": target["name"],
+                "basis": "ghidra_unique_explicit_internal_call_reference",
+            })
         hypotheses = []
         # Maintain provenance for each API. Do not turn an import table entry
         # or a function name into a call when no Ghidra evidence exists.
@@ -273,7 +294,15 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
                 "sites": computed_sites,
                 "observed_count": computed_count,
                 "truncated": computed_cut,
-                "targets": "not_inferred",
+                "targets": (
+                    "explicit_references_only" if validated_targets
+                    else "not_inferred"),
+                "explicit_reference_candidates": validated_targets,
+                "unknown_destination_sites": [
+                    site for site in computed_sites
+                    if site.lower() not in
+                       {target["site"].lower() for target in validated_targets}
+                ],
             },
             "context_provenance": "ghidra_direct_static_references_only",
             "evidence_quality": ("partial_pseudocode"

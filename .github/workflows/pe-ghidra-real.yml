@@ -11,6 +11,7 @@ on:
       - feature/pe-auto-winapi-evidence
       - feature/pe-auto-string-context
       - feature/pe-auto-indirect-coverage
+      - feature/pe-auto-explicit-indirect-targets
   workflow_dispatch:
 
 permissions:
@@ -93,7 +94,7 @@ jobs:
           assert all(len(record["strings"]) <= 8 and
                      record["instructions_scanned_for_strings"] <= 2048 and
                      len(record["computed_call_sites"]) <= 8 and
-                     record["computed_call_destinations"] == "not_inferred"
+                     record["computed_call_destinations"] == "explicit_references_only"
                      for record in deep["functions"])
           computed = [(rec["name"], site)
                       for rec in deep["functions"]
@@ -128,7 +129,8 @@ jobs:
                      for s in item["string_context"]), (
               "Behavior report dropped original Ghidra string reference evidence")
           assert all(item["strings_are_behavior_evidence"] is False
-                     and item["indirect_call_context"]["targets"] == "not_inferred"
+                     and item["indirect_call_context"]["targets"] in (
+                         "not_inferred", "explicit_references_only")
                      for item in behavior["functions"])
           assert any(item["name"] == "inspect_path" and
                      item["indirect_call_context"]["observed_count"] >= 1
@@ -136,6 +138,15 @@ jobs:
           print("PE-A4.1 selected external API references:", [
               {"name": f["name"], "api_refs": f["api_call_references"],
                "score": f["selection_score"]} for f in deep["functions"]])
+          assert all(
+              target["site"] in record["computed_call_sites"] and
+              target["basis"] == "ghidra_unique_explicit_internal_call_reference"
+              for record in deep["functions"]
+              for target in record["explicit_computed_targets"]), (
+              "Reported inferred target without explicit unique Ghidra CALL reference")
+          print("PE-A4.4 explicit computed call targets:", [
+              (record["name"], target) for record in deep["functions"]
+              for target in record["explicit_computed_targets"]])
           print("PE-A4.3 bounded computed call sites:", computed)
           print("PE-A4.2 string references:", sources)
           print("PE-A4 behavior hypotheses:", behavior["functions_with_hypotheses"],

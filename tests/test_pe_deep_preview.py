@@ -18,7 +18,7 @@ spec.loader.exec_module(runner)
 
 def sample():
     return {
-        "schema": "ghidra_deep_preview_v4",
+        "schema": "ghidra_deep_preview_v5",
         "selection_method": "bounded_api_references_and_call_connectivity_v2",
         "functions": [{
             "entry_point": "00401000", "name": "add_numbers",
@@ -39,7 +39,8 @@ def sample():
             "computed_call_sites": [],
             "computed_call_count": 0,
             "computed_calls_truncated": False,
-            "computed_call_destinations": "not_inferred",
+            "computed_call_destinations": "explicit_references_only",
+            "explicit_computed_targets": [],
         }],
         "candidates_scanned": 1, "eligible_non_thunks": 1,
         "sample_truncated": False, "scan_truncated": False,
@@ -243,7 +244,7 @@ class DeepPreviewTests(unittest.TestCase):
         record["instructions_scanned_for_strings"] = 10
         result = self.load(item)["functions"][0]
         self.assertEqual(result["computed_call_sites"], ["0040100a"])
-        self.assertEqual(result["computed_call_destinations"], "not_inferred")
+        self.assertEqual(result["computed_call_destinations"], "explicit_references_only")
 
     def test_rejects_fabricated_indirect_call_sites(self):
         def good():
@@ -264,6 +265,47 @@ class DeepPreviewTests(unittest.TestCase):
                 sample_bad = good()
                 sample_bad["functions"][0][key] = replacement
                 self.rejected(sample_bad)
+
+    def test_accepts_one_explicit_reference_target_and_unknown_others(self):
+        data = sample()
+        rec = data["functions"][0]
+        rec["computed_call_sites"] = ["0040100a", "0040100c"]
+        rec["computed_call_count"] = 2
+        rec["instructions_scanned_for_strings"] = 20
+        rec["explicit_computed_targets"] = [{
+            "site": "0040100a", "entry_point": "00402000", "name": "known_helper",
+            "basis": "ghidra_unique_explicit_internal_call_reference",
+        }]
+        self.assertEqual(self.load(data)["functions"][0]["explicit_computed_targets"][0]["entry_point"],
+                         "00402000")
+
+    def test_rejects_fake_computed_target_and_non_call_site(self):
+        def good():
+            data = sample()
+            rec = data["functions"][0]
+            rec["computed_call_sites"] = ["0040100a"]
+            rec["computed_call_count"] = 1
+            rec["instructions_scanned_for_strings"] = 20
+            rec["explicit_computed_targets"] = [{
+                "site": "0040100a", "entry_point": "00402000",
+                "name": "known_helper",
+                "basis": "ghidra_unique_explicit_internal_call_reference",
+            }]
+            return data
+        for field, bad in (
+            ("site", "0040101b"),
+            ("entry_point", "EXTERNAL:0001"),
+            ("name", "x" + chr(10) + "malicious"),
+            ("basis", "guessed_by_llm"),
+        ):
+            with self.subTest(field=field):
+                data = good()
+                data["functions"][0]["explicit_computed_targets"][0][field] = bad
+                self.rejected(data)
+        data = good()
+        data["functions"][0]["explicit_computed_targets"].append(
+            data["functions"][0]["explicit_computed_targets"][0].copy())
+        self.rejected(data)
 
     def test_rejects_missing_or_oversized_evidence(self):
         with self.assertRaises(runner.HeadlessError):

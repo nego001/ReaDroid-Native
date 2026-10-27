@@ -136,7 +136,7 @@ def _validated_deep_evidence(path: Path) -> dict:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HeadlessError("Prévia de pseudocódigo indisponível ou corrompida") from exc
-    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v4":
+    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v5":
         raise HeadlessError("Esquema de pseudocódigo inesperado")
     method = "bounded_api_references_and_call_connectivity_v2"
     records = raw.get("functions")
@@ -184,6 +184,9 @@ def _validated_deep_evidence(path: Path) -> dict:
         computed_count = record.get("computed_call_count")
         computed_cut = record.get("computed_calls_truncated")
         destinations = record.get("computed_call_destinations")
+        target_records = record.get("explicit_computed_targets")
+        if not isinstance(target_records, list) or len(target_records) > MAX_COMPUTED_SITES:
+            raise HeadlessError("Lista de destinos de chamadas calculadas inválida")
         if (type(computed_count) is not int
                 or not 0 <= computed_count <= MAX_STRING_INSTRUCTIONS
                 or not isinstance(computed_sites, list)
@@ -191,11 +194,35 @@ def _validated_deep_evidence(path: Path) -> dict:
                 or len(computed_sites) != min(computed_count, MAX_COMPUTED_SITES)
                 or type(computed_cut) is not bool
                 or computed_cut != (computed_count > MAX_COMPUTED_SITES)
-                or destinations != "not_inferred"
+                or destinations != "explicit_references_only"
                 or any(not isinstance(s, str) or not ADDRESS.fullmatch(s)
                        for s in computed_sites)
                 or len(set(s.lower() for s in computed_sites)) != len(computed_sites)):
             raise HeadlessError("Chamadas indiretas sem endereços confiáveis")
+        verified_targets = []
+        seen_target_sites = set()
+        computed_set = {site.lower() for site in computed_sites}
+        for target in target_records:
+            if not isinstance(target, dict):
+                raise HeadlessError("Destino explícito sem estrutura comprovável")
+            site = target.get("site")
+            entry_point = target.get("entry_point")
+            target_name = target.get("name")
+            if (not isinstance(site, str) or not ADDRESS.fullmatch(site)
+                    or site.lower() not in computed_set
+                    or site.lower() in seen_target_sites
+                    or not isinstance(entry_point, str) or not ADDRESS.fullmatch(entry_point)
+                    or not isinstance(target_name, str)
+                    or not 1 <= len(target_name) <= 160
+                    or any(ord(ch) < 32 or ord(ch) == 127 for ch in target_name)
+                    or target.get("basis") !=
+                       "ghidra_unique_explicit_internal_call_reference"):
+                raise HeadlessError("Destino calculado não fundamentado pelo Ghidra")
+            seen_target_sites.add(site.lower())
+            verified_targets.append({
+                "site": site, "entry_point": entry_point, "name": target_name,
+                "basis": "ghidra_unique_explicit_internal_call_reference",
+            })
         if (not isinstance(string_records, list)
                 or len(string_records) > MAX_DEEP_STRINGS
                 or type(strings_cut) is not bool
@@ -283,7 +310,8 @@ def _validated_deep_evidence(path: Path) -> dict:
             "computed_call_sites": computed_sites,
             "computed_call_count": computed_count,
             "computed_calls_truncated": computed_cut,
-            "computed_call_destinations": "not_inferred",
+            "computed_call_destinations": "explicit_references_only",
+            "explicit_computed_targets": verified_targets,
             "calls": calls, "calls_truncated": calls_cut,
             "decompile_status": status,
             "pseudocode": pseudocode, "pseudocode_truncated": cut,
