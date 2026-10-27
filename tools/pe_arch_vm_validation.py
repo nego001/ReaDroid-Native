@@ -47,10 +47,34 @@ def java25_preflight() -> None:
         raise ArchVmValidationError("Expected an operational JDK 25")
 
 
+def validate_ghidra_122_install(ghidra_home: Path) -> None:
+    """Check release identity; authenticity still requires a pinned ZIP hash."""
+    props = ghidra_home / "Ghidra/application.properties"
+    try:
+        if props.is_symlink() or not props.is_file() or props.stat().st_size > 8192:
+            raise ArchVmValidationError("Ghidra 12.2 version metadata missing")
+        values = {}
+        for line in props.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith(("#", "!")):
+                continue
+            if "=" not in line:
+                raise ArchVmValidationError("Malformed Ghidra release metadata")
+            key, value = (part.strip() for part in line.split("=", 1))
+            if key in values:
+                raise ArchVmValidationError("Duplicate Ghidra release property")
+            values[key] = value
+        if values.get("application.name") != "Ghidra" or values.get("application.version") != "12.2":
+            raise ArchVmValidationError("Ghidra release must be exactly 12.2")
+    except (OSError, UnicodeError) as exc:
+        raise ArchVmValidationError("Ghidra version cannot be verified") from exc
+
+
 def validate_real_ghidra(ghidra_home: Path, *, timeout_seconds: int = 420) -> dict:
     if (not ghidra_home.is_absolute() or ghidra_home.is_symlink()
             or not (ghidra_home / "support/analyzeHeadless").is_file()):
         raise ArchVmValidationError("Trusted absolute Ghidra directory required")
+    validate_ghidra_122_install(ghidra_home)
     if not FIXTURE.is_file() or FIXTURE.is_symlink():
         raise ArchVmValidationError("Synthetic PE fixture source is absent")
     java25_preflight()
