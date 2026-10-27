@@ -20,8 +20,10 @@ from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 from pe_auto_ghidra import (_validated_function_evidence,
                             _validated_deep_evidence, HeadlessError)
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
-from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope, stop_scope,
+from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope,
                                 ResourceLimitsUnavailable)
+from pe_scope_cleanup_evidence import (stop_and_attest_scope,
+                                       ScopeCleanupUnavailable)
 from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
 from pe_seccomp_runtime_evidence import (baseline_from_scope_receipts,
                                          read_ghidra_seccomp_proof,
@@ -106,11 +108,9 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
                 raise ScopedGhidraError(
                     "Native scoped Ghidra failed to start or timed out") from exc
         finally:
-            stop_accepted = stop_scope(unit)
-
-        if not stop_accepted:
-            raise ScopedGhidraError(
-                "systemd did not accept cleanup of real Ghidra cgroup")
+            scope_cleanup = stop_and_attest_scope(unit)
+        if scope_cleanup.get("verified") is not True or scope_cleanup.get("cgroup_unpopulated") is not True:
+            raise ScopedGhidraError("Ghidra scope cleanup attestation incomplete")
         if result.returncode != 0:
             raise ScopedGhidraError("Real Ghidra with cgroup/seccomp exited nonzero")
         if len(result.stdout) > 128 * 1024:
@@ -151,7 +151,10 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
                 "Ghidra did not decompile with proven effective cgroup quotas")
         return {
             "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
-            "scope": unit, "scope_stop_accepted": True,
+            "scope": unit,
+            "scope_stop_accepted": scope_cleanup["stop_request_accepted"],
+            "scope_cleanup_verified": True,
+            "scope_cleanup_evidence": scope_cleanup,
             "filter_compiled_inside_scope": True,
             "quotas_verified_before_bwrap": limits,
             "ghidra_jvm_seccomp_evidence": runtime,
