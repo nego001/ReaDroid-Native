@@ -34,6 +34,7 @@ SOURCE_FILES = (
     "tools/pe_seccomp_runtime_evidence.py",
     "tools/pe_cgroup_guard.py",
     "tools/pe_resource_limits.py",
+    "tools/pe_scope_cleanup_evidence.py",
     "tools/pe_resource_evidence.py",
     "tools/pe_ghidra_sandbox.py",
     "tools/ghidra_scripts/NegrescoFunctionInventory.java",
@@ -79,7 +80,15 @@ def validate_native_acceptance_report(report: dict) -> None:
             or not isinstance(combined, dict)
             or combined.get("status")
             != "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP"
-            or combined.get("scope_stop_accepted") is not True
+            or combined.get("scope_cleanup_verified") is not True
+            or not isinstance(combined.get("scope_cleanup_evidence"), dict)
+            or combined["scope_cleanup_evidence"].get("scope_quiescent") is not True
+            or combined["scope_cleanup_evidence"].get("cgroup_unpopulated") is not True
+            or combined["scope_cleanup_evidence"].get("active_state") != "inactive"
+            or combined["scope_cleanup_evidence"].get("sub_state") != "dead"
+            or not isinstance(probe.get("scope_cleanup_evidence"), dict)
+            or probe["scope_cleanup_evidence"].get("scope_quiescent") is not True
+            or probe["scope_cleanup_evidence"].get("cgroup_unpopulated") is not True
             or combined.get("filter_compiled_inside_scope") is not True
             or type(combined.get("decompiled_functions")) is not int
             or combined["decompiled_functions"] < 1
