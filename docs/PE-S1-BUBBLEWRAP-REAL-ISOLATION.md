@@ -242,10 +242,14 @@ A validação em cadeia, nesta ordem:
 3. **Descendant smoke:** cria um filho Python em sessão separada que
    ignora SIGTERM, e exige seu encerramento pelo cgroup após parada da
    unidade. Não conta o fallback de limpeza como sucesso.
-4. **Ghidra real:** compila localmente um PE Windows sintético inofensivo
-   (não o executa), executa Ghidra 12.2 dentro do Bubblewrap obrigatório
-   **com `--require-cgroup-limits`**, e exige prova privada de quotas,
-   prévia de funções e pelo menos uma decompilação válida.
+4. **Probe Bubblewrap no próprio Arch:** compila primeiro o PE sintético
+   inofensivo e executa `tests/pe_sandbox_probe.py` no exato perfil
+   Bubblewrap usado pelo Ghidra. Exige namespace de rede separado,
+   sentinela privada do host oculta, `/usr` somente leitura, acesso ao
+   JDK configurado e escrita apenas no workspace permitido.
+5. **Ghidra real:** analisa o mesmo PE sintético sem executá-lo com
+   Bubblewrap obrigatório **e `--require-cgroup-limits`**. Exige prova
+   privada de quotas, prévia de funções e pelo menos uma decompilação válida.
 
 Todos os testes devem passar, na mesma VM, para retornar
 `PASS_PE_S1_5_ARCH_VM`. Em qualquer falha, a saída será
