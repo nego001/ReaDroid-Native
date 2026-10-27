@@ -59,11 +59,32 @@ jobs:
           from pe_ghidra_integrity import verify_pinned_ghidra_tree
 
           install, archive = map(Path, sys.argv[1:3])
+          from pe_ghidra_integrity import GhidraIntegrityError
+
           proof = verify_pinned_ghidra_tree(install, archive)
           assert proof["verified"] is True
           assert proof["matched_files"] >= 100
           print("Pinned official Ghidra ZIP and all extracted files: PASS")
           print(json.dumps(proof, sort_keys=True))
+
+          # Test a real tamper against the full genuine release. Restore the
+          # tree even on an assertion failure, then reattest before launching.
+          intruder = install / ".negresco-unlisted-synthetic-test"
+          assert not intruder.exists()
+          try:
+              intruder.write_text("synthetic-unlisted-test-file", encoding="utf-8")
+              try:
+                  verify_pinned_ghidra_tree(install, archive)
+              except GhidraIntegrityError as exc:
+                  assert "Unlisted or missing" in str(exc), str(exc)
+                  print("Real extracted-tree injection correctly rejected: PASS")
+              else:
+                  raise AssertionError("Tampered Ghidra tree was accepted")
+          finally:
+              intruder.unlink(missing_ok=True)
+          clean = verify_pinned_ghidra_tree(install, archive)
+          assert clean == proof
+          print("Ghidra tree reverified after tamper test: PASS")
           PY
       - name: Compile harmless nonexecuting PE fixture
         run: |
