@@ -24,6 +24,11 @@ class RealBridgeGhidraContracts(unittest.TestCase):
         self.archive.write_text("test-only", encoding="utf-8")
         self.pe = self.root / "synthetic.exe"
         self.pe.write_bytes(b"MZ mocked fixture")
+        runtime = mock.patch.object(ci, "read_ghidra_seccomp_proof",
+            return_value={"verified": True, "seccomp_mode": 2,
+                          "filters_before_bwrap": 1, "filters_in_ghidra": 2})
+        runtime.start()
+        self.addCleanup(runtime.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -46,7 +51,8 @@ class RealBridgeGhidraContracts(unittest.TestCase):
             if receipt:
                 print('{"scope_seccomp_guard":"passed",'
                       '"scope":"' + ci.SCOPE_UNIT + '",'
-                      '"filters_compiled_inside_scope":true}')
+                      '"filters_compiled_inside_scope":true,'
+                      '"seccomp_filters_before_bwrap":1}')
             return exit_code
 
         with mock.patch.object(ci.os, "geteuid", return_value=1000):
@@ -65,7 +71,8 @@ class RealBridgeGhidraContracts(unittest.TestCase):
                                  "-postScript", "NegrescoFunctionInventory.java",
                                  "/work/ghidra-functions.json",
                                  "-postScript", "NegrescoDeepPreview.java",
-                                 "/work/ghidra-deep.json"]):
+                                 "/work/ghidra-deep.json",
+                                 "-analysisTimeoutPerFile", "390"]):
                         with mock.patch.object(
                                 ci.bridge, "launch_scoped_bwrap",
                                 side_effect=fake_launch) as launch:
@@ -88,6 +95,7 @@ class RealBridgeGhidraContracts(unittest.TestCase):
                                             result["cgroup_verification"],
                                             "MOCK_ONLY_NOT_HOMOLOGATED")
                                         self.assertFalse(result["native_arch_vm_executed"])
+                                        self.assertTrue(result["ghidra_jvm_seccomp_evidence"]["verified"])
                                         launch.assert_called_once()
                                         inv.assert_called_once()
                                         deep.assert_called_once()
