@@ -279,3 +279,28 @@ duplicatas e arquivos adicionais no diretório do Ghidra. Não aceita apenas
 intencionalmente rígida: use uma extração nova da release original. Isso
 **não impede** que um administrador mal-intencionado modifique o host
 durante a execução e tampouco substitui uma VM descartável.
+
+## PE-S1.7 | Prova de descritores do host e adulteração real do Ghidra
+
+O workflow Ubuntu agora executa duas verificações negativas adicionais:
+
+- Depois de conferir o ZIP oficial Ghidra 12.2 e **cada arquivo**
+  extraído, injeta um arquivo inofensivo inesperado na pasta do Ghidra.
+  O verificador de integridade **precisa recusar** essa instalação.
+  O pipeline remove o arquivo e só continua depois de conferir
+  novamente a árvore oficial sem diferenças. Isso exercita a detecção
+  com a instalação real, não apenas fixtures ZIP.
+- O teste de isolamento cria uma sentinela privada do host, abre um
+  descritor para ela e marca esse descritor como herdável no processo
+  pai. Executa o Bubblewrap real com `close_fds=True`, e o Python
+  dentro da sandbox verifica que nenhum descritor em
+  `/proc/self/fd` expõe o par `st_dev/st_ino` da sentinela.
+  A prova `inherited_host_fd_hidden=true` é obrigatória. O mesmo
+  teste foi adicionado ao roteiro manual da VM Arch.
+
+Essa prova é limitada **ao processo de teste dentro do Bubblewrap**
+naquele sistema. Não demonstra ausência universal de vazamentos em
+outros códigos, não substitui seccomp e não resolve exploits de kernel.
+A etapa nativa em VM Arch segue pendente até haver registro de execução
+no kernel Arch separado. Manter a PR Draft e não analisar software
+suspeito no host principal.
