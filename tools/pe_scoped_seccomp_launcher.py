@@ -22,7 +22,7 @@ from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
                                 CPU_QUOTA_PERCENT, _validate_scope_name,
                                 ResourceLimitsUnavailable)
 from pe_seccomp_filter import (attach_seccomp_fd, compile_seccomp_bpf_fd,
-                               SeccompUnavailable)
+                               seccomp_filter_count, SeccompUnavailable)
 
 
 class ScopedSeccompUnavailable(RuntimeError):
@@ -66,12 +66,18 @@ def launch_scoped_bwrap(unit_name: str, command: list[str],
     if proof.get("verified") is not True:
         raise ScopedSeccompUnavailable("Cgroup verifier did not attest quotas")
 
+    try:
+        baseline_filters = seccomp_filter_count()
+    except SeccompUnavailable as exc:
+        raise ScopedSeccompUnavailable("Host seccomp baseline unavailable") from exc
+
     filter_fd = None
     try:
         filter_fd = compile_seccomp_bpf_fd()
         secured = attach_seccomp_fd(argv, filter_fd)
         print(json.dumps({"scope_seccomp_guard": "passed",
-                          "scope": unit_name, "filters_compiled_inside_scope": True},
+                          "scope": unit_name, "filters_compiled_inside_scope": True,
+                          "seccomp_filters_before_bwrap": baseline_filters},
                          sort_keys=True), flush=True)
         try:
             child = subprocess.Popen(
