@@ -1,0 +1,158 @@
+"""PE-S1.12: native Arch VM evidence receipt, not a signed attestation."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+import pe_arch_vm_evidence as evidence
+
+
+class PrivateNativeArchReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "tools").mkdir(mode=0o700)
+        self.source = self.root / "tools" / "synthetic.py"
+        self.source.write_text("print('harmless fixture')\n", encoding="utf-8")
+        self.private = self.root / "private-proof"
+        self.private.mkdir(mode=0o700)
+        self.dest = self.private / "acceptance.json"
+        source = mock.patch.object(evidence, "SOURCE_FILES",
+                                   ("tools/synthetic.py",))
+        source.start()
+        self.addCleanup(source.stop)
+        self.report = {
+            "status": "PASS_PE_S1_5_ARCH_VM",
+            "environment": {
+                "status": "ARCH_VM_PREFLIGHT_PASSED",
+                "vm_confirmed": True, "container": False},
+            "descendants_terminated": True,
+            "windows_binary_executed": False,
+            "ghidra": {
+                "ghidra_integrity": {"verified": True},
+                "arch_scoped_seccomp_probe": {
+                    "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP"},
+                "arch_real_ghidra_with_both": {
+                    "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
+                    "scope_stop_accepted": True,
+                    "filter_compiled_inside_scope": True,
+                    "quotas_verified_before_bwrap": {
+                        "verification": "guard_verified_before_bwrap"},
+                    "decompiled_functions": 2,
+                    "ghidra_jvm_seccomp_evidence": {
+                        "verified": True,
+                        "measured_process": "ghidra_headless_jvm",
+                        "seccomp_mode": 2,
+                        "filters_before_bwrap": 1,
+                        "filters_in_ghidra": 2}}},
+        }
+
+    def write(self, report=None, path=None):
+        return evidence.write_receipt_no_overwrite(
+            self.report if report is None else report,
+            self.dest if path is None else path, source_root=self.root)
+
+    def test_private_receipt_records_source_hashes_without_claiming_signature(self):
+        written = self.write()
+        self.assertEqual(written["path"], str(self.dest))
+        saved = self.dest.read_bytes()
+        self.assertEqual(written["receipt_sha256"],
+                         hashlib.sha256(saved).hexdigest())
+        payload = json.loads(saved)
+        self.assertEqual(payload["schema"],
+                         "negresco_native_arch_vm_local_receipt_v1")
+        self.assertEqual(payload["security_classification"],
+                         "LOCAL_SELF_REPORT_NOT_SIGNED")
+        self.assertEqual(payload["native_acceptance_report"], self.report)
+        self.assertEqual(payload["source_file_hashes"]["tools/synthetic.py"]["sha256"],
+                         hashlib.sha256(self.source.read_bytes()).hexdigest())
+        self.assertEqual(stat.S_IMODE(self.dest.stat().st_mode), 0o600)
+        self.assertEqual(payload["report_sha256"],
+                         hashlib.sha256(evidence._canonical(self.report)).hexdigest())
+
+    def test_does_not_overwrite_existing_receipt(self):
+        self.write()
+        original = self.dest.read_bytes()
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write()
+        self.assertEqual(self.dest.read_bytes(), original)
+
+    def test_rejects_nonprivate_or_relative_destination(self):
+        public = self.root / "public"
+        public.mkdir(mode=0o755)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write(path=public / "proof.json")
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write(path=Path("relative.json"))
+        self.assertFalse((public / "proof.json").exists())
+
+    def test_rejects_symlinked_destination_and_source(self):
+        target = self.root / "unrelated.txt"
+        target.write_text("never change", encoding="utf-8")
+        self.dest.symlink_to(target)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write()
+        self.assertEqual(target.read_text(encoding="utf-8"), "never change")
+        self.dest.unlink()
+        self.source.unlink()
+        self.source.symlink_to(target)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write()
+        self.assertFalse(self.dest.exists())
+
+    def test_refuses_mocked_ci_or_missing_native_vm_proofs(self):
+        cases = (
+            ("environment", {
+                "status": "ARCH_VM_PREFLIGHT_PASSED",
+                "vm_confirmed": False, "container": True}),
+            ("descendants_terminated", False),
+            ("windows_binary_executed", True),
+            ("status", "PASS_REAL_GHIDRA_BRIDGE_MOCKED_CGROUP_ONLY"),
+        )
+        for key, value in cases:
+            with self.subTest(key=key):
+                report = {**self.report, key: value}
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_refuses_missing_real_jvm_cgroup_or_decompilation(self):
+        original = self.report["ghidra"]["arch_real_ghidra_with_both"]
+        for key, value in (
+                ("scope_stop_accepted", False),
+                ("decompiled_functions", 0),
+                ("quotas_verified_before_bwrap", {}),
+                ("ghidra_jvm_seccomp_evidence", {
+                    "verified": True,
+                    "measured_process": "ghidra_headless_jvm",
+                    "seccomp_mode": 2,
+                    "filters_before_bwrap": 3,
+                    "filters_in_ghidra": 3}),
+        ):
+            with self.subTest(key=key):
+                changed = dict(original)
+                changed[key] = value
+                report = {**self.report, "ghidra": {
+                    **self.report["ghidra"],
+                    "arch_real_ghidra_with_both": changed}}
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+        self.assertFalse(self.dest.exists())
+
+    def test_fails_before_writing_if_source_changed_to_directory(self):
+        self.source.unlink()
+        self.source.mkdir()
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write()
+        self.assertFalse(self.dest.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
