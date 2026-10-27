@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,8 +21,11 @@ from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 from pe_arch_cgroup_smoke import run_smoke
 from pe_arch_descendant_smoke import run_native_descendant_smoke
 from pe_auto_ghidra import inspect_functions, HeadlessError
+from pe_ghidra_sandbox import build_command, SandboxUnavailable
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
+PROBE = Path(__file__).resolve().parents[1] / "tests/pe_sandbox_probe.py"
+GHIDRA_SCRIPT = Path(__file__).resolve().parent / "ghidra_scripts/NegrescoFunctionInventory.java"
 
 
 class ArchVmValidationError(RuntimeError):
@@ -70,6 +74,49 @@ def validate_ghidra_122_install(ghidra_home: Path) -> None:
         raise ArchVmValidationError("Ghidra version cannot be verified") from exc
 
 
+def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
+    """Run the Ubuntu isolation probe under the actual Arch VM kernel."""
+    if not PROBE.is_file() or not GHIDRA_SCRIPT.is_file():
+        raise ArchVmValidationError("Bubblewrap probe/source scripts missing")
+    canary = root / "host-private-canary"
+    canary.write_text("synthetic-marker", encoding="ascii")
+    canary.chmod(0o600)
+    work = root / "probe-workspace"
+    scripts = work / "scripts"
+    scripts.mkdir(parents=True, mode=0o700)
+    (work / "project").mkdir(mode=0o700)
+    shutil.copyfile(GHIDRA_SCRIPT, scripts / GHIDRA_SCRIPT.name)
+    shutil.copyfile(PROBE, work / "pe_sandbox_probe.py")
+    shutil.copyfile(pe, work / "input.exe")
+    try:
+        argv = build_command(ghidra_home, work, 120)
+        boundary = argv.index("--")
+        argv = argv[:boundary + 1] + [
+            "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+            os.readlink("/proc/self/ns/net"), str(canary)]
+        result = subprocess.run(
+            argv, stdin=subprocess.DEVNULL, capture_output=True,
+            text=True, timeout=35, check=False)
+    except (OSError, ValueError, SandboxUnavailable,
+            subprocess.TimeoutExpired) as exc:
+        raise ArchVmValidationError("Real Arch Bubblewrap probe could not execute") from exc
+    if result.returncode != 0:
+        raise ArchVmValidationError("Real Arch Bubblewrap isolation probe failed")
+    try:
+        records = [json.loads(line) for line in result.stdout.splitlines()
+                   if line.lstrip().startswith("{")]
+    except json.JSONDecodeError as exc:
+        raise ArchVmValidationError("Real Arch Bubblewrap probe evidence malformed") from exc
+    fields = ("host_home_canary_hidden", "network_namespace_separate",
+              "host_etc_hidden", "usr_runtime_read_only", "private_work_writable")
+    if not any(isinstance(item, dict) and item.get("isolation_probe") == "passed"
+               and all(item.get(field) is True for field in fields)
+               for item in records):
+        raise ArchVmValidationError("Arch Bubblewrap isolation evidence incomplete")
+    return {"status": "PASS_NATIVE_ARCH_BWRAP_PROBE",
+            **{field: True for field in fields}}
+
+
 def validate_real_ghidra(ghidra_home: Path, *, timeout_seconds: int = 420) -> dict:
     if (not ghidra_home.is_absolute() or ghidra_home.is_symlink()
             or not (ghidra_home / "support/analyzeHeadless").is_file()):
@@ -92,6 +139,7 @@ def validate_real_ghidra(ghidra_home: Path, *, timeout_seconds: int = 420) -> di
                 stderr=subprocess.PIPE, text=True, timeout=90, check=True)
         except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
             raise ArchVmValidationError("Synthetic PE compile failed") from exc
+        isolation = native_bwrap_probe(ghidra_home, pe, root)
         report = inspect_functions(
             pe, ghidra_home, report_path, timeout_seconds=timeout_seconds,
             sandbox_mode="bwrap", require_cgroup_limits=True, deep_preview=True)
@@ -113,7 +161,8 @@ def validate_real_ghidra(ghidra_home: Path, *, timeout_seconds: int = 420) -> di
                 "tasks_max": proof["tasks_max"],
                 "cpu_quota": proof["cpu_quota"],
                 "cpu_period": proof["cpu_period"],
-                "pe_executed": False, "sandbox": "bubblewrap"}
+                "pe_executed": False, "sandbox": "bubblewrap",
+                "arch_isolation_probe": isolation}
 
 
 def run_acceptance(ghidra_home: Path, *, timeout_seconds: int = 420) -> dict:
