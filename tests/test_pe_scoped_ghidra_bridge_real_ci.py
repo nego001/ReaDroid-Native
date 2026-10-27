@@ -52,7 +52,13 @@ class RealBridgeGhidraContracts(unittest.TestCase):
                             ci, "build_command",
                             side_effect=lambda home, work, secs, deep_preview:
                                 ["/usr/bin/bwrap", "--unshare-all", "--",
-                                 "/opt/negresco-ghidra/support/analyzeHeadless"]):
+                                 "/opt/negresco-ghidra/support/analyzeHeadless",
+                                 "/work/project", "NegrescoAutomaticPE",
+                                 "-import", "/work/input.exe",
+                                 "-postScript", "NegrescoFunctionInventory.java",
+                                 "/work/ghidra-functions.json",
+                                 "-postScript", "NegrescoDeepPreview.java",
+                                 "/work/ghidra-deep.json"]):
                         with mock.patch.object(
                                 ci.bridge, "launch_scoped_bwrap",
                                 side_effect=fake_launch) as launch:
