@@ -360,3 +360,29 @@ Esta etapa **não** abrange o transporte do FD pelo
 `systemd-run --user --scope` do caminho de cgroup estrito; logo o filtro
 não se tornou obrigatório no fluxo principal. Também não substitui
 a homologação do kernel Arch em VM separada.
+
+### PE-S1.8.2 | Seccomp opcional no executor Negresco PE
+
+Após o teste do Ghidra real com filtro, o runner
+`tools/pe_auto_ghidra.py` recebeu a **opção explícita**
+`--require-seccomp`. O padrão atual continua sendo apenas Bubblewrap,
+sem ativação automática. A opção exige Linux x86_64, libseccomp e
+um cBPF compilado/selado; anexa o `memfd` somente ao Bubblewrap com
+`Popen(pass_fds=(fd,), close_fds=True)`, fechando o FD no pai mesmo
+quando o lançamento falha. O relatório passa a distinguir
+`seccomp_policy=bwrap_narrow_cBPF_requested` do estado
+`not_enforced`. O campo indica a política solicitada, **não**
+uma prova independente de todas as regras em toda execução.
+
+**Combinação não homologada:** o runner rejeita
+`--require-seccomp --require-cgroup-limits` por enquanto.
+O encaminhamento do FD pelo `systemd-run --scope` ainda não recebeu
+teste real na VM Arch; não existe fallback silencioso para o modo sem
+seccomp nem para o modo sem quotas.
+
+A CI ganhou um teste **ponta a ponta**: executa esse runner com
+`--require-seccomp` e o Ghidra 12.2 real lendo o PE sintético,
+e exige um relatório válido sem execução do PE.
+Não usar isto como autorização para analisar amostras hostis no
+computador pessoal; a integração com cgroup estrito e a homologação
+nativa Arch seguem pendentes.
