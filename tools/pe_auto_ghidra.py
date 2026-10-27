@@ -26,6 +26,7 @@ import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
+from pe_resource_limits import wrap_in_cgroup_scope, ResourceLimitsUnavailable
 from pe_auto_symbols import inspect_symbols
 from pe_auto_behavior import classify, API_TO_RULE
 
@@ -345,7 +346,8 @@ def _locate_ghidra(home: Path) -> Path:
 
 def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                       output: str | Path, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
-                      *, sandbox_mode: str = "bwrap", deep_preview: bool = False) -> dict:
+                      *, sandbox_mode: str = "bwrap", deep_preview: bool = False,
+                      require_cgroup_limits: bool = False) -> dict:
     """Run trusted Ghidra tooling and atomically write bounded JSON evidence."""
     if sys.platform != "linux":
         raise HeadlessError("PE-A2 suporta somente Linux; Windows será validado depois")
@@ -355,6 +357,10 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         raise HeadlessError("Configuração de pseudocódigo inválida")
     if sandbox_mode not in ("bwrap", "trusted-fixture"):
         raise HeadlessError("Modo de isolamento inválido")
+    if type(require_cgroup_limits) is not bool:
+        raise HeadlessError("Modo de limite de recursos inválido")
+    if require_cgroup_limits and sandbox_mode != "bwrap":
+        raise HeadlessError("Limites rígidos exigem Bubblewrap")
     target = Path(binary)
     destination = Path(output)
     if destination.exists() or destination.is_symlink():
@@ -396,6 +402,11 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                                         deep_preview=deep_preview)
             except (SandboxUnavailable, OSError) as exc:
                 raise HeadlessError("Isolamento Bubblewrap indisponível; análise recusada") from exc
+            if require_cgroup_limits:
+                try:
+                    command = wrap_in_cgroup_scope(command)
+                except (ResourceLimitsUnavailable, OSError) as exc:
+                    raise HeadlessError("Limites cgroup obrigatórios indisponíveis; análise recusada") from exc
         else:
             # Explicit test-only compatibility path for synthetic fixtures in
             # CI. Never choose this automatically when inspecting unknown files.
@@ -472,6 +483,8 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "executable_launched": False,
                 "os_sandbox": ("bubblewrap_profile" if sandbox_mode == "bwrap"
                                else "not_implemented"),
+                "resource_scope": ("systemd_user_cgroup_v2_requested"
+                                   if require_cgroup_limits else "not_enforced"),
             },
         }
         encoded = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
@@ -506,6 +519,8 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout-seconds", default=DEFAULT_TIMEOUT_SECONDS, type=int)
     parser.add_argument("--deep-preview", action="store_true",
                         help="Recuperar amostra limitada de chamadas e pseudocódigo")
+    parser.add_argument("--require-cgroup-limits", action="store_true",
+                        help="Exigir escopo systemd user cgroup v2 com RAM/processos/CPU limitados, sem fallback")
     parser.add_argument("--allow-unisolated-synthetic-fixture", action="store_true",
                         help="Somente para CI com PE sintético confiável; desativa isolamento")
     args = parser.parse_args(argv)
@@ -513,6 +528,7 @@ def main(argv=None) -> int:
         report = inspect_functions(args.binary, args.ghidra_home, args.output,
                                    args.timeout_seconds,
                                    deep_preview=args.deep_preview,
+                                   require_cgroup_limits=args.require_cgroup_limits,
                                    sandbox_mode=("trusted-fixture"
                                        if args.allow_unisolated_synthetic_fixture
                                        else "bwrap"))
