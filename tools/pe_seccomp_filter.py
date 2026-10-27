@@ -132,7 +132,8 @@ def compile_seccomp_bpf_fd() -> int:
 def attach_seccomp_fd(argv: list[str], fd: int) -> list[str]:
     """Insert --seccomp before the bwrap command after checking its boundary."""
     if (not isinstance(argv, list) or argv.count("--") != 1
-            or not argv or not Path(argv[0]).name.startswith("bwrap")
+            or len(argv) < 3 or argv.index("--") == len(argv) - 1
+            or not Path(argv[0]).name.startswith("bwrap")
             or type(fd) is not int or fd < 3
             or "--seccomp" in argv or "--add-seccomp-fd" in argv):
         raise SeccompUnavailable("Invalid Bubblewrap command or seccomp FD")
