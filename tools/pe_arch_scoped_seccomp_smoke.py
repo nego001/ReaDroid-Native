@@ -35,12 +35,19 @@ BRIDGE = TOOLS / "pe_scoped_seccomp_launcher.py"
 
 def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
                             workspace_root: Path) -> dict:
-    """Requires caller to have passed verify_arch_vm before this function."""
+    """Enforce native Arch VM gate before any systemd/cgroup process launch."""
     if any(not file.is_file() or file.is_symlink()
            for file in (PROBE, SCRIPT, BRIDGE, pe)):
         raise ScopedSeccompSmokeError("Missing trusted synthetic probe fixture")
     if not workspace_root.is_absolute() or workspace_root.is_symlink():
         raise ScopedSeccompSmokeError("Private absolute test root required")
+    # Direct library callers must pass the same disposable Arch VM gate as
+    # the CLI. Never rely on an undocumented parent-process precondition.
+    environment = verify_arch_vm()
+    if (environment.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
+            or environment.get("vm_confirmed") is not True
+            or environment.get("container") is not False):
+        raise ScopedSeccompSmokeError("Native Arch VM gate not attested")
     unit = new_scope_unit()
     baseline = seccomp_filter_count()
     with tempfile.TemporaryDirectory(prefix="negresco-scope-seccomp-",
