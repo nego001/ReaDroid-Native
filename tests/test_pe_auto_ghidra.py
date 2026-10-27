@@ -138,6 +138,12 @@ if args.count("-postScript") == 2:
         self.launcher.write_text(source.replace("@MODE@", repr(mode)), encoding="utf-8")
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
 
+    def test_strict_cgroup_never_uses_unisolated_fixture_mode(self):
+        with self.assertRaisesRegex(runner.HeadlessError, "exigem Bubblewrap"):
+            self.run_synthetic(self.input, self.home, self.output, 2,
+                               require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
     def test_full_offline_handoff_returns_bounded_function_evidence(self):
         report = self.run_synthetic(self.input, self.home, self.output, 3)
         self.assertEqual(report["schema"], "pe_ghidra_headless_v1")
