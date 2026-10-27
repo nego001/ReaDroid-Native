@@ -138,3 +138,25 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
+
+  arch-userspace-contract:
+    name: Arch Linux userspace | sandbox and cgroup contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Arch packages
+        run: |
+          set -euo pipefail
+          pacman -Syu --noconfirm --needed python bubblewrap util-linux
+          python --version
+          bwrap --version
+          cat /etc/os-release
+      - name: Run profile and resource policy contracts as unprivileged user
+        run: |
+          set -euo pipefail
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
+          echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
