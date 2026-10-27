@@ -23,15 +23,20 @@ def read_ghidra_seccomp_proof(path: Path, baseline: int) -> dict:
     if type(baseline) is not int or not 0 <= baseline <= 4096:
         raise SeccompRuntimeEvidenceError("Invalid pre-bwrap seccomp baseline")
     try:
-        if path.is_symlink():
-            raise SeccompRuntimeEvidenceError("Symlinked runtime proof rejected")
-        info = path.stat()
-        if (not stat.S_ISREG(info.st_mode)
-                or info.st_uid != os.geteuid()
-                or info.st_mode & 0o022
-                or not 1 <= info.st_size <= MAX_PROOF_BYTES):
-            raise SeccompRuntimeEvidenceError("Unsafe runtime proof file")
-        raw = path.read_bytes()
+        # Open once, without following symlinks, so the security metadata and
+        # JSON bytes refer to the very same file (no check/use path race).
+        flags = os.O_RDONLY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != os.geteuid()
+                    or info.st_mode & 0o022
+                    or not 1 <= info.st_size <= MAX_PROOF_BYTES):
+                raise SeccompRuntimeEvidenceError("Unsafe runtime proof file")
+            raw = stream.read(MAX_PROOF_BYTES + 1)
         if len(raw) != info.st_size:
             raise SeccompRuntimeEvidenceError("Runtime proof changed size")
         # Object pairs hook rejects duplicate security-critical fields.
