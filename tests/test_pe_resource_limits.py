@@ -52,22 +52,24 @@ class CgroupScopeTests(unittest.TestCase):
                 argv = wrap_in_cgroup_scope(self.command, timeout_seconds=420,
                                             unit_name=self.unit_name,
                                             systemd_run_path=str(self.launcher))
-        self.assertEqual(argv[:11], [
+        self.assertEqual(argv[:13], [
             str(self.launcher), "--user", "--scope", "--quiet",
             "--unit=" + self.unit_name,
             "--property=RuntimeMaxSec=440s",
             "--property=TimeoutStopSec=5s",
+            "--property=KillMode=control-group",
+            "--property=SendSIGKILL=yes",
             "--property=MemoryMax=" + str(MEMORY_MAX_BYTES),
             "--property=TasksMax=" + str(TASKS_MAX),
             "--property=CPUQuota=" + str(CPU_QUOTA_PERCENT) + "%",
             "--",
         ])
-        self.assertEqual(argv[11:13], [sys.executable, "-I"])
-        self.assertTrue(argv[13].endswith("/tools/pe_cgroup_guard.py"))
-        self.assertEqual(argv[14:19],
+        self.assertEqual(argv[13:15], [sys.executable, "-I"])
+        self.assertTrue(argv[15].endswith("/tools/pe_cgroup_guard.py"))
+        self.assertEqual(argv[16:21],
                          [str(MEMORY_MAX_BYTES), str(TASKS_MAX),
                           str(CPU_QUOTA_PERCENT), self.unit_name, "--"])
-        self.assertEqual(argv[19:], self.command)
+        self.assertEqual(argv[21:], self.command)
         self.assertNotIn("--system", argv)
         self.assertNotIn("--shell", argv)
 
