@@ -37,6 +37,8 @@ def main(argv: list[str]) -> int:
             "untrusted HOME exposed inside sandbox")
     require(os.environ.get("TMPDIR") == "/tmp",
             "temporary files not redirected")
+    require(os.environ.get("GHIDRA_HEADLESS_MAXMEM") == "2G",
+            "Ghidra memory budget missing after --clearenv")
     require(os.environ.get("PATH", "").split(":")[0] ==
             os.environ["JAVA_HOME"] + "/bin",
             "pinned JDK not prioritized on PATH")
