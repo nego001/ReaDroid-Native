@@ -63,10 +63,11 @@ def wait_until_dead(pid: int, starttime: str, seconds: float) -> bool:
     return not active_identity(pid, starttime)
 
 
-def _grandchild(unit: str) -> int:
+def _grandchild(unit: str, ready: Path) -> int:
     if not belongs_to_scope(os.getpid(), unit):
         raise DescendantProbeError("grandchild is outside assigned scope")
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    ready.write_text("sigterm_ignored", encoding="ascii")
     while True:
         time.sleep(0.25)
 
@@ -74,11 +75,19 @@ def _grandchild(unit: str) -> int:
 def _worker(marker: Path, unit: str) -> int:
     if not belongs_to_scope(os.getpid(), unit):
         raise DescendantProbeError("worker is outside assigned scope")
+    ready = marker.with_suffix(".ready")
     child = subprocess.Popen(
         [sys.executable, "-I", str(Path(__file__).resolve()),
-         "--grandchild", unit],
+         "--grandchild", unit, str(ready)],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+    deadline = time.monotonic() + 5
+    while not ready.is_file() and time.monotonic() < deadline:
+        if child.poll() is not None:
+            raise DescendantProbeError("detached grandchild exited before ready")
+        time.sleep(0.05)
+    if not ready.is_file() or ready.read_text(encoding="ascii") != "sigterm_ignored":
+        raise DescendantProbeError("SIGTERM-resistant child was not ready")
     identity = proc_identity(child.pid)
     if not identity or not belongs_to_scope(child.pid, unit):
         raise DescendantProbeError("grandchild did not enter assigned scope")
@@ -166,8 +175,8 @@ def run_native_descendant_smoke() -> dict:
 
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) == 3 and argv[1] == "--grandchild":
-            return _grandchild(argv[2])
+        if len(argv) == 4 and argv[1] == "--grandchild":
+            return _grandchild(argv[2], Path(argv[3]))
         if len(argv) == 4 and argv[1] == "--worker":
             return _worker(Path(argv[2]), argv[3])
         if len(argv) == 1:
