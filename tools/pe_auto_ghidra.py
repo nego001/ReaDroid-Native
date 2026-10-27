@@ -26,7 +26,8 @@ import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
-from pe_resource_limits import wrap_in_cgroup_scope, ResourceLimitsUnavailable
+from pe_resource_limits import (wrap_in_cgroup_scope, new_scope_unit, stop_scope,
+                                ResourceLimitsUnavailable)
 from pe_auto_symbols import inspect_symbols
 from pe_auto_behavior import classify, API_TO_RULE
 
@@ -390,6 +391,7 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         }
         if os.environ.get("JAVA_HOME"):
             env["JAVA_HOME"] = os.environ["JAVA_HOME"]
+        scope_unit = None
         if sandbox_mode == "bwrap":
             scripts = working / "scripts"
             scripts.mkdir(mode=0o700)
@@ -404,7 +406,10 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 raise HeadlessError("Isolamento Bubblewrap indisponível; análise recusada") from exc
             if require_cgroup_limits:
                 try:
-                    command = wrap_in_cgroup_scope(command)
+                    scope_unit = new_scope_unit()
+                    command = wrap_in_cgroup_scope(
+                        command, timeout_seconds=timeout_seconds,
+                        unit_name=scope_unit)
                 except (ResourceLimitsUnavailable, OSError) as exc:
                     raise HeadlessError("Limites cgroup obrigatórios indisponíveis; análise recusada") from exc
         else:
@@ -442,8 +447,18 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.wait()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
             raise HeadlessError("Ghidra excedeu o tempo e foi interrompido") from exc
+        finally:
+            if scope_unit is not None:
+                # A systemd scope tracks all descendants, including processes
+                # that leave the launcher's process group. RuntimeMaxSec is an
+                # independent backstop if this best-effort stop request fails.
+                stop_scope(scope_unit)
         if code != 0:
             raise HeadlessError("O Ghidra não concluiu a análise; nenhum relatório foi aceito")
         evidence = _validated_function_evidence(raw_result)
