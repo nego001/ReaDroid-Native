@@ -121,6 +121,16 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         with self.assertRaises(scope.ScopeCleanupUnavailable):
             self.run_mock(self.report(load="not-found"), returncode=1)
 
+    def test_path_injected_user_owned_systemctl_is_never_trusted(self):
+        with mock.patch.object(scope.shutil, "which",
+                               return_value=str(self.systemctl)):
+            with mock.patch.object(scope.subprocess, "run") as show:
+                with self.assertRaisesRegex(
+                        scope.ScopeCleanupUnavailable, "Cannot verify scope cleanup"):
+                    scope.stop_and_attest_scope(
+                        self.UNIT, mount_root=self.cgroup)
+                show.assert_not_called()
+
     def test_symlinked_systemctl_refused_without_calling_systemd(self):
         alias = self.root / "alias"
         alias.symlink_to(self.systemctl)
