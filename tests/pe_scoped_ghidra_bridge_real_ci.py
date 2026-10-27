@@ -28,9 +28,12 @@ from pe_auto_ghidra import (_validated_deep_evidence,
                             _validated_function_evidence, inspect_pe)
 from pe_ghidra_integrity import verify_pinned_ghidra_tree
 from pe_ghidra_sandbox import build_command
+from pe_seccomp_runtime_evidence import (baseline_from_scope_receipts,
+                                         read_ghidra_seccomp_proof)
 
 INVENTORY = ROOT / "tools/ghidra_scripts/NegrescoFunctionInventory.java"
 DEEP = ROOT / "tools/ghidra_scripts/NegrescoDeepPreview.java"
+RUNTIME = ROOT / "tools/ghidra_scripts/NegrescoSeccompRuntimeProof.java"
 SCOPE_UNIT = "negresco-pe-0123456789abcdef01234567.scope"
 
 
@@ -45,7 +48,7 @@ def run_real_bridge_ghidra(ghidra_home: Path, ghidra_archive: Path,
     if not synthetic_pe.is_file() or synthetic_pe.is_symlink():
         raise RealBridgeGhidraError("Trusted synthetic input is missing")
     if any(not path.is_file() or path.is_symlink()
-           for path in (INVENTORY, DEEP)):
+           for path in (INVENTORY, DEEP, RUNTIME)):
         raise RealBridgeGhidraError("Trusted Ghidra exporter scripts missing")
     inspection = inspect_pe(synthetic_pe)
     if inspection.get("architecture") != "x86_64":
@@ -60,6 +63,7 @@ def run_real_bridge_ghidra(ghidra_home: Path, ghidra_archive: Path,
         (work / "project").mkdir(mode=0o700)
         shutil.copyfile(INVENTORY, work / "scripts" / INVENTORY.name)
         shutil.copyfile(DEEP, work / "scripts" / DEEP.name)
+        shutil.copyfile(RUNTIME, work / "scripts" / RUNTIME.name)
         target = work / "input.exe"
         shutil.copyfile(synthetic_pe, target)
         if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(
@@ -68,6 +72,12 @@ def run_real_bridge_ghidra(ghidra_home: Path, ghidra_archive: Path,
 
         command = build_command(
             ghidra_home, work, 420, deep_preview=True)
+        if command.count("-analysisTimeoutPerFile") != 1:
+            raise RealBridgeGhidraError("Missing Ghidra postScript insertion point")
+        before = command.index("-analysisTimeoutPerFile")
+        command[before:before] = [
+            "-postScript", "NegrescoSeccompRuntimeProof.java",
+            "/work/ghidra-seccomp-runtime.json"]
         receipts = io.StringIO()
         # Explicitly mock ONLY cgroup verification. libseccomp, FD transfer,
         # Bubblewrap and Ghidra execution all remain real subprocesses.
@@ -94,6 +104,11 @@ def run_real_bridge_ghidra(ghidra_home: Path, ghidra_archive: Path,
                     for item in records)):
             raise RealBridgeGhidraError(
                 "Real Ghidra rejected by scoped seccomp bridge")
+        # Correlate the kernel status in the Ghidra JVM with the baseline
+        # recorded by the real launcher before Bubblewrap inherited its BPF.
+        baseline = baseline_from_scope_receipts(records, SCOPE_UNIT)
+        runtime_proof = read_ghidra_seccomp_proof(
+            work / "ghidra-seccomp-runtime.json", baseline)
         # These read ACTUAL files written by Ghidra inside Bubblewrap.
         inventory = _validated_function_evidence(work / "ghidra-functions.json")
         preview = _validated_deep_evidence(work / "ghidra-deep.json")
@@ -110,6 +125,7 @@ def run_real_bridge_ghidra(ghidra_home: Path, ghidra_archive: Path,
             "real_ghidra_12_2": True,
             "ghidra_pinned_release_verified": True,
             "filter_created_by_actual_scoped_launcher": True,
+            "ghidra_jvm_seccomp_evidence": runtime_proof,
             "inventory_total_discovered": inventory["total_discovered"],
             "decompiled_functions": successes,
             "cgroup_verification": "MOCK_ONLY_NOT_HOMOLOGATED",
