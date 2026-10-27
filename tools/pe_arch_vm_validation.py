@@ -169,6 +169,10 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                 or actual_combined.get("filter_compiled_inside_scope") is not True
                 or not isinstance(
                     actual_combined.get("quotas_verified_before_bwrap"), dict)
+                or not isinstance(
+                    actual_combined.get("ghidra_jvm_seccomp_evidence"), dict)
+                or actual_combined["ghidra_jvm_seccomp_evidence"].get("verified") is not True
+                or actual_combined["ghidra_jvm_seccomp_evidence"].get("seccomp_mode") != 2
                 or actual_combined.get("decompiled_functions", 0) < 1):
             raise ArchVmValidationError(
                 "Real Ghidra under simultaneous cgroup/seccomp not proven")
