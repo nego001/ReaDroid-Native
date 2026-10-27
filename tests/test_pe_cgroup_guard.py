@@ -26,6 +26,7 @@ class CgroupVerificationTests(unittest.TestCase):
     def verify(self):
         return verify_cgroup_limits(
             4 * 1024 ** 3, 128, 200,
+            expected_scope="run-negresco.scope",
             proc_cgroup=self.proc, mount_root=self.root)
 
     def test_accepts_actual_finite_scope_budgets(self):
@@ -52,6 +53,12 @@ class CgroupVerificationTests(unittest.TestCase):
                 with self.assertRaises(CgroupVerificationError):
                     self.verify()
                 file.write_text(original)
+
+    def test_rejects_wrong_scope_identity(self):
+        with self.assertRaisesRegex(CgroupVerificationError, "assigned scope"):
+            verify_cgroup_limits(4 * 1024 ** 3, 128, 200,
+                                 expected_scope="unrelated.scope",
+                                 proc_cgroup=self.proc, mount_root=self.root)
 
     def test_rejects_missing_scope_or_non_v2_membership(self):
         for line in ("0::/user.slice/unrestricted.service\n",
