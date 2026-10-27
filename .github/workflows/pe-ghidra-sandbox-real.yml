@@ -300,6 +300,13 @@ jobs:
           assert proof["real_bubblewrap"] is True
           assert proof["real_ghidra_12_2"] is True
           assert proof["filter_created_by_actual_scoped_launcher"] is True
+          runtime = proof["ghidra_jvm_seccomp_evidence"]
+          assert runtime["verified"] is True
+          assert runtime["measured_process"] == "ghidra_headless_jvm"
+          assert runtime["measurement_source"] == "/proc/self/status"
+          assert runtime["seccomp_mode"] == 2
+          assert runtime["filters_in_ghidra"] > runtime["filters_before_bwrap"]
+          assert runtime["additional_filters_observed"] >= 1
           assert proof["inventory_total_discovered"] > 0
           assert proof["decompiled_functions"] > 0
           assert proof["cgroup_verification"] == "MOCK_ONLY_NOT_HOMOLOGATED"
@@ -353,6 +360,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_arch_scoped_seccomp_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_scoped_ghidra_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_scoped_ghidra_bridge_real_ci.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
 
   arch-userspace-contract:
     name: Arch Linux userspace | sandbox and cgroup contracts
@@ -386,4 +394,5 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_scoped_seccomp_smoke.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_scoped_ghidra_smoke.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scoped_ghidra_bridge_real_ci.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
