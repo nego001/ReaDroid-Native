@@ -276,6 +276,32 @@ jobs:
           assert report["evidence"]["total_discovered"] > 0
           print("PE RUNNER WITH EXPLICIT SECCOMP: PASS")
           PY
+      - name: Real Ghidra decompilation through actual seccomp bridge (cgroup mocked)
+        run: |
+          set -euo pipefail
+          python3 tests/pe_scoped_ghidra_bridge_real_ci.py \
+            "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            "$RUNNER_TEMP/ghidra_12.2.zip" \
+            "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            > "$RUNNER_TEMP/real-ghidra-scoped-bridge.json"
+          python3 - "$RUNNER_TEMP/real-ghidra-scoped-bridge.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          proof = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert proof["status"] == "PASS_REAL_GHIDRA_BRIDGE_MOCKED_CGROUP_ONLY"
+          assert proof["ghidra_pinned_release_verified"] is True
+          assert proof["real_libseccomp_bpf"] is True
+          assert proof["real_bubblewrap"] is True
+          assert proof["real_ghidra_12_2"] is True
+          assert proof["filter_created_by_actual_scoped_launcher"] is True
+          assert proof["inventory_total_discovered"] > 0
+          assert proof["decompiled_functions"] > 0
+          assert proof["cgroup_verification"] == "MOCK_ONLY_NOT_HOMOLOGATED"
+          assert proof["native_arch_vm_executed"] is False
+          assert proof["windows_binary_executed"] is False
+          print("REAL GHIDRA + REAL SECCOMP BRIDGE DECOMPILATION: PASS")
+          print("SYSTEMD CGROUP/ARCH KERNEL: MOCKED OR UNTESTED, NOT HOMOLOGATED")
+          PY
       - name: Check actual sandboxed Ghidra evidence
         run: |
           python3 - <<'PY'
