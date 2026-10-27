@@ -127,15 +127,31 @@ jobs:
                               workspace / "pe_sandbox_probe.py")
               argv = build_command(ghidra, workspace, 120, deep_preview=True)
               boundary = argv.index("--")
-              argv = argv[:boundary+1] + [
-                  "/usr/bin/python3", "/work/pe_sandbox_probe.py",
-                  os.readlink("/proc/self/ns/net"), str(canary)]
-              result = subprocess.run(argv, capture_output=True,
-                                      text=True, timeout=35, check=False)
+              # Keep a real secret-bearing host FD intentionally inheritable
+              # in the parent, then prove the sandbox process cannot see its
+              # device/inode identity. This tests the actual process boundary.
+              host_fd = os.open(canary, os.O_RDONLY)
+              try:
+                  os.set_inheritable(host_fd, True)
+                  host_stat = os.fstat(host_fd)
+                  argv = argv[:boundary+1] + [
+                      "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+                      os.readlink("/proc/self/ns/net"), str(canary),
+                      str(host_stat.st_dev), str(host_stat.st_ino)]
+                  result = subprocess.run(argv, capture_output=True,
+                                          text=True, timeout=35, check=False,
+                                          close_fds=True)
+              finally:
+                  os.close(host_fd)
               print((result.stdout + result.stderr)[:4000])
-              if result.returncode != 0 or '"isolation_probe": "passed"' not in result.stdout:
+              import json
+              if result.returncode != 0:
+                  raise RuntimeError("REAL BUBBLEWRAP PROBE FAILED CLOSED")
+              payload = json.loads(result.stdout.strip())
+              if (payload.get("isolation_probe") != "passed"
+                      or payload.get("inherited_host_fd_hidden") is not True):
                   raise RuntimeError(
-                      "REAL BUBBLEWRAP PROBE FAILED CLOSED: no policy relaxation")
+                      "REAL BUBBLEWRAP FD/NAMESPACE PROBE FAILED CLOSED")
           PY
       - name: Run real Ghidra in REQUIRED Bubblewrap profile
         run: |
