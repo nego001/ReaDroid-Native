@@ -84,7 +84,19 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                         else (_ for _ in ()).throw(
                             scoped.InvalidResourceEvidence("absent")))))
                 stop = stack.enter_context(mock.patch.object(
-                    scoped, "stop_scope", return_value=stop_accepted))
+                    scoped, "stop_and_attest_scope",
+                    side_effect=(
+                        lambda unit: {
+                            "verified": True, "scope_quiescent": True,
+                            "cgroup_unpopulated": True,
+                            "stop_request_accepted": True,
+                            "load_state": "loaded",
+                            "active_state": "inactive",
+                            "sub_state": "dead",
+                            "scope_collected": False
+                        }
+                    ) if stop_accepted else scoped.ScopeCleanupUnavailable(
+                        "scope still active")))
                 if (valid_seccomp and include_guard and include_scope
                         and include_private_proof and stop_accepted):
                     result = scoped.run_scoped_seccomp_probe(
