@@ -92,12 +92,19 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
     try:
         argv = build_command(ghidra_home, work, 120)
         boundary = argv.index("--")
-        argv = argv[:boundary + 1] + [
-            "/usr/bin/python3", "/work/pe_sandbox_probe.py",
-            os.readlink("/proc/self/ns/net"), str(canary)]
-        result = subprocess.run(
-            argv, stdin=subprocess.DEVNULL, capture_output=True,
-            text=True, timeout=35, check=False)
+        host_fd = os.open(canary, os.O_RDONLY)
+        try:
+            os.set_inheritable(host_fd, True)
+            identity = os.fstat(host_fd)
+            argv = argv[:boundary + 1] + [
+                "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+                os.readlink("/proc/self/ns/net"), str(canary),
+                str(identity.st_dev), str(identity.st_ino)]
+            result = subprocess.run(
+                argv, stdin=subprocess.DEVNULL, capture_output=True,
+                text=True, timeout=35, check=False, close_fds=True)
+        finally:
+            os.close(host_fd)
     except (OSError, ValueError, SandboxUnavailable,
             subprocess.TimeoutExpired) as exc:
         raise ArchVmValidationError("Real Arch Bubblewrap probe could not execute") from exc
@@ -109,7 +116,8 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
     except json.JSONDecodeError as exc:
         raise ArchVmValidationError("Real Arch Bubblewrap probe evidence malformed") from exc
     fields = ("host_home_canary_hidden", "network_namespace_separate",
-              "host_etc_hidden", "usr_runtime_read_only", "private_work_writable")
+              "host_etc_hidden", "usr_runtime_read_only", "private_work_writable",
+              "inherited_host_fd_hidden")
     if not any(isinstance(item, dict) and item.get("isolation_probe") == "passed"
                and all(item.get(field) is True for field in fields)
                for item in records):
