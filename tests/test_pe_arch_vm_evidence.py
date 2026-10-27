@@ -38,10 +38,20 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             "ghidra": {
                 "ghidra_integrity": {"verified": True},
                 "arch_scoped_seccomp_probe": {
-                    "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP"},
+                    "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
+                    "scope_cleanup_evidence": {
+                        "verified": True, "scope_quiescent": True,
+                        "cgroup_unpopulated": True}},
                 "arch_real_ghidra_with_both": {
                     "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
-                    "scope_stop_accepted": True,
+                    "scope_cleanup_verified": True,
+                    "scope_cleanup_evidence": {
+                        "verified": True, "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "stop_request_accepted": False,
+                        "load_state": "not-found",
+                        "active_state": "inactive", "sub_state": "dead",
+                        "scope_collected": True},
                     "filter_compiled_inside_scope": True,
                     "quotas_verified_before_bwrap": {
                         "verification": "guard_verified_before_bwrap"},
@@ -126,7 +136,11 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
     def test_refuses_missing_real_jvm_cgroup_or_decompilation(self):
         original = self.report["ghidra"]["arch_real_ghidra_with_both"]
         for key, value in (
-                ("scope_stop_accepted", False),
+                ("scope_cleanup_verified", False),
+                ("scope_cleanup_evidence", {
+                    "verified": False, "scope_quiescent": False,
+                    "cgroup_unpopulated": False,
+                    "active_state": "active", "sub_state": "running"}),
                 ("decompiled_functions", 0),
                 ("quotas_verified_before_bwrap", {}),
                 ("ghidra_jvm_seccomp_evidence", {
