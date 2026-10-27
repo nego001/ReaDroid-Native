@@ -139,6 +139,35 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             self.assertTrue(result["inherited_host_fd_hidden"])
             self.assertTrue(run.call_args.kwargs["close_fds"])
 
+    def test_arch_vm_rejects_unproven_scoped_seccomp_before_ghidra(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ghidra = Path(tmp) / "ghidra"
+            (ghidra / "support").mkdir(parents=True)
+            (ghidra / "support/analyzeHeadless").write_text("synthetic")
+            (ghidra / "Ghidra").mkdir()
+            (ghidra / "Ghidra/application.properties").write_text(
+                "application.name=Ghidra\napplication.version=12.2\n",
+                encoding="utf-8")
+            with mock.patch.object(validation, "verify_pinned_ghidra_tree",
+                                   return_value={"verified": True}):
+                with mock.patch.object(validation, "java25_preflight"):
+                    with mock.patch.object(validation.subprocess, "run",
+                                           return_value=mock.Mock(returncode=0)):
+                        with mock.patch.object(validation, "native_bwrap_probe",
+                                               return_value={"status": "PASS_NATIVE_ARCH_BWRAP_PROBE"}):
+                            with mock.patch.object(validation, "run_scoped_seccomp_probe",
+                                                   return_value={
+                                                       "status": "REJECTED_NOT_HOMOLOGATED",
+                                                       "filter_compiled_after_guard": False
+                                                   }):
+                                with mock.patch.object(validation, "inspect_functions") as inspect:
+                                    with self.assertRaisesRegex(
+                                            validation.ArchVmValidationError,
+                                            "joint native attestation incomplete"):
+                                        validation.validate_real_ghidra(
+                                            ghidra, Path(tmp) / "synthetic.zip")
+                                inspect.assert_not_called()
+
     def test_real_ghidra_requires_private_quota_proof(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp) / "ghidra"
@@ -168,13 +197,20 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                        return_value=mock.Mock(returncode=0)):
                         with mock.patch.object(validation, "native_bwrap_probe",
                                                return_value={"status": "PASS_NATIVE_ARCH_BWRAP_PROBE"}):
-                            with mock.patch.object(validation, "inspect_functions",
-                                                   side_effect=fake_inspect):
-                                with self.assertRaisesRegex(
-                                        validation.ArchVmValidationError, "incomplete"):
-                                    validation.validate_real_ghidra(
-                                        home, Path("/fake/release.zip"),
-                                        timeout_seconds=420)
+                            with mock.patch.object(
+                                    validation, "run_scoped_seccomp_probe",
+                                    return_value={
+                                        "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
+                                        "filter_compiled_after_guard": True,
+                                        "cgroup_verification": {"verification": "guard_verified_before_bwrap"}
+                                    }):
+                                with mock.patch.object(validation, "inspect_functions",
+                                                       side_effect=fake_inspect):
+                                    with self.assertRaisesRegex(
+                                            validation.ArchVmValidationError, "incomplete"):
+                                        validation.validate_real_ghidra(
+                                            home, Path("/fake/release.zip"),
+                                            timeout_seconds=420)
 
 
 if __name__ == "__main__":
