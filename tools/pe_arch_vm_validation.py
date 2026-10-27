@@ -23,6 +23,8 @@ from pe_arch_descendant_smoke import run_native_descendant_smoke
 from pe_auto_ghidra import inspect_functions, HeadlessError
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_ghidra_integrity import verify_pinned_ghidra_tree, GhidraIntegrityError
+from pe_arch_scoped_seccomp_smoke import (run_scoped_seccomp_probe,
+                                          ScopedSeccompSmokeError)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
 PROBE = Path(__file__).resolve().parents[1] / "tests/pe_sandbox_probe.py"
@@ -151,6 +153,12 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
         except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
             raise ArchVmValidationError("Synthetic PE compile failed") from exc
         isolation = native_bwrap_probe(ghidra_home, pe, root)
+        scoped_seccomp = run_scoped_seccomp_probe(ghidra_home, pe, root)
+        if (scoped_seccomp.get("status") != "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP"
+                or scoped_seccomp.get("filter_compiled_after_guard") is not True
+                or not isinstance(scoped_seccomp.get("cgroup_verification"), dict)):
+            raise ArchVmValidationError(
+                "Scoped seccomp/cgroup joint native attestation incomplete")
         report = inspect_functions(
             pe, ghidra_home, report_path, timeout_seconds=timeout_seconds,
             sandbox_mode="bwrap", require_cgroup_limits=True, deep_preview=True)
@@ -174,7 +182,8 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                 "cpu_period": proof["cpu_period"],
                 "pe_executed": False, "sandbox": "bubblewrap",
                 "ghidra_integrity": integrity,
-                "arch_isolation_probe": isolation}
+                "arch_isolation_probe": isolation,
+                "arch_scoped_seccomp_probe": scoped_seccomp}
 
 
 def run_acceptance(ghidra_home: Path, release_zip: Path, *,
@@ -208,6 +217,7 @@ def main() -> int:
         print(json.dumps(proof, sort_keys=True))
         return 0
     except (ArchVmUnavailable, ArchVmValidationError, GhidraIntegrityError,
+            ScopedSeccompSmokeError,
             HeadlessError,
             RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "REJECTED_NOT_HOMOLOGATED",
