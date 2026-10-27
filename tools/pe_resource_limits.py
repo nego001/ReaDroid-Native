@@ -59,6 +59,7 @@ def stop_scope(unit_name: str, *, systemctl_path: str | None = None) -> bool:
 
 def wrap_in_cgroup_scope(command: list[str], *, timeout_seconds: int = 600,
                          unit_name: str | None = None,
+                         proof_path: Path | None = None,
                          systemd_run_path: str | None = None) -> list[str]:
     """Create argv for a synchronous systemd user scope, never a shell string.
 
@@ -74,6 +75,22 @@ def wrap_in_cgroup_scope(command: list[str], *, timeout_seconds: int = 600,
     if unit_name is None:
         unit_name = new_scope_unit()
     _validate_scope_name(unit_name)
+    proof_argument = "-"
+    if proof_path is not None:
+        proof = Path(proof_path)
+        if not proof.is_absolute() or proof.is_symlink() or proof.exists():
+            raise ResourceLimitsUnavailable("Destino da prova de cgroup inválido")
+        try:
+            parent = proof.parent
+            parent_meta = parent.stat()
+            if (not parent.is_dir() or parent.is_symlink()
+                    or parent.resolve(strict=True) != parent
+                    or parent_meta.st_uid != os.geteuid()
+                    or parent_meta.st_mode & 0o077):
+                raise ResourceLimitsUnavailable("Diretório de prova não privado")
+        except OSError as exc:
+            raise ResourceLimitsUnavailable("Diretório de prova indisponível") from exc
+        proof_argument = str(proof)
     if os.geteuid() == 0:
         raise ResourceLimitsUnavailable("Escopo de Ghidra não pode rodar como root")
     if not Path("/sys/fs/cgroup/cgroup.controllers").is_file():
@@ -100,5 +117,5 @@ def wrap_in_cgroup_scope(command: list[str], *, timeout_seconds: int = 600,
         "--property=CPUQuota=" + str(CPU_QUOTA_PERCENT) + "%",
         "--", sys.executable, "-I", str(verifier.resolve(strict=True)),
         str(MEMORY_MAX_BYTES), str(TASKS_MAX), str(CPU_QUOTA_PERCENT),
-        unit_name, "--", *command,
+        unit_name, proof_argument, "--", *command,
     ]
