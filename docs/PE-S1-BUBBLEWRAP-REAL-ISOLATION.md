@@ -338,3 +338,25 @@ seccomp obrigatório**. A política será integrada ao Ghidra só depois
 de provar compatibilidade da análise real e o encaminhamento seguro
 do descritor também através de `systemd-run --scope` no Arch nativo.
 Ainda não há autorização para usar amostras hostis no host principal.
+
+### PE-S1.8.1 | Compatibilidade do Ghidra 12.2 com seccomp real
+
+O experimento passou a conter um segundo *smoke* separado:
+`tools/pe_seccomp_ghidra_smoke.py`. Ele exige
+`--ghidra-home` e `--ghidra-archive`, **reconfere o ZIP SHA-256
+fixado e a árvore extraída**, compila a fixture PE do próprio repositório
+e executa o Ghidra 12.2 real em Bubblewrap com o mesmo filtro seccomp
+selado. A verificação exige retorno zero e inventário de pelo menos
+uma função real, com validação de esquema e limites de tamanho. O PE
+Windows é **lido**, nunca executado.
+
+A CI Ubuntu agora testa a política primeiro com
+`PTRACE_TRACEME=EPERM` e depois com Ghidra 12.2 de verdade. A suíte
+de testes simulados verifica que o filtro via FD é obrigatório, que
+falhas e inventário ausente são rejeitados, e que o FD é fechado.
+**Aprovação depende da nova execução do workflow.**
+
+Esta etapa **não** abrange o transporte do FD pelo
+`systemd-run --user --scope` do caminho de cgroup estrito; logo o filtro
+não se tornou obrigatório no fluxo principal. Também não substitui
+a homologação do kernel Arch em VM separada.
