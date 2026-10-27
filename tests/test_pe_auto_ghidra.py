@@ -182,6 +182,37 @@ if args.count("-postScript") == 2:
         stop.assert_called_once_with(unit)
         self.assertTrue(self.output.exists())
 
+    def test_strict_scope_never_publishes_if_systemd_stop_refuses(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(runner, "stop_scope", return_value=False) as stop:
+                        with self.assertRaisesRegex(
+                                runner.HeadlessError, "parada do cgroup"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        stop.assert_called_once_with(unit)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_refuses_missing_systemctl_cleanup(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        self._fake("exit")
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(runner, "stop_scope", return_value=False):
+                        with self.assertRaises(runner.HeadlessError):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
     def test_strict_scope_stops_on_timeout_without_publishing_report(self):
         self._fake("sleep")
         unit = "negresco-pe-0123456789abcdef01234567.scope"
