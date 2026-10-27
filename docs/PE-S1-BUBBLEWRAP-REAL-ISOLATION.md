@@ -165,3 +165,32 @@ repetir o Ghidra real com quotas sobre o mesmo kernel, observar OOM,
 verificar limpeza de projetos temporários, testar seccomp e resistência
 a fuga de sandbox. **Não usar binários hostis em uma estação pessoal
 apenas com estes testes.** A PR segue Draft.
+
+## PE-S1.4 | Atestação privada de quotas e limpeza obrigatória
+
+O modo `--require-cgroup-limits` agora usa um segundo diretório temporário
+(`negresco-pe-proof-*`, 0700) **fora** do diretório `/work` disponibilizado
+ao Ghidra. O verificador de cgroup escreve um JSON exclusivo (O_EXCL,
+O_NOFOLLOW quando disponível, modo 0600 e fsync) **antes** de executar
+o Bubblewrap. O arquivo contém identidade do escopo e limites efetivos
+`memory.max`, `pids.max` e `cpu.max`, além de um identificador de
+esquema. O verificador não sobrescreve evidência preexistente.
+
+O executor confere que a prova é um arquivo regular privado, pertence ao
+usuário, tem tamanho limitado, corresponde exatamente ao escopo requisitado
+e contém quotas dentro da política. **Sem essa prova, o modo estrito não
+publica relatório**, mesmo que um subprocesso retorne zero. O relatório
+estrito passa a usar
+`resource_scope=systemd_user_cgroup_v2_verified_at_start` e fornece um
+resumo dos limites verificados. Essa indicação descreve apenas a verificação
+na inicialização, **não** uma garantia contra alterações posteriores nem
+isolamento de qualidade equivalente a uma VM.
+
+O executor também exige que `systemctl --user stop <escopo>` retorne
+sucesso para aceitar o resultado da análise estrita; se a solicitação
+de parada falhar, descarta o relatório. **O retorno zero do systemctl
+não comprova por si só que todos os descendentes terminaram.** Essa
+hipótese deve ser testada com `pe_arch_descendant_smoke.py` em Arch
+instalado; a matriz CI cobre somente testes simulados para esse caso.
+O fluxo não solicita root, não desativa segurança do host, não analisa
+software hostil nem publica APK/OTA.
