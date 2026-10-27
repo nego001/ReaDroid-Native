@@ -167,7 +167,12 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
             ghidra_home, pe, root, timeout_seconds=timeout_seconds)
         if (actual_combined.get("status")
                 != "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP"
-                or actual_combined.get("scope_stop_accepted") is not True
+                or actual_combined.get("scope_cleanup_verified") is not True
+                or not isinstance(actual_combined.get("scope_cleanup_evidence"), dict)
+                or actual_combined["scope_cleanup_evidence"].get("scope_quiescent") is not True
+                or actual_combined["scope_cleanup_evidence"].get("cgroup_unpopulated") is not True
+                or not isinstance(scoped_seccomp.get("scope_cleanup_evidence"), dict)
+                or scoped_seccomp["scope_cleanup_evidence"].get("scope_quiescent") is not True
                 or actual_combined.get("filter_compiled_inside_scope") is not True
                 or not isinstance(
                     actual_combined.get("quotas_verified_before_bwrap"), dict)
