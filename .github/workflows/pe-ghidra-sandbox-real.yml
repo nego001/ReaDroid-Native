@@ -144,6 +144,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_descendant_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
 
   arch-userspace-contract:
     name: Arch Linux userspace | sandbox and cgroup contracts
@@ -170,4 +171,5 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_descendant_smoke.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
