@@ -25,6 +25,8 @@ from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_ghidra_integrity import verify_pinned_ghidra_tree, GhidraIntegrityError
 from pe_arch_scoped_seccomp_smoke import (run_scoped_seccomp_probe,
                                           ScopedSeccompSmokeError)
+from pe_arch_scoped_ghidra_smoke import (run_native_scoped_ghidra,
+                                         ScopedGhidraError)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
 PROBE = Path(__file__).resolve().parents[1] / "tests/pe_sandbox_probe.py"
@@ -159,6 +161,17 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                 or not isinstance(scoped_seccomp.get("cgroup_verification"), dict)):
             raise ArchVmValidationError(
                 "Scoped seccomp/cgroup joint native attestation incomplete")
+        actual_combined = run_native_scoped_ghidra(
+            ghidra_home, pe, root, timeout_seconds=timeout_seconds)
+        if (actual_combined.get("status")
+                != "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP"
+                or actual_combined.get("scope_stop_accepted") is not True
+                or actual_combined.get("filter_compiled_inside_scope") is not True
+                or not isinstance(
+                    actual_combined.get("quotas_verified_before_bwrap"), dict)
+                or actual_combined.get("decompiled_functions", 0) < 1):
+            raise ArchVmValidationError(
+                "Real Ghidra under simultaneous cgroup/seccomp not proven")
         report = inspect_functions(
             pe, ghidra_home, report_path, timeout_seconds=timeout_seconds,
             sandbox_mode="bwrap", require_cgroup_limits=True, deep_preview=True)
@@ -183,7 +196,8 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                 "pe_executed": False, "sandbox": "bubblewrap",
                 "ghidra_integrity": integrity,
                 "arch_isolation_probe": isolation,
-                "arch_scoped_seccomp_probe": scoped_seccomp}
+                "arch_scoped_seccomp_probe": scoped_seccomp,
+                "arch_real_ghidra_with_both": actual_combined}
 
 
 def run_acceptance(ghidra_home: Path, release_zip: Path, *,
@@ -217,7 +231,7 @@ def main() -> int:
         print(json.dumps(proof, sort_keys=True))
         return 0
     except (ArchVmUnavailable, ArchVmValidationError, GhidraIntegrityError,
-            ScopedSeccompSmokeError,
+            ScopedSeccompSmokeError, ScopedGhidraError,
             HeadlessError,
             RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "REJECTED_NOT_HOMOLOGATED",
