@@ -304,3 +304,37 @@ outros códigos, não substitui seccomp e não resolve exploits de kernel.
 A etapa nativa em VM Arch segue pendente até haver registro de execução
 no kernel Arch separado. Manter a PR Draft e não analisar software
 suspeito no host principal.
+
+## PE-S1.8 | Seccomp experimental com BPF do libseccomp
+
+Uma camada adicional de teste foi introduzida, **ainda não habilitada
+no executor de produção**. O módulo `tools/pe_seccomp_filter.py`
+gera um cBPF usando `libseccomp` instalada no sistema Linux x86_64,
+com política `SCMP_ACT_ALLOW` e recusa `EPERM` para chamadas
+específicas: `ptrace`, `process_vm_readv/writev`, `bpf`,
+`perf_event_open`, `userfaultfd`, carregamento de módulos,
+`kexec`, `mount`, `setns`, `unshare` e outras operações
+de administração do kernel. Chamadas necessárias ao Java como `mmap`,
+`clone`, `futex`, `openat` e `execve` continuam permitidas.
+**Isto é uma denylist parcial, não um perfil de permissões mínimas.**
+
+A política é compilada num `memfd` com `CLOEXEC`, tamanho limitado
+e **selos contra alteração**; passa apenas ao Bubblewrap por
+`--seccomp FD` e `pass_fds=(fd,)`, e o processo pai fecha esse
+descritor depois do lançamento. O próprio Bubblewrap precisa carregar
+o cBPF dentro da sandbox. Não se instala seccomp no processo pai nem
+se altera configuração de segurança do host.
+
+O novo passo GitHub Actions usa um PE sintético e o Bubblewrap real.
+Compara o número de filtros em `/proc/self/status` antes e dentro,
+confere que `ptrace(PTRACE_TRACEME)` retorna `EPERM`,
+e simultaneamente exige isolamento de rede, filesystem e descritor
+privado do host. Testes de contrato verificam geração real do cBPF
+e selagem do memfd em Ubuntu e Arch userspace. **Esperar o CI deste
+commit terminar antes de declarar aprovado.**
+
+Por cautela, Ghidra ainda usa o perfil Bubblewrap existente, **sem
+seccomp obrigatório**. A política será integrada ao Ghidra só depois
+de provar compatibilidade da análise real e o encaminhamento seguro
+do descritor também através de `systemd-run --scope` no Arch nativo.
+Ainda não há autorização para usar amostras hostis no host principal.
