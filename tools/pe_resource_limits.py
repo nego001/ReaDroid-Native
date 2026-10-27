@@ -17,7 +17,7 @@ import sys
 MEMORY_MAX_BYTES = 4 * 1024 * 1024 * 1024
 TASKS_MAX = 128
 CPU_QUOTA_PERCENT = 200
-SCOPE_PATTERN = re.compile(r"negresco-pe-[0-9a-f]{24}\\.scope\\Z")
+SCOPE_PATTERN = re.compile(r"negresco-pe-[0-9a-f]{24}\.scope\Z")
 
 
 class ResourceLimitsUnavailable(RuntimeError):
