@@ -194,3 +194,70 @@ hipótese deve ser testada com `pe_arch_descendant_smoke.py` em Arch
 instalado; a matriz CI cobre somente testes simulados para esse caso.
 O fluxo não solicita root, não desativa segurança do host, não analisa
 software hostil nem publica APK/OTA.
+
+## PE-S1.5 | Aceitação nativa do Arch em VM descartável (pronta, NÃO executada)
+
+**Esta etapa não está homologada no Arch real.** A CI Ubuntu + contêiner Arch
+pode testar somente o contrato do validador; não consegue comprovar o
+kernel Arch ou um gerenciador `systemd --user` de uma VM separada.
+
+### Ambiente exigido
+
+- VM Arch Linux independente, descartável e com snapshot, com systemd PID 1,
+  cgroup v2 e sessão de usuário comum. **Não usar contêiner, PC principal
+  ou root**. Não compartilhar HOME, chaves SSH, pastas sensíveis nem tokens
+  da máquina hospedeira com essa VM.
+- `python3`, `bubblewrap`, `systemd-run`, `systemctl`,
+  `systemd-detect-virt` e `x86_64-w64-mingw32-gcc`, já instalados.
+- Ghidra **12.2** previamente extraído de uma origem confiável. Validar
+  separadamente o SHA-256 do arquivo oficial antes da extração. A versão
+  informada em `Ghidra/application.properties` é conferida, mas **não
+  constitui validação criptográfica** de toda a instalação.
+- `JAVA_HOME` absoluto apontando para JDK **25** validado. Sem sudo,
+  relaxamento de AppArmor, sysctl, nem bypass dos namespaces.
+
+A execução de referência Ubuntu havia usado o ZIP
+`ghidra_12.2_PUBLIC_20261016.zip` com SHA-256
+`2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67`.
+Reverificar o arquivo correto e sua proveniência antes de confiar nele.
+
+### Comandos dentro da VM Arch
+
+```bash
+# Em uma sessão de usuário comum, com o repositório já clonado:
+export JAVA_HOME=/caminho/do/jdk25
+python3 tools/pe_arch_vm_gate.py
+python3 tools/pe_arch_vm_validation.py \
+  --ghidra-home /caminho/ghidra_12.2_PUBLIC \
+  --timeout-seconds 420
+```
+
+A validação em cadeia, nesta ordem:
+
+1. **VM gate:** exige Arch nativo, systemd PID 1, VM real (via
+   `systemd-detect-virt --vm`), ausência de contêiner, usuário não-root,
+   bus systemd de usuário, runtime próprio e ferramentas disponíveis.
+2. **Cgroup smoke:** cria um escopo systemd e comprova na inicialização
+   `memory.max`, `pids.max` e `cpu.max` com processo Python sintético.
+3. **Descendant smoke:** cria um filho Python em sessão separada que
+   ignora SIGTERM, e exige seu encerramento pelo cgroup após parada da
+   unidade. Não conta o fallback de limpeza como sucesso.
+4. **Ghidra real:** compila localmente um PE Windows sintético inofensivo
+   (não o executa), executa Ghidra 12.2 dentro do Bubblewrap obrigatório
+   **com `--require-cgroup-limits`**, e exige prova privada de quotas,
+   prévia de funções e pelo menos uma decompilação válida.
+
+Todos os testes devem passar, na mesma VM, para retornar
+`PASS_PE_S1_5_ARCH_VM`. Em qualquer falha, a saída será
+`REJECTED_NOT_HOMOLOGATED` e o código de saída diferente de zero;
+**não** desativar isolamentos para forçar aprovação. Arquivos PE e
+relatórios intermediários são mantidos em diretórios temporários e
+descartados; o resultado final contém apenas metadados da prova.
+
+### Escopo da prova e próximos bloqueios
+
+Mesmo uma aprovação real só confirma esse conjunto de operações na VM
+e kernel específicos. Ela não prova resistência a exploit do kernel,
+fuga de sandbox, seccomp nem segurança universal contra executáveis
+hostis. A integração em uma interface gráfica, o IObit real, APK e OTA
+continuam fora do escopo. PR Draft; `main` não alterada.
