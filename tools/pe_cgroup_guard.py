@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Fail closed unless the current systemd scope has effective cgroup v2 limits.
+
+Executes before Bubblewrap, while /sys/fs/cgroup is still visible. No shell,
+network, privilege escalation, or fallback command is used.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import sys
+
+
+class CgroupVerificationError(RuntimeError):
+    pass
+
+
+def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
+                         cpu_percent: int, *,
+                         proc_cgroup: Path = Path("/proc/self/cgroup"),
+                         mount_root: Path = Path("/sys/fs/cgroup")) -> dict:
+    if any(type(x) is not int or x <= 0 for x in
+           (memory_budget, tasks_budget, cpu_percent)):
+        raise CgroupVerificationError("invalid resource policy")
+    try:
+        lines = proc_cgroup.read_text(encoding="utf-8").splitlines()
+        entries = [line[3:] for line in lines if line.startswith("0::")]
+        if len(entries) != 1 or not entries[0].startswith("/"):
+            raise CgroupVerificationError("missing unified v2 membership")
+        parts = Path(entries[0]).parts
+        if not any(part.endswith(".scope") for part in parts):
+            raise CgroupVerificationError("not running in systemd scope")
+        mount = mount_root.resolve(strict=True)
+        group = (mount / entries[0].lstrip("/")).resolve(strict=True)
+        if group == mount or mount not in group.parents:
+            raise CgroupVerificationError("scope outside cgroup mount")
+
+        def finite_int(name: str) -> int:
+            value = (group / name).read_text(encoding="ascii").strip()
+            if not value.isdecimal():
+                raise CgroupVerificationError(name + " is not finite")
+            return int(value)
+
+        memory = finite_int("memory.max")
+        tasks = finite_int("pids.max")
+        cpu = (group / "cpu.max").read_text(encoding="ascii").split()
+        if len(cpu) != 2 or any(not x.isdecimal() for x in cpu):
+            raise CgroupVerificationError("cpu.max is not finite")
+        quota, period = map(int, cpu)
+        if period < 1 or quota < 1:
+            raise CgroupVerificationError("cpu.max is invalid")
+        if not (0 < memory <= memory_budget
+                and 0 < tasks <= tasks_budget
+                and quota * 100 <= period * cpu_percent):
+            raise CgroupVerificationError("effective resource budgets exceed policy")
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise CgroupVerificationError("cgroup controls cannot be verified") from exc
+    return {"verified": True, "memory_max": memory,
+            "pids_max": tasks, "cpu_quota": quota, "cpu_period": period}
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 7 or argv[4] != "--" or not argv[5]:
+        print("cgroup verifier: invalid arguments", file=sys.stderr)
+        return 2
+    try:
+        verify_cgroup_limits(int(argv[1]), int(argv[2]), int(argv[3]))
+    except (CgroupVerificationError, ValueError) as exc:
+        print("cgroup verifier: " + str(exc), file=sys.stderr)
+        return 2
+    try:
+        os.execvpe(argv[5], argv[5:], os.environ)
+    except OSError as exc:
+        print("cgroup verifier: command unavailable: " + str(exc), file=sys.stderr)
+        return 2
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
