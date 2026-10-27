@@ -28,3 +28,48 @@ A primeira matriz usa um runner Ubuntu 22.04 efêmero, Bubblewrap do sistema, Gh
 Ubuntu 24.04 pode impor restrições AppArmor a namespaces de usuários. Um resultado `Operation not permitted` deve ser relatado como ambiente indisponível, **não como aprovação** ou convite para desabilitar a segurança do host.
 
 Os resultados só podem ser chamados de homologados depois que **o probe funcional e o Ghidra real** passarem no mesmo SHA da PR, juntamente com Source checks/OTA/PE. O IObit Uninstaller real segue não analisado; fluxo de selecionar `.exe` na interface ainda não existe. PR em Draft, sem merge em `main` nem APK/OTA publicados.
+## PE-S1.1: modo de recursos cgroup v2 (implementado, homologação real pendente)
+
+O executável `tools/pe_auto_ghidra.py` agora aceita `--require-cgroup-limits`.
+Esse modo não permite `--allow-unisolated-synthetic-fixture` e envolve o mesmo
+comando Bubblewrap em um `systemd-run --user --scope` síncrono, com:
+
+- `MemoryMax=4294967296` (4 GiB de memória no cgroup, incluindo processos filhos);
+- `TasksMax=128` (processos **e threads**, não 128 processos garantidos);
+- `CPUQuota=200%` (limite agregado equivalente a duas CPUs).
+
+Se `systemd-run` não existir, se cgroup v2 não estiver visível ou se o
+gerenciador de usuário não aceitar as propriedades/escopo, o modo estrito recusa
+a análise **sem executar Ghidra diretamente**. Não pede `sudo`, não altera
+sysctl e não desativa AppArmor. O relatório registra
+`resource_scope=systemd_user_cgroup_v2_requested` quando requisitado, e
+**não** registra que a aplicação efetiva das quotas foi verificada no host.
+O perfil também passou a injetar explicitamente
+`GHIDRA_HEADLESS_MAXMEM=2G` dentro do Bubblewrap (`--clearenv` não
+preserva variáveis herdadas). Esse limite da JVM **não substitui** MemoryMax.
+
+Exemplo em Arch Linux, sob sessão de usuário normal com systemd user manager:
+
+```sh
+python3 tools/pe_auto_ghidra.py /caminho/fixture-sintetica.exe \
+  --ghidra-home /caminho/ghidra \
+  --output /caminho/relatorio.json \
+  --deep-preview --timeout-seconds 420 --require-cgroup-limits
+```
+
+Somente usar executável sintético de laboratório nesta etapa. Antes de
+analisar software desconhecido, falta verificar **o cgroup real da árvore
+Ghidra** (`memory.max`, `pids.max`, `cpu.max`), encerramento de filhos no
+timeout, caso de OOM, esgotamento de tarefas, descritores herdados, seccomp,
+limites de arquivo e resistência à fuga de sandbox. Bubblewrap + cgroup **não é
+equivalente a uma VM**.
+
+### Teste de compatibilidade Arch Linux (escopo limitado)
+
+O novo job `arch-userspace-contract` usa imagem oficial `archlinux:latest`
+sobre runner Ubuntu e executa testes de construção de argumentos como usuário
+`nobody` (não-root). Ele verifica compatibilidade de runtime/caminhos, não
+executa Ghidra real nem comprova os namespaces/cgroups do kernel Arch. Uma
+homologação específica exige runner/VM **Arch Linux real, sem privilégios
+relaxados**, probe no mesmo perfil, Ghidra real e teste ativo dos limites.
+Até essa etapa, manter a PR Draft.
