@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 
+from pe_arch_vm_gate import verify_arch_vm
 from pe_auto_ghidra import (_validated_function_evidence,
                             _validated_deep_evidence, HeadlessError)
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
@@ -53,6 +54,15 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
                                 SCRIPT_HOME / "NegrescoDeepPreview.java",
                                 SCRIPT_HOME / "NegrescoSeccompRuntimeProof.java"))):
         raise ScopedGhidraError("Missing private workspace or trusted synthetic fixture")
+
+    # Enforce the VM boundary HERE too, not only in the parent CLI.
+    # A caller importing this function directly must not be able to start
+    # this lifecycle experiment on a workstation or container.
+    environment = verify_arch_vm()
+    if (environment.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
+            or environment.get("vm_confirmed") is not True
+            or environment.get("container") is not False):
+        raise ScopedGhidraError("Native Arch VM safety gate was not attested")
 
     unit = new_scope_unit()
     with tempfile.TemporaryDirectory(prefix="negresco-native-arch-ghidra-both-",
