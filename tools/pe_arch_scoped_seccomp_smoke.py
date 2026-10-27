@@ -95,7 +95,11 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
             os.close(host_fd)
             # A transient unit can already be garbage-collected on exit.
             # Accept only systemd-confirmed inactive/dead and unpopulated state.
-            scope_cleanup = stop_and_attest_scope(unit)
+            try:
+                scope_cleanup = stop_and_attest_scope(unit)
+            except ScopeCleanupUnavailable as exc:
+                raise ScopedSeccompSmokeError(
+                    "Cannot prove scoped probe fully stopped") from exc
         if scope_cleanup.get("verified") is not True or scope_cleanup.get("cgroup_unpopulated") is not True:
             raise ScopedSeccompSmokeError("Scope cleanup attestation incomplete")
         if proc.returncode != 0:
