@@ -178,6 +178,42 @@ class ConservativeBehaviorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     behavior.classify(data)
 
+    def test_explicit_computed_target_is_context_not_behavioral_proof(self):
+        data = sample("int f(void) { return 1; }")
+        data["functions"][0].update({
+            "computed_call_sites": ["0040100a", "0040100f"],
+            "computed_call_count": 2,
+            "computed_calls_truncated": False,
+            "explicit_computed_targets": [{
+                "site": "0040100a", "entry_point": "00402000",
+                "name": "helper",
+                "basis": "ghidra_unique_explicit_internal_call_reference",
+            }],
+        })
+        result = behavior.classify(data)
+        record = result["functions"][0]
+        self.assertEqual(record["status"], "unidentified")
+        context = record["indirect_call_context"]
+        self.assertEqual(context["targets"], "explicit_references_only")
+        self.assertEqual(context["explicit_reference_candidates"][0]["entry_point"],
+                         "00402000")
+        self.assertEqual(context["unknown_destination_sites"], ["0040100f"])
+
+    def test_rejects_fabricated_computed_target(self):
+        data = sample()
+        data["functions"][0].update({
+            "computed_call_sites": ["0040100a"],
+            "computed_call_count": 1,
+            "computed_calls_truncated": False,
+            "explicit_computed_targets": [{
+                "site": "0040100b", "entry_point": "00402000",
+                "name": "helper",
+                "basis": "ghidra_unique_explicit_internal_call_reference",
+            }],
+        })
+        with self.assertRaises(ValueError):
+            behavior.classify(data)
+
     def test_lexer_removes_literals_comments_and_function_signature(self):
         src = (r'''void DeleteFileW(void) {
             /* DeleteFileW(old); */
