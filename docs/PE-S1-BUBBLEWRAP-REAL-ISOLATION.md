@@ -386,3 +386,54 @@ e exige um relatório válido sem execução do PE.
 Não usar isto como autorização para analisar amostras hostis no
 computador pessoal; a integração com cgroup estrito e a homologação
 nativa Arch seguem pendentes.
+
+## PE-S1.9 | Ponte seccomp + cgroup criada dentro do escopo systemd
+
+O impedimento anterior da passagem do filtro BPF por `systemd-run`
+foi abordado por outra arquitetura, **ainda experimental**:
+
+1. `wrap_in_cgroup_scope` cria um escopo systemd de usuário com ID
+   aleatório, limites `MemoryMax=4GiB`, `TasksMax=128`,
+   `CPUQuota=200%`, duração limitada e limpeza por cgroup.
+2. `pe_cgroup_guard.py` inicia **dentro do escopo**, valida membership
+   e quotas efetivas, registra uma prova JSON privada **fora do /work**
+   e só então executa com `exec` o lançador
+   `pe_scoped_seccomp_launcher.py`.
+3. O novo lançador revalida membership e quotas, compila o cBPF
+   usando a libseccomp **de dentro do próprio escopo** e passa
+   exclusivamente seu descritor ao Bubblewrap via
+   `Popen(close_fds=True, pass_fds=(fd,))`.
+   O pai fecha o FD, propaga o exit code, encerra por timeout
+   com limites e não usa shell, root ou bypass.
+   **O filtro não atravessa `systemd-run`, nem é transmitido por D-Bus.**
+4. O diagnóstico `pe_arch_scoped_seccomp_smoke.py` exige o
+   `pe_arch_vm_gate.py` antes de executar a prova, cria apenas
+   processos Python/PE sintéticos e comprova simultaneamente
+   cgroup válido, prova privada, filtro aplicado (ptrace negado
+   e número de filtros), namespace de rede, filesystem e FD privado
+   do host. Qualquer ausência recusa o resultado.
+5. A aceitação `pe_arch_vm_validation.py` exige essa nova prova
+   conjunta **antes de iniciar** o teste de Ghidra real com cgroup.
+   Ela também continua exigindo que o ZIP e a árvore do Ghidra
+   correspondam à release oficial pinada.
+
+Os testes em `tests/test_pe_scoped_seccomp_launcher.py` e
+`tests/test_pe_arch_scoped_seccomp_smoke.py` cobrem o contrato nos
+ambientes Ubuntu e Arch userspace do CI, **sem criar cgroup real**.
+O passo de prova em VM Arch nativa só será homologado depois de uma
+execução registrada nesse ambiente. A combinação `--require-seccomp
+--require-cgroup-limits` no runner principal **permanece bloqueada**
+até teste real da compatibilidade completa do Ghidra + seccomp + cgroup.
+Não introduzir bypass, nem ativar esse modo automaticamente para
+amostras desconhecidas.
+
+O comando da VM continua:
+```bash
+python3 tools/pe_arch_vm_validation.py \
+  --ghidra-home /caminho/ghidra_12.2_PUBLIC \
+  --ghidra-archive /caminho/ghidra_12.2_PUBLIC_20261016.zip \
+  --timeout-seconds 420
+```
+Instalar `libseccomp` da distribuição Arch antes da validação. A VM
+deve ser descartável, sem pastas pessoais do host montadas e com
+sistema, JDK e Bubblewrap verificados.
