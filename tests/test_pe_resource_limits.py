@@ -66,12 +66,30 @@ class CgroupScopeTests(unittest.TestCase):
         ])
         self.assertEqual(argv[13:15], [sys.executable, "-I"])
         self.assertTrue(argv[15].endswith("/tools/pe_cgroup_guard.py"))
-        self.assertEqual(argv[16:21],
+        self.assertEqual(argv[16:22],
                          [str(MEMORY_MAX_BYTES), str(TASKS_MAX),
-                          str(CPU_QUOTA_PERCENT), self.unit_name, "--"])
-        self.assertEqual(argv[21:], self.command)
+                          str(CPU_QUOTA_PERCENT), self.unit_name, "-", "--"])
+        self.assertEqual(argv[22:], self.command)
         self.assertNotIn("--system", argv)
         self.assertNotIn("--shell", argv)
+
+    def test_accepts_only_private_outside_sandbox_proof_path(self):
+        with tempfile.TemporaryDirectory() as evidence:
+            path = Path(evidence) / "guard-proof.json"
+            with mock.patch("pe_resource_limits.os.geteuid", return_value=os.geteuid()):
+                with mock.patch("pe_resource_limits.Path.is_file", return_value=True):
+                    argv = wrap_in_cgroup_scope(
+                        self.command, timeout_seconds=30, unit_name=self.unit_name,
+                        proof_path=path, systemd_run_path=str(self.launcher))
+            self.assertEqual(argv[20], str(path))
+            path.write_text("existing")
+            with self.assertRaisesRegex(ResourceLimitsUnavailable, "inválido"):
+                wrap_in_cgroup_scope(self.command, proof_path=path)
+            path.unlink()
+            link = Path(evidence) / "link.json"
+            link.symlink_to(path)
+            with self.assertRaises(ResourceLimitsUnavailable):
+                wrap_in_cgroup_scope(self.command, proof_path=link)
 
     def test_unique_scopes_and_bad_names_or_timeouts(self):
         first = new_scope_unit()
