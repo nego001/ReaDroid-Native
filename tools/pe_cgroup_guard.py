@@ -64,19 +64,36 @@ def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 7 or argv[5] != "--" or not argv[6]:
+    if len(argv) < 8 or argv[6] != "--" or not argv[7]:
         print("cgroup verifier: invalid arguments", file=sys.stderr)
         return 2
     try:
         proof = verify_cgroup_limits(int(argv[1]), int(argv[2]), int(argv[3]),
                                      expected_scope=argv[4])
-    except (CgroupVerificationError, ValueError) as exc:
+        if argv[5] != "-":
+            # The parent creates an exclusively owned private directory. This
+            # file lies outside Bubblewrap's mounts, preventing the analyzer
+            # from altering the quota attestation.
+            path = Path(argv[5])
+            if not path.is_absolute():
+                raise CgroupVerificationError("invalid proof path")
+            record = {"schema": "negresco_cgroup_v2_proof_v1",
+                      "scope": argv[4], **proof}
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            with os.fdopen(os.open(path, flags, 0o600), "w",
+                           encoding="utf-8") as result:
+                json.dump(record, result, sort_keys=True)
+                result.flush()
+                os.fsync(result.fileno())
+    except (CgroupVerificationError, ValueError, OSError) as exc:
         print("cgroup verifier: " + str(exc), file=sys.stderr)
         return 2
     print(json.dumps({"cgroup_verification": "passed", **proof},
                      sort_keys=True), flush=True)
     try:
-        os.execvpe(argv[6], argv[6:], os.environ)
+        os.execvpe(argv[7], argv[7:], os.environ)
     except OSError as exc:
         print("cgroup verifier: command unavailable: " + str(exc), file=sys.stderr)
         return 2
