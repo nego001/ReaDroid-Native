@@ -73,3 +73,18 @@ executa Ghidra real nem comprova os namespaces/cgroups do kernel Arch. Uma
 homologação específica exige runner/VM **Arch Linux real, sem privilégios
 relaxados**, probe no mesmo perfil, Ghidra real e teste ativo dos limites.
 Até essa etapa, manter a PR Draft.
+
+### Verificação antes da execução (PE-S1.1)
+
+O modo estrito agora chama `tools/pe_cgroup_guard.py` **dentro do escopo**
+e **antes** do Bubblewrap. O verificador lê a associação do próprio processo
+em `/proc/self/cgroup` e os controles de seu escopo em
+`/sys/fs/cgroup/.../{memory.max,pids.max,cpu.max}`. Rejeita um escopo
+ausente, quotas ilimitadas (`max`), valores superiores à política e
+erros de leitura. Só então usa `execvpe` para iniciar o Bubblewrap
+com argv original, sem shell nem fallback.
+
+Os testes são com sistema de arquivos cgroup **sintético**, tanto no Ubuntu
+quanto no contêiner Arch. O teste de aplicação efetiva no host Arch real
+continua pendente. Nenhum desses testes tenta disparar OOM nem saturar
+processos no runner compartilhado.
