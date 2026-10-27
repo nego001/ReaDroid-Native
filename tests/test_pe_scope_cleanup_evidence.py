@@ -47,6 +47,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         argv = show.call_args.args[0]
         self.assertIn("--user", argv)
         self.assertIn("--no-pager", argv)
+        self.assertIn("--all", argv)  # Empty ControlGroup must not be omitted.
         self.assertIn("show", argv)
         self.assertFalse(show.call_args.kwargs.get("shell", False))
         self.assertEqual(show.call_args.kwargs["timeout"], 10)
