@@ -18,7 +18,7 @@ spec.loader.exec_module(runner)
 
 def sample():
     return {
-        "schema": "ghidra_deep_preview_v2",
+        "schema": "ghidra_deep_preview_v3",
         "selection_method": "bounded_api_references_and_call_connectivity_v2",
         "functions": [{
             "entry_point": "00401000", "name": "add_numbers",
@@ -32,6 +32,10 @@ def sample():
             "decompile_status": "ok",
             "pseudocode": "int add_numbers(int a, int b) { return a + b; }",
             "pseudocode_truncated": False,
+            "strings": [],
+            "strings_truncated": False,
+            "string_scan_truncated": False,
+            "instructions_scanned_for_strings": 0,
         }],
         "candidates_scanned": 1, "eligible_non_thunks": 1,
         "sample_truncated": False, "scan_truncated": False,
@@ -183,6 +187,49 @@ class DeepPreviewTests(unittest.TestCase):
         bad["functions"][0]["api_call_references"] = ["GetFileAttributesA"]
         bad["functions"][0]["api_call_reference_count"] = 1
         self.rejected(bad)  # missing priority bonus must not pass
+
+    def test_accepts_attributed_bounded_string_evidence(self):
+        value = sample()
+        func = value["functions"][0]
+        func["strings"] = [{
+            "text": "negresco_evidence_2026.txt",
+            "data_address": "00408000",
+            "reference_from": "00401006",
+        }]
+        func["instructions_scanned_for_strings"] = 12
+        report = self.load(value)
+        self.assertEqual(report["functions"][0]["strings"][0]["data_address"], "00408000")
+
+    def test_rejects_forged_string_references_and_truncation(self):
+        def valid():
+            v = sample()
+            v["functions"][0]["strings"] = [{
+                "text": "sample-string",
+                "data_address": "00408000",
+                "reference_from": "00401006",
+            }]
+            v["functions"][0]["instructions_scanned_for_strings"] = 8
+            return v
+        for bad_key, replacement in (
+            ("data_address", "/etc/passwd"),
+            ("reference_from", "EXTERNAL:001"),
+            ("text", "hi"),
+            ("text", "x" * 97),
+            ("text", "line" + chr(10) + "attack"),
+        ):
+            with self.subTest(key=bad_key):
+                v = valid()
+                v["functions"][0]["strings"][0][bad_key] = replacement
+                self.rejected(v)
+        v = valid()
+        v["functions"][0]["strings_truncated"] = True
+        self.rejected(v)
+        v = valid()
+        v["functions"][0]["strings"].append(v["functions"][0]["strings"][0].copy())
+        self.rejected(v)
+        v = valid()
+        v["functions"][0]["instructions_scanned_for_strings"] = 0
+        self.rejected(v)
 
     def test_rejects_missing_or_oversized_evidence(self):
         with self.assertRaises(runner.HeadlessError):

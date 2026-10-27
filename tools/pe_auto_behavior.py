@@ -142,6 +142,15 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
     if not isinstance(functions, list) or len(functions) > MAX_FUNCTIONS:
         raise ValueError("Amostra Ghidra fora do limite")
     imports = _global_import_names(symbols)
+    # Only already-selected Ghidra entrypoints are named in the context.
+    # Calls outside the preview remain unclassified references, not guessed names.
+    selected_names = {
+        item["entry_point"].lower(): item["name"]
+        for item in functions
+        if isinstance(item, dict)
+        and isinstance(item.get("entry_point"), str)
+        and isinstance(item.get("name"), str)
+    }
     results: list[dict] = []
     for item in functions:
         if not isinstance(item, dict):
@@ -162,6 +171,35 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
                        for api in api_refs)
                 or len({api.lower() for api in api_refs}) != len(api_refs)):
             raise ValueError("Referências externas de API adulteradas")
+        # String evidence is contextual only: never promote its wording
+        # into a behavioral category. These bytes stay in the LOCAL report.
+        strings = item.get("strings", [])
+        calls = item.get("calls", [])
+        if (not isinstance(strings, list) or len(strings) > 8
+                or not isinstance(calls, list) or len(calls) > 24):
+            raise ValueError("Contexto de strings/chamadas fora do limite")
+        context_strings = []
+        for s in strings:
+            if (not isinstance(s, dict) or not isinstance(s.get("text"), str)
+                    or not 6 <= len(s["text"]) <= 96
+                    or not isinstance(s.get("data_address"), str)
+                    or not isinstance(s.get("reference_from"), str)):
+                raise ValueError("Contexto de string não validado")
+            context_strings.append({
+                "text": s["text"], "data_address": s["data_address"],
+                "reference_from": s["reference_from"],
+            })
+        related = []
+        seen_related = set()
+        for address in calls:
+            if not isinstance(address, str):
+                raise ValueError("Chamada interna inválida")
+            key = address.lower()
+            if key in selected_names and key not in seen_related and key != entry.lower():
+                seen_related.add(key)
+                related.append({"entry_point": address, "name": selected_names[key]})
+            if len(related) >= 8:
+                break
         hypotheses = []
         # Maintain provenance for each API. Do not turn an import table entry
         # or a function name into a call when no Ghidra evidence exists.
@@ -217,6 +255,10 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
             "status": "hypotheses" if hypotheses else "unidentified",
             "hypotheses": hypotheses[:MAX_HYPOTHESES_PER_FUNCTION],
             "hypotheses_truncated": len(hypotheses) > MAX_HYPOTHESES_PER_FUNCTION,
+            "string_context": context_strings,
+            "strings_are_behavior_evidence": False,
+            "linked_selected_callees": related,
+            "context_provenance": "ghidra_direct_static_references_only",
             "evidence_quality": ("partial_pseudocode"
                 if item.get("pseudocode_truncated") else "bounded_pseudocode"),
         })
@@ -227,7 +269,7 @@ def classify(deep: dict, symbols: dict | None = None) -> dict:
         "functions": results,
         "functions_with_hypotheses": known,
         "functions_unidentified": len(results) - known,
-        "scope": "bounded_ghidra_decompilation_only",
+        "scope": "bounded_ghidra_decompilation_and_references_only",
         "limitations": (
             "Pistas estáticas e nomes WinAPI não provam intenção, execução, "
             "capacidade completa de desinstalação ou código-fonte original."

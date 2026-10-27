@@ -9,6 +9,7 @@ on:
       - feature/pe-auto-function-ranking
       - feature/pe-auto-function-behavior
       - feature/pe-auto-winapi-evidence
+      - feature/pe-auto-string-context
   workflow_dispatch:
 
 permissions:
@@ -88,6 +89,16 @@ jobs:
           assert 1 <= len(deep["functions"]) <= 12
           assert deep["selection_method"] == "bounded_api_references_and_call_connectivity_v2"
           assert deep["graph_scope"] == "scanned_functions_only"
+          assert all(len(record["strings"]) <= 8 and
+                     record["instructions_scanned_for_strings"] <= 2048
+                     for record in deep["functions"])
+          sentinel = "negresco_evidence_2026.txt"
+          sources = [(rec["name"], s)
+                     for rec in deep["functions"] for s in rec["strings"]
+                     if s["text"] == sentinel]
+          assert sources, "Ghidra did not recover function-linked sentinel string"
+          assert any(name == "inspect_path" for name, _ in sources), (
+              "Sentinel string lacks the expected inspect_path provenance")
           assert deep["candidates_scanned"] <= 384
           assert all(x["selection_rank"] == i for i, x in enumerate(deep["functions"], 1))
           assert all(a["selection_score"] >= b["selection_score"]
@@ -103,9 +114,17 @@ jobs:
           assert behavior["schema"] == "pe_behavior_hypotheses_v1"
           assert behavior["engine"] == "deterministic_local_rules_not_ai"
           assert len(behavior["functions"]) == len(deep["functions"])
+          assert any(s["text"] == "negresco_evidence_2026.txt"
+                     and s["reference_from"] and s["data_address"]
+                     for item in behavior["functions"]
+                     for s in item["string_context"]), (
+              "Behavior report dropped original Ghidra string reference evidence")
+          assert all(item["strings_are_behavior_evidence"] is False
+                     for item in behavior["functions"])
           print("PE-A4.1 selected external API references:", [
               {"name": f["name"], "api_refs": f["api_call_references"],
                "score": f["selection_score"]} for f in deep["functions"]])
+          print("PE-A4.2 string references:", sources)
           print("PE-A4 behavior hypotheses:", behavior["functions_with_hypotheses"],
                 "categories=", [h["category"] for f in behavior["functions"]
                                 for h in f["hypotheses"]])

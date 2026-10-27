@@ -18,8 +18,8 @@ __declspec(dllexport) int compare_numbers(int first, int second) {
  * Ghidra pseudocode rather than in a function name or global import.
  */
 __declspec(dllexport) int inspect_path(const char *path) {
-    DWORD flags = GetFileAttributesA(path);
-    return flags != INVALID_FILE_ATTRIBUTES;
+    DWORD flags = GetFileAttributesA("negresco_evidence_2026.txt");
+    return flags != INVALID_FILE_ATTRIBUTES && path != 0;
 }
 __declspec(dllexport) int path_check_one(void) {
     return inspect_path("example-one.txt");

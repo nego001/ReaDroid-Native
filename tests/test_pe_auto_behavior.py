@@ -121,6 +121,39 @@ class ConservativeBehaviorTests(unittest.TestCase):
                 h = behavior.classify(sample("void f(void) { " + api + "(arg); }"))
                 self.assertEqual(h["functions"][0]["hypotheses"][0]["category"], category)
 
+    def test_strings_are_context_not_behavioral_proof(self):
+        data = sample("int f(void) { return 0; }", name="DeleteAll")
+        data["functions"][0]["strings"] = [{
+            "text": "delete registry entries",
+            "data_address": "00407000",
+            "reference_from": "00401004",
+        }]
+        result = behavior.classify(data)
+        record = result["functions"][0]
+        self.assertEqual(record["status"], "unidentified")
+        self.assertFalse(record["strings_are_behavior_evidence"])
+        self.assertEqual(record["string_context"][0]["reference_from"], "00401004")
+        self.assertEqual(record["context_provenance"],
+                         "ghidra_direct_static_references_only")
+
+    def test_links_only_selected_function_addresses_not_random_callees(self):
+        data = sample("int f(void) { return 0; }")
+        data["functions"][0]["calls"] = ["00402000", "00403000"]
+        data["functions"].append({
+            "entry_point": "00402000",
+            "name": "known_helper",
+            "decompile_status": "unavailable",
+            "pseudocode": "",
+            "pseudocode_truncated": False,
+            "calls": [],
+        })
+        result = behavior.classify(data)
+        self.assertEqual(
+            result["functions"][0]["linked_selected_callees"],
+            [{"entry_point": "00402000", "name": "known_helper"}],
+        )
+        self.assertEqual(result["functions_with_hypotheses"], 0)
+
     def test_lexer_removes_literals_comments_and_function_signature(self):
         src = (r'''void DeleteFileW(void) {
             /* DeleteFileW(old); */

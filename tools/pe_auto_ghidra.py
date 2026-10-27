@@ -34,6 +34,9 @@ MAX_DEEP_BYTES = 64 * 1024
 MAX_DEEP_FUNCTIONS = 12
 MAX_DEEP_CALLS = 24
 MAX_DEEP_API_REFS = 8
+MAX_DEEP_STRINGS = 8
+MAX_STRING_LEN = 96
+MAX_STRING_INSTRUCTIONS = 2048
 MAX_DEEP_PSEUDOCODE = 1800
 DEEP_SCRIPT_NAME = "NegrescoDeepPreview.java"
 MAX_FUNCTIONS = 256
@@ -132,7 +135,7 @@ def _validated_deep_evidence(path: Path) -> dict:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HeadlessError("Prévia de pseudocódigo indisponível ou corrompida") from exc
-    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v2":
+    if not isinstance(raw, dict) or raw.get("schema") != "ghidra_deep_preview_v3":
         raise HeadlessError("Esquema de pseudocódigo inesperado")
     method = "bounded_api_references_and_call_connectivity_v2"
     records = raw.get("functions")
@@ -172,6 +175,38 @@ def _validated_deep_evidence(path: Path) -> dict:
         api_names = record.get("api_call_references")
         api_count = record.get("api_call_reference_count")
         api_cut = record.get("api_call_references_truncated")
+        string_records = record.get("strings")
+        strings_cut = record.get("strings_truncated")
+        string_scan_cut = record.get("string_scan_truncated")
+        string_instructions = record.get("instructions_scanned_for_strings")
+        if (not isinstance(string_records, list)
+                or len(string_records) > MAX_DEEP_STRINGS
+                or type(strings_cut) is not bool
+                or (strings_cut and len(string_records) != MAX_DEEP_STRINGS)
+                or type(string_scan_cut) is not bool
+                or type(string_instructions) is not int
+                or not 0 <= string_instructions <= MAX_STRING_INSTRUCTIONS
+                or (string_records and string_instructions == 0)):
+            raise HeadlessError("Strings de função sem limites ou proveniência")
+        safe_strings = []
+        seen_data = set()
+        for item in string_records:
+            if not isinstance(item, dict):
+                raise HeadlessError("String de função com formato inválido")
+            value = item.get("text")
+            data_addr = item.get("data_address")
+            ref_from = item.get("reference_from")
+            if (not isinstance(value, str) or not 6 <= len(value) <= MAX_STRING_LEN
+                    or any(not 32 <= ord(ch) <= 126 for ch in value)
+                    or not isinstance(data_addr, str) or not ADDRESS.fullmatch(data_addr)
+                    or data_addr.lower() in seen_data
+                    or not isinstance(ref_from, str) or not ADDRESS.fullmatch(ref_from)):
+                raise HeadlessError("String com endereço falso ou conteúdo inválido")
+            seen_data.add(data_addr.lower())
+            safe_strings.append({
+                "text": value, "data_address": data_addr,
+                "reference_from": ref_from,
+            })
         if (not isinstance(addr, str) or not ADDRESS.fullmatch(addr)
                 or addr.lower() in seen
                 or not isinstance(name, str) or not 1 <= len(name) <= 160
@@ -223,6 +258,10 @@ def _validated_deep_evidence(path: Path) -> dict:
             "api_call_references": api_names,
             "api_call_reference_count": api_count,
             "api_call_references_truncated": api_cut,
+            "strings": safe_strings,
+            "strings_truncated": strings_cut,
+            "string_scan_truncated": string_scan_cut,
+            "instructions_scanned_for_strings": string_instructions,
             "calls": calls, "calls_truncated": calls_cut,
             "decompile_status": status,
             "pseudocode": pseudocode, "pseudocode_truncated": cut,
