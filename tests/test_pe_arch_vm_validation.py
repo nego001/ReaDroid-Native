@@ -214,6 +214,10 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                               "quotas_verified_before_bwrap": {
                                                   "verification": "guard_verified_before_bwrap"},
                                               "decompiled_functions": 2,
+                                              "ghidra_jvm_seccomp_evidence": {
+                                                  "verified": True, "seccomp_mode": 2,
+                                                  "filters_before_bwrap": 1,
+                                                  "filters_in_ghidra": 2},
                                               "windows_binary_executed": False})):
                                     with self.assertRaisesRegex(
                                             validation.ArchVmValidationError, "incomplete"):
