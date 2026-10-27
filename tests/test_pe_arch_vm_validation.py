@@ -101,6 +101,39 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                         "Duplicate"):
                 validation.validate_ghidra_122_install(home)
 
+    def test_arch_bwrap_probe_rejects_unverified_filesystem_or_network(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZsynthetic-pe-not-executed")
+            cmd = ["/usr/bin/bwrap", "--unshare-all", "--",
+                   "/usr/bin/placeholder"]
+            incomplete = {
+                "isolation_probe": "passed", "host_home_canary_hidden": True,
+                "network_namespace_separate": False, "host_etc_hidden": True,
+                "usr_runtime_read_only": True, "private_work_writable": True}
+            with mock.patch.object(validation, "build_command", return_value=cmd):
+                with mock.patch.object(
+                        validation.subprocess, "run",
+                        return_value=mock.Mock(returncode=0,
+                                               stdout=json.dumps(incomplete))) as run:
+                    with self.assertRaisesRegex(
+                            validation.ArchVmValidationError, "incomplete"):
+                        validation.native_bwrap_probe(Path("/unused-ghidra"), pe, root)
+            argv = run.call_args.args[0]
+            self.assertEqual(argv[argv.index("--") + 1], "/usr/bin/python3")
+            self.assertIn("/work/pe_sandbox_probe.py", argv)
+            self.assertIn("network_namespace_separate", incomplete)
+            incomplete["network_namespace_separate"] = True
+            with mock.patch.object(validation, "build_command", return_value=cmd):
+                with mock.patch.object(
+                        validation.subprocess, "run",
+                        return_value=mock.Mock(returncode=0,
+                                               stdout=json.dumps(incomplete))):
+                    result = validation.native_bwrap_probe(
+                        Path("/unused-ghidra"), pe, root)
+            self.assertEqual(result["status"], "PASS_NATIVE_ARCH_BWRAP_PROBE")
+
     def test_real_ghidra_requires_private_quota_proof(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp) / "ghidra"
@@ -126,11 +159,13 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             with mock.patch.object(validation, "java25_preflight"):
                 with mock.patch.object(validation.subprocess, "run",
                                        return_value=mock.Mock(returncode=0)):
-                    with mock.patch.object(validation, "inspect_functions",
-                                           side_effect=fake_inspect):
-                        with self.assertRaisesRegex(
-                                validation.ArchVmValidationError, "incomplete"):
-                            validation.validate_real_ghidra(home, timeout_seconds=420)
+                    with mock.patch.object(validation, "native_bwrap_probe",
+                                           return_value={"status": "PASS_NATIVE_ARCH_BWRAP_PROBE"}):
+                        with mock.patch.object(validation, "inspect_functions",
+                                               side_effect=fake_inspect):
+                            with self.assertRaisesRegex(
+                                    validation.ArchVmValidationError, "incomplete"):
+                                validation.validate_real_ghidra(home, timeout_seconds=420)
 
 
 if __name__ == "__main__":
