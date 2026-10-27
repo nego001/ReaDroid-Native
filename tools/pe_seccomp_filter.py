@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import errno
+import fcntl
 import os
 from pathlib import Path
 import platform
@@ -92,8 +93,8 @@ def compile_seccomp_bpf_fd() -> int:
     """
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise SeccompUnavailable("Seccomp PE prototype requires Linux x86_64")
-    if not hasattr(os, "memfd_create"):
-        raise SeccompUnavailable("memfd_create unavailable")
+    if not hasattr(os, "memfd_create") or not hasattr(os, "MFD_ALLOW_SEALING"):
+        raise SeccompUnavailable("Sealable memfd unavailable")
     lib = _load_libseccomp()
     ctx = lib.seccomp_init(SCMP_ACT_ALLOW)
     if not ctx:
@@ -107,13 +108,19 @@ def compile_seccomp_bpf_fd() -> int:
             if lib.seccomp_rule_add(
                     ctx, SCMP_ACT_ERRNO_EPERM, number, 0) != 0:
                 raise SeccompUnavailable("Could not block syscall: " + syscall)
-        fd = os.memfd_create("negresco-pe-seccomp", flags=os.MFD_CLOEXEC)
+        fd = os.memfd_create("negresco-pe-seccomp", flags=os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
         if lib.seccomp_export_bpf(ctx, fd) != 0:
             raise SeccompUnavailable("libseccomp BPF export failed")
         length = os.lseek(fd, 0, os.SEEK_END)
         if not 8 <= length <= MAX_BPF_BYTES or length % 8 != 0:
             raise SeccompUnavailable("Unexpected seccomp BPF program size")
         os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            fcntl.fcntl(fd, fcntl.F_ADD_SEALS,
+                        fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW |
+                        fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+        except (OSError, AttributeError) as exc:
+            raise SeccompUnavailable("Could not seal seccomp policy") from exc
         result, fd = fd, None
         return result
     finally:
