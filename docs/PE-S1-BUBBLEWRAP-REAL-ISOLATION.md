@@ -639,3 +639,49 @@ amostras hostis e não ativa `--require-seccomp --require-cgroup-limits`
 na aplicação principal.
 
 A PR permanece Draft até homologação nativa independente.
+
+## PE-S1.13 | Encerramento de scopes transitórios, sem falso positivo/negativo
+
+O diagnóstico nativo não usa mais `systemctl --user stop` sozinho como
+veredito de limpeza: unidades `*.scope` transitórias podem ser removidas
+pelo systemd **entre o fim do último processo e a tentativa de parada**.
+Uma chamada `stop` que falha nesse cenário não prova que existam
+descendentes sobreviventes. Por outro lado, `stop` com retorno zero
+não prova que o cgroup já esteja vazio.
+
+`tools/pe_scope_cleanup_evidence.py` sempre solicita a parada, consulta
+separadamente as propriedades exatas `LoadState`, `ActiveState`,
+`SubState` e `ControlGroup` via `systemctl --user show` e exige:
+
+- `ActiveState=inactive` e `SubState=dead`, com `LoadState=loaded`
+  ou `not-found`. Um scope coletado com `not-found` pode ter
+  `stop_request_accepted=false` **sem reprovação automática**.
+- Nenhuma referência a cgroup de outro escopo, nem caminho relativo,
+  `..`, componente vazio ou symlink escapando de `/sys/fs/cgroup`.
+- Se a pasta do cgroup ainda existe, a evidência **do kernel**
+  `cgroup.events` deve conter exatamente `populated 0`;
+  `populated 1`, falta da informação, erro na consulta e scope
+  ainda ativo resultam em rejeição.
+- O cgroup pode já ter sido removido. Seu desaparecimento é aceito
+  apenas em conjunto com a confirmação estrita de inatividade
+  pelo systemd e, para qualquer aprovação final, com a
+  **prova cgroup privada anterior** de que aquele mesmo escopo
+  foi realmente criado e limitado.
+
+Os scripts nativos do probe Bubblewrap e do Ghidra combinado exigem
+`scope_cleanup_evidence` com `verified=true`,
+`scope_quiescent=true` e `cgroup_unpopulated=true`. O gate
+`pe_arch_vm_validation.py` e o gerador do recibo local SHA-256
+exigem as mesmas evidências; o novo script integra o manifesto de
+fontes criptografadas do recibo `LOCAL_SELF_REPORT_NOT_SIGNED`.
+
+Os testes `test_pe_scope_cleanup_evidence.py` simulam unidades
+`not-found`, escopos ainda ativos, cgroups `populated 0/1`,
+saídas malformadas/duplicadas e paths inválidos. Essas simulações,
+executadas em Ubuntu e Arch userspace, **não são prova nativa do
+kernel Arch**. A homologação ainda requer VM Arch descartável,
+prova de limite CPU/RAM/PIDs e teste separado de limpeza de
+descendentes com processos reais.
+
+Proteção combinada no runner principal permanece recusada;
+PR Draft, `main` intocada, nenhuma publicação APK/OTA.
