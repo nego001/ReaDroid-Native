@@ -76,6 +76,7 @@ def build_command(ghidra_home: Path, working: Path,
              "--setenv", "HOME", "/work",
              "--setenv", "XDG_CACHE_HOME", "/work",
              "--setenv", "TMPDIR", "/tmp",
+             "--setenv", "GHIDRA_HEADLESS_MAXMEM", "2G",
              "--setenv", "LANG", "C.UTF-8"]
 
     # Arch typically installs the JDK under /usr/lib/jvm, whereas GitHub
