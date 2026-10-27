@@ -55,6 +55,10 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(
                     native.os, "geteuid", return_value=1000))
+                gate = stack.enter_context(mock.patch.object(
+                    native, "verify_arch_vm", return_value={
+                        "status": "ARCH_VM_PREFLIGHT_PASSED",
+                        "vm_confirmed": True, "container": False}))
                 stack.enter_context(mock.patch.object(
                     native, "new_scope_unit", return_value=self.UNIT))
                 stack.enter_context(mock.patch.object(
@@ -108,6 +112,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                     with self.assertRaises(native.ScopedGhidraError):
                         native.run_native_scoped_ghidra(
                             Path("/synthetic-ghidra"), pe, base)
+                gate.assert_called_once()
                 wrap.assert_called_once()
                 run.assert_called_once()
                 self.assertTrue(run.call_args.kwargs["close_fds"])
@@ -133,6 +138,41 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
 
     def test_refuses_zero_successful_decompilations(self):
         self.run_contract(decompiled=False)
+
+    def test_direct_call_outside_arch_vm_never_creates_scope(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ synthetic-only")
+            with mock.patch.object(native.os, "geteuid", return_value=1000):
+                with mock.patch.object(
+                        native, "verify_arch_vm",
+                        side_effect=native.ArchVmUnavailable("not a VM")):
+                    with mock.patch.object(native, "new_scope_unit") as scope:
+                        with mock.patch.object(native.subprocess, "run") as run:
+                            with self.assertRaises(native.ArchVmUnavailable):
+                                native.run_native_scoped_ghidra(
+                                    Path("/ghidra"), pe, root)
+                        scope.assert_not_called()
+                        run.assert_not_called()
+
+    def test_false_vm_claim_cannot_pass_native_gate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ synthetic-only")
+            with mock.patch.object(native.os, "geteuid", return_value=1000):
+                with mock.patch.object(native, "verify_arch_vm",
+                                       return_value={
+                                           "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                           "vm_confirmed": False,
+                                           "container": True}):
+                    with mock.patch.object(native, "new_scope_unit") as scope:
+                        with self.assertRaisesRegex(
+                                native.ScopedGhidraError, "VM safety gate"):
+                            native.run_native_scoped_ghidra(
+                                Path("/ghidra"), pe, root)
+                        scope.assert_not_called()
 
     def test_refuses_to_run_as_root(self):
         with mock.patch.object(native.os, "geteuid", return_value=0):
