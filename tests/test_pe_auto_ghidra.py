@@ -151,6 +151,23 @@ if args.count("-postScript") == 2:
             "-readOnly", "-deleteProject", "-log", str(working / "ghidra.log"),
         ]
 
+    def _mock_strict_guard_with_private_proof(self, command, **kwargs):
+        """Simulates guard output WITHOUT creating an actual Linux cgroup."""
+        proof_path = kwargs["proof_path"]
+        self.assertNotIn(str(proof_path.parent), command)
+        record = {
+            "schema": "negresco_cgroup_v2_proof_v1",
+            "scope": kwargs["unit_name"],
+            "verified": True,
+            "memory_max": 4 * 1024 ** 3,
+            "pids_max": 128,
+            "cpu_quota": 200000,
+            "cpu_period": 100000,
+        }
+        proof_path.write_text(json.dumps(record), encoding="utf-8")
+        proof_path.chmod(0o600)
+        return command
+
     def test_launcher_never_inherits_host_stdin_or_extra_fds(self):
         with mock.patch.object(runner.subprocess, "Popen",
                                side_effect=OSError("synthetic rejection")) as launch:
@@ -170,17 +187,33 @@ if args.count("-postScript") == 2:
                                side_effect=self._mocked_bwrap_command):
             with mock.patch.object(runner, "new_scope_unit", return_value=unit):
                 with mock.patch.object(runner, "wrap_in_cgroup_scope",
-                                       side_effect=lambda command, **k: command) as wrap:
+                                       side_effect=self._mock_strict_guard_with_private_proof) as wrap:
                     with mock.patch.object(runner, "stop_scope", return_value=True) as stop:
                         report = runner.inspect_functions(
                             self.input, self.home, self.output, 3,
                             sandbox_mode="bwrap", require_cgroup_limits=True)
         self.assertEqual(report["limitations"]["resource_scope"],
-                         "systemd_user_cgroup_v2_requested")
+                         "systemd_user_cgroup_v2_verified_at_start")
+        self.assertEqual(report["limitations"]["resource_limits"]["tasks_max"], 128)
         self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 3)
         self.assertEqual(wrap.call_args.kwargs["unit_name"], unit)
         stop.assert_called_once_with(unit)
         self.assertTrue(self.output.exists())
+
+    def test_strict_scope_refuses_missing_guard_proof(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(runner, "stop_scope", return_value=True):
+                        with self.assertRaisesRegex(
+                                runner.HeadlessError, "não comprovados"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
 
     def test_strict_scope_never_publishes_if_systemd_stop_refuses(self):
         unit = "negresco-pe-0123456789abcdef01234567.scope"
