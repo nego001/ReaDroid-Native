@@ -218,15 +218,19 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     descendants = run_native_descendant_smoke()
     if (quotas.get("status") != "PASS_NATIVE_ARCH_CGROUP"
             or descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
-            or descendants.get("detached_sigterm_ignoring_child_terminated") is not True):
-        raise ArchVmValidationError("Native cgroup and descendant checks not approved")
+            or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
+            or not isinstance(descendants.get("descendant_cleanup_evidence"), dict)
+            or descendants["descendant_cleanup_evidence"].get("verified") is not True
+            or descendants["descendant_cleanup_evidence"].get("scope_quiescent") is not True
+            or descendants["descendant_cleanup_evidence"].get("cgroup_unpopulated") is not True):
+        raise ArchVmValidationError("Native cgroup and descendant lifecycle not approved")
     ghidra = validate_real_ghidra(ghidra_home, release_zip,
                                  timeout_seconds=timeout_seconds)
     return {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
             "cgroup": {k: quotas[k] for k in
                        ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
-            "descendants_terminated": True, "ghidra": ghidra,
-            "windows_binary_executed": False}
+            "descendants_terminated": True, "descendant_lifecycle": descendants,
+            "ghidra": ghidra, "windows_binary_executed": False}
 
 
 def main() -> int:
