@@ -135,7 +135,9 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 30)
         self.assertEqual(wrap.call_args.kwargs["unit_name"], self.unit)
         self.assertEqual(wrap.call_args.kwargs["proof_path"].name, "quota.json")
-        if proof and child_gone:
+        # Private quotas are checked BEFORE attempting to stop the child,
+        # including the negative test where that child deliberately survives.
+        if proof:
             quota_read.assert_called_once_with(mock.ANY, self.unit)
         else:
             quota_read.assert_not_called()
