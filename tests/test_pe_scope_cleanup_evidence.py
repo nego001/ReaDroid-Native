@@ -97,6 +97,69 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
             control="/user.slice/" + self.UNIT), stop=False)
         self.assertTrue(out["scope_quiescent"])
 
+    def test_kernel_events_reject_forged_or_ambiguous_population(self):
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        events = path / "cgroup.events"
+        for contents in (
+                "populated 1\\nfrozen 0\\n",
+                "populated 0\\npopulated 0\\n",
+                "frozen 0\\n",
+                "populated false\\n",
+                "populated 0",
+                "populated 0\\nfrozen nope\\n",
+                "populated 0\\n" + ("x" * 4096) + "\\n"):
+            with self.subTest(contents=contents[:80]):
+                events.write_text(contents.replace("\\\\n", "\\n"), encoding="ascii")
+                with self.assertRaises(scope.ScopeCleanupUnavailable):
+                    self.run_mock(
+                        self.report(control="/user.slice/" + self.UNIT),
+                        stop=True)
+
+    def test_kernel_events_allow_valid_additional_cgroup_v2_fields(self):
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        (path / "cgroup.events").write_text(
+            "populated 0\\nfrozen 0\\nnr_dying_descendants 0\\n".replace(
+                "\\\\n", "\\n"), encoding="ascii")
+        result = self.run_mock(
+            self.report(control="/user.slice/" + self.UNIT), stop=True)
+        self.assertTrue(result["cgroup_unpopulated"])
+
+    def test_cgroup_directory_symlink_cannot_impersonate_empty_scope(self):
+        parent = self.cgroup / "user.slice"
+        parent.mkdir()
+        other = parent / "other-scope"
+        other.mkdir()
+        (other / "cgroup.events").write_text(
+            "populated 0\\n".replace("\\\\n", "\\n"), encoding="ascii")
+        (parent / self.UNIT).symlink_to(other, target_is_directory=True)
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
+
+    def test_intermediate_cgroup_symlink_cannot_redirect_kernel_probe(self):
+        actual = self.cgroup / "real-user.slice" / self.UNIT
+        actual.mkdir(parents=True)
+        (actual / "cgroup.events").write_text(
+            "populated 0\\n".replace("\\\\n", "\\n"), encoding="ascii")
+        (self.cgroup / "user.slice").symlink_to(
+            actual.parent, target_is_directory=True)
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
+
+    def test_kernel_event_file_symlink_is_rejected(self):
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        target = self.root / "forged-events"
+        target.write_text("populated 0\\n".replace("\\\\n", "\\n"),
+                          encoding="ascii")
+        (path / "cgroup.events").symlink_to(target)
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
+
     def test_unreadable_kernel_cgroup_events_rejected(self):
         path = self.cgroup / "user.slice" / self.UNIT
         path.mkdir(parents=True)
