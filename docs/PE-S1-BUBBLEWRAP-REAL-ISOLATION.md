@@ -1401,3 +1401,38 @@ prova final. A gravação atômica não autentica recibos, não
 fornece assinatura, nem atesta execução de kernel em VM Arch.
 PR segue Draft, sem merge ou publicação APK/OTA, e o modo
 conjunto seccomp+cgroup segue bloqueado.
+
+## PE-S1.34 | Inspeção e limpeza manual de estágios órfãos
+
+A PE-S1.33 publica recibos completos de forma atômica, mas
+uma interrupção `SIGKILL`/queda de energia ainda pode deixar
+`.negresco-receipt-<32hex>.tmp` no diretório privado.
+
+Nova ferramenta **offline, sem limpeza automática**:
+`python3 tools/pe_receipt_stage_cleanup.py --private-directory /caminho/privado`
+apenas lista os candidatos. Para remover, encerrar **todos os
+escritores** e invocar explicitamente `--apply`. A idade mínima
+é 24 horas, configurável por `--min-age-hours` (24–8760).
+A inspeção exige diretório sem symlinks ancestrais, pertencente
+ao usuário e inacessível a grupo/outros; examina até 4096
+entradas para evitar varreduras ilimitadas.
+
+A ferramenta considera somente nomes com token hexadecimal
+de 128 bits, arquivos regulares `0600`, de proprietário local,
+de tamanho limitado e com `st_mtime` e `st_ctime` antigos.
+`st_nlink=1` é obrigatório: estágios vinculados a algum
+nome definitivo não são removidos. Antes de `unlinkat`,
+abre novamente o nome com `O_NOFOLLOW|O_NONBLOCK` e
+confere inode e metadados contra os valores da inspeção.
+Sincroniza o diretório após exclusões.
+
+A limpeza continua conservadora: não é possível garantir,
+com os primitivos expostos pelo Python, um `unlinkat`
+condicional à identidade do inode; a mudança de nome por
+outro processo **do mesmo UID** no instante entre a
+última conferência e o `unlink` continua sendo uma corrida.
+Portanto o modo `--apply` é manual, exige escritores parados
+e não deve ser executado por tarefa periódica. Resultados
+apenas sobre manutenção local, não atestação nativa ou prova
+independente. PR permanece Draft, sem merge na main,
+sem publicação APK/OTA e sem desbloqueio seccomp+cgroups.

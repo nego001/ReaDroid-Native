@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import secrets
 import stat
+import time
 
 from pe_nofollow_paths import open_absolute_directory_nofollow
 from pe_ghidra_integrity import GHIDRA_RELEASE_SHA256
@@ -28,6 +29,7 @@ from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
     "tools/pe_arch_vm_evidence.py",
+    "tools/pe_receipt_stage_cleanup.py",
     "tools/pe_arch_vm_receipt_verify.py",
     "tools/pe_nofollow_paths.py",
     "tools/pe_arch_vm_gate.py",
@@ -58,6 +60,9 @@ SOURCE_FILES = (
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_REPORT_BYTES = 512 * 1024
 CHALLENGE_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+STAGE_PATTERN = re.compile(r"\.negresco-receipt-[0-9a-f]{32}\.tmp\Z")
+MIN_STAGE_AGE_SECONDS = 24 * 60 * 60
+MAX_STAGE_SCAN_ENTRIES = 4096
 
 
 class AcceptanceReceiptError(RuntimeError):
@@ -496,6 +501,103 @@ def build_receipt(report: dict, source_root: Path = ROOT, *,
         "native_acceptance_report": report_snapshot,
         "windows_executable_launched": False,
     }
+
+
+def cleanup_orphan_receipt_stages(
+        directory: Path, *, min_age_seconds: int = MIN_STAGE_AGE_SECONDS,
+        apply: bool = False) -> dict:
+    """Review old unpublished stage inodes; delete only by explicit opt-in.
+
+    This is never called by the writer or receipt verifier. A crash can
+    preserve a .tmp; a currently open writer can also be delayed, so age is
+    a conservative hint rather than evidence that an inode is abandoned.
+    Never touch final receipts, symlinks, or hard-linked/published stages.
+    """
+    if (type(min_age_seconds) is not int
+            or not MIN_STAGE_AGE_SECONDS <= min_age_seconds <= 365 * 86400
+            or type(apply) is not bool):
+        raise AcceptanceReceiptError("Invalid stage cleanup controls")
+    with ExitStack() as stack:
+        try:
+            fd = open_absolute_directory_nofollow(Path(directory), stack)
+            private = os.fstat(fd)
+            if (not stat.S_ISDIR(private.st_mode)
+                    or private.st_uid != os.geteuid()
+                    or private.st_mode & 0o077):
+                raise AcceptanceReceiptError(
+                    "Stage cleanup requires owner-only directory")
+            now_ns = time.time_ns()
+            cutoff = now_ns - min_age_seconds * 1_000_000_000
+            candidates = []
+            scanned = 0
+            with os.scandir(fd) as entries:
+                for entry in entries:
+                    scanned += 1
+                    if scanned > MAX_STAGE_SCAN_ENTRIES:
+                        raise AcceptanceReceiptError(
+                            "Too many entries for bounded stage inspection")
+                    name = entry.name
+                    if STAGE_PATTERN.fullmatch(name) is None:
+                        continue
+                    identity = os.stat(
+                        name, dir_fd=fd, follow_symlinks=False)
+                    # A stage with two links could already be published
+                    # under a final receipt name. Do not touch it.
+                    if (not stat.S_ISREG(identity.st_mode)
+                            or identity.st_uid != os.geteuid()
+                            or stat.S_IMODE(identity.st_mode) != 0o600
+                            or identity.st_nlink != 1
+                            or not 0 <= identity.st_size <=
+                            MAX_REPORT_BYTES + MAX_SOURCE_BYTES
+                            or identity.st_mtime_ns > cutoff
+                            or identity.st_ctime_ns > cutoff):
+                        continue
+                    candidates.append((name, identity))
+            removed = []
+            for name, observed in candidates:
+                if not apply:
+                    continue
+                # Reopen by private directory FD with nofollow; compare
+                # inode and metadata immediately before unlinking.
+                try:
+                    stage_fd = os.open(
+                        name, os.O_RDONLY | os.O_CLOEXEC |
+                        os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+                except FileNotFoundError:
+                    continue
+                try:
+                    current = os.fstat(stage_fd)
+                    linked = os.stat(
+                        name, dir_fd=fd, follow_symlinks=False)
+                    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns",
+                              "st_ctime_ns", "st_nlink", "st_mode", "st_uid")
+                    if (any(getattr(current, key) != getattr(observed, key)
+                            or getattr(linked, key) != getattr(observed, key)
+                            for key in fields)
+                            or current.st_nlink != 1):
+                        continue
+                    # Python has no inode-conditional unlinkat. The private
+                    # directory is required, but same-UID replacement remains
+                    # a theoretical race; operator must ensure no writers.
+                    os.unlink(name, dir_fd=fd)
+                    removed.append(name)
+                finally:
+                    os.close(stage_fd)
+            if removed:
+                os.fsync(fd)
+            return {
+                "status": "STAGE_CLEANUP_APPLIED" if apply
+                          else "STAGE_CLEANUP_PREVIEW",
+                "minimum_age_seconds": min_age_seconds,
+                "eligible_stages": sorted(name for name, _ in candidates),
+                "removed_stages": sorted(removed),
+                "scanned_entries": scanned,
+                "note": "UNSIGNED_LOCAL_MAINTENANCE_NOT_VM_ATTESTATION",
+            }
+        except (OSError, ValueError) as exc:
+            raise AcceptanceReceiptError(
+                "Cannot safely inspect private receipt stages") from exc
+
 
 def write_receipt_no_overwrite(report: dict, destination: Path,
                               source_root: Path = ROOT, *,

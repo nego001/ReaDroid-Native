@@ -688,6 +688,116 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         self.assertEqual(json.loads(stderr.getvalue())["status"],
                          "REJECTED_LOCAL_RECEIPT")
 
+    def test_s1_34_preview_then_explicit_cleanup_of_old_single_link_stage(self):
+        from pe_receipt_stage_cleanup import main
+        stage = self.private / (".negresco-receipt-" + "a" * 32 + ".tmp")
+        stage.write_bytes(b'{"partially_written":')
+        stage.chmod(0o600)
+        final = self.private / "legitimate.json"
+        final.write_bytes(b"real final receipt should never be cleaned")
+        final.chmod(0o600)
+        now = max(stage.stat().st_ctime_ns, stage.stat().st_mtime_ns)
+        with mock.patch.object(evidence.time, "time_ns",
+                               return_value=now + 25 * 3600 * 10 ** 9):
+            preview = evidence.cleanup_orphan_receipt_stages(self.private)
+            self.assertEqual(preview["status"], "STAGE_CLEANUP_PREVIEW")
+            self.assertEqual(preview["eligible_stages"], [stage.name])
+            self.assertEqual(preview["removed_stages"], [])
+            self.assertTrue(stage.exists())
+            applied = evidence.cleanup_orphan_receipt_stages(
+                self.private, apply=True)
+        self.assertEqual(applied["removed_stages"], [stage.name])
+        self.assertFalse(stage.exists())
+        self.assertEqual(final.read_bytes(), b"real final receipt should never be cleaned")
+
+    def test_s1_34_rejects_symlink_hardlink_public_and_similar_names(self):
+        target = self.root / "important.txt"
+        target.write_text("protected", encoding="utf-8")
+        symlink = self.private / (".negresco-receipt-" + "b" * 32 + ".tmp")
+        symlink.symlink_to(target)
+        hardlink = self.private / (".negresco-receipt-" + "c" * 32 + ".tmp")
+        os.link(target, hardlink)
+        nonprivate = self.private / (".negresco-receipt-" + "d" * 32 + ".tmp")
+        nonprivate.write_bytes(b"not owned by writer")
+        nonprivate.chmod(0o644)
+        odd = self.private / ".negresco-receipt-not-a-token.tmp"
+        odd.write_bytes(b"unrelated")
+        now = max(x.stat().st_ctime_ns for x in (target, hardlink, nonprivate, odd))
+        with mock.patch.object(evidence.time, "time_ns",
+                               return_value=now + 48 * 3600 * 10 ** 9):
+            result = evidence.cleanup_orphan_receipt_stages(
+                self.private, apply=True)
+        self.assertEqual(result["removed_stages"], [])
+        self.assertEqual(target.read_text(encoding="utf-8"), "protected")
+        self.assertTrue(symlink.is_symlink())
+        self.assertTrue(hardlink.exists())
+        self.assertTrue(nonprivate.exists())
+        self.assertTrue(odd.exists())
+
+    def test_s1_34_skips_young_stage_and_changed_inode(self):
+        stage = self.private / (".negresco-receipt-" + "f" * 32 + ".tmp")
+        stage.write_bytes(b"in progress")
+        stage.chmod(0o600)
+        self.assertEqual(evidence.cleanup_orphan_receipt_stages(
+            self.private, apply=True)["removed_stages"], [])
+        original_stat = os.stat
+
+        def replace_before_final_check(name, *args, **kwargs):
+            if (name == stage.name and kwargs.get("follow_symlinks") is False
+                    and kwargs.get("dir_fd") is not None):
+                # First directory scan sees old inode. The second check
+                # catches a replacement that must never be deleted.
+                if not hasattr(replace_before_final_check, "saw"):
+                    replace_before_final_check.saw = True
+                else:
+                    stage.unlink()
+                    stage.write_bytes(b"replacement")
+                    stage.chmod(0o600)
+                    return original_stat(name, *args, **kwargs)
+            return original_stat(name, *args, **kwargs)
+
+        past = stage.stat().st_ctime_ns + 48 * 3600 * 10 ** 9
+        with (mock.patch.object(evidence.time, "time_ns", return_value=past),
+              mock.patch.object(evidence.os, "stat",
+                                side_effect=replace_before_final_check)):
+            result = evidence.cleanup_orphan_receipt_stages(
+                self.private, apply=True)
+        self.assertEqual(result["removed_stages"], [])
+        self.assertEqual(stage.read_bytes(), b"replacement")
+
+    def test_s1_34_rejects_unsafe_cleanup_options_and_paths(self):
+        for args in (
+                {"min_age_seconds": 0}, {"min_age_seconds": True},
+                {"min_age_seconds": 366 * 86400}, {"apply": "yes"}):
+            with self.subTest(args=args):
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    evidence.cleanup_orphan_receipt_stages(
+                        self.private, **args)
+        public = self.root / "public"
+        public.mkdir(mode=0o755)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            evidence.cleanup_orphan_receipt_stages(public)
+        alias = self.root / "alias-stage"
+        alias.symlink_to(self.private, target_is_directory=True)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            evidence.cleanup_orphan_receipt_stages(alias)
+
+    def test_s1_34_cli_requires_explicit_apply_and_absolute_private_path(self):
+        from contextlib import redirect_stdout, redirect_stderr
+        from io import StringIO
+        from pe_receipt_stage_cleanup import main
+        with redirect_stdout(StringIO()) as capture:
+            self.assertEqual(main([
+                "--private-directory", str(self.private)]), 0)
+        self.assertEqual(json.loads(capture.getvalue())["status"],
+                         "STAGE_CLEANUP_PREVIEW")
+        with redirect_stderr(StringIO()):
+            self.assertEqual(main([
+                "--private-directory", str(self.private),
+                "--min-age-hours", "1", "--apply"]), 2)
+            self.assertEqual(main([
+                "--private-directory", "relative-path", "--apply"]), 2)
+
     def test_s1_33_publishes_only_complete_fsynced_private_receipt(self):
         original_link = os.link
         original_fsync = os.fsync
