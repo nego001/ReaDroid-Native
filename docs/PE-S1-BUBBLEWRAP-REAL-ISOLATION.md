@@ -885,3 +885,45 @@ externa de kernel, hipervisor ou da autoria dos eventos.
 A PR permanece Draft; `main` e APK/OTA intactos. A
 combinação `--require-seccomp --require-cgroup-limits`
 continua bloqueada para uso normal.
+
+## PE-S1.18 | Verificação de cgroup.events sem follow de links nem leitura ilimitada
+
+A auditoria do encerramento encontrou um ponto ainda frágil da
+PE-S1.13: `_cgroup_unpopulated()` lia `cgroup.events` diretamente
+via `Path.read_text()`, sem limite de bytes e sem impedir
+redirecionamento por symlinks intermediários ou no próprio arquivo.
+
+A leitura foi substituída por um percurso de descritores, sem shell,
+que abre `/sys/fs/cgroup` e cada componente da árvore apontada pelo
+systemd com `O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC`. Abre o arquivo
+`cgroup.events` relativo ao diretório da unidade com `O_NOFOLLOW`.
+O código só aprova evidência de kernel regular, legível, limitada
+a **4096 bytes**, codificada em ASCII e terminada em newline.
+Exige exatamente uma chave `populated`, de valor `0`;
+recusa duplicatas, dados malformados, valores não numéricos,
+`populated=1`, conteúdo truncado, arquivo simbólico e
+caminhos com `..`/componente vazio.
+
+A unidade pode desaparecer legitimamente porque o systemd
+recolhe scopes transitórios. Um diretório ausente por `ENOENT`
+é aceito apenas dentro da rotina que já exige consulta ao
+systemd com `LoadState=loaded|not-found`, `ActiveState=inactive`,
+`SubState=dead`. Erros de permissão, redirecionamento, ausência
+de `cgroup.events` numa unidade ainda existente e resultados
+inconclusivos rejeitam a homologação. O recibo privado de quotas
+anterior continua obrigatório para provar que o escopo havia
+sido criado e limitado.
+
+Os testes negativos novos em
+`tests/test_pe_scope_cleanup_evidence.py` usam **somente
+uma árvore sintética local**, cobrindo symlink de diretório
+final/intermediário, symlink no evento, saída excessiva,
+duplicações, truncamento e valores falsos. O teste positivo
+aceita campos extras do cgroup v2, mantendo `populated 0`
+obrigatório. O GitHub Actions não executa uma unidade
+cgroup nativa Arch com processos reais; essa validação ainda
+requer uma VM Arch Linux independente.
+
+O executor normal ainda recusa `--require-seccomp`
+junto de `--require-cgroup-limits`. PR Draft,
+`main` intocada e sem APK ou OTA.
