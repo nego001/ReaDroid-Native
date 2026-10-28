@@ -801,3 +801,40 @@ a etapa toda.
 A VM Arch descartável com cgroups/seccomp simultâneos continua
 o requisito de homologação. CLI normal bloqueada, PR Draft,
 sem alteração na main e sem publicar APK/OTA.
+
+## PE-S1.16 | Executor principal: prova de encerramento, não só `stop`
+
+A análise identificou que o executor principal `tools/pe_auto_ghidra.py`
+continuava usando exclusivamente o retorno de `stop_scope()` para
+autorizar a publicação em modo `--require-cgroup-limits`. O mecanismo
+nativo PE-S1.13 já distinguia entre um escopo transitório recolhido
+automaticamente pelo systemd e um escopo ainda ativo/com cgroup populado.
+
+Agora `inspect_functions()` reutiliza diretamente
+`stop_and_attest_scope(unit)` **sempre** após a execução estrita,
+inclusive quando o Ghidra expira e é interrompido. A aceitação exige
+recibo com o mesmo nome do escopo, `verified=true`,
+`scope_quiescent=true`, `cgroup_unpopulated=true`,
+`ActiveState=inactive` e `SubState=dead`.
+Uma unidade transitória comprovadamente recolhida (com
+`stop_request_accepted=false`) pode ser aceita; `stop` que
+retorna zero, mas mantém cgroup ativo/ocupado, não pode.
+
+Em caso de sucesso, a evidência de limpeza também integra
+`limitations.resource_cleanup`, além da prova de limites
+`limitations.resource_limits` (obtida do arquivo privado
+`quota.json` pela leitura segura PE-S1.15).
+O campo `resource_scope` segue descrevendo limites medidos
+na partida; nenhum resultado afirma que Ghidra foi imune a
+escapes de kernel ou que houve VM Arch independente.
+
+Testes negativos em `tests/test_pe_auto_ghidra.py` verificam
+rejeição sem estado final, com cgroup ainda ativo, prova de outro
+escopo e timeout. Um teste positivo admite o escopo já recolhido
+sem relaxar a exigência de cgroup vazio. A combinação conjunta
+`--require-seccomp --require-cgroup-limits` **continua
+recusada** no caminho principal. A integração simultânea só
+poderá ser liberada depois da execução e revisão independente
+do roteiro em VM Arch nativa.
+
+PR continua Draft, sem merge na main ou publicação APK/OTA.
