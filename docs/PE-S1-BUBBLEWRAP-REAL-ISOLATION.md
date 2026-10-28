@@ -838,3 +838,50 @@ poderá ser liberada depois da execução e revisão independente
 do roteiro em VM Arch nativa.
 
 PR continua Draft, sem merge na main ou publicação APK/OTA.
+
+## PE-S1.17 | Política numérica para o recibo nativo e stdout
+
+O recibo de aceitação da VM Arch não pode aceitar um relatório
+baseado apenas nas strings `PASS_*` e
+`verification=guard_verified_before_bwrap`. Isso permitiria
+que um resultado incorreto com orçamento numérico ausente,
+infinito ou acima da política fosse serializado como se fosse
+comprovação de uma execução controlada.
+
+- `pe_arch_vm_evidence.validate_native_acceptance_report` exige
+  números **inteiros, finitos e positivos**, sem `bool` e sem
+  strings, em **quatro medições independentes**:
+  `cgroup` (sonda original), `descendant_lifecycle.quota_private_proof`,
+  `ghidra.arch_scoped_seccomp_probe.cgroup_verification` e
+  `ghidra.arch_real_ghidra_with_both.quotas_verified_before_bwrap`.
+  Todos respeitam o teto definido em `pe_resource_limits`:
+  4 GiB de RAM, 128 tarefas e quota de CPU de no máximo 200%,
+  com período de CPU positivo. Valores menores são válidos
+  porque um escopo pode herdar uma política mais restritiva.
+- As três sondas devem ter nomes de scope que obedeçam ao
+  padrão de IDs aleatórios do projeto, **distintos entre si**.
+  A reutilização de um scope entre sonda de descendente,
+  seccomp e Ghidra combinado recusa o recibo, mesmo que
+  os documentos individuais aparentem estar corretos.
+- O recibo da JVM precisa indicar a origem
+  `/proc/self/status`, `Seccomp=2`, contagens inteiras
+  entre 0 e 4096, aumento de filtros e delta
+  `additional_filters_observed` matematicamente consistente.
+- A mesma validação agora é executada em
+  `pe_arch_vm_validation.run_acceptance` **antes de anunciar
+  `PASS_PE_S1_5_ARCH_VM` no stdout**, mesmo quando o
+  usuário não solicita `--evidence-output`. Erros de
+  coerência convertem-se em `REJECTED_NOT_HOMOLOGATED`;
+  não existe caminho de aprovação mais fraco sem recibo.
+
+Os novos testes de contrato simulam orçamento acima da
+política, campos booleanos/string, contagem falsa de filtros,
+reuse de ID de scope e ausência de relatório. **Não comprovam
+que a VM nativa Arch tenha sido executada.**
+Mesmo um recibo local válido é explicitamente classificado
+`LOCAL_SELF_REPORT_NOT_SIGNED`, nunca prova criptográfica
+externa de kernel, hipervisor ou da autoria dos eventos.
+
+A PR permanece Draft; `main` e APK/OTA intactos. A
+combinação `--require-seccomp --require-cgroup-limits`
+continua bloqueada para uso normal.
