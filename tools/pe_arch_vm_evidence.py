@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import stat
 
 from pe_nofollow_paths import open_absolute_directory_nofollow
@@ -506,34 +507,82 @@ def write_receipt_no_overwrite(report: dict, destination: Path,
     if not path.is_absolute() or path.name in ("", ".", ".."):
         raise AcceptanceReceiptError("Absolute new receipt filename required")
     parent = path.parent
-    directory_stack = ExitStack()
-    try:
-        directory_fd = open_absolute_directory_nofollow(parent, directory_stack)
-        meta = os.fstat(directory_fd)
-        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.geteuid()
-                or meta.st_mode & 0o077):
-            raise AcceptanceReceiptError("Receipt parent must be owner-only (0700)")
-        fd = os.open(
-            path.name,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
-            0o600, dir_fd=directory_fd)
+    with ExitStack() as directory_stack:
         try:
-            with os.fdopen(fd, "wb") as output:
-                output.write(encoded)
-                output.flush()
-                os.fsync(output.fileno())
-            os.fsync(directory_fd)
-        except BaseException:
-            # Never leave an apparently completed but truncated proof.
+            directory_fd = open_absolute_directory_nofollow(
+                parent, directory_stack)
+            meta = os.fstat(directory_fd)
+            if (not stat.S_ISDIR(meta.st_mode)
+                    or meta.st_uid != os.geteuid()
+                    or meta.st_mode & 0o077):
+                raise AcceptanceReceiptError(
+                    "Receipt parent must be owner-only (0700)")
+            # A completed receipt must never be observable under its final
+            # name while it is still being written or fsynced. An owner-only
+            # staging file receives the full bytes before atomic publication.
+            stage_name = ".negresco-receipt-" + secrets.token_hex(16) + ".tmp"
+            stage_created = False
+            published = False
+            identity = None
+
+            def unlink_owned(name: str) -> None:
+                # Do not delete another file if the entry was replaced while
+                # handling an error. Directory is already validated private.
+                try:
+                    entry = os.stat(
+                        name, dir_fd=directory_fd, follow_symlinks=False)
+                    if (identity is not None
+                            and (entry.st_dev, entry.st_ino) == identity
+                            and stat.S_ISREG(entry.st_mode)):
+                        os.unlink(name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
+
             try:
-                os.unlink(path.name, dir_fd=directory_fd)
-            except OSError:
-                pass
-            raise
-    except (OSError, ValueError) as exc:
-        raise AcceptanceReceiptError("Cannot safely write private receipt") from exc
-    finally:
-        directory_stack.close()
+                fd = os.open(
+                    stage_name,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+                    | os.O_NOFOLLOW,
+                    0o600, dir_fd=directory_fd)
+                stage_created = True
+                identity_stat = os.fstat(fd)
+                identity = (identity_stat.st_dev, identity_stat.st_ino)
+                with os.fdopen(fd, "wb") as output:
+                    output.write(encoded)
+                    output.flush()
+                    os.fsync(output.fileno())
+                # link() publishes an already-complete inode atomically and
+                # refuses to overwrite an existing final name (EEXIST).
+                os.link(
+                    stage_name, path.name,
+                    src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
+                    follow_symlinks=False)
+                published = True
+                unlink_owned(stage_name)
+                stage_created = False
+                os.fsync(directory_fd)
+            except BaseException:
+                # No success is reported for a failed write, link or durable
+                # directory sync. Remove only our own inode, never a receipt
+                # installed concurrently by another process.
+                if published:
+                    try:
+                        unlink_owned(path.name)
+                    except OSError:
+                        pass
+                if stage_created:
+                    try:
+                        unlink_owned(stage_name)
+                    except OSError:
+                        pass
+                try:
+                    os.fsync(directory_fd)
+                except OSError:
+                    pass
+                raise
+        except (OSError, ValueError) as exc:
+            raise AcceptanceReceiptError(
+                "Cannot safely publish private receipt") from exc
     return {
         "path": str(path),
         "receipt_sha256": hashlib.sha256(encoded).hexdigest(),

@@ -1368,3 +1368,36 @@ ou imune a qualquer alteração por quem o controla; impede a mutação
 homologação independente do kernel em VM Arch descartável.
 A PR continua Draft, sem merge na main, sem APK/OTA publicados
 e sem liberar `--require-seccomp --require-cgroup-limits`.
+
+## PE-S1.33 | Publicação atômica e durável de recibos locais
+
+A gravação anterior criava o nome definitivo com
+`O_CREAT|O_EXCL` **antes** de escrever e sincronizar os bytes.
+Uma leitura concorrente podia observar o JSON incompleto, e a
+falha após gravar podia deixar o nome definitivo visível
+durante a limpeza.
+
+O gravador usa agora um nome temporário aleatório e privado
+`.negresco-receipt-*.tmp` no **mesmo diretório 0700**. Ele
+grava o recibo completo com permissões 0600, faz
+`flush + fsync` no arquivo e só então publica o inode pronto
+por `os.link` sem sobrescrita. A ligação é atômica em
+filesystem local: o nome definitivo aparece completo ou não
+existe. O temporário é desvinculado, e o diretório é
+sincronizado antes de emitir o comprovante de gravação.
+
+Em erros de escrita, publicação ou `fsync`, o código não
+emite sucesso e tenta remover apenas entradas que ainda
+referenciem o inode criado por ele, respeitando a possibilidade
+de outro escritor ter ocupado o destino. Cinco testes de
+regressão cobrem ordem da sincronização, recusa por erro de
+`os.link`, falha de `fsync` no arquivo ou diretório, e
+corrida entre dois escritores com o mesmo nome definitivo.
+
+**Limites:** interrupções por `SIGKILL`, perda de energia ou
+falha do filesystem podem deixar arquivo temporário órfão;
+isso não é um recibo concluído e nunca deve ser aceito como
+prova final. A gravação atômica não autentica recibos, não
+fornece assinatura, nem atesta execução de kernel em VM Arch.
+PR segue Draft, sem merge ou publicação APK/OTA, e o modo
+conjunto seccomp+cgroup segue bloqueado.

@@ -688,6 +688,103 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         self.assertEqual(json.loads(stderr.getvalue())["status"],
                          "REJECTED_LOCAL_RECEIPT")
 
+    def test_s1_33_publishes_only_complete_fsynced_private_receipt(self):
+        original_link = os.link
+        original_fsync = os.fsync
+        steps = []
+
+        def watch_fsync(fd):
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                self.assertFalse(self.dest.exists())
+                temp_files = list(self.private.glob(".negresco-receipt-*.tmp"))
+                self.assertEqual(len(temp_files), 1)
+                self.assertEqual(
+                    json.loads(temp_files[0].read_text(encoding="utf-8"))[
+                        "schema"], "negresco_native_arch_vm_local_receipt_v2")
+                steps.append("file-fsync")
+            else:
+                steps.append("directory-fsync")
+            return original_fsync(fd)
+
+        def watch_link(src, dst, **options):
+            self.assertEqual(steps, ["file-fsync"])
+            self.assertFalse(self.dest.exists())
+            self.assertEqual(dst, self.dest.name)
+            output = original_link(src, dst, **options)
+            steps.append("published")
+            return output
+
+        with (mock.patch.object(evidence.os, "fsync", side_effect=watch_fsync),
+              mock.patch.object(evidence.os, "link", side_effect=watch_link)):
+            receipt = self.write()
+        self.assertEqual(steps, [
+            "file-fsync", "published", "directory-fsync"])
+        self.assertEqual(receipt["record_type"], "LOCAL_SELF_REPORT_NOT_SIGNED")
+        self.assertEqual(stat.S_IMODE(self.dest.stat().st_mode), 0o600)
+        self.assertEqual(list(self.private.glob(".negresco-receipt-*.tmp")), [])
+        self.assertEqual(
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge
+            )["status"], "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+
+    def test_s1_33_refuses_publish_failure_and_cleans_staging_file(self):
+        with mock.patch.object(evidence.os, "link",
+                               side_effect=OSError("injected link failure")):
+            with self.assertRaises(evidence.AcceptanceReceiptError):
+                self.write()
+        self.assertFalse(self.dest.exists())
+        self.assertEqual(list(self.private.iterdir()), [])
+
+    def test_s1_33_directory_sync_failure_rolls_back_published_receipt(self):
+        real_fsync = os.fsync
+        seen = []
+
+        def fail_directory_sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                seen.append("directory")
+                raise OSError("injected directory fsync failure")
+            return real_fsync(fd)
+
+        with mock.patch.object(evidence.os, "fsync",
+                               side_effect=fail_directory_sync):
+            with self.assertRaises(evidence.AcceptanceReceiptError):
+                self.write()
+        self.assertGreaterEqual(len(seen), 1)
+        self.assertFalse(self.dest.exists())
+        self.assertEqual(list(self.private.iterdir()), [])
+
+    def test_s1_33_file_sync_failure_never_publishes_receipt(self):
+        real_fsync = os.fsync
+
+        def fail_file_sync(fd):
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError("injected file fsync failure")
+            return real_fsync(fd)
+
+        with mock.patch.object(evidence.os, "fsync",
+                               side_effect=fail_file_sync):
+            with self.assertRaises(evidence.AcceptanceReceiptError):
+                self.write()
+        self.assertFalse(self.dest.exists())
+        self.assertEqual(list(self.private.iterdir()), [])
+
+    def test_s1_33_concurrent_existing_receipt_never_overwritten(self):
+        # Another process can win the final name while the candidate is
+        # staged. Hard-link publication must fail closed without clobbering it.
+        original_link = os.link
+        def competing_receipt(src, dst, **options):
+            self.dest.write_text("other writer won", encoding="utf-8")
+            self.dest.chmod(0o600)
+            return original_link(src, dst, **options)
+
+        with mock.patch.object(evidence.os, "link",
+                               side_effect=competing_receipt):
+            with self.assertRaises(evidence.AcceptanceReceiptError):
+                self.write()
+        self.assertEqual(self.dest.read_text(encoding="utf-8"),
+                         "other writer won")
+        self.assertEqual(list(self.private.glob(".negresco-receipt-*.tmp")), [])
+
     def test_does_not_overwrite_existing_receipt(self):
         self.write()
         original = self.dest.read_bytes()
