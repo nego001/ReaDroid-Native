@@ -139,8 +139,10 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
                 "Cgroup, scope launcher and seccomp isolation were not jointly verified")
         try:
             quota_proof = read_scope_proof(proof_path, unit)
+            corroborate_guard_receipt(records, quota_proof)
         except InvalidResourceEvidence as exc:
-            raise ScopedSeccompSmokeError("Private cgroup proof missing") from exc
+            raise ScopedSeccompSmokeError(
+                "Private cgroup quota proof missing or inconsistent") from exc
         return {
             "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
             "scope": unit,
