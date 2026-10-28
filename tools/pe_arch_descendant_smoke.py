@@ -19,6 +19,7 @@ import time
 from pe_arch_cgroup_smoke import preflight
 from pe_arch_vm_gate import verify_arch_vm
 from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
+from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
 from pe_resource_limits import (new_scope_unit, stop_scope,
                                 wrap_in_cgroup_scope)
 
@@ -116,16 +117,21 @@ def run_native_descendant_smoke() -> dict:
     launcher = None
     stopped = False
     proof = False
+    quota_private_proof = None
     cleanup_evidence = None
 
     with tempfile.TemporaryDirectory(prefix="negresco-arch-descendant-") as temp:
         marker = Path(temp) / "child.json"
         out_path = Path(temp) / "scope.stdout"
         err_path = Path(temp) / "scope.stderr"
+        proof_dir = Path(temp) / "private-quota-proof"
+        proof_dir.mkdir(mode=0o700)
+        proof_path = proof_dir / "quota.json"
         command = [
             sys.executable, "-I", str(Path(__file__).resolve()),
             "--worker", str(marker), unit]
-        argv = wrap_in_cgroup_scope(command, timeout_seconds=30, unit_name=unit)
+        argv = wrap_in_cgroup_scope(command, timeout_seconds=30,
+                                    unit_name=unit, proof_path=proof_path)
         try:
             with out_path.open("wb") as stdout, err_path.open("wb") as stderr:
                 launcher = subprocess.Popen(
@@ -150,10 +156,28 @@ def run_native_descendant_smoke() -> dict:
                     time.sleep(0.15)
                 else:
                     raise DescendantProbeError("child startup marker not produced")
-                output = out_path.read_text(encoding="utf-8", errors="replace")
-                proof = '"cgroup_verification": "passed"' in output
-                if not proof:
-                    raise DescendantProbeError("quota verifier did not pass")
+                output = out_path.read_bytes()
+                if len(output) > 32 * 1024:
+                    raise DescendantProbeError("Cgroup guard stdout is unbounded")
+                try:
+                    receipts = [json.loads(line) for line in output.decode(
+                        "utf-8").splitlines() if line.lstrip().startswith("{")]
+                except (UnicodeError, json.JSONDecodeError) as exc:
+                    raise DescendantProbeError("Malformed cgroup guard receipt") from exc
+                matching = [
+                    record for record in receipts
+                    if isinstance(record, dict)
+                    and record.get("cgroup_verification") == "passed"
+                    and record.get("verified") is True]
+                if len(matching) != 1:
+                    raise DescendantProbeError("Missing or duplicate cgroup guard attestation")
+                try:
+                    quota_private_proof = read_scope_proof(proof_path, unit)
+                except InvalidResourceEvidence as exc:
+                    raise DescendantProbeError("Private effective cgroup proof missing") from exc
+                if quota_private_proof.get("verification") != "guard_verified_before_bwrap":
+                    raise DescendantProbeError("Private cgroup quotas are not proven")
+                proof = True
                 stopped = stop_scope(unit)
                 if not stopped:
                     raise DescendantProbeError("systemctl could not stop scope")
@@ -186,6 +210,7 @@ def run_native_descendant_smoke() -> dict:
         return {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": unit, "quota_verified": proof,
                 "systemd_stop_succeeded": stopped,
+                "quota_private_proof": quota_private_proof,
                 "descendant_cleanup_evidence": cleanup_evidence,
                 "detached_sigterm_ignoring_child_terminated": True,
                 "windows_binary_executed": False,
