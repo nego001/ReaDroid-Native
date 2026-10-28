@@ -799,6 +799,29 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     self.write(report=report)
                 self.assertFalse(self.dest.exists())
 
+    def test_s1_31_report_rejects_physically_impossible_cpu_max_values(self):
+        for location in (
+                ("cgroup",),
+                ("cgroup_lifecycle", "quota_private_proof"),
+                ("descendant_lifecycle", "quota_private_proof"),
+                ("ghidra", "arch_scoped_seccomp_probe", "cgroup_verification"),
+                ("ghidra", "arch_real_ghidra_with_both",
+                 "quotas_verified_before_bwrap"),
+                ("ghidra",)):
+            for key, value in (("cpu_quota", 999),
+                               ("cpu_period", 999),
+                               ("cpu_period", 1000001),
+                               ("cpu_period", 10 ** 12)):
+                with self.subTest(location=location, key=key, value=value):
+                    report = copy.deepcopy(self.report)
+                    node = report
+                    for part in location:
+                        node = node[part]
+                    node[key] = value
+                    with self.assertRaises(evidence.AcceptanceReceiptError):
+                        self.write(report=report)
+                    self.assertFalse(self.dest.exists())
+
     def test_refuses_unbounded_or_forged_kernel_quota_values(self):
         paths = (
             ("cgroup",),

@@ -57,6 +57,21 @@ class CgroupVerificationTests(unittest.TestCase):
                     self.verify()
                 file.write_text(original)
 
+    def test_s1_31_rejects_impossible_linux_cpu_bandwidth_parameters(self):
+        original = (self.group / "cpu.max").read_text()
+        for value in ("999 100000", "200000 999",
+                      "200000 1000001", "1000 999",
+                      "999 1000000", "200000 1000000000000"):
+            with self.subTest(cpu_max=value):
+                (self.group / "cpu.max").write_text(value + "\n")
+                with self.assertRaises(CgroupVerificationError):
+                    self.verify()
+        (self.group / "cpu.max").write_text("1000 1000\n")
+        self.assertEqual(self.verify()["cpu_period"], 1000)
+        (self.group / "cpu.max").write_text("2000000 1000000\n")
+        self.assertEqual(self.verify()["cpu_quota"], 2000000)
+        (self.group / "cpu.max").write_text(original)
+
     def test_rejects_wrong_scope_identity(self):
         with self.assertRaisesRegex(CgroupVerificationError, "assigned scope"):
             verify_cgroup_limits(4 * 1024 ** 3, 128, 200,

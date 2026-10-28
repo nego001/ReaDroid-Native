@@ -1312,3 +1312,29 @@ especial, não substitui timeout geral de operações no filesystem,
 não autentica a origem do recibo e não prova medições do kernel em
 VM Arch independente. A PR segue Draft; `main`, APK/OTA e
 os controles combinados seccomp+cgroup permanecem intocados.
+
+## PE-S1.31 | Limites plausíveis para cpu.max (CFS do kernel)
+
+O parser de cgroup v2 já recusava quotas não inteiras, não positivas,
+sem limite ou acima do orçamento de CPU (200%). Porém um comprovante
+falso podia anunciar `cpu_period=1000000000000` microssegundos
+ou `cpu_quota=1` microssegundo e passar na comparação de razão CPU.
+
+Agora três camadas validam limites físicos do escalonador Linux:
+`cpu_quota >= 1000` microssegundos e
+`1000 <= cpu_period <= 1000000` microssegundos.
+As constantes em `pe_resource_limits.py` são aplicadas à
+leitura de `cpu.max` (`pe_cgroup_guard.py`), à prova privada
+0600 (`pe_resource_evidence.py`) e à validação nativa/recibo
+offline (`pe_arch_vm_evidence.py`). Permanecem limites de
+memória, processos e até 200% de CPU, sem forçar os valores a
+serem iguais entre escopos independentes.
+
+Testes negativos cobrem números impossíveis em cada etapa.
+Testes positivos preservam 1ms e 1s, extremos válidos do
+kernel. Referência: https://kernel.org/doc/html/v6.16/scheduler/sched-bwc.html
+(CFS: mínimo de quota/período de 1ms; período máximo de 1s).
+
+A regra reforça coerência, mas não autentica o emissor nem
+equivale a execução independente da VM Arch. PR Draft, sem
+merge na main, sem APK/OTA e sem liberar o modo conjunto.

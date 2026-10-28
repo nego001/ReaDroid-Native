@@ -74,6 +74,24 @@ class ResourceProofTests(unittest.TestCase):
                 with self.assertRaises(InvalidResourceEvidence):
                     read_scope_proof(self.file, UNIT)
 
+    def test_s1_31_private_cgroup_proof_enforces_real_cpu_max_bounds(self):
+        for patch in (
+                {"cpu_quota": 999},
+                {"cpu_period": 999},
+                {"cpu_period": 1000001},
+                {"cpu_period": 10 ** 12}):
+            with self.subTest(patch=patch):
+                self.write({**self.valid, **patch})
+                with self.assertRaises(InvalidResourceEvidence):
+                    read_scope_proof(self.file, UNIT)
+        for period, quota in ((1000, 1000), (1000000, 2000000)):
+            with self.subTest(valid_period=period):
+                self.write({**self.valid, "cpu_period": period,
+                            "cpu_quota": quota})
+                proof = read_scope_proof(self.file, UNIT)
+                self.assertEqual(proof["cpu_period"], period)
+                self.assertEqual(proof["cpu_quota"], quota)
+
     def test_refuses_oversized_or_malformed_json(self):
         self.file.write_text("{malformed", encoding="utf-8")
         with self.assertRaises(InvalidResourceEvidence):
