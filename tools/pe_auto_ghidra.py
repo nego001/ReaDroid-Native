@@ -26,9 +26,10 @@ import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
-from pe_resource_limits import (wrap_in_cgroup_scope, new_scope_unit, stop_scope,
+from pe_resource_limits import (wrap_in_cgroup_scope, new_scope_unit,
                                 ResourceLimitsUnavailable)
 from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
+from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
 from pe_seccomp_filter import (compile_seccomp_bpf_fd, attach_seccomp_fd,
                                SeccompUnavailable)
 from pe_auto_symbols import inspect_symbols
@@ -483,15 +484,27 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 process.wait(timeout=5)
             raise HeadlessError("Ghidra excedeu o tempo e foi interrompido") from exc
         finally:
-            scope_stop_accepted = (stop_scope(scope_unit)
-                                   if scope_unit is not None else None)
-        if scope_unit is not None and not scope_stop_accepted:
-            # Even a successful Ghidra exit is insufficient if systemd did not
-            # accept the attempt to stop the full process cgroup. Never publish
-            # evidence in strict mode when that cleanup request failed.
+            scope_cleanup = None
+            if scope_unit is not None:
+                try:
+                    # A transient systemd scope can be garbage-collected on
+                    # exit, while a successful stop request alone cannot prove
+                    # that descendants are gone. Check final state instead.
+                    scope_cleanup = stop_and_attest_scope(scope_unit)
+                except (ScopeCleanupUnavailable, OSError) as exc:
+                    raise HeadlessError(
+                        "Estado final do cgroup não comprovado; relatório recusado"
+                    ) from exc
+        if scope_unit is not None and (
+                not isinstance(scope_cleanup, dict)
+                or scope_cleanup.get("scope") != scope_unit
+                or scope_cleanup.get("verified") is not True
+                or scope_cleanup.get("scope_quiescent") is not True
+                or scope_cleanup.get("cgroup_unpopulated") is not True
+                or scope_cleanup.get("active_state") != "inactive"
+                or scope_cleanup.get("sub_state") != "dead"):
             raise HeadlessError(
-                "Não foi possível confirmar a solicitação de parada do cgroup; "
-                "relatório recusado")
+                "Escopo systemd ainda ativo ou cgroup ocupado; relatório recusado")
         if code != 0:
             raise HeadlessError("O Ghidra não concluiu a análise; nenhum relatório foi aceito")
         strict_resource_proof = None
@@ -542,6 +555,7 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                                    if strict_resource_proof is not None
                                    else "not_enforced"),
                 "resource_limits": strict_resource_proof,
+                "resource_cleanup": scope_cleanup,
                 "seccomp_policy": ("bwrap_narrow_cBPF_requested"
                                    if require_seccomp else "not_enforced"),
             },
