@@ -977,34 +977,34 @@ PR segue Draft; `main`, APK e OTA intactos.
 
 ## PE-S1.20 | Revisão independente do recibo local, sem assinatura falsa
 
-Foi criado o verificador **offline** \`tools/pe_arch_vm_receipt_verify.py\`.
+Foi criado o verificador **offline** `tools/pe_arch_vm_receipt_verify.py`.
 Ele não aceita um arquivo de evidências só porque contém
-\`PASS_PE_S1_5_ARCH_VM\`. Reabre o recibo produzido por
-\`--evidence-output\` em uma pasta privada 0700, por descritores
-\`O_NOFOLLOW\`, com arquivo 0600 e leitura máxima de 1 MiB.
+`PASS_PE_S1_5_ARCH_VM`. Reabre o recibo produzido por
+`--evidence-output` em uma pasta privada 0700, por descritores
+`O_NOFOLLOW`, com arquivo 0600 e leitura máxima de 1 MiB.
 O parser rejeita chaves JSON duplicadas, campos desconhecidos e
 constantes não finitas. O verificador compara o SHA-256 do relatório
 canônico, roda **novamente** os contratos completos de
-\`validate_native_acceptance_report\`, verifica o manifesto exato
+`validate_native_acceptance_report`, verifica o manifesto exato
 de arquivos-fonte e reabre cada arquivo a partir do checkout de
 código fornecido, sem seguir links simbólicos em seus componentes.
 Cada hash e tamanho precisa bater exatamente com o manifesto.
 
-O novo script integra \`SOURCE_FILES\`, portanto o próprio código do
+O novo script integra `SOURCE_FILES`, portanto o próprio código do
 verificador será incluído nos hashes da próxima aceitação. Pode ser
 executado por outro revisor, sem privilégios de administrador e sem
 executar PE, Ghidra, systemd ou acessar a rede:
 
-\`\`\`bash
+```bash
 python3 tools/pe_arch_vm_receipt_verify.py \
   --receipt /caminho/privado/acceptance.json \
   --source-root /caminho/do/checkout/exato
-\`\`\`
+```
 
 Um resultado aprovado retorna apenas
-\`LOCAL_RECEIPT_CONSISTENCY_VALIDATED\` com
-\`native_kernel_execution_independently_verified=false\` e
-\`UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION\`. A ausência de
+`LOCAL_RECEIPT_CONSISTENCY_VALIDATED` com
+`native_kernel_execution_independently_verified=false` e
+`UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION`. A ausência de
 assinatura ou chave confiável significa que uma pessoa capaz de
 alterar simultaneamente recibo e repositório também pode recalcular
 esses hashes. **Nenhuma verificação de hash prova que houve uma
@@ -1012,9 +1012,9 @@ VM Arch independente**, nem mede retroativamente quotas ou seccomp
 do kernel. A homologação real ainda exige execução acompanhada na
 VM e análise externa das evidências originais.
 
-Contratos em \`tests/test_pe_arch_vm_evidence.py\` cobrem aprovação
+Contratos em `tests/test_pe_arch_vm_evidence.py` cobrem aprovação
 somente de consistência local, adulteração do relatório, hash da
 fonte, manifestação incorreta, symlinks, permissões abertas,
 entrada acima do limite, JSON com chaves duplicadas e status não
-assinado. \`main\` continua intacta; sem merge, APK/OTA ou liberação
-de \`--require-seccomp --require-cgroup-limits\`.
+assinado. `main` continua intacta; sem merge, APK/OTA ou liberação
+de `--require-seccomp --require-cgroup-limits`.
