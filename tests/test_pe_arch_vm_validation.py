@@ -308,7 +308,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             (home / "support/analyzeHeadless").write_text("synthetic")
             (home / "Ghidra").mkdir()
             (home / "Ghidra/application.properties").write_text(
-                "application.name=Ghidra\\napplication.version=12.2\\n",
+                "application.name=Ghidra\napplication.version=12.2\n",
                 encoding="utf-8")
             unit = "negresco-pe-0123456789abcdef01234567.scope"
             scope_proof = {
