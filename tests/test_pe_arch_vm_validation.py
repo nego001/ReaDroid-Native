@@ -76,6 +76,12 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                       "scope": "negresco-pe-0123456789abcdef01234567.scope",
                       "detached_sigterm_ignoring_child_terminated": True,
                       "systemd_stop_succeeded": True,
+                      "quota_verified": True,
+                      "quota_private_proof": {
+                          "verification": "guard_verified_before_bwrap",
+                          "memory_max_bytes": 4294967296,
+                          "tasks_max": 128,
+                          "cpu_quota": 200000, "cpu_period": 100000},
                       "descendant_cleanup_evidence": {
                           "scope": "negresco-pe-0123456789abcdef01234567.scope",
                           "verified": True, "scope_quiescent": True,
