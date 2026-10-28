@@ -78,6 +78,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                     native, "stop_and_attest_scope",
                     side_effect=(
                         lambda unit: {
+                            "scope": self.UNIT,
                             "verified": True, "scope_quiescent": True,
                             "cgroup_unpopulated": True,
                             "stop_request_accepted": True,
