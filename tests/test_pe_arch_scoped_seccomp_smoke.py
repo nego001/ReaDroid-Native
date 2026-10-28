@@ -28,7 +28,10 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 "scope_seccomp_guard": "passed", "scope": self.UNIT,
                 "filters_compiled_inside_scope": True,
             }
-            kernel_receipt = {"cgroup_verification": "passed", "verified": True}
+            kernel_receipt = {
+                "cgroup_verification": "passed", "verified": True,
+                "memory_max": 4294967296, "pids_max": 128,
+                "cpu_quota": 200000, "cpu_period": 100000}
             fields = (
                 "host_home_canary_hidden", "network_namespace_separate",
                 "host_etc_hidden", "usr_runtime_read_only",
