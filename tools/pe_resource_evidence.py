@@ -49,30 +49,33 @@ def read_scope_proof(path: Path, unit: str) -> dict:
         # The parent is constructed as 0700 outside Bubblewrap. It must not
         # be redirected to a user-shared directory in native acceptance.
         parent = proof.parent
-        if parent.is_symlink():
-            raise InvalidResourceEvidence("Symlinked proof parent")
-        parent_meta = parent.stat()
-        if (not stat.S_ISDIR(parent_meta.st_mode)
-                or parent_meta.st_uid != os.geteuid()
-                or parent_meta.st_mode & 0o077):
-            raise InvalidResourceEvidence("Cgroup proof parent is not private")
-        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-        fd = os.open(proof, flags)
-        with os.fdopen(fd, "rb") as reader:
-            before = os.fstat(reader.fileno())
-            if (not stat.S_ISREG(before.st_mode)
-                    or before.st_uid != os.geteuid()
-                    or before.st_mode & 0o077
-                    or not 1 <= before.st_size <= MAX_PROOF_BYTES):
-                raise InvalidResourceEvidence(
-                    "Unsafe owner, permissions or cgroup proof length")
-            raw = reader.read(MAX_PROOF_BYTES + 1)
-            after = os.fstat(reader.fileno())
-            if (len(raw) != before.st_size
-                    or after.st_size != before.st_size
-                    or after.st_ino != before.st_ino
-                    or after.st_mtime_ns != before.st_mtime_ns):
-                raise InvalidResourceEvidence("Cgroup proof changed while read")
+        # Pin the private directory too, so swapping the parent path after
+        # checking metadata cannot redirect the later file open.
+        parent_fd = os.open(
+            parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        with os.fdopen(parent_fd, "rb") as directory:
+            parent_meta = os.fstat(directory.fileno())
+            if (not stat.S_ISDIR(parent_meta.st_mode)
+                    or parent_meta.st_uid != os.geteuid()
+                    or parent_meta.st_mode & 0o077):
+                raise InvalidResourceEvidence("Cgroup proof parent is not private")
+            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+            fd = os.open(proof.name, flags, dir_fd=directory.fileno())
+            with os.fdopen(fd, "rb") as reader:
+                before = os.fstat(reader.fileno())
+                if (not stat.S_ISREG(before.st_mode)
+                        or before.st_uid != os.geteuid()
+                        or before.st_mode & 0o077
+                        or not 1 <= before.st_size <= MAX_PROOF_BYTES):
+                    raise InvalidResourceEvidence(
+                        "Unsafe owner, permissions or cgroup proof length")
+                raw = reader.read(MAX_PROOF_BYTES + 1)
+                after = os.fstat(reader.fileno())
+                if (len(raw) != before.st_size
+                        or after.st_size != before.st_size
+                        or after.st_ino != before.st_ino
+                        or after.st_mtime_ns != before.st_mtime_ns):
+                    raise InvalidResourceEvidence("Cgroup proof changed while read")
         record = json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=_unique_pairs,
