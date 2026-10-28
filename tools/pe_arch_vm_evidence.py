@@ -21,6 +21,7 @@ from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
     "tools/pe_arch_vm_evidence.py",
+    "tools/pe_arch_vm_receipt_verify.py",
     "tools/pe_arch_vm_gate.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
