@@ -57,6 +57,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         out = self.run_mock(
             self.report(load="not-found"), stop=False)
         self.assertTrue(out["verified"])
+        self.assertEqual(out["scope"], self.UNIT)
         self.assertTrue(out["scope_quiescent"])
         self.assertTrue(out["scope_collected"])
         self.assertFalse(out["stop_request_accepted"])
