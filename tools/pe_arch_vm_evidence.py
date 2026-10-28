@@ -17,6 +17,7 @@ from pathlib import Path
 import stat
 
 from pe_nofollow_paths import open_absolute_directory_nofollow
+from pe_ghidra_integrity import GHIDRA_RELEASE_SHA256
 from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
                                 CPU_QUOTA_PERCENT, SCOPE_PATTERN)
 
@@ -205,6 +206,62 @@ def validate_native_acceptance_report(report: dict) -> None:
             or combined["quotas_verified_before_bwrap"].get("verification")
             != "guard_verified_before_bwrap"):
         raise AcceptanceReceiptError("Real combined security controls unproven")
+
+    # PE-S1.22: a valid report needs the actual isolation and release
+    # identity observations, not merely successful cgroup/JVM status labels.
+    isolation = ghidra.get("arch_isolation_probe")
+    isolation_fields = (
+        "host_home_canary_hidden", "network_namespace_separate",
+        "host_etc_hidden", "usr_runtime_read_only",
+        "private_work_writable", "inherited_host_fd_hidden",
+    )
+    if (ghidra.get("status") != "PASS_REAL_ARCH_VM_GHIDRA"
+            or ghidra.get("sandbox") != "bubblewrap"
+            or ghidra.get("pe_executed") is not False
+            or vm.get("root") is not False
+            or vm.get("systemd_user_bus") is not True
+            or not isinstance(isolation, dict)
+            or isolation.get("status") != "PASS_NATIVE_ARCH_BWRAP_PROBE"
+            or any(isolation.get(field) is not True for field in isolation_fields)
+            or not isinstance(integrity, dict)
+            or integrity.get("verified") is not True
+            or integrity.get("release_sha256") != GHIDRA_RELEASE_SHA256
+            or type(integrity.get("matched_files")) is not int
+            or integrity["matched_files"] < 1
+            or integrity.get("symlinks_allowed") is not False
+            or integrity.get("unexpected_files_allowed") is not False
+            or type(ghidra.get("ghidra_functions")) is not int
+            or ghidra["ghidra_functions"] < 1):
+        raise AcceptanceReceiptError(
+            "Ghidra pinned release or native Bubblewrap isolation unproven")
+    # The standalone Ghidra invocation uses its own cgroup scope; validate
+    # the four finite effective numbers, without incorrectly requiring
+    # equality with other independent scopes.
+    ghidra_quota = {key: ghidra.get(key) for key in (
+        "memory_max_bytes", "tasks_max", "cpu_quota", "cpu_period")}
+    ghidra_quota["verification"] = "guard_verified_before_bwrap"
+    if not _finite_budget(ghidra_quota, private=True):
+        raise AcceptanceReceiptError("Standalone Ghidra quota summary invalid")
+    scoped_sandbox_checks = (*isolation_fields, "seccomp_enforced")
+    if (probe.get("filter_compiled_after_guard") is not True
+            or probe.get("windows_pe_executed") is not False
+            or probe.get("ghidra_executed") is not False
+            or probe.get("sandbox_checks") != list(scoped_sandbox_checks)
+            or not isinstance(probe.get("scope_cleanup_evidence"), dict)
+            or probe["scope_cleanup_evidence"].get("verified") is not True
+            or probe["scope_cleanup_evidence"].get("active_state") != "inactive"
+            or probe["scope_cleanup_evidence"].get("sub_state") != "dead"
+            or descendants.get("windows_binary_executed") is not False
+            or descendants.get("ghidra_executed") is not False
+            or combined.get("bubblewrap") is not True
+            or combined.get("windows_binary_executed") is not False
+            or type(combined.get("ghidra_functions_discovered")) is not int
+            or combined["ghidra_functions_discovered"] < 1
+            or type(combined.get("decompiled_functions")) is not int
+            or not 1 <= combined["decompiled_functions"]
+                       <= combined["ghidra_functions_discovered"]):
+        raise AcceptanceReceiptError(
+            "Conflicting or incomplete scoped security/decompilation evidence")
     jvm = combined.get("ghidra_jvm_seccomp_evidence")
     if (not isinstance(jvm, dict) or jvm.get("verified") is not True
             or jvm.get("measured_process") != "ghidra_headless_jvm"

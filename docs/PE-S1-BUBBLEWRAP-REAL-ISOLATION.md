@@ -1047,3 +1047,33 @@ nem autentica a VM Arch. A execução ponta a ponta com systemd,
 cgroups e seccomp no mesmo kernel Arch continua pendente. A PR
 permanece Draft; `main`, APK/OTA e a combinação bloqueada do
 executor principal permanecem inalterados.
+
+## PE-S1.22 | Recibo nativo exige provas integrais de isolamento e identidade do Ghidra
+
+A auditoria do contrato encontrou campos emitidos pelo roteiro
+`run_acceptance()` que o validador do recibo não exigia:
+`arch_isolation_probe` de Bubblewrap, SHA-256 pinado e propriedades
+da instalação Ghidra, resumo de quotas do Ghidra isolado,
+`sandbox_checks` de seccomp e negações de execução de PE em estágios
+individualizados. Recibos autodeclarados ainda conseguiam passar
+sem parte dessas provas ou com valores contraditórios.
+
+O `validate_native_acceptance_report()` agora exige isolamento
+de rede, HOME e FDs do host, montagem read-only e workspace
+privado; versão atestada pelo digest fixo de Ghidra 12.2, árvore
+com arquivos conferidos e sem extras/symlinks; quotas finitas
+também no resumo da análise standalone; observações de filtro
+seccomp após o guard, probes completos, estado final de escopo,
+identidade de VM não-root com bus de systemd e afirmações
+consistentes de não execução do Windows PE em todas as etapas.
+
+O inventário de funções e a contagem de descompilações devem
+ser positivos e coerentes. Os testes simulam campos ausentes,
+falsos, incongruentes, scopes com limpeza não comprovada e
+identidade de release adulterada. Todos são **contratos sobre
+recibos sintéticos**, não uma execução de VM Arch com kernel
+real. O verificador offline continua classificando sua saída
+como `LOCAL_RECEIPT_CONSISTENCY_VALIDATED`, nunca como
+atestação independente de hipervisor. Nenhuma opção bloqueada
+foi desbloqueada, a PR continua Draft, sem alteração da main
+nem publicação de APK/OTA.

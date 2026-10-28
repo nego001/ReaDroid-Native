@@ -13,6 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_evidence as evidence
 import pe_arch_vm_receipt_verify as review
+from pe_ghidra_integrity import GHIDRA_RELEASE_SHA256
 
 
 class PrivateNativeArchReceiptTests(unittest.TestCase):
@@ -34,7 +35,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             "status": "PASS_PE_S1_5_ARCH_VM",
             "environment": {
                 "status": "ARCH_VM_PREFLIGHT_PASSED",
-                "vm_confirmed": True, "container": False},
+                "vm_confirmed": True, "container": False,
+                "root": False, "systemd_user_bus": True},
             "descendants_terminated": True,
             "cgroup": {"memory_max": 4294967296, "pids_max": 128,
                        "cpu_quota": 200000, "cpu_period": 100000},
@@ -69,13 +71,40 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     "scope": "negresco-pe-0123456789abcdef01234567.scope",
                     "verified": True, "scope_quiescent": True,
                     "cgroup_unpopulated": True,
-                    "active_state": "inactive", "sub_state": "dead"}},
+                    "active_state": "inactive", "sub_state": "dead"},
+                "windows_binary_executed": False,
+                "ghidra_executed": False},
             "windows_binary_executed": False,
             "ghidra": {
-                "ghidra_integrity": {"verified": True},
+                "status": "PASS_REAL_ARCH_VM_GHIDRA",
+                "sandbox": "bubblewrap", "pe_executed": False,
+                "ghidra_functions": 18,
+                "memory_max_bytes": 4294967296, "tasks_max": 128,
+                "cpu_quota": 200000, "cpu_period": 100000,
+                "ghidra_integrity": {
+                    "verified": True, "release_sha256": GHIDRA_RELEASE_SHA256,
+                    "matched_files": 100,
+                    "symlinks_allowed": False,
+                    "unexpected_files_allowed": False},
+                "arch_isolation_probe": {
+                    "status": "PASS_NATIVE_ARCH_BWRAP_PROBE",
+                    "host_home_canary_hidden": True,
+                    "network_namespace_separate": True,
+                    "host_etc_hidden": True,
+                    "usr_runtime_read_only": True,
+                    "private_work_writable": True,
+                    "inherited_host_fd_hidden": True},
                 "arch_scoped_seccomp_probe": {
                     "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
                     "scope": "negresco-pe-aaaaaaaaaaaaaaaaaaaaaaaa.scope",
+                    "filter_compiled_after_guard": True,
+                    "windows_pe_executed": False,
+                    "ghidra_executed": False,
+                    "sandbox_checks": [
+                        "host_home_canary_hidden", "network_namespace_separate",
+                        "host_etc_hidden", "usr_runtime_read_only",
+                        "private_work_writable", "inherited_host_fd_hidden",
+                        "seccomp_enforced"],
                     "cgroup_verification": {
                         "verification": "guard_verified_before_bwrap",
                         "memory_max_bytes": 4294967296,
@@ -84,7 +113,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     "scope_cleanup_evidence": {
                         "scope": "negresco-pe-aaaaaaaaaaaaaaaaaaaaaaaa.scope",
                         "verified": True, "scope_quiescent": True,
-                        "cgroup_unpopulated": True}},
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive", "sub_state": "dead"}},
                 "arch_real_ghidra_with_both": {
                     "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
                     "scope": "negresco-pe-bbbbbbbbbbbbbbbbbbbbbbbb.scope",
@@ -104,6 +134,9 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                         "tasks_max": 128, "cpu_quota": 200000,
                         "cpu_period": 100000},
                     "decompiled_functions": 2,
+                    "ghidra_functions_discovered": 18,
+                    "bubblewrap": True,
+                    "windows_binary_executed": False,
                     "ghidra_jvm_seccomp_evidence": {
                         "verified": True,
                         "measured_process": "ghidra_headless_jvm",
@@ -118,6 +151,75 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         return evidence.write_receipt_no_overwrite(
             self.report if report is None else report,
             self.dest if path is None else path, source_root=self.root)
+
+    def test_s1_22_rejects_missing_or_contradictory_isolation_evidence(self):
+        mutations = [
+            ("vm.root", ("environment", "root"), True),
+            ("vm.user_bus", ("environment", "systemd_user_bus"), False),
+            ("ghidra.status", ("ghidra", "status"), "PASS_MOCKED_ONLY"),
+            ("ghidra.sandbox", ("ghidra", "sandbox"), "none"),
+            ("ghidra.pe_executed", ("ghidra", "pe_executed"), True),
+            ("ghidra.functions", ("ghidra", "ghidra_functions"), 0),
+            ("ghidra.memory", ("ghidra", "memory_max_bytes"), 9 * 1024 ** 3),
+            ("ghidra.integrity.sha",
+             ("ghidra", "ghidra_integrity", "release_sha256"), "0" * 64),
+            ("ghidra.integrity.extra",
+             ("ghidra", "ghidra_integrity", "unexpected_files_allowed"), True),
+            ("ghidra.integrity.count",
+             ("ghidra", "ghidra_integrity", "matched_files"), 0),
+            ("bubblewrap.network",
+             ("ghidra", "arch_isolation_probe", "network_namespace_separate"), False),
+            ("bubblewrap.fd",
+             ("ghidra", "arch_isolation_probe", "inherited_host_fd_hidden"), None),
+            ("bubblewrap.status",
+             ("ghidra", "arch_isolation_probe", "status"), "FAKE_PASS"),
+            ("seccomp.after_guard",
+             ("ghidra", "arch_scoped_seccomp_probe", "filter_compiled_after_guard"), False),
+            ("seccomp.sandbox",
+             ("ghidra", "arch_scoped_seccomp_probe", "sandbox_checks"), []),
+            ("seccomp.windows_pe",
+             ("ghidra", "arch_scoped_seccomp_probe", "windows_pe_executed"), True),
+            ("seccomp.cleanup",
+             ("ghidra", "arch_scoped_seccomp_probe", "scope_cleanup_evidence",
+              "active_state"), "active"),
+            ("descendant.windows",
+             ("descendant_lifecycle", "windows_binary_executed"), True),
+            ("descendant.ghidra",
+             ("descendant_lifecycle", "ghidra_executed"), True),
+            ("combined.bubblewrap",
+             ("ghidra", "arch_real_ghidra_with_both", "bubblewrap"), False),
+            ("combined.windows",
+             ("ghidra", "arch_real_ghidra_with_both", "windows_binary_executed"), True),
+            ("combined.functions",
+             ("ghidra", "arch_real_ghidra_with_both", "ghidra_functions_discovered"), 0),
+            ("combined.decompile_overcount",
+             ("ghidra", "arch_real_ghidra_with_both", "decompiled_functions"), 19),
+        ]
+        for title, path, value in mutations:
+            with self.subTest(title=title):
+                report = copy.deepcopy(self.report)
+                target = report
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = value
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    evidence.validate_native_acceptance_report(report)
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_s1_22_rejects_missing_isolation_and_integrity_objects(self):
+        for parent, field in (
+            ("ghidra", "arch_isolation_probe"),
+            ("ghidra", "ghidra_integrity"),
+            ("ghidra", "arch_real_ghidra_with_both"),
+        ):
+            with self.subTest(field=field):
+                report = copy.deepcopy(self.report)
+                report[parent].pop(field)
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
 
     def test_private_receipt_records_source_hashes_without_claiming_signature(self):
         written = self.write()
