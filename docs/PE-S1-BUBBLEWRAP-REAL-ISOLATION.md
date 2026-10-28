@@ -927,3 +927,50 @@ requer uma VM Arch Linux independente.
 O executor normal ainda recusa `--require-seccomp`
 junto de `--require-cgroup-limits`. PR Draft,
 `main` intocada e sem APK ou OTA.
+
+## PE-S1.19 | Quatro ciclos de cgroup completos, incluindo a sonda inicial
+
+A revisão da sequência `run_acceptance()` encontrou uma assimetria:
+`run_smoke()`, que roda **antes** do teste com descendente resistente
+a SIGTERM, aceitava recibos do stdout e entregava valores de quotas,
+mas ainda não comprovava por arquivo privado o estado do cgroup nem
+verificava independentemente a limpeza do próprio escopo.
+
+A etapa inicial agora:
+
+- Cria diretório temporário privado, passa um destino `quota.json`
+  para o `pe_cgroup_guard` e exige a leitura protegida
+  `read_scope_proof(path, unit)`. O guard e o arquivo privado
+  precisam concordar em memória, PIDs, quota/período de CPU via
+  `corroborate_guard_receipt`.
+- Mantém parsing limitado a 32768 bytes de stdout, recusa chaves
+  JSON duplicadas, `NaN`, registros de guard duplicados e marcador
+  do filho ausente ou repetido. O processo Windows **não é executado**.
+- Em todas as saídas da invocação do processo, solicita parada e
+  exige `stop_and_attest_scope(unit)`, com estado
+  `inactive/dead`, mesmo nome de unidade e ausência de
+  processos no cgroup. Falha de cleanup ou scope ainda ativo
+  converte qualquer suposto resultado `PASS` em rejeição.
+- Anexa `quota_private_proof` e `scope_cleanup_evidence`
+  à sonda inicial. O validador principal recusa provas incompletas
+  **antes de iniciar** o teste com filho SIGTERM-resistant, e
+  preserva a sonda inteira no campo `cgroup_lifecycle`.
+- O recibo local agora confirma **quatro scopes diferentes**:
+  sonda inicial, descendente, ponte seccomp e Ghidra simultâneo.
+  Para o primeiro, exige coincidência exata dos quatro números
+  de quota entre `cgroup`, `cgroup_lifecycle` e seu arquivo privado,
+  além da prova de limpeza e das flags de não execução PE/Ghidra.
+
+Os testes `test_pe_arch_cgroup_smoke.py`,
+`test_pe_arch_vm_validation.py` e
+`test_pe_arch_vm_evidence.py` foram ampliados com casos de
+falta de arquivo privado, discordância de quotas, falso sucesso,
+escopo populado, timeout, recibo reutilizado e bloqueio da
+fase perigosa quando a primeira sonda falha. Os jobs
+Ubuntu/Arch userspace são **contratos simulados**, não
+homologação em VM Arch nativa.
+
+Permanece obrigatória execução independente da VM Arch com
+systemd+cgroups reais e seccomp ativo na JVM antes de qualquer
+desbloqueio de `--require-seccomp --require-cgroup-limits`.
+PR segue Draft; `main`, APK e OTA intactos.
