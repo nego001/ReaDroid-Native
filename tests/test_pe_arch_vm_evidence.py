@@ -207,6 +207,55 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         with self.assertRaises(review.ReceiptReviewError):
             review.verify_local_receipt(self.dest, self.root)
 
+    def test_offline_review_and_writer_refuse_symlinked_receipt_ancestor(self):
+        self.write()
+        outer = self.root / "actual-parent"
+        outer.mkdir(mode=0o700)
+        nested = outer / "private"
+        nested.mkdir(mode=0o700)
+        copied = nested / "copied.json"
+        copied.write_bytes(self.dest.read_bytes())
+        copied.chmod(0o600)
+        self.assertEqual(review.verify_local_receipt(copied, self.root)["status"],
+                         "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+        alias = self.root / "linked-ancestor"
+        alias.symlink_to(outer, target_is_directory=True)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(alias / "private" / "copied.json",
+                                        self.root)
+        bad_dest = alias / "private" / "new.json"
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            evidence.write_receipt_no_overwrite(
+                self.report, bad_dest, source_root=self.root)
+        self.assertFalse((nested / "new.json").exists())
+
+    def test_offline_review_and_writer_refuse_source_root_ancestor_symlink(self):
+        self.write()
+        outer = self.root / "actual-sources"
+        checkout = outer / "checkout"
+        (checkout / "tools").mkdir(parents=True, mode=0o700)
+        (checkout / "tools" / "synthetic.py").write_bytes(self.source.read_bytes())
+        self.assertEqual(review.verify_local_receipt(self.dest, checkout)["status"],
+                         "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+        alias = self.root / "linked-sources"
+        alias.symlink_to(outer, target_is_directory=True)
+        bad_root = alias / "checkout"
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(self.dest, bad_root)
+        bad_dest = self.private / "another.json"
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            evidence.write_receipt_no_overwrite(
+                self.report, bad_dest, source_root=bad_root)
+        self.assertFalse(bad_dest.exists())
+
+    def test_writer_rejects_symlink_in_source_manifest_directory(self):
+        actual_tools = self.root / "actual-tools"
+        (self.root / "tools").rename(actual_tools)
+        (self.root / "tools").symlink_to(actual_tools, target_is_directory=True)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write()
+        self.assertFalse(self.dest.exists())
+
     def test_offline_audit_rejects_oversized_receipt(self):
         self.write()
         with self.dest.open("ab") as out:

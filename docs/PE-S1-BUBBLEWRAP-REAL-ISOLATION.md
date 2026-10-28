@@ -1018,3 +1018,32 @@ fonte, manifestação incorreta, symlinks, permissões abertas,
 entrada acima do limite, JSON com chaves duplicadas e status não
 assinado. `main` continua intacta; sem merge, APK/OTA ou liberação
 de `--require-seccomp --require-cgroup-limits`.
+
+## PE-S1.21 | Proteção contra symlinks em ancestrais de caminhos
+
+A revisão da PE-S1.20 identificou que `O_NOFOLLOW` aplicado ao
+diretório final não impede que um componente **anterior** do caminho
+seja um link simbólico. A mesma limitação existia na criação do recibo
+e no hashing de fontes locais.
+
+`tools/pe_nofollow_paths.py` percorre cada componente de caminhos
+absolutos a partir do FD do diretório raiz, usando
+`openat` / `dir_fd` e `O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC`.
+O leitor de recibos, o escritor de recibos e os dois lados do manifesto
+de fontes compartilham agora a mesma política, sem `resolve()` sobre
+entradas não confiáveis. Os descritores de diretórios pais permanecem
+abertos durante a operação; a criação do recibo segue exclusiva,
+com arquivo 0600 em diretório 0700 e sem sobrescrita.
+
+O escritor de manifesto também verifica metadados antes e depois da
+leitura de cada arquivo, rejeitando trocas detectáveis durante a
+aquisição. Testes negativos cobrem link simbólico em **ancestral**
+da pasta privada do recibo, em ancestral do checkout e dentro do
+diretório de manifesto, tanto na leitura quanto na gravação.
+
+**Escopo:** essa proteção corrige a travessia por symlinks, não é uma
+assinatura digital, não garante integridade de um kernel comprometido,
+nem autentica a VM Arch. A execução ponta a ponta com systemd,
+cgroups e seccomp no mesmo kernel Arch continua pendente. A PR
+permanece Draft; `main`, APK/OTA e a combinação bloqueada do
+executor principal permanecem inalterados.

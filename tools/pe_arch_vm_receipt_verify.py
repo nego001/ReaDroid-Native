@@ -20,6 +20,7 @@ import stat
 import sys
 
 import pe_arch_vm_evidence as evidence
+from pe_nofollow_paths import open_absolute_directory_nofollow
 
 MAX_RECEIPT_BYTES = 1024 * 1024
 RECEIPT_SCHEMA = "negresco_native_arch_vm_local_receipt_v1"
@@ -49,8 +50,7 @@ def _read_private_receipt(path: Path) -> bytes:
         raise ReceiptReviewError("Absolute private receipt path required")
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
     with ExitStack() as stack:
-        parent_fd = os.open(path.parent, flags | os.O_DIRECTORY)
-        stack.callback(os.close, parent_fd)
+        parent_fd = open_absolute_directory_nofollow(path.parent, stack)
         directory = os.fstat(parent_fd)
         if (not stat.S_ISDIR(directory.st_mode)
                 or directory.st_uid != os.geteuid()
@@ -83,8 +83,7 @@ def _read_source(source_root: Path, relative: str) -> bytes:
         raise ReceiptReviewError("Invalid source manifest path")
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
     with ExitStack() as stack:
-        root_fd = os.open(source_root, flags | os.O_DIRECTORY)
-        stack.callback(os.close, root_fd)
+        root_fd = open_absolute_directory_nofollow(source_root, stack)
         directory_fd = root_fd
         for part in parts[:-1]:
             fd = os.open(part, flags | os.O_DIRECTORY, dir_fd=directory_fd)

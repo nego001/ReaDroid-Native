@@ -8,6 +8,7 @@ never overwrites an earlier result, and never runs a Windows executable.
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -15,6 +16,7 @@ import os
 from pathlib import Path
 import stat
 
+from pe_nofollow_paths import open_absolute_directory_nofollow
 from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
                                 CPU_QUOTA_PERCENT, SCOPE_PATTERN)
 
@@ -22,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
     "tools/pe_arch_vm_evidence.py",
     "tools/pe_arch_vm_receipt_verify.py",
+    "tools/pe_nofollow_paths.py",
     "tools/pe_arch_vm_gate.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
@@ -224,24 +227,45 @@ def build_receipt(report: dict, source_root: Path = ROOT) -> dict:
     if len(canonical_report) > MAX_REPORT_BYTES:
         raise AcceptanceReceiptError("Acceptance report exceeds safety bound")
     sources = {}
-    for relative in SOURCE_FILES:
-        path = source_root / relative
-        try:
-            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-            with os.fdopen(os.open(path, flags), "rb") as src:
-                meta = os.fstat(src.fileno())
-                if (not stat.S_ISREG(meta.st_mode)
-                        or not 1 <= meta.st_size <= MAX_SOURCE_BYTES):
-                    raise AcceptanceReceiptError("Unsafe or oversized source: " + relative)
-                data = src.read(MAX_SOURCE_BYTES + 1)
-                if len(data) != meta.st_size:
-                    raise AcceptanceReceiptError("Changed source: " + relative)
-        except OSError as exc:
-            raise AcceptanceReceiptError("Cannot hash trusted source: " + relative) from exc
-        sources[relative] = {
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "bytes": len(data),
-        }
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        # Pin the source checkout via every ancestor, not just its leaf.
+        with ExitStack() as checkout_stack:
+            checkout_fd = open_absolute_directory_nofollow(
+                Path(source_root), checkout_stack)
+            for relative in SOURCE_FILES:
+                parts = relative.split("/")
+                if not relative or any(p in ("", ".", "..") for p in parts):
+                    raise AcceptanceReceiptError("Invalid source manifest path")
+                with ExitStack() as file_stack:
+                    directory_fd = checkout_fd
+                    for part in parts[:-1]:
+                        directory_fd = os.open(
+                            part, flags | os.O_DIRECTORY, dir_fd=directory_fd)
+                        file_stack.callback(os.close, directory_fd)
+                    fd = os.open(parts[-1], flags, dir_fd=directory_fd)
+                    file_stack.callback(os.close, fd)
+                    before = os.fstat(fd)
+                    if (not stat.S_ISREG(before.st_mode)
+                            or not 1 <= before.st_size <= MAX_SOURCE_BYTES):
+                        raise AcceptanceReceiptError(
+                            "Unsafe or oversized source: " + relative)
+                    with os.fdopen(fd, "rb", closefd=False) as src:
+                        data = src.read(MAX_SOURCE_BYTES + 1)
+                    after = os.fstat(fd)
+                    if (len(data) != before.st_size
+                            or (after.st_dev, after.st_ino, after.st_size,
+                                after.st_mtime_ns, after.st_ctime_ns) !=
+                               (before.st_dev, before.st_ino, before.st_size,
+                                before.st_mtime_ns, before.st_ctime_ns)):
+                        raise AcceptanceReceiptError(
+                            "Changed source: " + relative)
+                sources[relative] = {
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "bytes": len(data),
+                }
+    except (OSError, ValueError) as exc:
+        raise AcceptanceReceiptError("Cannot hash trusted source checkout") from exc
     return {
         "schema": "negresco_native_arch_vm_local_receipt_v1",
         "recorded_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -252,7 +276,6 @@ def build_receipt(report: dict, source_root: Path = ROOT) -> dict:
         "windows_executable_launched": False,
     }
 
-
 def write_receipt_no_overwrite(report: dict, destination: Path,
                               source_root: Path = ROOT) -> dict:
     payload = build_receipt(report, source_root)
@@ -261,10 +284,9 @@ def write_receipt_no_overwrite(report: dict, destination: Path,
     if not path.is_absolute() or path.name in ("", ".", ".."):
         raise AcceptanceReceiptError("Absolute new receipt filename required")
     parent = path.parent
-    directory_fd = None
+    directory_stack = ExitStack()
     try:
-        directory_fd = os.open(
-            parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        directory_fd = open_absolute_directory_nofollow(parent, directory_stack)
         meta = os.fstat(directory_fd)
         if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.geteuid()
                 or meta.st_mode & 0o077):
@@ -286,11 +308,10 @@ def write_receipt_no_overwrite(report: dict, destination: Path,
             except OSError:
                 pass
             raise
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise AcceptanceReceiptError("Cannot safely write private receipt") from exc
     finally:
-        if directory_fd is not None:
-            os.close(directory_fd)
+        directory_stack.close()
     return {
         "path": str(path),
         "receipt_sha256": hashlib.sha256(encoded).hexdigest(),
