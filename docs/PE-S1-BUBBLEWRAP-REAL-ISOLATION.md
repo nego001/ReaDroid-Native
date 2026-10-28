@@ -1077,3 +1077,28 @@ como `LOCAL_RECEIPT_CONSISTENCY_VALIDATED`, nunca como
 atestação independente de hipervisor. Nenhuma opção bloqueada
 foi desbloqueada, a PR continua Draft, sem alteração da main
 nem publicação de APK/OTA.
+
+## PE-S1.23 | Integridade do Ghidra por descritores ancorados
+
+A verificação do Ghidra comparava os arquivos com o ZIP oficial, mas
+usava `Path.open()`, `os.walk()` e caminhos completos em algumas leituras.
+Isso permitia que diretórios ancestrais simbólicos fossem seguidos e
+abria janelas de alteração entre o exame do caminho e sua leitura.
+
+O verificador `pe_ghidra_integrity.py` agora abre o diretório da
+instalação, os ancestrais do ZIP e seus arquivos por descritores
+ancorados com `O_NOFOLLOW`. O mesmo arquivo aberto é usado para hash
+e leitura do ZIP oficial. As leituras de cada arquivo extraído conferem
+`fstat` antes e depois, e a listagem completa também percorre
+diretórios por FDs, rejeitando links e entradas não regulares.
+
+Foram incluídos testes negativos de symlink em ancestral da instalação,
+ancestral do arquivo ZIP, diretório intermediário e entrada tipo FIFO.
+A suíte sintética só valida contratos locais; a CI Ubuntu usa o ZIP
+oficial e repete o teste de adulteração da árvore extraída.
+
+**Limite**: FDs ancorados comprovam os bytes examinados; não impedem
+mudança posterior do diretório antes do lançamento de Ghidra por
+um adversário com privilégios suficientes, nem atestam uma VM Arch
+independente. A PR permanece Draft; combinação real cgroup+seccomp
+não foi liberada, sem merge, publicação APK ou OTA.

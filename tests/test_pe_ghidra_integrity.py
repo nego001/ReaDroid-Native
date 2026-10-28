@@ -65,6 +65,38 @@ class GhidraReleaseIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(integrity.GhidraIntegrityError, "file type"):
             self.verify()
 
+    def test_rejects_symlinked_ghidra_ancestor_directory(self):
+        alias = self.root / "indirect-source"
+        alias.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaises(integrity.GhidraIntegrityError):
+            with mock.patch.object(integrity, "GHIDRA_RELEASE_SHA256", self.digest):
+                integrity.verify_pinned_ghidra_tree(
+                    alias / self.install.name, self.archive)
+
+    def test_rejects_symlinked_release_zip_ancestor_directory(self):
+        alias = self.root / "indirect-archive"
+        alias.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaises(integrity.GhidraIntegrityError):
+            with mock.patch.object(integrity, "GHIDRA_RELEASE_SHA256", self.digest):
+                integrity.verify_pinned_ghidra_tree(
+                    self.install, alias / self.archive.name)
+
+    def test_rejects_fifo_and_special_installed_tree_nodes(self):
+        import os
+        named_pipe = self.install / "unlisted-pipe"
+        os.mkfifo(named_pipe)
+        with self.assertRaisesRegex(
+                integrity.GhidraIntegrityError, "Unexpected file type"):
+            self.verify()
+
+    def test_rejects_symlinked_intermediate_directory(self):
+        original = self.install / "support"
+        actual = self.install / "real-support"
+        original.rename(actual)
+        original.symlink_to(actual, target_is_directory=True)
+        with self.assertRaises(integrity.GhidraIntegrityError):
+            self.verify()
+
     def test_rejects_changed_file_symlink(self):
         target = self.install / "support/analyzeHeadless"
         target.unlink()
