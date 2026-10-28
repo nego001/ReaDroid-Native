@@ -87,8 +87,17 @@ class NativeDescendantTests(unittest.TestCase):
                                              "vm_confirmed": True,
                                              "container": False}):
             with mock.patch.object(smoke, "new_scope_unit", return_value=self.unit):
-                with mock.patch.object(smoke, "wrap_in_cgroup_scope",
-                                       side_effect=lambda cmd, **opts: cmd) as wrap:
+                with (
+                    mock.patch.object(smoke, "wrap_in_cgroup_scope",
+                                      side_effect=lambda cmd, **opts: cmd) as wrap,
+                    mock.patch.object(smoke, "read_scope_proof",
+                                      return_value={
+                                          "verification": "guard_verified_before_bwrap",
+                                          "memory_max_bytes": 4294967296,
+                                          "tasks_max": 128,
+                                          "cpu_quota": 200000, "cpu_period": 100000,
+                                      }) as quota_read,
+                ):
                     with mock.patch.object(smoke.subprocess, "Popen",
                                            side_effect=launch) as popen:
                         with mock.patch.object(smoke, "belongs_to_scope",
@@ -125,6 +134,11 @@ class NativeDescendantTests(unittest.TestCase):
                                                 result = None
         self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 30)
         self.assertEqual(wrap.call_args.kwargs["unit_name"], self.unit)
+        self.assertEqual(wrap.call_args.kwargs["proof_path"].name, "quota.json")
+        if proof and child_gone:
+            quota_read.assert_called_once_with(mock.ANY, self.unit)
+        else:
+            quota_read.assert_not_called()
         self.assertTrue(popen.call_args.kwargs["close_fds"])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
         self.assertGreaterEqual(stop.call_count, 1)
@@ -134,6 +148,8 @@ class NativeDescendantTests(unittest.TestCase):
         result = self._synthetic_result()
         self.assertEqual(result["status"], "PASS_NATIVE_ARCH_DESCENDANTS")
         self.assertTrue(result["quota_verified"])
+        self.assertEqual(result["quota_private_proof"]["verification"],
+                         "guard_verified_before_bwrap")
         self.assertTrue(result["detached_sigterm_ignoring_child_terminated"])
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
