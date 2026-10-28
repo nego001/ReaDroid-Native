@@ -1146,3 +1146,33 @@ O resultado continua `LOCAL_RECEIPT_CONSISTENCY_VALIDATED`, com
 homologação real conjunta em VM Arch independente continua
 **pendente**. PR permanece Draft; sem `main`, APK, OTA ou
 desbloqueio do modo seccomp+cgroups.
+
+## PE-S1.25 | Leitura segura dos comprovantes de kernel e JVM
+
+A revisão dos comprovantes detectou dois pontos fracos: o validador do
+arquivo de quotas cgroup `pe_resource_evidence.py` ancorava apenas o
+diretório final, permitindo seguir links simbólicos em ancestrais;
+e `pe_seccomp_runtime_evidence.py` abria o comprovante da JVM por
+caminho global e só conferia seu tamanho depois da leitura.
+
+Agora ambos usam o helper `open_absolute_directory_nofollow()`
+para abrir cada ancestral por `dir_fd` + `O_NOFOLLOW`, mantendo
+os descritores abertos até o término da leitura. Os comprovantes
+também são abertos com `O_NONBLOCK` para não travar em arquivos
+especiais (como FIFO), recusando tipos não-regulares antes de
+interpretar JSON. O leitor da JVM exige diretório pertencente
+ao usuário e não-gravável por grupo/outros.
+
+As duas leituras exigem identidade e estabilidade do inode:
+`st_dev`, `st_ino`, `st_size`, `st_mtime_ns` e
+`st_ctime_ns` precisam permanecer iguais do início ao fim.
+Os testes negativos cobrem ancestrais simbólicos, FIFO,
+alteração durante leitura e diretório JVM com escrita pública.
+
+**Limite importante**: esses testes são contratuais e simulam
+comprovantes. Os campos de cgroup e /proc não representam
+observações independentes até uma VM Arch descartável realmente
+executar e preservar suas evidências. O desafio externo da
+PE-S1.24 continua obrigatório; o recibo permanece auto-relatado,
+sem assinatura de uma autoridade independente. A PR permanece
+Draft e o modo conjunto seccomp+cgroup não será desbloqueado.

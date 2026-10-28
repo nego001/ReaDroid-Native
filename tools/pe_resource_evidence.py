@@ -8,12 +8,13 @@ These checks are not substitutes for validating the kernel's live cgroup.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import json
 import os
 from pathlib import Path
 import stat
 
+from pe_nofollow_paths import open_absolute_directory_nofollow
 from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
                                 CPU_QUOTA_PERCENT, _validate_scope_name,
                                 ResourceLimitsUnavailable)
@@ -33,14 +34,10 @@ class InvalidResourceEvidence(RuntimeError):
 
 @contextmanager
 def _pinned_directory(path: Path):
-    # A directory FD is not a Python binary stream: never os.fdopen it.
-    # Pin the directory inode and always close the raw descriptor.
-    fd = os.open(
-        path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
-    try:
-        yield fd
-    finally:
-        os.close(fd)
+    # Pin ALL ancestors via directory FDs. O_NOFOLLOW on the leaf
+    # alone does not defend against redirecting an ancestor directory.
+    with ExitStack() as stack:
+        yield open_absolute_directory_nofollow(path, stack)
 
 
 def _unique_pairs(pairs: list[tuple[str, object]]) -> dict:
@@ -70,7 +67,10 @@ def read_scope_proof(path: Path, unit: str) -> dict:
                     or parent_meta.st_uid != os.geteuid()
                     or parent_meta.st_mode & 0o077):
                 raise InvalidResourceEvidence("Cgroup proof parent is not private")
-            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+            # O_NONBLOCK prevents an attacker-controlled FIFO from hanging
+            # before fstat can refuse its non-regular file type.
+            flags = (os.O_RDONLY | os.O_CLOEXEC |
+                     os.O_NOFOLLOW | os.O_NONBLOCK)
             fd = os.open(proof.name, flags, dir_fd=directory_fd)
             with os.fdopen(fd, "rb") as reader:
                 before = os.fstat(reader.fileno())
@@ -83,9 +83,10 @@ def read_scope_proof(path: Path, unit: str) -> dict:
                 raw = reader.read(MAX_PROOF_BYTES + 1)
                 after = os.fstat(reader.fileno())
                 if (len(raw) != before.st_size
-                        or after.st_size != before.st_size
-                        or after.st_ino != before.st_ino
-                        or after.st_mtime_ns != before.st_mtime_ns):
+                        or (after.st_dev, after.st_ino, after.st_size,
+                            after.st_mtime_ns, after.st_ctime_ns) !=
+                           (before.st_dev, before.st_ino, before.st_size,
+                            before.st_mtime_ns, before.st_ctime_ns)):
                     raise InvalidResourceEvidence("Cgroup proof changed while read")
         record = json.loads(
             raw.decode("utf-8"),

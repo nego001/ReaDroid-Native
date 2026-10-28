@@ -87,6 +87,49 @@ class GhidraRuntimeAttestationTests(unittest.TestCase):
         with self.assertRaises(SeccompRuntimeEvidenceError):
             read_ghidra_seccomp_proof(self.path, 1)
 
+    def test_s1_25_rejects_symlinked_ancestor_above_jvm_proof(self):
+        self.write(self.good)
+        outer = Path(self.temp.name) / "real-container"
+        workspace = outer / "workspace"
+        workspace.mkdir(parents=True, mode=0o700)
+        copied = workspace / "jvm-proof.json"
+        copied.write_bytes(self.path.read_bytes())
+        copied.chmod(0o600)
+        self.assertTrue(read_ghidra_seccomp_proof(copied, 2)["verified"])
+        alias = Path(self.temp.name) / "linked-container"
+        alias.symlink_to(outer, target_is_directory=True)
+        with self.assertRaises(SeccompRuntimeEvidenceError):
+            read_ghidra_seccomp_proof(alias / "workspace" / copied.name, 2)
+
+    def test_s1_25_rejects_fifo_without_waiting_for_writer(self):
+        named_pipe = Path(self.temp.name) / "not-jvm.json"
+        os.mkfifo(named_pipe, 0o600)
+        with self.assertRaises(SeccompRuntimeEvidenceError):
+            read_ghidra_seccomp_proof(named_pipe, 2)
+
+    def test_s1_25_rejects_modified_jvm_inode_during_read(self):
+        from unittest import mock
+        self.write(self.good)
+        original_read = os.read
+
+        def mutate(fd, count):
+            raw = original_read(fd, count)
+            os.utime(self.path, None)
+            return raw
+
+        with mock.patch("pe_seccomp_runtime_evidence.os.read",
+                        side_effect=mutate):
+            with self.assertRaisesRegex(
+                    SeccompRuntimeEvidenceError, "changed during read"):
+                read_ghidra_seccomp_proof(self.path, 2)
+
+    def test_s1_25_rejects_world_writable_jvm_parent(self):
+        self.write(self.good)
+        self.path.parent.chmod(0o777)
+        with self.assertRaises(SeccompRuntimeEvidenceError):
+            read_ghidra_seccomp_proof(self.path, 2)
+        self.path.parent.chmod(0o700)
+
     def test_requires_one_matching_scope_receipt(self):
         receipt = {"scope_seccomp_guard": "passed",
                    "scope": self.UNIT,

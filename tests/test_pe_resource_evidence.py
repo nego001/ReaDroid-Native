@@ -107,6 +107,48 @@ class ResourceProofTests(unittest.TestCase):
             read_scope_proof(self.file, UNIT)
         self.file.parent.chmod(0o700)
 
+    def test_s1_25_rejects_symlinked_ancestor_above_private_parent(self):
+        self.write(self.valid)
+        outer = Path(self.temp.name) / "real-container"
+        private = outer / "private"
+        private.mkdir(parents=True, mode=0o700)
+        (private / "limits.json").write_bytes(self.file.read_bytes())
+        self.assertEqual(read_scope_proof(private / "limits.json", UNIT)[
+            "verification"], "guard_verified_before_bwrap")
+        alias = Path(self.temp.name) / "linked-container"
+        alias.symlink_to(outer, target_is_directory=True)
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(alias / "private" / "limits.json", UNIT)
+
+    def test_s1_25_rejects_fifo_without_waiting_for_writer(self):
+        import os
+        named_pipe = Path(self.temp.name) / "not-a-proof.json"
+        os.mkfifo(named_pipe, 0o600)
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(named_pipe, UNIT)
+
+    def test_s1_25_rejects_changed_ctime_even_when_size_unchanged(self):
+        from unittest import mock
+        import os
+        self.write(self.valid)
+        # read_scope_proof uses a file stream; use a wrapped fstat to model
+        # metadata changing between the two descriptor observations.
+        real_fstat = os.fstat
+        reads = [0]
+
+        def changed_ctime(fd):
+            info = real_fstat(fd)
+            if info.st_ino == self.file.stat().st_ino:
+                reads[0] += 1
+                if reads[0] == 2:
+                    os.utime(self.file, None)
+                    info = real_fstat(fd)
+            return info
+
+        with mock.patch("pe_resource_evidence.os.fstat", side_effect=changed_ctime):
+            with self.assertRaises(InvalidResourceEvidence):
+                read_scope_proof(self.file, UNIT)
+
     def test_guard_receipt_must_match_exact_private_quota_values(self):
         self.write(self.valid)
         private = read_scope_proof(self.file, UNIT)
