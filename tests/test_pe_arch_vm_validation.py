@@ -73,7 +73,12 @@ class ArchVmAcceptanceTests(unittest.TestCase):
         quotas = {"status": "PASS_NATIVE_ARCH_CGROUP", "memory_max": 4294967296,
                   "pids_max": 128, "cpu_quota": 200000, "cpu_period": 100000}
         descendant = {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
-                      "detached_sigterm_ignoring_child_terminated": True}
+                      "detached_sigterm_ignoring_child_terminated": True,
+                      "systemd_stop_succeeded": True,
+                      "descendant_cleanup_evidence": {
+                          "verified": True, "scope_quiescent": True,
+                          "cgroup_unpopulated": True,
+                          "active_state": "inactive", "sub_state": "dead"}}
         with mock.patch.object(validation, "verify_arch_vm",
                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}):
             with mock.patch.object(validation, "run_smoke", return_value=quotas):
@@ -84,6 +89,8 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                         result = validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
         self.assertFalse(result["windows_binary_executed"])
+        self.assertTrue(result["descendant_lifecycle"][
+            "descendant_cleanup_evidence"]["cgroup_unpopulated"])
 
     def test_rejects_unsupported_ghidra_release_even_with_launch_script(self):
         with tempfile.TemporaryDirectory() as temp:
