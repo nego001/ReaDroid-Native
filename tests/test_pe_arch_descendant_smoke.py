@@ -57,7 +57,10 @@ class NativeDescendantTests(unittest.TestCase):
             kwargs["stdout"].flush()
             return fake_process
 
-        with mock.patch.object(smoke, "preflight"):
+        with mock.patch.object(smoke, "verify_arch_vm",
+                               return_value={"status": "ARCH_VM_PREFLIGHT_PASSED",
+                                             "vm_confirmed": True,
+                                             "container": False}):
             with mock.patch.object(smoke, "new_scope_unit", return_value=self.unit):
                 with mock.patch.object(smoke, "wrap_in_cgroup_scope",
                                        side_effect=lambda cmd, **opts: cmd) as wrap:
@@ -71,12 +74,23 @@ class NativeDescendantTests(unittest.TestCase):
                                                        return_value=child_gone):
                                     with mock.patch.object(smoke, "stop_scope",
                                                            return_value=True) as stop:
-                                        if proof and child_gone:
-                                            result = smoke.run_native_descendant_smoke()
-                                        else:
-                                            with self.assertRaises(smoke.DescendantProbeError):
-                                                smoke.run_native_descendant_smoke()
-                                            result = None
+                                        with mock.patch.object(
+                                                smoke, "stop_and_attest_scope",
+                                                return_value={
+                                                    "verified": True,
+                                                    "scope_quiescent": True,
+                                                    "cgroup_unpopulated": True,
+                                                    "active_state": "inactive",
+                                                    "sub_state": "dead",
+                                                }) as cleanup:
+                                            if proof and child_gone:
+                                                result = smoke.run_native_descendant_smoke()
+                                                cleanup.assert_called_once_with(self.unit)
+                                            else:
+                                                with self.assertRaises(smoke.DescendantProbeError):
+                                                    smoke.run_native_descendant_smoke()
+                                                cleanup.assert_not_called()
+                                                result = None
         self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 30)
         self.assertEqual(wrap.call_args.kwargs["unit_name"], self.unit)
         self.assertTrue(popen.call_args.kwargs["close_fds"])
@@ -89,7 +103,29 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS_NATIVE_ARCH_DESCENDANTS")
         self.assertTrue(result["quota_verified"])
         self.assertTrue(result["detached_sigterm_ignoring_child_terminated"])
+        self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
+
+    def test_direct_descendant_probe_refuses_non_vm_before_spawning(self):
+        with mock.patch.object(smoke, "verify_arch_vm",
+                               side_effect=RuntimeError("not a disposable VM")):
+            with mock.patch.object(smoke, "new_scope_unit") as new_scope:
+                with mock.patch.object(smoke.subprocess, "Popen") as launch:
+                    with self.assertRaisesRegex(RuntimeError, "disposable VM"):
+                        smoke.run_native_descendant_smoke()
+                new_scope.assert_not_called()
+                launch.assert_not_called()
+
+    def test_false_vm_proof_is_rejected_before_scope(self):
+        with mock.patch.object(smoke, "verify_arch_vm", return_value={
+            "status": "ARCH_VM_PREFLIGHT_PASSED",
+            "vm_confirmed": False, "container": True
+        }):
+            with mock.patch.object(smoke, "new_scope_unit") as new_scope:
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError, "VM not verified"):
+                    smoke.run_native_descendant_smoke()
+                new_scope.assert_not_called()
 
     def test_fails_closed_if_child_survives_or_quota_proof_missing(self):
         self._synthetic_result(child_gone=False)
