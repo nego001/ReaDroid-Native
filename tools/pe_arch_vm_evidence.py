@@ -54,7 +54,7 @@ SOURCE_FILES = (
 )
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_REPORT_BYTES = 512 * 1024
-CHALLENGE_PATTERN = re.compile(r"[0-9a-f]{64}\\Z")
+CHALLENGE_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class AcceptanceReceiptError(RuntimeError):
