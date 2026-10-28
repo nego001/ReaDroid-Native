@@ -758,3 +758,46 @@ para o ciclo de vida do systemd e do kernel Arch.
 A prova nativa ainda depende da execução em VM Arch
 independente. Não há desbloqueio da combinação cgroup+seccomp
 no executor habitual nem merge, APK ou OTA.
+
+## PE-S1.15 | Leitura sem corrida da prova cgroup e reconciliação de quotas
+
+A prova privada `quota.json` criada pelo `pe_cgroup_guard.py`
+é uma evidência independente do stdout. Em PE-S1.15, o validador
+`tools/pe_resource_evidence.py` foi reforçado para **nunca**
+aceitar somente uma string `cgroup_verification=passed`.
+
+- A pasta da prova precisa ser privada e de propriedade do usuário;
+  é aberta uma única vez com `O_DIRECTORY|O_NOFOLLOW` e mantida
+  por um descritor exclusivo durante a leitura. O JSON é aberto
+  relativo ao FD dessa pasta com `O_NOFOLLOW`, impedindo que
+  uma substituição do caminho entre os testes de metadados e a
+  abertura redirecione a leitura.
+- `fstat` e leitura limitada a 4096 bytes exigem arquivo regular
+  `0600` ou mais restrito, dono correto, tamanho finito,
+  e ausência de alteração perceptível durante a leitura.
+  O parser JSON recusa chaves duplicadas, campos desconhecidos,
+  `NaN`/`Infinity`, tipos incorretos, nomes de scope diferentes
+  e orçamento de memória/tarefas/CPU fora da política.
+- A função `corroborate_guard_receipt()` exige **exatamente um**
+  recibo `cgroup_verification=passed` e compara seus quatro
+  números com o arquivo privado: `memory_max`, `pids_max`,
+  `cpu_quota`, `cpu_period`. Qualquer diferença ou falta
+  de prova resulta em recusa. Ela é exigida nos três caminhos
+  de aceitação nativa: descendente, sonda seccomp e Ghidra real
+  no mesmo escopo.
+- Testes negativos em `test_pe_resource_evidence.py` cobrem
+  arquivo ausente, pasta compartilhada ou symlink, JSON duplicado,
+  campos adicionais e relatórios com quotas contraditórias.
+  Esses são **testes de contrato**, não equivalem a observar
+  quotas reais num kernel Arch.
+
+Uma primeira execução detectou falha de implementação ao tentar
+tratar um diretório como arquivo binário via `os.fdopen`.
+Corrigimos para preservar o descritor cru da pasta num context
+manager com `os.close`. O testador PE safe-intake confirmou a
+correção; a matriz Sandbox/Ghidra precisa concluir para aprovar
+a etapa toda.
+
+A VM Arch descartável com cgroups/seccomp simultâneos continua
+o requisito de homologação. CLI normal bloqueada, PR Draft,
+sem alteração na main e sem publicar APK/OTA.
