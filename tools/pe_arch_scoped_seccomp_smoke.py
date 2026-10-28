@@ -100,7 +100,9 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
             except ScopeCleanupUnavailable as exc:
                 raise ScopedSeccompSmokeError(
                     "Cannot prove scoped probe fully stopped") from exc
-        if scope_cleanup.get("verified") is not True or scope_cleanup.get("cgroup_unpopulated") is not True:
+        if (scope_cleanup.get("scope") != unit
+                or scope_cleanup.get("verified") is not True
+                or scope_cleanup.get("cgroup_unpopulated") is not True):
             raise ScopedSeccompSmokeError("Scope cleanup attestation incomplete")
         if proc.returncode != 0:
             raise ScopedSeccompSmokeError(
