@@ -172,6 +172,10 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                 or actual_combined["scope_cleanup_evidence"].get("scope_quiescent") is not True
                 or actual_combined["scope_cleanup_evidence"].get("cgroup_unpopulated") is not True
                 or not isinstance(scoped_seccomp.get("scope_cleanup_evidence"), dict)
+                or actual_combined["scope_cleanup_evidence"].get("scope")
+                   != actual_combined.get("scope")
+                or scoped_seccomp["scope_cleanup_evidence"].get("scope")
+                   != scoped_seccomp.get("scope")
                 or scoped_seccomp["scope_cleanup_evidence"].get("scope_quiescent") is not True
                 or actual_combined.get("filter_compiled_inside_scope") is not True
                 or not isinstance(
@@ -220,6 +224,7 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
             or descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
             or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
             or not isinstance(descendants.get("descendant_cleanup_evidence"), dict)
+            or descendants["descendant_cleanup_evidence"].get("scope") != descendants.get("scope")
             or descendants["descendant_cleanup_evidence"].get("verified") is not True
             or descendants["descendant_cleanup_evidence"].get("scope_quiescent") is not True
             or descendants["descendant_cleanup_evidence"].get("cgroup_unpopulated") is not True):
