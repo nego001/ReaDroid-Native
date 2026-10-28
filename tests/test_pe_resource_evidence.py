@@ -113,6 +113,7 @@ class ResourceProofTests(unittest.TestCase):
         private = outer / "private"
         private.mkdir(parents=True, mode=0o700)
         (private / "limits.json").write_bytes(self.file.read_bytes())
+        (private / "limits.json").chmod(0o600)
         self.assertEqual(read_scope_proof(private / "limits.json", UNIT)[
             "verification"], "guard_verified_before_bwrap")
         alias = Path(self.temp.name) / "linked-container"
@@ -127,25 +128,27 @@ class ResourceProofTests(unittest.TestCase):
         with self.assertRaises(InvalidResourceEvidence):
             read_scope_proof(named_pipe, UNIT)
 
-    def test_s1_25_rejects_changed_ctime_even_when_size_unchanged(self):
+    def test_s1_25_rejects_changed_inode_metadata_without_size_drift(self):
         from unittest import mock
         import os
         self.write(self.valid)
-        # read_scope_proof uses a file stream; use a wrapped fstat to model
-        # metadata changing between the two descriptor observations.
+        # Force a deterministic timestamp change between fstat calls;
+        # wall-clock utime(None) may round to an unchanged timestamp in CI.
         real_fstat = os.fstat
         reads = [0]
 
-        def changed_ctime(fd):
+        def changed_metadata(fd):
             info = real_fstat(fd)
             if info.st_ino == self.file.stat().st_ino:
                 reads[0] += 1
                 if reads[0] == 2:
-                    os.utime(self.file, None)
+                    os.utime(self.file, ns=(
+                        info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
                     info = real_fstat(fd)
             return info
 
-        with mock.patch("pe_resource_evidence.os.fstat", side_effect=changed_ctime):
+        with mock.patch("pe_resource_evidence.os.fstat",
+                        side_effect=changed_metadata):
             with self.assertRaises(InvalidResourceEvidence):
                 read_scope_proof(self.file, UNIT)
 
