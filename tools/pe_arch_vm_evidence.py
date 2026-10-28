@@ -82,7 +82,7 @@ def _canonical(obj: object) -> bytes:
     try:
         return (json.dumps(obj, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=True, allow_nan=False) + "\n").encode("utf-8")
-    except (ValueError, TypeError, OverflowError) as exc:
+    except (ValueError, TypeError, OverflowError, RecursionError, RuntimeError) as exc:
         raise AcceptanceReceiptError("Non-serializable acceptance report") from exc
 
 
@@ -434,10 +434,16 @@ def validate_native_acceptance_report(report: dict) -> None:
 def build_receipt(report: dict, source_root: Path = ROOT, *,
                   reviewer_challenge: str) -> dict:
     require_reviewer_challenge(reviewer_challenge)
-    validate_native_acceptance_report(report)
+    # Canonicalize once, then validate and embed the same detached snapshot.
+    # The caller can mutate its original nested dictionaries after returning.
     canonical_report = _canonical(report)
     if len(canonical_report) > MAX_REPORT_BYTES:
         raise AcceptanceReceiptError("Acceptance report exceeds safety bound")
+    try:
+        report_snapshot = json.loads(canonical_report)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise AcceptanceReceiptError("Malformed acceptance report snapshot") from exc
+    validate_native_acceptance_report(report_snapshot)
     sources = {}
     # Prevent an attacker-controlled FIFO source from blocking before fstat.
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -486,7 +492,7 @@ def build_receipt(report: dict, source_root: Path = ROOT, *,
         "security_classification": "LOCAL_SELF_REPORT_NOT_SIGNED",
         "report_sha256": hashlib.sha256(canonical_report).hexdigest(),
         "source_file_hashes": sources,
-        "native_acceptance_report": report,
+        "native_acceptance_report": report_snapshot,
         "windows_executable_launched": False,
     }
 
