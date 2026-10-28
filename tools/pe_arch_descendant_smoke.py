@@ -19,7 +19,8 @@ import time
 from pe_arch_cgroup_smoke import preflight
 from pe_arch_vm_gate import verify_arch_vm
 from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
-from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
+from pe_resource_evidence import (read_scope_proof, corroborate_guard_receipt,
+                                  InvalidResourceEvidence)
 from pe_resource_limits import (new_scope_unit, stop_scope,
                                 wrap_in_cgroup_scope)
 
