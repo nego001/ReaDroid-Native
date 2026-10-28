@@ -234,13 +234,27 @@ if args.count("-postScript") == 2:
             with mock.patch.object(runner, "new_scope_unit", return_value=unit):
                 with mock.patch.object(runner, "wrap_in_cgroup_scope",
                                        side_effect=self._mock_strict_guard_with_private_proof) as wrap:
-                    with mock.patch.object(runner, "stop_scope", return_value=True) as stop:
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                        "scope": unit,
+                        "verified": True,
+                        "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive",
+                        "sub_state": "dead",
+                        "load_state": "not-found",
+                        "scope_collected": True,
+                        "stop_request_accepted": False,
+                    }) as stop:
                         report = runner.inspect_functions(
                             self.input, self.home, self.output, 3,
                             sandbox_mode="bwrap", require_cgroup_limits=True)
         self.assertEqual(report["limitations"]["resource_scope"],
                          "systemd_user_cgroup_v2_verified_at_start")
         self.assertEqual(report["limitations"]["resource_limits"]["tasks_max"], 128)
+        self.assertTrue(report["limitations"]["resource_cleanup"]["scope_collected"])
+        self.assertFalse(report["limitations"]["resource_cleanup"]["stop_request_accepted"])
         self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 3)
         self.assertEqual(wrap.call_args.kwargs["unit_name"], unit)
         stop.assert_called_once_with(unit)
@@ -253,7 +267,19 @@ if args.count("-postScript") == 2:
             with mock.patch.object(runner, "new_scope_unit", return_value=unit):
                 with mock.patch.object(runner, "wrap_in_cgroup_scope",
                                        side_effect=lambda command, **k: command):
-                    with mock.patch.object(runner, "stop_scope", return_value=True):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                        "scope": unit,
+                        "verified": True,
+                        "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive",
+                        "sub_state": "dead",
+                        "load_state": "not-found",
+                        "scope_collected": True,
+                        "stop_request_accepted": False,
+                    }):
                         with self.assertRaisesRegex(
                                 runner.HeadlessError, "não comprovados"):
                             runner.inspect_functions(
@@ -261,16 +287,23 @@ if args.count("-postScript") == 2:
                                 sandbox_mode="bwrap", require_cgroup_limits=True)
         self.assertFalse(self.output.exists())
 
-    def test_strict_scope_never_publishes_if_systemd_stop_refuses(self):
+    def test_strict_scope_never_publishes_when_cgroup_is_still_populated(self):
         unit = "negresco-pe-0123456789abcdef01234567.scope"
         with mock.patch.object(runner, "build_command",
                                side_effect=self._mocked_bwrap_command):
             with mock.patch.object(runner, "new_scope_unit", return_value=unit):
                 with mock.patch.object(runner, "wrap_in_cgroup_scope",
                                        side_effect=lambda command, **k: command):
-                    with mock.patch.object(runner, "stop_scope", return_value=False) as stop:
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                                "scope": unit, "verified": True,
+                                "scope_quiescent": False,
+                                "cgroup_unpopulated": False,
+                                "active_state": "active", "sub_state": "running",
+                            }) as stop:
                         with self.assertRaisesRegex(
-                                runner.HeadlessError, "parada do cgroup"):
+                                runner.HeadlessError, "cgroup ocupado"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 3,
                                 sandbox_mode="bwrap", require_cgroup_limits=True)
@@ -285,8 +318,12 @@ if args.count("-postScript") == 2:
             with mock.patch.object(runner, "new_scope_unit", return_value=unit):
                 with mock.patch.object(runner, "wrap_in_cgroup_scope",
                                        side_effect=lambda command, **k: command):
-                    with mock.patch.object(runner, "stop_scope", return_value=False):
-                        with self.assertRaises(runner.HeadlessError):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            side_effect=runner.ScopeCleanupUnavailable(
+                                "systemd state unavailable")):
+                        with self.assertRaisesRegex(runner.HeadlessError,
+                                                     "Estado final do cgroup"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 3,
                                 sandbox_mode="bwrap", require_cgroup_limits=True)
@@ -300,12 +337,48 @@ if args.count("-postScript") == 2:
             with mock.patch.object(runner, "new_scope_unit", return_value=unit):
                 with mock.patch.object(runner, "wrap_in_cgroup_scope",
                                        side_effect=lambda command, **k: command):
-                    with mock.patch.object(runner, "stop_scope", return_value=True) as stop:
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                        "scope": unit,
+                        "verified": True,
+                        "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive",
+                        "sub_state": "dead",
+                        "load_state": "not-found",
+                        "scope_collected": True,
+                        "stop_request_accepted": False,
+                    }) as stop:
                         with self.assertRaisesRegex(runner.HeadlessError, "excedeu"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 1,
                                 sandbox_mode="bwrap", require_cgroup_limits=True)
         stop.assert_called_once_with(unit)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_rejects_cleanup_for_other_unit(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        wrong = "negresco-pe-ffffffffffffffffffffffff.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(
+                        runner, "wrap_in_cgroup_scope",
+                        side_effect=self._mock_strict_guard_with_private_proof):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                                "scope": wrong, "verified": True,
+                                "scope_quiescent": True,
+                                "cgroup_unpopulated": True,
+                                "active_state": "inactive", "sub_state": "dead",
+                            }):
+                        with self.assertRaisesRegex(
+                                runner.HeadlessError, "cgroup ocupado"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
         self.assertFalse(self.output.exists())
 
     def test_strict_cgroup_never_uses_unisolated_fixture_mode(self):
