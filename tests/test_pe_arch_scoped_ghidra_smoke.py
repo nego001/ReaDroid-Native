@@ -27,7 +27,10 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
             pe.write_bytes(b"MZ harmless synthetic fixture")
             records = []
             if guard:
-                records.append({"cgroup_verification": "passed", "verified": True})
+                records.append({
+                    "cgroup_verification": "passed", "verified": True,
+                    "memory_max": 4294967296, "pids_max": 128,
+                    "cpu_quota": 200000, "cpu_period": 100000})
             if scope:
                 records.append({
                     "scope_seccomp_guard": "passed", "scope": self.UNIT,
