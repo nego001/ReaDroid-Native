@@ -82,7 +82,10 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 quota = stack.enter_context(mock.patch.object(
                     scoped, "read_scope_proof",
                     side_effect=(
-                        lambda path, unit: {"verification": "guard_verified_before_bwrap"}
+                        lambda path, unit: {
+                            "verification": "guard_verified_before_bwrap",
+                            "memory_max_bytes": 4294967296, "tasks_max": 128,
+                            "cpu_quota": 200000, "cpu_period": 100000}
                         if include_private_proof
                         else (_ for _ in ()).throw(
                             scoped.InvalidResourceEvidence("absent")))))
