@@ -220,9 +220,23 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
                    timeout_seconds: int = 420) -> dict:
     environment = verify_arch_vm()
     quotas = run_smoke()
-    descendants = run_native_descendant_smoke()
+    # Refuse before starting the SIGTERM-resistant descendant experiment if
+    # the harmless initial scope lacked private quotas or final kernel cleanup.
+    initial_cleanup = quotas.get("scope_cleanup_evidence")
     if (quotas.get("status") != "PASS_NATIVE_ARCH_CGROUP"
-            or descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
+            or not isinstance(quotas.get("quota_private_proof"), dict)
+            or quotas["quota_private_proof"].get("verification") != "guard_verified_before_bwrap"
+            or not isinstance(initial_cleanup, dict)
+            or initial_cleanup.get("scope") != quotas.get("scope")
+            or initial_cleanup.get("verified") is not True
+            or initial_cleanup.get("scope_quiescent") is not True
+            or initial_cleanup.get("cgroup_unpopulated") is not True
+            or initial_cleanup.get("active_state") != "inactive"
+            or initial_cleanup.get("sub_state") != "dead"):
+        raise ArchVmValidationError(
+            "Initial native cgroup quotas and lifecycle not approved")
+    descendants = run_native_descendant_smoke()
+    if (descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
             or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
             or descendants.get("systemd_stop_succeeded") is not True
             or descendants.get("quota_verified") is not True
@@ -239,6 +253,7 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     report = {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
               "cgroup": {k: quotas[k] for k in
                          ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
+              "cgroup_lifecycle": quotas,
               "descendants_terminated": True, "descendant_lifecycle": descendants,
               "ghidra": ghidra, "windows_binary_executed": False}
     # Enforce the SAME strict report checks whether or not the operator
