@@ -87,7 +87,9 @@ def validate_native_acceptance_report(report: dict) -> None:
     if (descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
             or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
             or descendants.get("systemd_stop_succeeded") is not True
+            or not isinstance(descendants.get("scope"), str)
             or not isinstance(cleanup, dict)
+            or cleanup.get("scope") != descendants.get("scope")
             or cleanup.get("verified") is not True
             or cleanup.get("scope_quiescent") is not True
             or cleanup.get("cgroup_unpopulated") is not True
@@ -100,11 +102,15 @@ def validate_native_acceptance_report(report: dict) -> None:
             != "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP"
             or combined.get("scope_cleanup_verified") is not True
             or not isinstance(combined.get("scope_cleanup_evidence"), dict)
+            or combined["scope_cleanup_evidence"].get("scope")
+               != combined.get("scope")
             or combined["scope_cleanup_evidence"].get("scope_quiescent") is not True
             or combined["scope_cleanup_evidence"].get("cgroup_unpopulated") is not True
             or combined["scope_cleanup_evidence"].get("active_state") != "inactive"
             or combined["scope_cleanup_evidence"].get("sub_state") != "dead"
             or not isinstance(probe.get("scope_cleanup_evidence"), dict)
+            or probe["scope_cleanup_evidence"].get("scope")
+               != probe.get("scope")
             or probe["scope_cleanup_evidence"].get("scope_quiescent") is not True
             or probe["scope_cleanup_evidence"].get("cgroup_unpopulated") is not True
             or combined.get("filter_compiled_inside_scope") is not True
