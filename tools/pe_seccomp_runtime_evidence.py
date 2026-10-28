@@ -100,14 +100,25 @@ def read_ghidra_seccomp_proof(path: Path, baseline: int) -> dict:
 
 
 def baseline_from_scope_receipts(records: list[dict], unit: str) -> int:
-    matches = [item for item in records
-               if isinstance(item, dict)
-               and item.get("scope_seccomp_guard") == "passed"
-               and item.get("scope") == unit
-               and item.get("filters_compiled_inside_scope") is True]
-    if len(matches) != 1:
-        raise SeccompRuntimeEvidenceError("Missing or duplicate scope receipt")
-    baseline = matches[0].get("seccomp_filters_before_bwrap")
+    if not isinstance(records, list) or not isinstance(unit, str):
+        raise SeccompRuntimeEvidenceError("Missing scope receipt collection")
+    # Count ALL scope claims, including non-PASS and wrong-scope records.
+    # Selecting only a matching PASS can mask a conflicting failure.
+    claims = [item for item in records
+              if isinstance(item, dict) and "scope_seccomp_guard" in item]
+    if len(claims) != 1:
+        raise SeccompRuntimeEvidenceError(
+            "Missing, duplicate or conflicting scope receipt")
+    receipt = claims[0]
+    if (set(receipt) != {
+            "scope_seccomp_guard", "scope",
+            "filters_compiled_inside_scope", "seccomp_filters_before_bwrap"}
+            or receipt["scope_seccomp_guard"] != "passed"
+            or receipt["scope"] != unit
+            or receipt["filters_compiled_inside_scope"] is not True):
+        raise SeccompRuntimeEvidenceError(
+            "Scope receipt is malformed or belongs to another scope")
+    baseline = receipt["seccomp_filters_before_bwrap"]
     if type(baseline) is not int or not 0 <= baseline <= 4096:
         raise SeccompRuntimeEvidenceError("Scope did not report seccomp baseline")
     return baseline

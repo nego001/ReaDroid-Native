@@ -127,11 +127,20 @@ def corroborate_guard_receipt(records: list[object],
     """
     if not isinstance(records, list) or not isinstance(private_limits, dict):
         raise InvalidResourceEvidence("Missing scope guard records")
-    matches = [x for x in records if isinstance(x, dict)
-               and x.get("cgroup_verification") == "passed"]
-    if len(matches) != 1:
-        raise InvalidResourceEvidence("Missing or duplicate cgroup guard receipt")
-    receipt = matches[0]
+    # Do not select only PASS records. A second FAILED or malformed
+    # cgroup claim from the same process stdout is contradictory evidence.
+    claims = [x for x in records if isinstance(x, dict)
+              and "cgroup_verification" in x]
+    if len(claims) != 1:
+        raise InvalidResourceEvidence(
+            "Missing, duplicated or conflicting cgroup guard receipts")
+    receipt = claims[0]
+    if (set(receipt) != {
+            "cgroup_verification", "verified", "memory_max",
+            "pids_max", "cpu_quota", "cpu_period"}
+            or receipt["cgroup_verification"] != "passed"):
+        raise InvalidResourceEvidence(
+            "Unexpected or non-PASS cgroup guard receipt")
     expected = {
         "memory_max": "memory_max_bytes",
         "pids_max": "tasks_max",

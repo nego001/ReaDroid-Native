@@ -176,6 +176,34 @@ class ResourceProofTests(unittest.TestCase):
                 with self.assertRaises(InvalidResourceEvidence):
                     corroborate_guard_receipt(records, private)
 
+    def test_s1_28_cgroup_guard_refuses_conflicting_stdout_claims(self):
+        self.write(self.valid)
+        private = read_scope_proof(self.file, UNIT)
+        good = {
+            "cgroup_verification": "passed", "verified": True,
+            "memory_max": 4294967296, "pids_max": 128,
+            "cpu_quota": 200000, "cpu_period": 100000,
+        }
+        # A passing claim does not neutralize a second failing or
+        # contradictory claim; other unrelated stdout records are fine.
+        self.assertTrue(corroborate_guard_receipt(
+            [{"unrelated": "diagnostic"}, good], private)["corroborated"])
+        contradictions = [
+            [good, {**good, "cgroup_verification": "rejected"}],
+            [{**good, "cgroup_verification": "rejected"}, good],
+            [good, {**good, "verified": False}],
+            [good, {**good, "pids_max": 1}],
+            [good, {**good, "cgroup_verification": None}],
+            [{**good, "unexpected_authority": True}],
+            [{key: value for key, value in good.items()
+              if key != "cpu_period"}],
+            [{**good, "cgroup_verification": True}],
+        ]
+        for claims in contradictions:
+            with self.subTest(claims=claims):
+                with self.assertRaises(InvalidResourceEvidence):
+                    corroborate_guard_receipt(claims, private)
+
     def test_guard_receipt_cannot_replace_missing_private_proof(self):
         receipt = {
             "cgroup_verification": "passed", "verified": True,

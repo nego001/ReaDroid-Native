@@ -1234,3 +1234,29 @@ a homologação em uma VM Arch descartável com kernel próprio.
 
 PR #47 segue Draft, sem merge na `main`, publicação APK/OTA ou
 ativação do executor principal seccomp+cgroups.
+
+## PE-S1.28 | Bloqueio de recibos stdout de kernel contraditórios
+
+A auditoria detectou que dois verificadores selecionavam somente
+recibos positivos do stdout: `corroborate_guard_receipt()`
+buscava apenas `cgroup_verification=passed` e
+`baseline_from_scope_receipts()` apenas
+`scope_seccomp_guard=passed` com o escopo esperado. Uma mesma
+saída podia conter um registro `PASS` acompanhado de outro
+`FAILED` ou de outro escopo e ainda assim ser aceita.
+
+Agora os verificadores exigem **exatamente uma declaração** da
+respectiva categoria no conjunto de registros; declarações
+contraditórias, duplicadas, de outro escopo, status não-PASS,
+campos extras/ausentes e tipos inválidos causam recusa fechada.
+Mensagens de diagnóstico que não alegam ser comprovantes de
+segurança são permitidas. A prova privada 0600 continua
+obrigatória, assim como a concordância exata de quotas e
+o aumento dos filtros na própria JVM.
+
+Os testes de regressão cobrem múltiplas declarações contraditórias,
+ambas as ordens dos registros e os contratos corretos. **Isto
+verifica coerência das declarações locais, não autentica stdout
+nem comprova uma VM Arch independente.** PR #47 continua Draft,
+sem merge na main, sem APK/OTA publicado e sem ativação do
+modo conjunto no executor principal.

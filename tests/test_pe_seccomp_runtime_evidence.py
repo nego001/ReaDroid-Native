@@ -130,6 +130,31 @@ class GhidraRuntimeAttestationTests(unittest.TestCase):
             read_ghidra_seccomp_proof(self.path, 2)
         self.path.parent.chmod(0o700)
 
+    def test_s1_28_scope_guard_refuses_conflicting_stdout_claims(self):
+        good = {
+            "scope_seccomp_guard": "passed",
+            "scope": self.UNIT,
+            "filters_compiled_inside_scope": True,
+            "seccomp_filters_before_bwrap": 2,
+        }
+        self.assertEqual(baseline_from_scope_receipts(
+            [good, {"other": "diagnostic"}], self.UNIT), 2)
+        contradictions = [
+            [good, {**good, "scope_seccomp_guard": "rejected"}],
+            [{**good, "scope_seccomp_guard": "failed"}, good],
+            [good, {**good, "scope": "different.scope"}],
+            [good, {**good, "filters_compiled_inside_scope": False}],
+            [good, {**good, "seccomp_filters_before_bwrap": 0}],
+            [{**good, "unknown": "extra"}],
+            [{key: value for key, value in good.items()
+              if key != "scope"}],
+            [{**good, "scope_seccomp_guard": True}],
+        ]
+        for claims in contradictions:
+            with self.subTest(claims=claims):
+                with self.assertRaises(SeccompRuntimeEvidenceError):
+                    baseline_from_scope_receipts(claims, self.UNIT)
+
     def test_requires_one_matching_scope_receipt(self):
         receipt = {"scope_seccomp_guard": "passed",
                    "scope": self.UNIT,
