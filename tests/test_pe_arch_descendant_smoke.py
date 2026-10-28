@@ -40,7 +40,8 @@ class NativeDescendantTests(unittest.TestCase):
         with mock.patch.object(smoke, "proc_identity", return_value=None):
             self.assertFalse(smoke.active_identity(2345, "123"))
 
-    def _synthetic_result(self, *, child_gone=True, proof=True):
+    def _synthetic_result(self, *, child_gone=True, proof=True,
+                          cleanup_quiescent=True, cleanup_other_scope=False):
         proof_line = (
             '{"cgroup_verification": "passed", "verified": true}\n'
             if proof else '{"cgroup_verification": "rejected"}\n')
@@ -77,20 +78,26 @@ class NativeDescendantTests(unittest.TestCase):
                                         with mock.patch.object(
                                                 smoke, "stop_and_attest_scope",
                                                 return_value={
-                                                    "scope": self.unit,
+                                                    "scope": (
+                                                        "negresco-pe-ffffffffffffffffffffffff.scope"
+                                                        if cleanup_other_scope else self.unit),
                                                     "verified": True,
-                                                    "scope_quiescent": True,
-                                                    "cgroup_unpopulated": True,
+                                                    "scope_quiescent": cleanup_quiescent,
+                                                    "cgroup_unpopulated": cleanup_quiescent,
                                                     "active_state": "inactive",
                                                     "sub_state": "dead",
                                                 }) as cleanup:
-                                            if proof and child_gone:
+                                            if (proof and child_gone and cleanup_quiescent
+                                                    and not cleanup_other_scope):
                                                 result = smoke.run_native_descendant_smoke()
                                                 cleanup.assert_called_once_with(self.unit)
                                             else:
                                                 with self.assertRaises(smoke.DescendantProbeError):
                                                     smoke.run_native_descendant_smoke()
-                                                cleanup.assert_not_called()
+                                                if proof and child_gone:
+                                                    cleanup.assert_called_once_with(self.unit)
+                                                else:
+                                                    cleanup.assert_not_called()
                                                 result = None
         self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 30)
         self.assertEqual(wrap.call_args.kwargs["unit_name"], self.unit)
@@ -131,6 +138,8 @@ class NativeDescendantTests(unittest.TestCase):
     def test_fails_closed_if_child_survives_or_quota_proof_missing(self):
         self._synthetic_result(child_gone=False)
         self._synthetic_result(proof=False)
+        self._synthetic_result(cleanup_quiescent=False)
+        self._synthetic_result(cleanup_other_scope=True)
 
 
 if __name__ == "__main__":
