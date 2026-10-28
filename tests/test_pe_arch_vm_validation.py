@@ -94,11 +94,52 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                        return_value=descendant):
                     with mock.patch.object(validation, "validate_real_ghidra",
                                            return_value={"status": "PASS_REAL_ARCH_VM_GHIDRA"}):
-                        result = validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+                        with mock.patch.object(
+                                validation, "validate_native_acceptance_report") as policy:
+                            result = validation.run_acceptance(
+                                Path("/sample/ghidra"), Path("/sample/zip"))
+        policy.assert_called_once_with(result)
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
         self.assertFalse(result["windows_binary_executed"])
         self.assertTrue(result["descendant_lifecycle"][
             "descendant_cleanup_evidence"]["cgroup_unpopulated"])
+
+    def test_stdout_pass_without_valid_private_receipt_policy_is_refused(self):
+        # A forged-looking PASS from internal stages cannot reach stdout just
+        # because --evidence-output was omitted. The final gate still runs.
+        quotas = {"status": "PASS_NATIVE_ARCH_CGROUP",
+                  "memory_max": 4294967296, "pids_max": 128,
+                  "cpu_quota": 200000, "cpu_period": 100000}
+        descendant = {
+            "status": "PASS_NATIVE_ARCH_DESCENDANTS",
+            "scope": "negresco-pe-0123456789abcdef01234567.scope",
+            "detached_sigterm_ignoring_child_terminated": True,
+            "systemd_stop_succeeded": True, "quota_verified": True,
+            "quota_private_proof": {
+                "verification": "guard_verified_before_bwrap",
+                "memory_max_bytes": 8 * 1024 ** 3,
+                "tasks_max": 128, "cpu_quota": 200000,
+                "cpu_period": 100000},
+            "descendant_cleanup_evidence": {
+                "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                "verified": True, "scope_quiescent": True,
+                "cgroup_unpopulated": True, "active_state": "inactive",
+                "sub_state": "dead"},
+        }
+        with (
+            mock.patch.object(validation, "verify_arch_vm", return_value={
+                "status": "ARCH_VM_PREFLIGHT_PASSED",
+                "vm_confirmed": True, "container": False}),
+            mock.patch.object(validation, "run_smoke", return_value=quotas),
+            mock.patch.object(validation, "run_native_descendant_smoke",
+                              return_value=descendant),
+            mock.patch.object(validation, "validate_real_ghidra",
+                              return_value={"status": "PASS_REAL_ARCH_VM_GHIDRA"}),
+        ):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "PASS refused"):
+                validation.run_acceptance(
+                    Path("/sample/ghidra"), Path("/sample/zip"))
 
     def test_rejects_unsupported_ghidra_release_even_with_launch_script(self):
         with tempfile.TemporaryDirectory() as temp:
