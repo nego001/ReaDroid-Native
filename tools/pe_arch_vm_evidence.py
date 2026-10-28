@@ -87,6 +87,9 @@ def validate_native_acceptance_report(report: dict) -> None:
     if (descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
             or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
             or descendants.get("systemd_stop_succeeded") is not True
+            or descendants.get("quota_verified") is not True
+            or not isinstance(descendants.get("quota_private_proof"), dict)
+            or descendants["quota_private_proof"].get("verification") != "guard_verified_before_bwrap"
             or not isinstance(descendants.get("scope"), str)
             or not isinstance(cleanup, dict)
             or cleanup.get("scope") != descendants.get("scope")
