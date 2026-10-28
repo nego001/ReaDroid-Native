@@ -120,6 +120,7 @@ def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as exc:
         raise ScopeCleanupUnavailable("Scope final state unavailable") from exc
     return {
+        "scope": unit_name,
         "verified": True,
         "scope_quiescent": True,
         "stop_request_accepted": accepted,
