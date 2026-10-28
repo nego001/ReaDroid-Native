@@ -28,6 +28,7 @@ from pe_arch_scoped_seccomp_smoke import (run_scoped_seccomp_probe,
 from pe_arch_scoped_ghidra_smoke import (run_native_scoped_ghidra,
                                          ScopedGhidraError)
 from pe_arch_vm_evidence import (write_receipt_no_overwrite,
+                                 validate_native_acceptance_report,
                                  AcceptanceReceiptError)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
@@ -235,11 +236,20 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
         raise ArchVmValidationError("Native cgroup and descendant lifecycle not approved")
     ghidra = validate_real_ghidra(ghidra_home, release_zip,
                                  timeout_seconds=timeout_seconds)
-    return {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
-            "cgroup": {k: quotas[k] for k in
-                       ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
-            "descendants_terminated": True, "descendant_lifecycle": descendants,
-            "ghidra": ghidra, "windows_binary_executed": False}
+    report = {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
+              "cgroup": {k: quotas[k] for k in
+                         ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
+              "descendants_terminated": True, "descendant_lifecycle": descendants,
+              "ghidra": ghidra, "windows_binary_executed": False}
+    # Enforce the SAME strict report checks whether or not the operator
+    # requested an on-disk receipt. Otherwise CLI stdout could announce
+    # PASS while a private receipt would correctly reject those claims.
+    try:
+        validate_native_acceptance_report(report)
+    except AcceptanceReceiptError as exc:
+        raise ArchVmValidationError(
+            "Inconsistent native Arch security evidence; PASS refused") from exc
+    return report
 
 
 def main() -> int:
