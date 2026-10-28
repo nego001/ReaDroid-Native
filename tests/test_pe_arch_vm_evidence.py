@@ -36,9 +36,11 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             "descendants_terminated": True,
             "descendant_lifecycle": {
                 "status": "PASS_NATIVE_ARCH_DESCENDANTS",
+                "scope": "negresco-pe-0123456789abcdef01234567.scope",
                 "detached_sigterm_ignoring_child_terminated": True,
                 "systemd_stop_succeeded": True,
                 "descendant_cleanup_evidence": {
+                    "scope": "negresco-pe-0123456789abcdef01234567.scope",
                     "verified": True, "scope_quiescent": True,
                     "cgroup_unpopulated": True,
                     "active_state": "inactive", "sub_state": "dead"}},
@@ -47,13 +49,17 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 "ghidra_integrity": {"verified": True},
                 "arch_scoped_seccomp_probe": {
                     "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
+                    "scope": "negresco-pe-0123456789abcdef01234567.scope",
                     "scope_cleanup_evidence": {
+                        "scope": "negresco-pe-0123456789abcdef01234567.scope",
                         "verified": True, "scope_quiescent": True,
                         "cgroup_unpopulated": True}},
                 "arch_real_ghidra_with_both": {
                     "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
+                    "scope": "negresco-pe-0123456789abcdef01234567.scope",
                     "scope_cleanup_verified": True,
                     "scope_cleanup_evidence": {
+                        "scope": "negresco-pe-0123456789abcdef01234567.scope",
                         "verified": True, "scope_quiescent": True,
                         "cgroup_unpopulated": True,
                         "stop_request_accepted": False,
@@ -201,6 +207,26 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         with self.assertRaises(evidence.AcceptanceReceiptError):
             self.write(report=report)
         self.assertFalse(self.dest.exists())
+
+    def test_refuses_cleanup_receipt_from_other_scope(self):
+        wrong = "negresco-pe-ffffffffffffffffffffffff.scope"
+        for section in ("descendant_lifecycle", "arch_scoped_seccomp_probe",
+                        "arch_real_ghidra_with_both"):
+            with self.subTest(section=section):
+                report = {**self.report, "ghidra": dict(self.report["ghidra"])}
+                if section == "descendant_lifecycle":
+                    entry = dict(report[section])
+                    entry["descendant_cleanup_evidence"] = {
+                        **entry["descendant_cleanup_evidence"], "scope": wrong}
+                    report[section] = entry
+                else:
+                    entry = dict(report["ghidra"][section])
+                    entry["scope_cleanup_evidence"] = {
+                        **entry["scope_cleanup_evidence"], "scope": wrong}
+                    report["ghidra"][section] = entry
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
 
     def test_fails_before_writing_if_source_changed_to_directory(self):
         self.source.unlink()
