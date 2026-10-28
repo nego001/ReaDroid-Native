@@ -9,7 +9,8 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
+from pe_resource_evidence import (
+    read_scope_proof, corroborate_guard_receipt, InvalidResourceEvidence)
 
 UNIT = "negresco-pe-0123456789abcdef01234567.scope"
 
@@ -78,6 +79,66 @@ class ResourceProofTests(unittest.TestCase):
         with self.assertRaises(InvalidResourceEvidence):
             read_scope_proof(self.file, UNIT)
         self.file.write_text(" " * 4097, encoding="utf-8")
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(self.file, UNIT)
+
+
+    def test_rejects_duplicate_json_keys_and_unknown_security_fields(self):
+        self.file.write_text(
+            '{"schema":"negresco_cgroup_v2_proof_v1",'
+            '"scope":"' + UNIT + '","verified":true,"verified":true,'
+            '"memory_max":4294967296,"pids_max":128,'
+            '"cpu_quota":200000,"cpu_period":100000}', encoding="utf-8")
+        self.file.chmod(0o600)
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(self.file, UNIT)
+        self.write({**self.valid, "unexpected": "injected"})
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(self.file, UNIT)
+
+    def test_rejects_parent_symlink_or_shared_permissions(self):
+        self.write(self.valid)
+        alias = Path(self.temp.name) / "parent-link"
+        alias.symlink_to(self.file.parent, target_is_directory=True)
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(alias / self.file.name, UNIT)
+        self.file.parent.chmod(0o755)
+        with self.assertRaises(InvalidResourceEvidence):
+            read_scope_proof(self.file, UNIT)
+        self.file.parent.chmod(0o700)
+
+    def test_guard_receipt_must_match_exact_private_quota_values(self):
+        self.write(self.valid)
+        private = read_scope_proof(self.file, UNIT)
+        receipt = {
+            "cgroup_verification": "passed", "verified": True,
+            "memory_max": 4294967296, "pids_max": 128,
+            "cpu_quota": 200000, "cpu_period": 100000,
+        }
+        self.assertTrue(corroborate_guard_receipt(
+            [receipt], private)["corroborated"])
+        for field, value in (
+                ("memory_max", 4294967295), ("pids_max", 127),
+                ("cpu_quota", 199999), ("cpu_period", 99999),
+                ("verified", False), ("verified", "true"),
+                ("pids_max", True)):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(InvalidResourceEvidence):
+                    corroborate_guard_receipt(
+                        [{**receipt, field: value}], private)
+        for records in ([], [receipt, receipt], [{"cgroup_verification": "rejected"}]):
+            with self.subTest(records=records):
+                with self.assertRaises(InvalidResourceEvidence):
+                    corroborate_guard_receipt(records, private)
+
+    def test_guard_receipt_cannot_replace_missing_private_proof(self):
+        receipt = {
+            "cgroup_verification": "passed", "verified": True,
+            "memory_max": 4294967296, "pids_max": 128,
+            "cpu_quota": 200000, "cpu_period": 100000,
+        }
+        with self.assertRaises(InvalidResourceEvidence):
+            corroborate_guard_receipt([receipt], {})
         with self.assertRaises(InvalidResourceEvidence):
             read_scope_proof(self.file, UNIT)
 
