@@ -67,7 +67,9 @@ class NativeDescendantTests(unittest.TestCase):
     def _synthetic_result(self, *, child_gone=True, proof=True,
                           cleanup_quiescent=True, cleanup_other_scope=False):
         proof_line = (
-            '{"cgroup_verification": "passed", "verified": true}\n'
+            '{"cgroup_verification": "passed", "verified": true,'
+            '"memory_max": 4294967296, "pids_max": 128,'
+            '"cpu_quota": 200000, "cpu_period": 100000}\n'
             if proof else '{"cgroup_verification": "rejected"}\n')
         fake_process = mock.Mock()
         fake_process.poll.return_value = None
