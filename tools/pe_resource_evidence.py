@@ -8,6 +8,7 @@ These checks are not substitutes for validating the kernel's live cgroup.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,18 @@ KERNEL_KEYS = ("memory_max", "pids_max", "cpu_quota", "cpu_period")
 
 class InvalidResourceEvidence(RuntimeError):
     pass
+
+
+@contextmanager
+def _pinned_directory(path: Path):
+    # A directory FD is not a Python binary stream: never os.fdopen it.
+    # Pin the directory inode and always close the raw descriptor.
+    fd = os.open(
+        path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
 
 
 def _unique_pairs(pairs: list[tuple[str, object]]) -> dict:
@@ -51,16 +64,14 @@ def read_scope_proof(path: Path, unit: str) -> dict:
         parent = proof.parent
         # Pin the private directory too, so swapping the parent path after
         # checking metadata cannot redirect the later file open.
-        parent_fd = os.open(
-            parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
-        with os.fdopen(parent_fd, "rb") as directory:
-            parent_meta = os.fstat(directory.fileno())
+        with _pinned_directory(parent) as directory_fd:
+            parent_meta = os.fstat(directory_fd)
             if (not stat.S_ISDIR(parent_meta.st_mode)
                     or parent_meta.st_uid != os.geteuid()
                     or parent_meta.st_mode & 0o077):
                 raise InvalidResourceEvidence("Cgroup proof parent is not private")
             flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-            fd = os.open(proof.name, flags, dir_fd=directory.fileno())
+            fd = os.open(proof.name, flags, dir_fd=directory_fd)
             with os.fdopen(fd, "rb") as reader:
                 before = os.fstat(reader.fileno())
                 if (not stat.S_ISREG(before.st_mode)
