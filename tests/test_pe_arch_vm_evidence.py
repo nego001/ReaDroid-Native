@@ -34,6 +34,14 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 "status": "ARCH_VM_PREFLIGHT_PASSED",
                 "vm_confirmed": True, "container": False},
             "descendants_terminated": True,
+            "descendant_lifecycle": {
+                "status": "PASS_NATIVE_ARCH_DESCENDANTS",
+                "detached_sigterm_ignoring_child_terminated": True,
+                "systemd_stop_succeeded": True,
+                "descendant_cleanup_evidence": {
+                    "verified": True, "scope_quiescent": True,
+                    "cgroup_unpopulated": True,
+                    "active_state": "inactive", "sub_state": "dead"}},
             "windows_binary_executed": False,
             "ghidra": {
                 "ghidra_integrity": {"verified": True},
@@ -158,6 +166,40 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     "arch_real_ghidra_with_both": changed}}
                 with self.assertRaises(evidence.AcceptanceReceiptError):
                     self.write(report=report)
+        self.assertFalse(self.dest.exists())
+
+    def test_refuses_missing_or_fake_descendant_cleanup_without_writing(self):
+        base = self.report["descendant_lifecycle"]
+        for modified in (
+                None,
+                {"status": "PASS_NATIVE_ARCH_DESCENDANTS"},
+                {**base, "systemd_stop_succeeded": False},
+                {**base, "descendant_cleanup_evidence": None},
+                {**base, "descendant_cleanup_evidence": {
+                    "verified": True, "scope_quiescent": False,
+                    "cgroup_unpopulated": True,
+                    "active_state": "active", "sub_state": "running"}},
+                {**base, "descendant_cleanup_evidence": {
+                    "verified": True, "scope_quiescent": True,
+                    "cgroup_unpopulated": False,
+                    "active_state": "inactive", "sub_state": "dead"}},
+        ):
+            with self.subTest(modified=modified):
+                candidate = dict(self.report)
+                if modified is None:
+                    candidate.pop("descendant_lifecycle")
+                else:
+                    candidate["descendant_lifecycle"] = modified
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=candidate)
+                self.assertFalse(self.dest.exists())
+
+    def test_refuses_missing_scoped_seccomp_probe_as_controlled_error(self):
+        report = {**self.report, "ghidra": {
+            **self.report["ghidra"],
+            "arch_scoped_seccomp_probe": None}}
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write(report=report)
         self.assertFalse(self.dest.exists())
 
     def test_fails_before_writing_if_source_changed_to_directory(self):
