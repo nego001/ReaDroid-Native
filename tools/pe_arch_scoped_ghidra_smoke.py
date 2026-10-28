@@ -113,7 +113,9 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             except ScopeCleanupUnavailable as exc:
                 raise ScopedGhidraError(
                     "Cannot prove Ghidra cgroup fully stopped") from exc
-        if scope_cleanup.get("verified") is not True or scope_cleanup.get("cgroup_unpopulated") is not True:
+        if (scope_cleanup.get("scope") != unit
+                or scope_cleanup.get("verified") is not True
+                or scope_cleanup.get("cgroup_unpopulated") is not True):
             raise ScopedGhidraError("Ghidra scope cleanup attestation incomplete")
         if result.returncode != 0:
             raise ScopedGhidraError("Real Ghidra with cgroup/seccomp exited nonzero")
