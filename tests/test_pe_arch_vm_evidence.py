@@ -12,6 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_evidence as evidence
+import pe_arch_vm_receipt_verify as review
 
 
 class PrivateNativeArchReceiptTests(unittest.TestCase):
@@ -135,6 +136,104 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.dest.stat().st_mode), 0o600)
         self.assertEqual(payload["report_sha256"],
                          hashlib.sha256(evidence._canonical(self.report)).hexdigest())
+
+    def test_independent_offline_receipt_audit_matches_private_source(self):
+        self.write()
+        result = review.verify_local_receipt(self.dest, self.root)
+        self.assertEqual(result["status"],
+                         "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+        self.assertEqual(result["source_files_rechecked"], 1)
+        self.assertEqual(result["security_classification"],
+                         "UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION")
+        self.assertFalse(result["native_kernel_execution_independently_verified"])
+        self.assertFalse(result["windows_binary_executed_by_reviewer"])
+
+    def test_offline_audit_detects_source_drift_and_symlink(self):
+        self.write()
+        self.source.write_text("print('modified source')\n", encoding="utf-8")
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(self.dest, self.root)
+        self.source.unlink()
+        unrelated = self.root / "unrelated.txt"
+        unrelated.write_text("print('harmless fixture')\n", encoding="utf-8")
+        self.source.symlink_to(unrelated)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(self.dest, self.root)
+
+    def test_offline_audit_rejects_changed_report_and_manifest(self):
+        self.write()
+        original = json.loads(self.dest.read_text(encoding="utf-8"))
+        for mutation in ("report", "hash", "manifest", "classification"):
+            with self.subTest(mutation=mutation):
+                record = copy.deepcopy(original)
+                if mutation == "report":
+                    record["native_acceptance_report"]["windows_binary_executed"] = True
+                elif mutation == "hash":
+                    record["report_sha256"] = "0" * 64
+                elif mutation == "manifest":
+                    record["source_file_hashes"]["tools/synthetic.py"]["sha256"] = "f" * 64
+                else:
+                    record["security_classification"] = "INDEPENDENT_VM_SIGNED"
+                self.dest.write_text(json.dumps(record), encoding="utf-8")
+                self.dest.chmod(0o600)
+                with self.assertRaises(review.ReceiptReviewError):
+                    review.verify_local_receipt(self.dest, self.root)
+        self.assertTrue(self.dest.exists())
+
+    def test_offline_audit_rejects_duplicate_json_keys_or_nonfinite(self):
+        self.write()
+        source = self.dest.read_text(encoding="utf-8")
+        for injected in (
+                source.replace('"schema":', '"schema":"duplicate","schema":', 1),
+                source.replace('"recorded_at_utc":', '"noise":NaN,"recorded_at_utc":', 1),
+                source.replace('"recorded_at_utc":', '"noise":Infinity,"recorded_at_utc":', 1),
+        ):
+            self.dest.write_text(injected, encoding="utf-8")
+            self.dest.chmod(0o600)
+            with self.assertRaises(review.ReceiptReviewError):
+                review.verify_local_receipt(self.dest, self.root)
+
+    def test_offline_audit_refuses_untrusted_private_paths(self):
+        self.write()
+        alias = self.root / "linked-proof"
+        alias.symlink_to(self.private, target_is_directory=True)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(alias / self.dest.name, self.root)
+        self.private.chmod(0o755)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(self.dest, self.root)
+        self.private.chmod(0o700)
+        self.dest.chmod(0o644)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(self.dest, self.root)
+
+    def test_offline_audit_rejects_oversized_receipt(self):
+        self.write()
+        with self.dest.open("ab") as out:
+            out.write(b" " * review.MAX_RECEIPT_BYTES)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(self.dest, self.root)
+
+    def test_offline_reviewer_cli_uses_precise_non_attestation_status(self):
+        self.write()
+        from contextlib import redirect_stdout, redirect_stderr
+        from io import StringIO
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            success = review.main([
+                "--receipt", str(self.dest),
+                "--source-root", str(self.root)])
+        self.assertEqual(success, 0)
+        self.assertFalse(json.loads(stdout.getvalue())[
+            "native_kernel_execution_independently_verified"])
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            failure = review.main([
+                "--receipt", str(self.root / "missing.json"),
+                "--source-root", str(self.root)])
+        self.assertEqual(failure, 2)
+        self.assertEqual(json.loads(stderr.getvalue())["status"],
+                         "REJECTED_LOCAL_RECEIPT")
 
     def test_does_not_overwrite_existing_receipt(self):
         self.write()
