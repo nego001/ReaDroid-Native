@@ -9,14 +9,18 @@ and had effective quotas before it could claim an acceptance PASS.
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
+import errno
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 
 from pe_resource_limits import _validate_scope_name, stop_scope
 
 MAX_SHOW_BYTES = 4096
+MAX_CGROUP_EVENTS_BYTES = 4096
 
 
 class ScopeCleanupUnavailable(RuntimeError):
@@ -66,28 +70,61 @@ def _parse_show(output: str) -> dict[str, str]:
 
 def _cgroup_unpopulated(relative: str, unit_name: str,
                         mount_root: Path) -> bool:
+    """Read kernel cgroup.events from pinned, no-follow directory FDs.
+
+    A removed transient scope is acceptable only after systemd independently
+    attested inactivity. All other uncertainty fails closed. cgroup.events is
+    a virtual kernel file with st_size often equal to zero, so bound its READ
+    length instead of relying on stat().st_size.
+    """
     if not relative:
         return True
-    parts = relative.split("/")
-    if (not relative.startswith("/") or len(parts) < 2
-            or parts[-1] != unit_name
-            or any(part in (".", "..", "") for part in parts[1:])):
+    if not isinstance(relative, str) or not relative.startswith("/"):
         return False
-    root = mount_root.resolve(strict=True)
-    scope = (root / relative.lstrip("/")).resolve(strict=False)
-    if scope == root or root not in scope.parents:
+    components = relative[1:].split("/")
+    if (components[-1] != unit_name
+            or any(part in ("", ".", "..") for part in components)):
         return False
-    if not scope.exists():
-        # cgroup directory has been removed by the kernel.
-        return True
-    if not scope.is_dir():
+    if not hasattr(os, "O_NOFOLLOW"):
         return False
-    # cgroup.events is maintained by the kernel for cgroup v2.
-    events = (scope / "cgroup.events").read_text(encoding="ascii")
-    pairs = [line.split() for line in events.splitlines()]
-    found = [v for pair in pairs if len(pair) == 2
-             for k, v in [pair] if k == "populated"]
-    return len(found) == 1 and found[0] == "0"
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    dir_flags = flags | os.O_DIRECTORY
+    with ExitStack() as stack:
+        root_fd = os.open(mount_root, dir_flags)
+        stack.callback(os.close, root_fd)
+        parent_fd = root_fd
+        for component in components:
+            try:
+                directory_fd = os.open(component, dir_flags, dir_fd=parent_fd)
+            except OSError as exc:
+                if exc.errno == errno.ENOENT:
+                    # A GC'd transient scope may have vanished already.
+                    return True
+                raise
+            stack.callback(os.close, directory_fd)
+            parent_fd = directory_fd
+        event_fd = os.open("cgroup.events", flags, dir_fd=parent_fd)
+        stack.callback(os.close, event_fd)
+        if not stat.S_ISREG(os.fstat(event_fd).st_mode):
+            return False
+        raw = os.read(event_fd, MAX_CGROUP_EVENTS_BYTES + 1)
+        if not 1 <= len(raw) <= MAX_CGROUP_EVENTS_BYTES:
+            return False
+        events = raw.decode("ascii")
+        # Reject truncated and malformed kernel status rather than inferring
+        # populated=0 from a partial or ambiguous record.
+        if not events.endswith("\n"):
+            return False
+        seen = set()
+        for line in events.splitlines():
+            parts = line.split()
+            if (len(parts) != 2 or parts[0] in seen
+                    or not parts[1].isdecimal()):
+                return False
+            seen.add(parts[0])
+            if parts[0] == "populated" and parts[1] != "0":
+                return False
+        return "populated" in seen
 
 
 def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
