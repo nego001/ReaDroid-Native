@@ -179,7 +179,7 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
             "reviewer_challenge_correlated": True,
             "independent_vm_attestation": False,
         }
-    except (OSError, UnicodeError, ValueError, TypeError,
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError,
             OverflowError, evidence.AcceptanceReceiptError) as exc:
         raise ReceiptReviewError("Receipt unavailable, unsafe or inconsistent") from exc
 
