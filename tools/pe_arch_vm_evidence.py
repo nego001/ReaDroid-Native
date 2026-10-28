@@ -108,17 +108,50 @@ def validate_native_acceptance_report(report: dict) -> None:
     combined = ghidra.get("arch_real_ghidra_with_both")
     probe = ghidra.get("arch_scoped_seccomp_probe")
     descendants = report.get("descendant_lifecycle")
+    initial = report.get("cgroup_lifecycle")
     # Inspect types BEFORE accessing nested attributes. Malformed/CI-like
     # reports must raise a deliberate refusal, never an incidental TypeError.
     if (not isinstance(probe, dict)
             or not isinstance(combined, dict)
-            or not isinstance(descendants, dict)):
+            or not isinstance(descendants, dict)
+            or not isinstance(initial, dict)):
         raise AcceptanceReceiptError("Missing native lifecycle reports")
     cleanup = descendants.get("descendant_cleanup_evidence")
-    scopes = [descendants.get("scope"), probe.get("scope"),
-              combined.get("scope")]
+    initial_cleanup = initial.get("scope_cleanup_evidence")
+    initial_budget = initial.get("quota_private_proof")
+    if (initial.get("status") != "PASS_NATIVE_ARCH_CGROUP"
+            or initial.get("windows_binary_executed") is not False
+            or initial.get("ghidra_executed") is not False
+            or not _finite_budget(initial_budget, private=True)
+            or not isinstance(initial_cleanup, dict)
+            or initial_cleanup.get("scope") != initial.get("scope")
+            or initial_cleanup.get("verified") is not True
+            or initial_cleanup.get("scope_quiescent") is not True
+            or initial_cleanup.get("cgroup_unpopulated") is not True
+            or initial_cleanup.get("active_state") != "inactive"
+            or initial_cleanup.get("sub_state") != "dead"):
+        raise AcceptanceReceiptError("Initial native cgroup lifecycle unproven")
+    # The original smoke measured one scope, independently of the later
+    # descendant, seccomp and Ghidra scopes. Report the measured values once
+    # and refuse if the summary or private file differs.
+    reported = report.get("cgroup")
+    original = {
+        "memory_max": "memory_max_bytes",
+        "pids_max": "tasks_max",
+        "cpu_quota": "cpu_quota",
+        "cpu_period": "cpu_period",
+    }
+    if (not isinstance(reported, dict)
+            or any(type(initial.get(key)) is not int
+                   or initial[key] != reported.get(key)
+                   or type(initial_budget.get(private_key)) is not int
+                   or initial_budget[private_key] != initial[key]
+                   for key, private_key in original.items())):
+        raise AcceptanceReceiptError("Initial cgroup report and private quota mismatch")
+    scopes = [initial.get("scope"), descendants.get("scope"),
+              probe.get("scope"), combined.get("scope")]
     if (not all(_valid_scope(unit) for unit in scopes)
-            or len(set(scopes)) != 3
+            or len(set(scopes)) != 4
             or not _finite_budget(report.get("cgroup"), private=False)
             or not _finite_budget(descendants.get("quota_private_proof"),
                                   private=True)
