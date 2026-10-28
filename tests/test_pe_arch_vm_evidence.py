@@ -517,7 +517,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             with self.assertRaises(review.ReceiptReviewError):
                 review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
-    def test_s1_31_receipt_uses_snapshot_not_mutable_report_alias(self):
+    def test_s1_32_receipt_uses_snapshot_not_mutable_report_alias(self):
         original = copy.deepcopy(self.report)
         receipt = evidence.build_receipt(
             self.report, source_root=self.root,
@@ -540,7 +540,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         evidence.validate_native_acceptance_report(
             receipt["native_acceptance_report"])
 
-    def test_s1_31_validation_uses_the_same_canonical_snapshot(self):
+    def test_s1_32_validation_uses_the_same_canonical_snapshot(self):
         original = copy.deepcopy(self.report)
         checked = []
         real_validator = evidence.validate_native_acceptance_report
@@ -563,7 +563,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             receipt["report_sha256"],
             hashlib.sha256(evidence._canonical(original)).hexdigest())
 
-    def test_s1_31_rejects_cyclic_report_as_controlled_error(self):
+    def test_s1_32_rejects_cyclic_report_as_controlled_error(self):
         invalid = copy.deepcopy(self.report)
         invalid["native_report_loop"] = invalid
         with self.assertRaises(evidence.AcceptanceReceiptError):
