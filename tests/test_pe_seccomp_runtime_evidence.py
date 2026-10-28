@@ -114,7 +114,11 @@ class GhidraRuntimeAttestationTests(unittest.TestCase):
 
         def mutate(fd, count):
             raw = original_read(fd, count)
-            os.utime(self.path, None)
+            # Wall-clock utime(None) can round to the unchanged mtime in
+            # fast CI. Force a distinct nanosecond timestamp instead.
+            before = os.fstat(fd)
+            os.utime(self.path, ns=(
+                before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
             return raw
 
         with mock.patch("pe_seccomp_runtime_evidence.os.read",
