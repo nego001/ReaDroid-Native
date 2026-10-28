@@ -37,7 +37,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             "environment": {
                 "status": "ARCH_VM_PREFLIGHT_PASSED",
                 "vm_confirmed": True, "container": False,
-                "root": False, "systemd_user_bus": True},
+                "root": False, "systemd_user_bus": True,
+                "real_cgroup_test_executed": False},
             "descendants_terminated": True,
             "cgroup": {"memory_max": 4294967296, "pids_max": 128,
                        "cpu_quota": 200000, "cpu_period": 100000},
@@ -158,6 +159,62 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             self.report if report is None else report,
             self.dest if path is None else path, source_root=self.root,
             reviewer_challenge=self.challenge)
+
+    def test_s1_29_report_producer_field_contracts_reject_injected_claims(self):
+        locations = (
+            (), ("environment",), ("cgroup",), ("cgroup_lifecycle",),
+            ("cgroup_lifecycle", "quota_private_proof"),
+            ("descendant_lifecycle",),
+            ("descendant_lifecycle", "quota_private_proof"),
+            ("ghidra",), ("ghidra", "ghidra_integrity"),
+            ("ghidra", "arch_isolation_probe"),
+            ("ghidra", "arch_scoped_seccomp_probe"),
+            ("ghidra", "arch_scoped_seccomp_probe", "cgroup_verification"),
+            ("ghidra", "arch_real_ghidra_with_both"),
+            ("ghidra", "arch_real_ghidra_with_both",
+             "quotas_verified_before_bwrap"),
+            ("ghidra", "arch_real_ghidra_with_both",
+             "ghidra_jvm_seccomp_evidence"),
+        )
+        for location in locations:
+            for action in ("injected", "missing"):
+                with self.subTest(location=location, action=action):
+                    report = copy.deepcopy(self.report)
+                    node = report
+                    for key in location:
+                        node = node[key]
+                    if action == "injected":
+                        node["independent_kernel_attestation"] = True
+                    else:
+                        node.pop(next(iter(node)))
+                    with self.assertRaisesRegex(
+                            evidence.AcceptanceReceiptError, "report fields"):
+                        evidence.validate_native_acceptance_report(report)
+                    with self.assertRaises(evidence.AcceptanceReceiptError):
+                        self.write(report=report)
+                    self.assertFalse(self.dest.exists())
+
+    def test_s1_29_preflight_must_not_falsely_claim_cgroup_testing(self):
+        for value in (True, "false", 0, None):
+            with self.subTest(value=value):
+                report = copy.deepcopy(self.report)
+                report["environment"]["real_cgroup_test_executed"] = value
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_s1_29_local_review_rejects_rehashed_extra_security_claim(self):
+        self.write()
+        record = json.loads(self.dest.read_text(encoding="utf-8"))
+        record["native_acceptance_report"][
+            "independent_hypervisor_attestation"] = True
+        record["report_sha256"] = hashlib.sha256(
+            evidence._canonical(record["native_acceptance_report"])).hexdigest()
+        self.dest.write_text(json.dumps(record), encoding="utf-8")
+        self.dest.chmod(0o600)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge)
 
     def test_s1_27_rejects_conflicting_ghidra_inventories_before_receipt(self):
         for unexpected in (1, 17, 19, 2 ** 31, True, "18", None):

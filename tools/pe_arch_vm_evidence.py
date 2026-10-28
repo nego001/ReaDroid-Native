@@ -141,8 +141,89 @@ def _verified_scope_cleanup(unit: object, proof: object) -> bool:
             and proof.get("sub_state") == "dead")
 
 
+# PE-S1.29: accept only fields emitted by the trusted native acceptance
+# producers. Unknown fields can carry deceptive approval/attestation claims
+# that the verifier never substantiated, even when all real fields look valid.
+# Paths are relative to native_acceptance_report, not the outer v2 receipt.
+_NATIVE_REPORT_FIELD_CONTRACTS = (
+    ((), ("status", "environment", "cgroup", "cgroup_lifecycle",
+          "descendants_terminated", "descendant_lifecycle", "ghidra",
+          "windows_binary_executed")),
+    (("environment",), ("status", "vm_confirmed", "container", "root",
+                       "systemd_user_bus", "real_cgroup_test_executed")),
+    (("cgroup",), ("memory_max", "pids_max", "cpu_quota", "cpu_period")),
+    (("cgroup_lifecycle",), (
+        "status", "scope", "memory_max", "pids_max", "cpu_quota",
+        "cpu_period", "quota_private_proof", "scope_cleanup_evidence",
+        "ghidra_executed", "windows_binary_executed")),
+    (("descendant_lifecycle",), (
+        "status", "scope", "quota_verified", "systemd_stop_succeeded",
+        "quota_private_proof", "descendant_cleanup_evidence",
+        "detached_sigterm_ignoring_child_terminated",
+        "windows_binary_executed", "ghidra_executed")),
+    (("ghidra",), (
+        "status", "ghidra_functions", "memory_max_bytes", "tasks_max",
+        "cpu_quota", "cpu_period", "pe_executed", "sandbox",
+        "ghidra_integrity", "arch_isolation_probe",
+        "arch_scoped_seccomp_probe", "arch_real_ghidra_with_both")),
+    (("ghidra", "ghidra_integrity"), (
+        "verified", "release_sha256", "matched_files",
+        "symlinks_allowed", "unexpected_files_allowed")),
+    (("ghidra", "arch_isolation_probe"), (
+        "status", "host_home_canary_hidden", "network_namespace_separate",
+        "host_etc_hidden", "usr_runtime_read_only",
+        "private_work_writable", "inherited_host_fd_hidden")),
+    (("ghidra", "arch_scoped_seccomp_probe"), (
+        "status", "scope", "filter_compiled_after_guard",
+        "cgroup_verification", "scope_cleanup_evidence", "sandbox_checks",
+        "windows_pe_executed", "ghidra_executed")),
+    (("ghidra", "arch_real_ghidra_with_both"), (
+        "status", "scope", "scope_stop_accepted",
+        "scope_cleanup_verified", "scope_cleanup_evidence",
+        "filter_compiled_inside_scope", "quotas_verified_before_bwrap",
+        "ghidra_jvm_seccomp_evidence", "ghidra_functions_discovered",
+        "decompiled_functions", "bubblewrap", "windows_binary_executed")),
+    (("ghidra", "arch_real_ghidra_with_both", "ghidra_jvm_seccomp_evidence"), (
+        "verified", "measurement_source", "measured_process",
+        "seccomp_mode", "filters_before_bwrap", "filters_in_ghidra",
+        "additional_filters_observed")),
+    (("cgroup_lifecycle", "quota_private_proof"), (
+        "verification", "memory_max_bytes", "tasks_max",
+        "cpu_quota", "cpu_period")),
+    (("descendant_lifecycle", "quota_private_proof"), (
+        "verification", "memory_max_bytes", "tasks_max",
+        "cpu_quota", "cpu_period")),
+    (("ghidra", "arch_scoped_seccomp_probe", "cgroup_verification"), (
+        "verification", "memory_max_bytes", "tasks_max",
+        "cpu_quota", "cpu_period")),
+    (("ghidra", "arch_real_ghidra_with_both",
+      "quotas_verified_before_bwrap"), (
+        "verification", "memory_max_bytes", "tasks_max",
+        "cpu_quota", "cpu_period")),
+)
+
+
+def _require_native_report_field_contracts(report: object) -> None:
+    """Fail closed on extra, missing or malformed self-reported fields.
+
+    These contracts cannot authenticate the VM; they prevent unsupported
+    security claims being smuggled into an otherwise valid local receipt.
+    """
+    for path, expected in _NATIVE_REPORT_FIELD_CONTRACTS:
+        node = report
+        for component in path:
+            if not isinstance(node, dict):
+                raise AcceptanceReceiptError("Malformed native report schema")
+            node = node.get(component)
+        if not isinstance(node, dict) or set(node) != set(expected):
+            location = ".".join(path) if path else "report"
+            raise AcceptanceReceiptError(
+                "Unrecognized or incomplete native report fields: " + location)
+
+
 def validate_native_acceptance_report(report: dict) -> None:
     """Reject CI-like or incomplete summaries without arch kernel evidence."""
+    _require_native_report_field_contracts(report)
     if not isinstance(report, dict) or report.get("status") != "PASS_PE_S1_5_ARCH_VM":
         raise AcceptanceReceiptError("No completed native Arch VM acceptance")
     vm = report.get("environment")
@@ -152,6 +233,7 @@ def validate_native_acceptance_report(report: dict) -> None:
     if (vm.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
             or vm.get("vm_confirmed") is not True
             or vm.get("container") is not False
+            or vm.get("real_cgroup_test_executed") is not False
             or report.get("descendants_terminated") is not True
             or report.get("windows_binary_executed") is not False):
         raise AcceptanceReceiptError("Kernel, descendant or VM checks incomplete")

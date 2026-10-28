@@ -1260,3 +1260,32 @@ verifica coerência das declarações locais, não autentica stdout
 nem comprova uma VM Arch independente.** PR #47 continua Draft,
 sem merge na main, sem APK/OTA publicado e sem ativação do
 modo conjunto no executor principal.
+
+## PE-S1.29 | Esquema exato dos campos de prova, sem afirmações extras
+
+O validador `validate_native_acceptance_report()` verificava
+conteúdo e tipos de campos conhecidos, mas ainda aceitava
+propriedades adicionais em objetos internos do relatório.
+Assim era possível acrescentar `independent_kernel_attestation=true`
+ou outro status inventado a um relatório local e recalcular
+seu hash SHA-256 sem provocar a recusa do revisor offline.
+
+Agora existe um contrato fechado de campos para o relatório
+principal, o preflight, as quotas, os resultados de cgroup/
+descendentes, Ghidra, integridade da release, isolamento,
+probe seccomp, execução combinada e prova da JVM. O sistema
+recusa propriedades extras, ausentes e objetos com tipo errado
+antes de reconhecer qualquer PASS. O preflight deve declarar
+`real_cgroup_test_executed=false`, como faz o emissor real;
+a prova concreta de cgroup é avaliada nos estágios posteriores.
+
+Os testes de regressão adulteram cada categoria do relatório,
+apresentam declarações extras com hashes recalculados
+e tentam forjar o preflight. Não se trata de assinatura
+digital nem de execução independente do kernel: continua sendo
+apenas validação rigorosa da consistência de um recibo local.
+
+O formato externo do recibo permanece v2 com desafio independente,
+sem novas informações pessoais. A PR #47 permanece Draft,
+sem merge, publicação APK/OTA ou liberação do executor
+principal `--require-seccomp --require-cgroup-limits`.
