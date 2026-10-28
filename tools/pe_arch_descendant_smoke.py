@@ -17,6 +17,8 @@ import tempfile
 import time
 
 from pe_arch_cgroup_smoke import preflight
+from pe_arch_vm_gate import verify_arch_vm
+from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
 from pe_resource_limits import (new_scope_unit, stop_scope,
                                 wrap_in_cgroup_scope)
 
@@ -101,13 +103,20 @@ def _worker(marker: Path, unit: str) -> int:
 
 
 def run_native_descendant_smoke() -> dict:
-    preflight()
+    # This test spawns a detached, SIGTERM-resistant grandchild. It must
+    # NEVER be directly callable on a personal Arch workstation.
+    environment = verify_arch_vm()
+    if (environment.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
+            or environment.get("vm_confirmed") is not True
+            or environment.get("container") is not False):
+        raise DescendantProbeError("Disposable native Arch VM not verified")
     unit = new_scope_unit()
     child_pid = None
     child_starttime = None
     launcher = None
     stopped = False
     proof = False
+    cleanup_evidence = None
 
     with tempfile.TemporaryDirectory(prefix="negresco-arch-descendant-") as temp:
         marker = Path(temp) / "child.json"
@@ -150,6 +159,14 @@ def run_native_descendant_smoke() -> dict:
                     raise DescendantProbeError("systemctl could not stop scope")
                 if not wait_until_dead(child_pid, child_starttime, 9):
                     raise DescendantProbeError("detached child survived scope stop")
+                # A vanished PID alone does not prove the whole scope empty.
+                # Demand the final systemd state and kernel cgroup.events.
+                cleanup_evidence = stop_and_attest_scope(unit)
+                if (cleanup_evidence.get("verified") is not True
+                        or cleanup_evidence.get("scope_quiescent") is not True
+                        or cleanup_evidence.get("cgroup_unpopulated") is not True):
+                    raise DescendantProbeError(
+                        "Descendant cgroup remained populated or unverified")
         finally:
             stop_scope(unit)
             if launcher is not None:
@@ -168,6 +185,7 @@ def run_native_descendant_smoke() -> dict:
         return {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": unit, "quota_verified": proof,
                 "systemd_stop_succeeded": stopped,
+                "descendant_cleanup_evidence": cleanup_evidence,
                 "detached_sigterm_ignoring_child_terminated": True,
                 "windows_binary_executed": False,
                 "ghidra_executed": False}
