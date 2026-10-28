@@ -17,6 +17,30 @@ class NativeDescendantTests(unittest.TestCase):
     def setUp(self):
         self.unit = "negresco-pe-0123456789abcdef01234567.scope"
 
+    def test_direct_worker_and_grandchild_cli_refuse_non_vm(self):
+        for mode in ("--worker", "--grandchild"):
+            with self.subTest(mode=mode):
+                argv = ["pe_arch_descendant_smoke.py", mode,
+                        "/tmp/synthetic-only", self.unit]
+                with mock.patch.object(smoke, "verify_arch_vm",
+                                       side_effect=RuntimeError("not VM")):
+                    with mock.patch.object(smoke, "_worker") as worker:
+                        with mock.patch.object(smoke, "_grandchild") as child:
+                            self.assertEqual(smoke.main(argv), 2)
+                            worker.assert_not_called()
+                            child.assert_not_called()
+
+    def test_direct_worker_cli_refuses_incomplete_vm_claim(self):
+        argv = ["pe_arch_descendant_smoke.py", "--worker",
+                "/tmp/synthetic-only", self.unit]
+        with mock.patch.object(smoke, "verify_arch_vm",
+                               return_value={"status": "ARCH_VM_PREFLIGHT_PASSED",
+                                             "vm_confirmed": False,
+                                             "container": True}):
+            with mock.patch.object(smoke, "_worker") as started:
+                self.assertEqual(smoke.main(argv), 2)
+                started.assert_not_called()
+
     def test_worker_requires_assigned_scope_before_fork(self):
         with mock.patch.object(smoke, "belongs_to_scope", return_value=False):
             with mock.patch.object(smoke.subprocess, "Popen") as started:
