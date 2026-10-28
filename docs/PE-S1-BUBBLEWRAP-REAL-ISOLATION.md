@@ -1338,3 +1338,33 @@ kernel. Referência: https://kernel.org/doc/html/v6.16/scheduler/sched-bwc.html
 A regra reforça coerência, mas não autentica o emissor nem
 equivale a execução independente da VM Arch. PR Draft, sem
 merge na main, sem APK/OTA e sem liberar o modo conjunto.
+
+
+## PE-S1.32 | Snapshot canônico de recibos nativos
+
+O relatório de aceitação era validado e hasheado, mas `build_receipt()`
+embutia uma referência ao **dicionário original do chamador**. Como
+estruturas aninhadas são mutáveis, alterações subsequentes poderiam
+mudar os dados que seriam serializados para o recibo sem repetir a
+validação nem atualizar o SHA-256. Isso causaria contradição entre
+o conteúdo e a prova de integridade.
+
+Agora o gerador serializa canonicamente o relatório **uma única vez**,
+aplica o limite de tamanho, faz uma cópia JSON independente e valida
+essa mesma cópia, que passa a ser usada no campo
+`native_acceptance_report`. O hash continua comprometendo os bytes
+da cópia canônica. Falhas de serialização recursiva e mutações durante
+a serialização são recusadas com `AcceptanceReceiptError`; a revisão
+offline converte `RecursionError` em `ReceiptReviewError` controlado.
+
+Três testes exercitam a mutação do objeto original depois da geração,
+a mutação durante a validação da cópia e um objeto com referência cíclica.
+O formato de recibo v2, as quotas do CFS da PE-S1.31, o desafio externo
+e os limites de privacidade continuam os mesmos.
+
+**Importante:** esta cópia independente não torna o recibo assinado
+ou imune a qualquer alteração por quem o controla; impede a mutação
+**indireta pelo objeto de entrada** após a validação. Não prova
+homologação independente do kernel em VM Arch descartável.
+A PR continua Draft, sem merge na main, sem APK/OTA publicados
+e sem liberar `--require-seccomp --require-cgroup-limits`.
