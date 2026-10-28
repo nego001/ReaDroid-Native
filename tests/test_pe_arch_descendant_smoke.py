@@ -77,6 +77,7 @@ class NativeDescendantTests(unittest.TestCase):
                                         with mock.patch.object(
                                                 smoke, "stop_and_attest_scope",
                                                 return_value={
+                                                    "scope": self.unit,
                                                     "verified": True,
                                                     "scope_quiescent": True,
                                                     "cgroup_unpopulated": True,
