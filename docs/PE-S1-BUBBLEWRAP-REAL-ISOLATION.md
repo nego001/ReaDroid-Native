@@ -729,3 +729,32 @@ oficial, fixture Windows sintética e relatório SHA-256
 A opção conjunta `--require-seccomp --require-cgroup-limits`
 continua **BLOQUEADA** no runner normal. Nenhuma alteração
 na main ou publicação APK/OTA.
+
+### Complemento PE-S1.14 | Prova privada de quota e modos internos
+
+A verificação dos descendentes deixou de inferir aplicação dos
+limites por procurar um fragmento de JSON em `scope.stdout`.
+O `pe_cgroup_guard.py` passa agora a escrever, antes do worker,
+uma prova privada `quota.json` em diretório modo 0700
+(não compartilhado com o Bubblewrap); o teste lê a prova por
+`read_scope_proof(proof_path, scope)` e recusa valores fora
+da política (memória até 4 GiB, `pids.max` até 128,
+CPU até 200%), arquivo ausente e escopo incorreto.
+O stdout ainda exige **exatamente um** registro estruturado
+do cgroup guard. A validação conjunta requer confirmação de
+stop com o descendente ativo, a morte da identidade PID/starttime,
+e a evidência independente systemd/kernel de cgroup vazio.
+
+Além do método principal, a CLI interna `--worker` e
+`--grandchild` agora reexecuta `verify_arch_vm()` antes
+de iniciar qualquer loop. A ausência do ambiente VM é
+recusa obrigatória, também nas chamadas diretas.
+O relatório final mantém `descendant_lifecycle` com
+`quota_private_proof` e `descendant_cleanup_evidence`,
+e o recibo SHA-256 rejeita ambos ausentes ou inconsistentes.
+
+**Limitação:** o GitHub Actions verifica contratos simulados
+para o ciclo de vida do systemd e do kernel Arch.
+A prova nativa ainda depende da execução em VM Arch
+independente. Não há desbloqueio da combinação cgroup+seccomp
+no executor habitual nem merge, APK ou OTA.
