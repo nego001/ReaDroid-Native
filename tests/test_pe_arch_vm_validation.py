@@ -73,9 +73,11 @@ class ArchVmAcceptanceTests(unittest.TestCase):
         quotas = {"status": "PASS_NATIVE_ARCH_CGROUP", "memory_max": 4294967296,
                   "pids_max": 128, "cpu_quota": 200000, "cpu_period": 100000}
         descendant = {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
+                      "scope": "negresco-pe-0123456789abcdef01234567.scope",
                       "detached_sigterm_ignoring_child_terminated": True,
                       "systemd_stop_succeeded": True,
                       "descendant_cleanup_evidence": {
+                          "scope": "negresco-pe-0123456789abcdef01234567.scope",
                           "verified": True, "scope_quiescent": True,
                           "cgroup_unpopulated": True,
                           "active_state": "inactive", "sub_state": "dead"}}
@@ -208,9 +210,11 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                     validation, "run_scoped_seccomp_probe",
                                     return_value={
                                         "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
+                                        "scope": "negresco-pe-0123456789abcdef01234567.scope",
                                         "filter_compiled_after_guard": True,
                                         "cgroup_verification": {"verification": "guard_verified_before_bwrap"},
                                         "scope_cleanup_evidence": {
+                                            "scope": "negresco-pe-0123456789abcdef01234567.scope",
                                             "verified": True, "scope_quiescent": True,
                                             "cgroup_unpopulated": True}
                                     }):
@@ -219,8 +223,10 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                       mock.patch.object(validation,
                                           "run_native_scoped_ghidra", return_value={
                                               "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
+                                              "scope": "negresco-pe-0123456789abcdef01234567.scope",
                                               "scope_cleanup_verified": True,
                                               "scope_cleanup_evidence": {
+                                                  "scope": "negresco-pe-0123456789abcdef01234567.scope",
                                                   "verified": True,
                                                   "scope_quiescent": True,
                                                   "cgroup_unpopulated": True,
