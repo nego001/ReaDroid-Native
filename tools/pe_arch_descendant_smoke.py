@@ -162,7 +162,8 @@ def run_native_descendant_smoke() -> dict:
                 # A vanished PID alone does not prove the whole scope empty.
                 # Demand the final systemd state and kernel cgroup.events.
                 cleanup_evidence = stop_and_attest_scope(unit)
-                if (cleanup_evidence.get("verified") is not True
+                if (cleanup_evidence.get("scope") != unit
+                        or cleanup_evidence.get("verified") is not True
                         or cleanup_evidence.get("scope_quiescent") is not True
                         or cleanup_evidence.get("cgroup_unpopulated") is not True):
                     raise DescendantProbeError(
