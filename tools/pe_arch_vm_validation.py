@@ -204,6 +204,14 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                            for f in report["deep_preview"]["functions"])
                 or not report_path.is_file()):
             raise ArchVmValidationError("Ghidra or effective cgroup proof incomplete")
+        # The two independent analysis runs operate on the same synthetic
+        # PE and pinned inventory script. A disagreement is a failed native
+        # acceptance rather than two unrelated PASS claims.
+        if (type(actual_combined.get("ghidra_functions_discovered")) is not int
+                or actual_combined["ghidra_functions_discovered"]
+                   != report["evidence"]["total_discovered"]):
+            raise ArchVmValidationError(
+                "Standalone and combined Ghidra function inventories disagree")
         return {"status": "PASS_REAL_ARCH_VM_GHIDRA",
                 "ghidra_functions": report["evidence"]["total_discovered"],
                 "memory_max_bytes": proof["memory_max_bytes"],

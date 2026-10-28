@@ -319,6 +319,12 @@ def validate_native_acceptance_report(report: dict) -> None:
             or combined.get("windows_binary_executed") is not False
             or type(combined.get("ghidra_functions_discovered")) is not int
             or combined["ghidra_functions_discovered"] < 1
+            # Both inventories inspect the same freshly compiled synthetic
+            # PE with the same pinned Ghidra release and inventory script.
+            # Two internally valid but contradictory counts cannot PASS.
+            or type(ghidra.get("ghidra_functions")) is not int
+            or combined["ghidra_functions_discovered"] !=
+               ghidra["ghidra_functions"]
             or type(combined.get("decompiled_functions")) is not int
             or not 1 <= combined["decompiled_functions"]
                        <= combined["ghidra_functions_discovered"]):

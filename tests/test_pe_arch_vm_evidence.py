@@ -159,6 +159,35 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             self.dest if path is None else path, source_root=self.root,
             reviewer_challenge=self.challenge)
 
+    def test_s1_27_rejects_conflicting_ghidra_inventories_before_receipt(self):
+        for unexpected in (1, 17, 19, 2 ** 31, True, "18", None):
+            with self.subTest(unexpected=unexpected):
+                report = copy.deepcopy(self.report)
+                report["ghidra"]["arch_real_ghidra_with_both"][
+                    "ghidra_functions_discovered"] = unexpected
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    evidence.validate_native_acceptance_report(report)
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_s1_27_accepts_matching_inventories_with_partial_decompile(self):
+        report = copy.deepcopy(self.report)
+        report["ghidra"]["ghidra_functions"] = 37
+        report["ghidra"]["arch_real_ghidra_with_both"][
+            "ghidra_functions_discovered"] = 37
+        # Some functions can legitimately fail decompilation; count of
+        # successful decompilations need not equal the inventory count.
+        report["ghidra"]["arch_real_ghidra_with_both"][
+            "decompiled_functions"] = 1
+        evidence.validate_native_acceptance_report(report)
+        self.write(report=report)
+        result = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge)
+        self.assertEqual(result["status"],
+                         "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+        self.assertFalse(result["independent_vm_attestation"])
+
     def test_s1_26_scope_cleanup_contract_accepts_both_kernel_outcomes(self):
         for collected in (False, True):
             report = copy.deepcopy(self.report)

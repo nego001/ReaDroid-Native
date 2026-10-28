@@ -301,6 +301,74 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                             ghidra, Path(tmp) / "synthetic.zip")
                                 inspect.assert_not_called()
 
+    def test_s1_27_native_ghidra_rejects_disagreeing_inventories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / "ghidra"
+            (home / "support").mkdir(parents=True)
+            (home / "support/analyzeHeadless").write_text("synthetic")
+            (home / "Ghidra").mkdir()
+            (home / "Ghidra/application.properties").write_text(
+                "application.name=Ghidra\\napplication.version=12.2\\n",
+                encoding="utf-8")
+            unit = "negresco-pe-0123456789abcdef01234567.scope"
+            scope_proof = {
+                "scope": unit, "verified": True,
+                "scope_quiescent": True, "cgroup_unpopulated": True,
+            }
+            scoped_probe = {
+                "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
+                "scope": unit, "filter_compiled_after_guard": True,
+                "cgroup_verification": {"verified": True},
+                "scope_cleanup_evidence": scope_proof,
+            }
+            combined = {
+                "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
+                "scope": unit, "scope_cleanup_verified": True,
+                "scope_cleanup_evidence": scope_proof,
+                "filter_compiled_inside_scope": True,
+                "quotas_verified_before_bwrap": {"verified": True},
+                "ghidra_jvm_seccomp_evidence": {
+                    "verified": True, "seccomp_mode": 2},
+                "decompiled_functions": 2,
+                "ghidra_functions_discovered": 19,
+            }
+            def inspect(pe, ghidra, report_path, **opts):
+                report_path.write_text("{}", encoding="utf-8")
+                return {
+                    "limitations": {
+                        "os_sandbox": "bubblewrap_profile",
+                        "executable_launched": False,
+                        "resource_scope": "systemd_user_cgroup_v2_verified_at_start",
+                        "resource_limits": {
+                            "verification": "guard_verified_before_bwrap",
+                            "memory_max_bytes": 4294967296,
+                            "tasks_max": 128,
+                            "cpu_quota": 200000,
+                            "cpu_period": 100000,
+                        }},
+                    "evidence": {"total_discovered": 18},
+                    "deep_preview": {"functions": [
+                        {"decompile_status": "ok"}]},
+                }
+            with (mock.patch.object(
+                    validation, "verify_pinned_ghidra_tree",
+                    return_value={"verified": True}),
+                  mock.patch.object(validation, "java25_preflight"),
+                  mock.patch.object(validation.subprocess, "run",
+                                    return_value=mock.Mock(returncode=0)),
+                  mock.patch.object(validation, "native_bwrap_probe",
+                                    return_value={"status": "PASS_NATIVE_ARCH_BWRAP_PROBE"}),
+                  mock.patch.object(validation, "run_scoped_seccomp_probe",
+                                    return_value=scoped_probe),
+                  mock.patch.object(validation, "run_native_scoped_ghidra",
+                                    return_value=combined),
+                  mock.patch.object(validation, "inspect_functions",
+                                    side_effect=inspect)):
+                with self.assertRaisesRegex(
+                        validation.ArchVmValidationError,
+                        "inventories disagree"):
+                    validation.validate_real_ghidra(home, Path(temp) / "release.zip")
+
     def test_real_ghidra_requires_private_quota_proof(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp) / "ghidra"

@@ -1207,3 +1207,30 @@ não uma assinatura ou observação independente do hipervisor.
 Ainda falta executar os experimentos sob um kernel Arch nativo
 em VM descartável. PR Draft; `main` sem merge, APK/OTA sem
 publicação e `--require-seccomp --require-cgroup-limits` bloqueado.
+
+## PE-S1.27 | Correlação das duas contagens de funções do Ghidra
+
+A aceitação nativa usa a **mesma amostra PE sintética**, o script
+`NegrescoFunctionInventory.java` e a release Ghidra 12.2 pinada
+em dois testes independentes: execução standalone em Bubblewrap/cgroup
+e execução experimental conjunta Bubblewrap/cgroup/seccomp.
+
+Antes desta revisão, o recibo podia conter
+`ghidra.ghidra_functions=18` e
+`arch_real_ghidra_with_both.ghidra_functions_discovered=19`
+com ambas as etapas alegando `PASS`, pois cada contagem era validada
+isoladamente. A execução nativa `validate_real_ghidra()` e o
+verificador final `validate_native_acceptance_report()` agora
+exigem **contagens iguais e inteiras positivas** para os dois
+inventários. Um descompilador pode não conseguir descompilar
+todas as funções; exige-se apenas
+`1 <= decompiled_functions <= ghidra_functions_discovered`.
+
+Os novos testes verificam adulterações no recibo, ausência,
+tipos errados e recusa *antes* de produzir a aprovação nativa.
+Aceitam as duas contagens correspondentes com descompilação parcial.
+São apenas contratos do relatório sintético: não substituem
+a homologação em uma VM Arch descartável com kernel próprio.
+
+PR #47 segue Draft, sem merge na `main`, publicação APK/OTA ou
+ativação do executor principal seccomp+cgroups.
