@@ -517,6 +517,61 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             with self.assertRaises(review.ReceiptReviewError):
                 review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
+    def test_s1_31_receipt_uses_snapshot_not_mutable_report_alias(self):
+        original = copy.deepcopy(self.report)
+        receipt = evidence.build_receipt(
+            self.report, source_root=self.root,
+            reviewer_challenge=self.challenge)
+        self.assertEqual(receipt["native_acceptance_report"], original)
+        self.assertIsNot(receipt["native_acceptance_report"], self.report)
+        self.assertIsNot(
+            receipt["native_acceptance_report"]["ghidra"],
+            self.report["ghidra"])
+        # A later change to a nested object must not change hashed contents.
+        self.report["environment"]["vm_confirmed"] = False
+        self.report["ghidra"]["arch_real_ghidra_with_both"][
+            "decompiled_functions"] = 0
+        self.report["independent_kernel_attestation"] = True
+        self.assertEqual(receipt["native_acceptance_report"], original)
+        self.assertEqual(
+            receipt["report_sha256"],
+            hashlib.sha256(evidence._canonical(
+                receipt["native_acceptance_report"])).hexdigest())
+        evidence.validate_native_acceptance_report(
+            receipt["native_acceptance_report"])
+
+    def test_s1_31_validation_uses_the_same_canonical_snapshot(self):
+        original = copy.deepcopy(self.report)
+        checked = []
+        real_validator = evidence.validate_native_acceptance_report
+
+        def mutate_source_and_validate(snapshot):
+            self.report["environment"]["vm_confirmed"] = False
+            self.report["ghidra"]["ghidra_functions"] = 0
+            checked.append(snapshot)
+            real_validator(snapshot)
+
+        with mock.patch.object(
+                evidence, "validate_native_acceptance_report",
+                side_effect=mutate_source_and_validate):
+            receipt = evidence.build_receipt(
+                self.report, source_root=self.root,
+                reviewer_challenge=self.challenge)
+        self.assertEqual(checked, [original])
+        self.assertIs(checked[0], receipt["native_acceptance_report"])
+        self.assertEqual(
+            receipt["report_sha256"],
+            hashlib.sha256(evidence._canonical(original)).hexdigest())
+
+    def test_s1_31_rejects_cyclic_report_as_controlled_error(self):
+        invalid = copy.deepcopy(self.report)
+        invalid["native_report_loop"] = invalid
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            evidence.build_receipt(
+                invalid, source_root=self.root,
+                reviewer_challenge=self.challenge)
+        self.assertFalse(self.dest.exists())
+
     def test_s1_30_offline_reviewer_refuses_fifo_receipt_without_hanging(self):
         # FIFO has no writer: a blocking read open would never reach fstat.
         fifo = self.private / "fifo-receipt.json"
