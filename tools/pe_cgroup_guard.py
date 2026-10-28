@@ -11,6 +11,9 @@ import os
 from pathlib import Path
 import sys
 
+from pe_resource_limits import (CPU_PERIOD_MIN_US, CPU_PERIOD_MAX_US,
+                                CPU_QUOTA_MIN_US)
+
 
 class CgroupVerificationError(RuntimeError):
     pass
@@ -51,8 +54,10 @@ def verify_cgroup_limits(memory_budget: int, tasks_budget: int,
         if len(cpu) != 2 or any(not x.isdecimal() for x in cpu):
             raise CgroupVerificationError("cpu.max is not finite")
         quota, period = map(int, cpu)
-        if period < 1 or quota < 1:
-            raise CgroupVerificationError("cpu.max is invalid")
+        if (not CPU_PERIOD_MIN_US <= period <= CPU_PERIOD_MAX_US
+                or quota < CPU_QUOTA_MIN_US):
+            raise CgroupVerificationError(
+                "cpu.max period/quota outside Linux CFS bounds")
         if not (0 < memory <= memory_budget
                 and 0 < tasks <= tasks_budget
                 and quota * 100 <= period * cpu_percent):

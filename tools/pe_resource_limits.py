@@ -17,6 +17,10 @@ import sys
 MEMORY_MAX_BYTES = 4 * 1024 * 1024 * 1024
 TASKS_MAX = 128
 CPU_QUOTA_PERCENT = 200
+# Linux CFS bandwidth bounds, microseconds (minimum 1ms, period at most 1s).
+CPU_QUOTA_MIN_US = 1_000
+CPU_PERIOD_MIN_US = 1_000
+CPU_PERIOD_MAX_US = 1_000_000
 SCOPE_PATTERN = re.compile(r"negresco-pe-[0-9a-f]{24}\.scope\Z")
 
 

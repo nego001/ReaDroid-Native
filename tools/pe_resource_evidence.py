@@ -16,7 +16,9 @@ import stat
 
 from pe_nofollow_paths import open_absolute_directory_nofollow
 from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
-                                CPU_QUOTA_PERCENT, _validate_scope_name,
+                                CPU_QUOTA_PERCENT, CPU_QUOTA_MIN_US,
+                                CPU_PERIOD_MIN_US, CPU_PERIOD_MAX_US,
+                                _validate_scope_name,
                                 ResourceLimitsUnavailable)
 
 MAX_PROOF_BYTES = 4096
@@ -105,7 +107,8 @@ def read_scope_proof(path: Path, unit: str) -> dict:
     memory, tasks, quota, period = (record[k] for k in KERNEL_KEYS)
     if (not 0 < memory <= MEMORY_MAX_BYTES
             or not 0 < tasks <= TASKS_MAX
-            or not 0 < quota and 0 < period
+            or quota < CPU_QUOTA_MIN_US
+            or not CPU_PERIOD_MIN_US <= period <= CPU_PERIOD_MAX_US
             or quota * 100 > period * CPU_QUOTA_PERCENT):
         raise InvalidResourceEvidence("Effective cgroup quota exceeds policy")
     return {

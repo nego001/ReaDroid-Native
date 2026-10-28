@@ -20,7 +20,9 @@ import stat
 from pe_nofollow_paths import open_absolute_directory_nofollow
 from pe_ghidra_integrity import GHIDRA_RELEASE_SHA256
 from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
-                                CPU_QUOTA_PERCENT, SCOPE_PATTERN)
+                                CPU_QUOTA_PERCENT, CPU_QUOTA_MIN_US,
+                                CPU_PERIOD_MIN_US, CPU_PERIOD_MAX_US,
+                                SCOPE_PATTERN)
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
@@ -104,7 +106,8 @@ def _finite_budget(values: object, *, private: bool) -> bool:
     memory, tasks, quota, period = (values[k] for k in names)
     return (0 < memory <= MEMORY_MAX_BYTES
             and 0 < tasks <= TASKS_MAX
-            and 0 < quota and 0 < period
+            and quota >= CPU_QUOTA_MIN_US
+            and CPU_PERIOD_MIN_US <= period <= CPU_PERIOD_MAX_US
             and quota * 100 <= period * CPU_QUOTA_PERCENT)
 
 
