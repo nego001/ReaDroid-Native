@@ -685,3 +685,45 @@ descendentes com processos reais.
 
 Proteção combinada no runner principal permanece recusada;
 PR Draft, `main` intocada, nenhuma publicação APK/OTA.
+
+## PE-S1.14 | Ciclo completo do descendente e vinculação do escopo
+
+A inspeção de riscos encontrou duas lacunas nos contratos anteriores
+da homologação Arch VM:
+
+1. `run_native_descendant_smoke()` fazia somente `preflight()`
+   de Arch/systemd. Uma chamada direta poderia iniciar um processo
+   sintético deliberadamente resistente a SIGTERM em um workstation
+   Arch fora de uma VM descartável. Agora o método reexecuta
+   `verify_arch_vm()` **antes de criar um novo scope**; recusará
+   host físico, container, root ou VM sem user bus.
+2. A confirmação do desaparecimento da identidade PID/starttime
+   do descendente não prova por si só que todo o cgroup ficou vazio.
+   Após solicitar parada do scope com o filho **ainda ativo**,
+   o teste exige tanto a morte do descendente observado quanto
+   `stop_and_attest_scope(unit)`: estado systemd
+   `inactive/dead` e cgroup v2 `populated 0` ou removido.
+   Uma confirmação incerta, populated=1 ou scope divergente recusa
+   a homologação, ainda que o PID já não esteja ativo.
+
+O mecanismo de limpeza PE-S1.13 agora inclui `scope` em seu
+resultado, de modo que **o relatório de fim e o escopo de início
+precisam usar o mesmo identificador**, nos três percursos
+(sonda seccomp, Ghidra conjunto e descendente). O gerador
+de recibo local `pe_arch_vm_evidence.py` exige o novo campo
+`descendant_lifecycle` completo, stop aceito, identidade do
+escopo e prova de quiescência. Um JSON ausente ou incompleto
+retorna rejeição controlada; os testes negativos impedem a
+aceitação de recibos copiados de outro escopo.
+
+Os testes são **contratos mockados** para a parte systemd em
+Ubuntu/Arch userspace; nenhum teste do GitHub Actions alega
+matar descendentes reais numa VM Arch independente.
+A homologação `PASS_PE_S1_5_ARCH_VM` ainda só pode ocorrer
+na VM descartável, com cgroups e seccomp reais, Ghidra 12.2
+oficial, fixture Windows sintética e relatório SHA-256
+`LOCAL_SELF_REPORT_NOT_SIGNED`.
+
+A opção conjunta `--require-seccomp --require-cgroup-limits`
+continua **BLOQUEADA** no runner normal. Nenhuma alteração
+na main ou publicação APK/OTA.
