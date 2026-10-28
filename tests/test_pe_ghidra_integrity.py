@@ -62,7 +62,7 @@ class GhidraReleaseIntegrityTests(unittest.TestCase):
         unlisted.unlink()
         link = self.install / "unlisted-link"
         link.symlink_to(self.archive)
-        with self.assertRaisesRegex(integrity.GhidraIntegrityError, "file type"):
+        with self.assertRaisesRegex(integrity.GhidraIntegrityError, "Symlink"):
             self.verify()
 
     def test_rejects_symlinked_ghidra_ancestor_directory(self):

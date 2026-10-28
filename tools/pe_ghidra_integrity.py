@@ -8,6 +8,7 @@ local, offline trust check before running real Ghidra in the Arch VM.
 from __future__ import annotations
 
 from contextlib import ExitStack
+import errno
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
@@ -46,7 +47,14 @@ def _hash_installed_file(home_fd: int, relative: Path) -> str:
             folder_fd = os.open(
                 part, flags | os.O_DIRECTORY, dir_fd=folder_fd)
             handles.callback(os.close, folder_fd)
-        file_fd = os.open(parts[-1], flags | os.O_NONBLOCK, dir_fd=folder_fd)
+        try:
+            file_fd = os.open(
+                parts[-1], flags | os.O_NONBLOCK, dir_fd=folder_fd)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise GhidraIntegrityError(
+                    "Symlink in installed Ghidra release file") from exc
+            raise
         handles.callback(os.close, file_fd)
         if not stat.S_ISREG(os.fstat(file_fd).st_mode):
             raise GhidraIntegrityError("Non-regular Ghidra release file")
