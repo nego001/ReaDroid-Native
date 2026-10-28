@@ -1,4 +1,5 @@
 """PE-S1.12: native Arch VM evidence receipt, not a signed attestation."""
+import copy
 import hashlib
 import json
 import os
@@ -34,6 +35,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 "status": "ARCH_VM_PREFLIGHT_PASSED",
                 "vm_confirmed": True, "container": False},
             "descendants_terminated": True,
+            "cgroup": {"memory_max": 4294967296, "pids_max": 128,
+                       "cpu_quota": 200000, "cpu_period": 100000},
             "descendant_lifecycle": {
                 "status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": "negresco-pe-0123456789abcdef01234567.scope",
@@ -55,17 +58,22 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 "ghidra_integrity": {"verified": True},
                 "arch_scoped_seccomp_probe": {
                     "status": "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP",
-                    "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                    "scope": "negresco-pe-aaaaaaaaaaaaaaaaaaaaaaaa.scope",
+                    "cgroup_verification": {
+                        "verification": "guard_verified_before_bwrap",
+                        "memory_max_bytes": 4294967296,
+                        "tasks_max": 128, "cpu_quota": 200000,
+                        "cpu_period": 100000},
                     "scope_cleanup_evidence": {
-                        "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                        "scope": "negresco-pe-aaaaaaaaaaaaaaaaaaaaaaaa.scope",
                         "verified": True, "scope_quiescent": True,
                         "cgroup_unpopulated": True}},
                 "arch_real_ghidra_with_both": {
                     "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
-                    "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                    "scope": "negresco-pe-bbbbbbbbbbbbbbbbbbbbbbbb.scope",
                     "scope_cleanup_verified": True,
                     "scope_cleanup_evidence": {
-                        "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                        "scope": "negresco-pe-bbbbbbbbbbbbbbbbbbbbbbbb.scope",
                         "verified": True, "scope_quiescent": True,
                         "cgroup_unpopulated": True,
                         "stop_request_accepted": False,
@@ -74,14 +82,19 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                         "scope_collected": True},
                     "filter_compiled_inside_scope": True,
                     "quotas_verified_before_bwrap": {
-                        "verification": "guard_verified_before_bwrap"},
+                        "verification": "guard_verified_before_bwrap",
+                        "memory_max_bytes": 4294967296,
+                        "tasks_max": 128, "cpu_quota": 200000,
+                        "cpu_period": 100000},
                     "decompiled_functions": 2,
                     "ghidra_jvm_seccomp_evidence": {
                         "verified": True,
                         "measured_process": "ghidra_headless_jvm",
+                        "measurement_source": "/proc/self/status",
                         "seccomp_mode": 2,
                         "filters_before_bwrap": 1,
-                        "filters_in_ghidra": 2}}},
+                        "filters_in_ghidra": 2,
+                        "additional_filters_observed": 1}}},
         }
 
     def write(self, report=None, path=None):
@@ -233,6 +246,69 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     entry["scope_cleanup_evidence"] = {
                         **entry["scope_cleanup_evidence"], "scope": wrong}
                     report["ghidra"][section] = entry
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_refuses_unbounded_or_forged_kernel_quota_values(self):
+        paths = (
+            ("cgroup",),
+            ("descendant_lifecycle", "quota_private_proof"),
+            ("ghidra", "arch_scoped_seccomp_probe", "cgroup_verification"),
+            ("ghidra", "arch_real_ghidra_with_both",
+             "quotas_verified_before_bwrap"),
+        )
+        for path in paths:
+            for field, value in (
+                    (("memory_max_bytes" if len(path) > 1 else "memory_max"),
+                     8 * 1024 ** 3),
+                    (("tasks_max" if len(path) > 1 else "pids_max"), True),
+                    ("cpu_period", "max"),
+                    ("cpu_quota", 300000), ("cpu_quota", 0)):
+                with self.subTest(path=path, field=field, value=value):
+                    report = copy.deepcopy(self.report)
+                    quotas = report
+                    for part in path:
+                        quotas = quotas[part]
+                    quotas[field] = value
+                    with self.assertRaises(evidence.AcceptanceReceiptError):
+                        self.write(report=report)
+                    self.assertFalse(self.dest.exists())
+
+    def test_refuses_replayed_scope_identity_across_stages(self):
+        for path in (
+                ("descendant_lifecycle",),
+                ("ghidra", "arch_scoped_seccomp_probe"),
+                ("ghidra", "arch_real_ghidra_with_both")):
+            with self.subTest(path=path):
+                report = copy.deepcopy(self.report)
+                entry = report
+                for part in path:
+                    entry = entry[part]
+                other_scope = (
+                    self.report["ghidra"]["arch_scoped_seccomp_probe"]["scope"]
+                    if len(path) == 1 else
+                    self.report["descendant_lifecycle"]["scope"])
+                entry["scope"] = other_scope
+                cleanup_key = ("descendant_cleanup_evidence" if len(path) == 1
+                               else "scope_cleanup_evidence")
+                entry[cleanup_key]["scope"] = other_scope
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_refuses_jvm_kernel_counter_provenance_inconsistencies(self):
+        for field, value in (
+                ("measurement_source", "user-supplied"),
+                ("additional_filters_observed", 0),
+                ("additional_filters_observed", True),
+                ("filters_before_bwrap", -1),
+                ("filters_in_ghidra", 5000),
+                ("seccomp_mode", True)):
+            with self.subTest(field=field, value=value):
+                report = copy.deepcopy(self.report)
+                report["ghidra"]["arch_real_ghidra_with_both"][
+                    "ghidra_jvm_seccomp_evidence"][field] = value
                 with self.assertRaises(evidence.AcceptanceReceiptError):
                     self.write(report=report)
                 self.assertFalse(self.dest.exists())
