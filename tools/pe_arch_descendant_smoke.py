@@ -176,8 +176,14 @@ def run_native_descendant_smoke() -> dict:
                     quota_private_proof = read_scope_proof(proof_path, unit)
                 except InvalidResourceEvidence as exc:
                     raise DescendantProbeError("Private effective cgroup proof missing") from exc
-                if quota_private_proof.get("verification") != "guard_verified_before_bwrap":
-                    raise DescendantProbeError("Private cgroup quotas are not proven")
+                try:
+                    quota_corroboration = corroborate_guard_receipt(
+                        receipts, quota_private_proof)
+                except InvalidResourceEvidence as exc:
+                    raise DescendantProbeError(
+                        "Guard receipt and private quotas do not match") from exc
+                if quota_corroboration.get("corroborated") is not True:
+                    raise DescendantProbeError("Kernel quota corroboration not proven")
                 proof = True
                 stopped = stop_scope(unit)
                 if not stopped:
