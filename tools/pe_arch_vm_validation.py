@@ -29,6 +29,7 @@ from pe_arch_scoped_ghidra_smoke import (run_native_scoped_ghidra,
                                          ScopedGhidraError)
 from pe_arch_vm_evidence import (write_receipt_no_overwrite,
                                  validate_native_acceptance_report,
+                                 require_reviewer_challenge,
                                  AcceptanceReceiptError)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests/fixtures/pe_headless_smoke.c"
@@ -275,12 +276,21 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=int, default=420)
     parser.add_argument("--evidence-output", type=Path,
                         help="Optional new JSON receipt file inside an owner-only 0700 directory; never overwrites")
+    parser.add_argument("--reviewer-challenge",
+                        help="External 64-hex challenge chosen BEFORE VM execution; required with --evidence-output")
     args = parser.parse_args()
     try:
+        if args.evidence_output is not None:
+            require_reviewer_challenge(args.reviewer_challenge)
+        elif args.reviewer_challenge is not None:
+            raise ArchVmValidationError(
+                "Reviewer challenge requires --evidence-output")
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
         if args.evidence_output is not None:
-            receipt = write_receipt_no_overwrite(proof, args.evidence_output)
+            receipt = write_receipt_no_overwrite(
+                proof, args.evidence_output,
+                reviewer_challenge=args.reviewer_challenge)
             # Printed acknowledgement is separate from the hashed source
             # report inside the receipt. A digest is NOT a digital signature.
             proof = {**proof, "local_receipt": receipt}

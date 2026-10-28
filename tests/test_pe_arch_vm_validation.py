@@ -47,6 +47,23 @@ class ArchVmGateTests(unittest.TestCase):
 
 
 class ArchVmAcceptanceTests(unittest.TestCase):
+    def test_s1_24_missing_or_invalid_challenge_blocks_vm_run(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        for challenge in (None, "0" * 64, "Z" * 64, "a" * 63):
+            with self.subTest(challenge=challenge):
+                argv = ["pe_arch_vm_validation.py",
+                        "--ghidra-home", "/tmp/ghidra",
+                        "--ghidra-archive", "/tmp/official.zip",
+                        "--evidence-output", "/tmp/private/proof.json"]
+                if challenge is not None:
+                    argv.extend(["--reviewer-challenge", challenge])
+                with (mock.patch.object(validation.sys, "argv", argv),
+                      mock.patch.object(validation, "run_acceptance") as native,
+                      redirect_stderr(StringIO())):
+                    self.assertEqual(validation.main(), 2)
+                native.assert_not_called()
+
     def test_vm_gate_refuses_before_any_resource_or_ghidra_test(self):
         with mock.patch.object(validation, "verify_arch_vm",
                                side_effect=gate.ArchVmUnavailable("not a VM")):

@@ -27,6 +27,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         self.private = self.root / "private-proof"
         self.private.mkdir(mode=0o700)
         self.dest = self.private / "acceptance.json"
+        self.challenge = "0123456789abcdef" * 4
         source = mock.patch.object(evidence, "SOURCE_FILES",
                                    ("tools/synthetic.py",))
         source.start()
@@ -150,7 +151,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
     def write(self, report=None, path=None):
         return evidence.write_receipt_no_overwrite(
             self.report if report is None else report,
-            self.dest if path is None else path, source_root=self.root)
+            self.dest if path is None else path, source_root=self.root,
+            reviewer_challenge=self.challenge)
 
     def test_s1_22_rejects_missing_or_contradictory_isolation_evidence(self):
         mutations = [
@@ -221,6 +223,56 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     self.write(report=report)
                 self.assertFalse(self.dest.exists())
 
+    def test_s1_24_rejects_replayed_or_unexpected_challenge(self):
+        self.write()
+        wrong = "fedcba9876543210" * 4
+        with self.assertRaisesRegex(
+                review.ReceiptReviewError, "challenge"):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=wrong)
+        record = json.loads(self.dest.read_text(encoding="utf-8"))
+        for changed in (None, "", "0" * 64, wrong, "A" * 64, "f" * 63, 17):
+            with self.subTest(changed=changed):
+                modified = copy.deepcopy(record)
+                if changed is None:
+                    modified.pop("reviewer_challenge")
+                else:
+                    modified["reviewer_challenge"] = changed
+                self.dest.write_text(json.dumps(modified), encoding="utf-8")
+                self.dest.chmod(0o600)
+                with self.assertRaises(review.ReceiptReviewError):
+                    review.verify_local_receipt(
+                        self.dest, self.root,
+                        expected_challenge=self.challenge)
+
+    def test_s1_24_invalid_or_missing_writer_challenges_fail_before_writing(self):
+        for invalid in (None, "", "0" * 64, "A" * 64, "x" * 64,
+                        "a" * 63, 1234, True):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    evidence.write_receipt_no_overwrite(
+                        self.report, self.dest, source_root=self.root,
+                        reviewer_challenge=invalid)
+                self.assertFalse(self.dest.exists())
+
+    def test_s1_24_old_v1_receipt_is_not_accepted_as_fresh_v2(self):
+        self.write()
+        record = json.loads(self.dest.read_text(encoding="utf-8"))
+        record["schema"] = "negresco_native_arch_vm_local_receipt_v1"
+        record.pop("reviewer_challenge")
+        self.dest.write_text(json.dumps(record), encoding="utf-8")
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge)
+
+    def test_s1_24_reviewer_challenge_does_not_claim_independent_vm(self):
+        self.write()
+        result = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge)
+        self.assertTrue(result["reviewer_challenge_correlated"])
+        self.assertFalse(result["native_kernel_execution_independently_verified"])
+        self.assertFalse(result["independent_vm_attestation"])
+
     def test_private_receipt_records_source_hashes_without_claiming_signature(self):
         written = self.write()
         self.assertEqual(written["path"], str(self.dest))
@@ -229,7 +281,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          hashlib.sha256(saved).hexdigest())
         payload = json.loads(saved)
         self.assertEqual(payload["schema"],
-                         "negresco_native_arch_vm_local_receipt_v1")
+                         "negresco_native_arch_vm_local_receipt_v2")
+        self.assertEqual(payload["reviewer_challenge"], self.challenge)
         self.assertEqual(payload["security_classification"],
                          "LOCAL_SELF_REPORT_NOT_SIGNED")
         self.assertEqual(payload["native_acceptance_report"], self.report)
@@ -241,7 +294,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
 
     def test_independent_offline_receipt_audit_matches_private_source(self):
         self.write()
-        result = review.verify_local_receipt(self.dest, self.root)
+        result = review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
         self.assertEqual(result["status"],
                          "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
         self.assertEqual(result["source_files_rechecked"], 1)
@@ -254,13 +307,13 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         self.write()
         self.source.write_text("print('modified source')\n", encoding="utf-8")
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(self.dest, self.root)
+            review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
         self.source.unlink()
         unrelated = self.root / "unrelated.txt"
         unrelated.write_text("print('harmless fixture')\n", encoding="utf-8")
         self.source.symlink_to(unrelated)
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(self.dest, self.root)
+            review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
     def test_offline_audit_rejects_changed_report_and_manifest(self):
         self.write()
@@ -279,7 +332,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 self.dest.write_text(json.dumps(record), encoding="utf-8")
                 self.dest.chmod(0o600)
                 with self.assertRaises(review.ReceiptReviewError):
-                    review.verify_local_receipt(self.dest, self.root)
+                    review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
         self.assertTrue(self.dest.exists())
 
     def test_offline_audit_rejects_duplicate_json_keys_or_nonfinite(self):
@@ -293,21 +346,21 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             self.dest.write_text(injected, encoding="utf-8")
             self.dest.chmod(0o600)
             with self.assertRaises(review.ReceiptReviewError):
-                review.verify_local_receipt(self.dest, self.root)
+                review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
     def test_offline_audit_refuses_untrusted_private_paths(self):
         self.write()
         alias = self.root / "linked-proof"
         alias.symlink_to(self.private, target_is_directory=True)
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(alias / self.dest.name, self.root)
+            review.verify_local_receipt(alias / self.dest.name, self.root, expected_challenge=self.challenge)
         self.private.chmod(0o755)
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(self.dest, self.root)
+            review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
         self.private.chmod(0o700)
         self.dest.chmod(0o644)
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(self.dest, self.root)
+            review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
     def test_offline_review_and_writer_refuse_symlinked_receipt_ancestor(self):
         self.write()
@@ -318,17 +371,17 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         copied = nested / "copied.json"
         copied.write_bytes(self.dest.read_bytes())
         copied.chmod(0o600)
-        self.assertEqual(review.verify_local_receipt(copied, self.root)["status"],
+        self.assertEqual(review.verify_local_receipt(copied, self.root, expected_challenge=self.challenge)["status"],
                          "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
         alias = self.root / "linked-ancestor"
         alias.symlink_to(outer, target_is_directory=True)
         with self.assertRaises(review.ReceiptReviewError):
             review.verify_local_receipt(alias / "private" / "copied.json",
-                                        self.root)
+                                        self.root, expected_challenge=self.challenge)
         bad_dest = alias / "private" / "new.json"
         with self.assertRaises(evidence.AcceptanceReceiptError):
             evidence.write_receipt_no_overwrite(
-                self.report, bad_dest, source_root=self.root)
+                self.report, bad_dest, source_root=self.root, reviewer_challenge=self.challenge)
         self.assertFalse((nested / "new.json").exists())
 
     def test_offline_review_and_writer_refuse_source_root_ancestor_symlink(self):
@@ -337,17 +390,17 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         checkout = outer / "checkout"
         (checkout / "tools").mkdir(parents=True, mode=0o700)
         (checkout / "tools" / "synthetic.py").write_bytes(self.source.read_bytes())
-        self.assertEqual(review.verify_local_receipt(self.dest, checkout)["status"],
+        self.assertEqual(review.verify_local_receipt(self.dest, checkout, expected_challenge=self.challenge)["status"],
                          "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
         alias = self.root / "linked-sources"
         alias.symlink_to(outer, target_is_directory=True)
         bad_root = alias / "checkout"
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(self.dest, bad_root)
+            review.verify_local_receipt(self.dest, bad_root, expected_challenge=self.challenge)
         bad_dest = self.private / "another.json"
         with self.assertRaises(evidence.AcceptanceReceiptError):
             evidence.write_receipt_no_overwrite(
-                self.report, bad_dest, source_root=bad_root)
+                self.report, bad_dest, source_root=bad_root, reviewer_challenge=self.challenge)
         self.assertFalse(bad_dest.exists())
 
     def test_writer_rejects_symlink_in_source_manifest_directory(self):
@@ -363,7 +416,7 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         with self.dest.open("ab") as out:
             out.write(b" " * review.MAX_RECEIPT_BYTES)
         with self.assertRaises(review.ReceiptReviewError):
-            review.verify_local_receipt(self.dest, self.root)
+            review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
     def test_offline_reviewer_cli_uses_precise_non_attestation_status(self):
         self.write()
@@ -373,7 +426,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         with redirect_stdout(stdout):
             success = review.main([
                 "--receipt", str(self.dest),
-                "--source-root", str(self.root)])
+                "--source-root", str(self.root),
+                "--expected-challenge", self.challenge])
         self.assertEqual(success, 0)
         self.assertFalse(json.loads(stdout.getvalue())[
             "native_kernel_execution_independently_verified"])
@@ -381,7 +435,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         with redirect_stderr(stderr):
             failure = review.main([
                 "--receipt", str(self.root / "missing.json"),
-                "--source-root", str(self.root)])
+                "--source-root", str(self.root),
+                "--expected-challenge", self.challenge])
         self.assertEqual(failure, 2)
         self.assertEqual(json.loads(stderr.getvalue())["status"],
                          "REJECTED_LOCAL_RECEIPT")

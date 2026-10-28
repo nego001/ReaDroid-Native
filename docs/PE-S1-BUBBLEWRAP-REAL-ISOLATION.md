@@ -609,6 +609,7 @@ python3 tools/pe_arch_vm_validation.py \
   --ghidra-home /caminho/ghidra_12.2_PUBLIC \
   --ghidra-archive /caminho/ghidra_12.2_PUBLIC_20261016.zip \
   --timeout-seconds 420 \
+  --reviewer-challenge "$REVIEWER_CHALLENGE" \
   --evidence-output "$HOME/negresco-arch-proof/acceptance.json"
 ```
 
@@ -998,7 +999,8 @@ executar PE, Ghidra, systemd ou acessar a rede:
 ```bash
 python3 tools/pe_arch_vm_receipt_verify.py \
   --receipt /caminho/privado/acceptance.json \
-  --source-root /caminho/do/checkout/exato
+  --source-root /caminho/do/checkout/exato \
+  --expected-challenge "$REVIEWER_CHALLENGE"
 ```
 
 Um resultado aprovado retorna apenas
@@ -1102,3 +1104,45 @@ mudança posterior do diretório antes do lançamento de Ghidra por
 um adversário com privilégios suficientes, nem atestam uma VM Arch
 independente. A PR permanece Draft; combinação real cgroup+seccomp
 não foi liberada, sem merge, publicação APK ou OTA.
+
+
+## PE-S1.24 | Desafio externo para correlacionar recibos a uma execução
+
+A homologação manual com `--evidence-output` agora **recusa iniciar**
+sem um desafio externo válido. O revisor escolhe aleatoriamente 32 bytes
+(64 caracteres hexadecimais minúsculos) **fora da VM** antes do teste,
+registra esse valor em um local independente e fornece-o à VM pelo
+parâmetro `--reviewer-challenge`. A CLI valida o desafio antes de
+executar cgroups, descendentes ou Ghidra. O recibo usa o esquema
+`negresco_native_arch_vm_local_receipt_v2` e inclui esse valor na
+estrutura persistida de modo exclusivo, 0600, sob diretório 0700.
+
+Depois da coleta, o verificador offline recusa arquivos v1 ou que não
+correspondam ao `--expected-challenge` **fornecido novamente pelo
+revisor**. Não aceita entrada ausente, não-canônica, 0 repetido, JSON
+alterado ou desafio usado em outra revisão. Todos os hashes e
+contratos anteriores continuam obrigatórios. Os testes sintéticos
+cobrem adulterações, replay de desafio diferente, v1 e pré-validação
+da CLI antes de iniciar tarefas da VM.
+
+Exemplo de preparação **no equipamento externo do revisor**
+(não na VM):
+
+```bash
+REVIEWER_CHALLENGE="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+printf 'Desafio da revisão: %s\n' "$REVIEWER_CHALLENGE"
+```
+
+Transfira o valor à VM por um canal controlado, forneça-o apenas
+na primeira execução nativa de aceitação e preserve o registro original
+com o revisor. Use o mesmo valor na revisão offline, fora da VM.
+Não reutilize desafios entre aceites.
+
+**Limitação obrigatória:** um desafio de revisão não é assinatura
+digital nem atestado do hipervisor ou do kernel. Um executor malicioso
+que veja o desafio pode produzir um relatório falso com ele.
+O resultado continua `LOCAL_RECEIPT_CONSISTENCY_VALIDATED`, com
+`native_kernel_execution_independently_verified=false`. A
+homologação real conjunta em VM Arch independente continua
+**pendente**. PR permanece Draft; sem `main`, APK, OTA ou
+desbloqueio do modo seccomp+cgroups.

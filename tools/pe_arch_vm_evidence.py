@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 
 from pe_nofollow_paths import open_absolute_directory_nofollow
@@ -53,10 +54,26 @@ SOURCE_FILES = (
 )
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_REPORT_BYTES = 512 * 1024
+CHALLENGE_PATTERN = re.compile(r"[0-9a-f]{64}\\Z")
 
 
 class AcceptanceReceiptError(RuntimeError):
     pass
+
+
+def require_reviewer_challenge(value: object) -> str:
+    """Require a reviewer-supplied 256-bit, lowercase hex challenge.
+
+    A correct challenge only correlates the receipt with the reviewer's
+    prior request. It is not a cryptographic signature, does not establish
+    entropy or prevent forgery by the host generating the receipt.
+    """
+    if (not isinstance(value, str)
+            or CHALLENGE_PATTERN.fullmatch(value) is None
+            or value == "0" * 64):
+        raise AcceptanceReceiptError(
+            "Reviewer challenge must be 64 nonzero lowercase hex digits")
+    return value
 
 
 def _canonical(obj: object) -> bytes:
@@ -278,7 +295,9 @@ def validate_native_acceptance_report(report: dict) -> None:
         raise AcceptanceReceiptError("Ghidra JVM seccomp proof incomplete")
 
 
-def build_receipt(report: dict, source_root: Path = ROOT) -> dict:
+def build_receipt(report: dict, source_root: Path = ROOT, *,
+                  reviewer_challenge: str) -> dict:
+    require_reviewer_challenge(reviewer_challenge)
     validate_native_acceptance_report(report)
     canonical_report = _canonical(report)
     if len(canonical_report) > MAX_REPORT_BYTES:
@@ -324,7 +343,8 @@ def build_receipt(report: dict, source_root: Path = ROOT) -> dict:
     except (OSError, ValueError) as exc:
         raise AcceptanceReceiptError("Cannot hash trusted source checkout") from exc
     return {
-        "schema": "negresco_native_arch_vm_local_receipt_v1",
+        "schema": "negresco_native_arch_vm_local_receipt_v2",
+        "reviewer_challenge": reviewer_challenge,
         "recorded_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "security_classification": "LOCAL_SELF_REPORT_NOT_SIGNED",
         "report_sha256": hashlib.sha256(canonical_report).hexdigest(),
@@ -334,8 +354,10 @@ def build_receipt(report: dict, source_root: Path = ROOT) -> dict:
     }
 
 def write_receipt_no_overwrite(report: dict, destination: Path,
-                              source_root: Path = ROOT) -> dict:
-    payload = build_receipt(report, source_root)
+                              source_root: Path = ROOT, *,
+                              reviewer_challenge: str) -> dict:
+    payload = build_receipt(
+        report, source_root, reviewer_challenge=reviewer_challenge)
     encoded = _canonical(payload)
     path = Path(destination)
     if not path.is_absolute() or path.name in ("", ".", ".."):

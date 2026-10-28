@@ -23,11 +23,11 @@ import pe_arch_vm_evidence as evidence
 from pe_nofollow_paths import open_absolute_directory_nofollow
 
 MAX_RECEIPT_BYTES = 1024 * 1024
-RECEIPT_SCHEMA = "negresco_native_arch_vm_local_receipt_v1"
+RECEIPT_SCHEMA = "negresco_native_arch_vm_local_receipt_v2"
 RECEIPT_FIELDS = frozenset({
     "schema", "recorded_at_utc", "security_classification",
     "report_sha256", "source_file_hashes", "native_acceptance_report",
-    "windows_executable_launched",
+    "windows_executable_launched", "reviewer_challenge",
 })
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -106,9 +106,11 @@ def _read_source(source_root: Path, relative: str) -> bytes:
         return raw
 
 
-def verify_local_receipt(receipt: Path, source_root: Path) -> dict:
-    """Correlate this untrusted local receipt with an exact source checkout."""
+def verify_local_receipt(receipt: Path, source_root: Path, *,
+                         expected_challenge: str) -> dict:
+    """Correlate an unsigned receipt to a challenge known BEFORE the run."""
     try:
+        evidence.require_reviewer_challenge(expected_challenge)
         raw = _read_private_receipt(Path(receipt))
         record = json.loads(
             raw.decode("utf-8"),
@@ -121,6 +123,12 @@ def verify_local_receipt(receipt: Path, source_root: Path) -> dict:
                 or record["security_classification"] != "LOCAL_SELF_REPORT_NOT_SIGNED"
                 or record["windows_executable_launched"] is not False):
             raise ReceiptReviewError("Unexpected receipt schema or security claims")
+
+        challenge = record["reviewer_challenge"]
+        evidence.require_reviewer_challenge(challenge)
+        if challenge != expected_challenge:
+            raise ReceiptReviewError(
+                "Receipt does not match externally supplied reviewer challenge")
 
         stamp = record["recorded_at_utc"]
         if not isinstance(stamp, str) or len(stamp) > 64:
@@ -164,6 +172,8 @@ def verify_local_receipt(receipt: Path, source_root: Path) -> dict:
             "receipt_sha256": hashlib.sha256(raw).hexdigest(),
             "native_kernel_execution_independently_verified": False,
             "windows_binary_executed_by_reviewer": False,
+            "reviewer_challenge_correlated": True,
+            "independent_vm_attestation": False,
         }
     except (OSError, UnicodeError, ValueError, TypeError,
             OverflowError, evidence.AcceptanceReceiptError) as exc:
@@ -176,10 +186,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True,
                         help="Exact source checkout used during VM acceptance")
+    parser.add_argument("--expected-challenge", required=True,
+                        help="Original random 64-hex token supplied by an outside reviewer")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(
-            verify_local_receipt(args.receipt, args.source_root),
+            verify_local_receipt(
+                args.receipt, args.source_root,
+                expected_challenge=args.expected_challenge),
             sort_keys=True))
         return 0
     except ReceiptReviewError as exc:
