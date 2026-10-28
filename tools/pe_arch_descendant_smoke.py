@@ -194,9 +194,17 @@ def run_native_descendant_smoke() -> dict:
 
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) == 4 and argv[1] == "--grandchild":
-            return _grandchild(argv[2], Path(argv[3]))
-        if len(argv) == 4 and argv[1] == "--worker":
+        # Direct CLI calls to the worker/grandchild must pass the same VM gate.
+        # They intentionally keep an unbounded loop until systemd terminates
+        # the disposable scope, so never enable these on a workstation.
+        if len(argv) == 4 and argv[1] in ("--grandchild", "--worker"):
+            environment = verify_arch_vm()
+            if (environment.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
+                    or environment.get("vm_confirmed") is not True
+                    or environment.get("container") is not False):
+                raise DescendantProbeError("Worker requires disposable native Arch VM")
+            if argv[1] == "--grandchild":
+                return _grandchild(argv[2], Path(argv[3]))
             return _worker(Path(argv[2]), argv[3])
         if len(argv) == 1:
             print(json.dumps(run_native_descendant_smoke(), sort_keys=True))
