@@ -76,6 +76,24 @@ def validate_native_acceptance_report(report: dict) -> None:
     integrity = ghidra.get("ghidra_integrity")
     combined = ghidra.get("arch_real_ghidra_with_both")
     probe = ghidra.get("arch_scoped_seccomp_probe")
+    descendants = report.get("descendant_lifecycle")
+    # Inspect types BEFORE accessing nested attributes. Malformed/CI-like
+    # reports must raise a deliberate refusal, never an incidental TypeError.
+    if (not isinstance(probe, dict)
+            or not isinstance(combined, dict)
+            or not isinstance(descendants, dict)):
+        raise AcceptanceReceiptError("Missing native lifecycle reports")
+    cleanup = descendants.get("descendant_cleanup_evidence")
+    if (descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
+            or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
+            or descendants.get("systemd_stop_succeeded") is not True
+            or not isinstance(cleanup, dict)
+            or cleanup.get("verified") is not True
+            or cleanup.get("scope_quiescent") is not True
+            or cleanup.get("cgroup_unpopulated") is not True
+            or cleanup.get("active_state") != "inactive"
+            or cleanup.get("sub_state") != "dead"):
+        raise AcceptanceReceiptError("Detached descendant cleanup was not proven")
     if (not isinstance(integrity, dict) or integrity.get("verified") is not True
             or not isinstance(combined, dict)
             or combined.get("status")
@@ -92,7 +110,6 @@ def validate_native_acceptance_report(report: dict) -> None:
             or combined.get("filter_compiled_inside_scope") is not True
             or type(combined.get("decompiled_functions")) is not int
             or combined["decompiled_functions"] < 1
-            or not isinstance(probe, dict)
             or probe.get("status") != "PASS_NATIVE_ARCH_VM_SCOPED_SECCOMP"
             or not isinstance(combined.get("quotas_verified_before_bwrap"), dict)
             or combined["quotas_verified_before_bwrap"].get("verification")
