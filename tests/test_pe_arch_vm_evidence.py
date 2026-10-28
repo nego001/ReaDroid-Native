@@ -186,6 +186,9 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 None,
                 {"status": "PASS_NATIVE_ARCH_DESCENDANTS"},
                 {**base, "systemd_stop_succeeded": False},
+                {**base, "quota_verified": False},
+                {**base, "quota_private_proof": None},
+                {**base, "quota_private_proof": {}},
                 {**base, "descendant_cleanup_evidence": None},
                 {**base, "descendant_cleanup_evidence": {
                     "verified": True, "scope_quiescent": False,
