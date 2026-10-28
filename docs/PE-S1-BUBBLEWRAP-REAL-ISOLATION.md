@@ -1176,3 +1176,34 @@ executar e preservar suas evidências. O desafio externo da
 PE-S1.24 continua obrigatório; o recibo permanece auto-relatado,
 sem assinatura de uma autoridade independente. A PR permanece
 Draft e o modo conjunto seccomp+cgroup não será desbloqueado.
+
+## PE-S1.26 | Correlação dos quatro recibos de limpeza de escopo
+
+A auditoria do validador `validate_native_acceptance_report()`
+identificou que status gerais `verified=true`, `inactive` e
+`dead` eram conferidos, mas a relação entre `load_state`,
+`scope_collected` e `stop_request_accepted` não era obrigatória
+em todos os quatro escopos. Um recibo com campos contraditórios
+podia manter aparência de aprovação.
+
+O validador agora verifica, nos escopos **inicial de cgroup**,
+**descendente resistente a SIGTERM**, **probe seccomp** e
+**Ghidra combinado**, o formato exato emitido pelo leitor systemd:
+identidade do escopo, confirmado/inativo/morto/não-populado,
+`load_state=not-found` se e somente se `scope_collected=true`,
+e `stop_request_accepted` booleano. Aceita tanto `loaded`
+inativo quanto `not-found` coletado, sem exigir que os
+quatro `stop_request_accepted` sejam iguais: systemd pode
+recolher um escopo naturalmente.
+
+A execução combinada em Ghidra também precisa concordar entre
+o resumo `scope_stop_accepted` e o comprovante de limpeza
+`stop_request_accepted`. Testes sintéticos rejeitam alterações
+individuais em todos os estágios, dados faltantes ou adicionais,
+além de ambos os estados legítimos de systemd.
+
+**Limites:** são verificações de coerência de evidências locais,
+não uma assinatura ou observação independente do hipervisor.
+Ainda falta executar os experimentos sob um kernel Arch nativo
+em VM descartável. PR Draft; `main` sem merge, APK/OTA sem
+publicação e `--require-seccomp --require-cgroup-limits` bloqueado.

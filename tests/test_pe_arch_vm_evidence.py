@@ -53,7 +53,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 "scope_cleanup_evidence": {
                     "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
                     "verified": True, "scope_quiescent": True,
-                    "cgroup_unpopulated": True,
+                    "stop_request_accepted": False, "load_state": "not-found",
+                    "scope_collected": True, "cgroup_unpopulated": True,
                     "active_state": "inactive", "sub_state": "dead"},
                 "ghidra_executed": False, "windows_binary_executed": False,
             },
@@ -71,7 +72,8 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                 "descendant_cleanup_evidence": {
                     "scope": "negresco-pe-0123456789abcdef01234567.scope",
                     "verified": True, "scope_quiescent": True,
-                    "cgroup_unpopulated": True,
+                    "stop_request_accepted": False, "load_state": "not-found",
+                    "scope_collected": True, "cgroup_unpopulated": True,
                     "active_state": "inactive", "sub_state": "dead"},
                 "windows_binary_executed": False,
                 "ghidra_executed": False},
@@ -114,12 +116,15 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     "scope_cleanup_evidence": {
                         "scope": "negresco-pe-aaaaaaaaaaaaaaaaaaaaaaaa.scope",
                         "verified": True, "scope_quiescent": True,
+                        "stop_request_accepted": False,
+                        "load_state": "not-found", "scope_collected": True,
                         "cgroup_unpopulated": True,
                         "active_state": "inactive", "sub_state": "dead"}},
                 "arch_real_ghidra_with_both": {
                     "status": "PASS_NATIVE_ARCH_REAL_GHIDRA_WITH_CGROUP_AND_SECCOMP",
                     "scope": "negresco-pe-bbbbbbbbbbbbbbbbbbbbbbbb.scope",
                     "scope_cleanup_verified": True,
+                    "scope_stop_accepted": False,
                     "scope_cleanup_evidence": {
                         "scope": "negresco-pe-bbbbbbbbbbbbbbbbbbbbbbbb.scope",
                         "verified": True, "scope_quiescent": True,
@@ -153,6 +158,84 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             self.report if report is None else report,
             self.dest if path is None else path, source_root=self.root,
             reviewer_challenge=self.challenge)
+
+    def test_s1_26_scope_cleanup_contract_accepts_both_kernel_outcomes(self):
+        for collected in (False, True):
+            report = copy.deepcopy(self.report)
+            for location in (
+                ("cgroup_lifecycle", "scope_cleanup_evidence"),
+                ("descendant_lifecycle", "descendant_cleanup_evidence"),
+                ("ghidra", "arch_scoped_seccomp_probe", "scope_cleanup_evidence"),
+                ("ghidra", "arch_real_ghidra_with_both",
+                 "scope_cleanup_evidence"),
+            ):
+                proof = report
+                for item in location:
+                    proof = proof[item]
+                proof["load_state"] = "not-found" if collected else "loaded"
+                proof["scope_collected"] = collected
+                proof["stop_request_accepted"] = not collected
+            report["ghidra"]["arch_real_ghidra_with_both"][
+                "scope_stop_accepted"] = not collected
+            with self.subTest(collected=collected):
+                evidence.validate_native_acceptance_report(report)
+
+    def test_s1_26_rejects_inconsistent_scope_cleanup_across_all_stages(self):
+        locations = (
+            ("cgroup_lifecycle", "scope_cleanup_evidence"),
+            ("descendant_lifecycle", "descendant_cleanup_evidence"),
+            ("ghidra", "arch_scoped_seccomp_probe", "scope_cleanup_evidence"),
+            ("ghidra", "arch_real_ghidra_with_both",
+             "scope_cleanup_evidence"),
+        )
+        mutations = (
+            ("removed_scope", "scope", None),
+            ("forged_status", "load_state", "running"),
+            ("collected_false_for_not_found", "scope_collected", False),
+            ("stop_not_boolean", "stop_request_accepted", "true"),
+            ("active", "active_state", "active"),
+            ("substate", "sub_state", "running"),
+            ("not_quiescent", "scope_quiescent", False),
+            ("not_verified", "verified", False),
+            ("populated", "cgroup_unpopulated", False),
+        )
+        for location in locations:
+            for case, key, value in mutations:
+                with self.subTest(scope=location, case=case):
+                    report = copy.deepcopy(self.report)
+                    proof = report
+                    for part in location:
+                        proof = proof[part]
+                    proof[key] = value
+                    with self.assertRaises(
+                            evidence.AcceptanceReceiptError):
+                        evidence.validate_native_acceptance_report(report)
+                    with self.assertRaises(
+                            evidence.AcceptanceReceiptError):
+                        self.write(report=report)
+                    self.assertFalse(self.dest.exists())
+
+    def test_s1_26_rejects_ghidra_stop_summary_disagreeing_with_cleanup(self):
+        report = copy.deepcopy(self.report)
+        report["ghidra"]["arch_real_ghidra_with_both"][
+            "scope_stop_accepted"] = True
+        with self.assertRaisesRegex(evidence.AcceptanceReceiptError,
+                                    "acknowledgement"):
+            self.write(report=report)
+        self.assertFalse(self.dest.exists())
+
+    def test_s1_26_rejects_missing_or_extra_cleanup_keys(self):
+        for action in ("missing", "unexpected"):
+            report = copy.deepcopy(self.report)
+            proof = report["cgroup_lifecycle"]["scope_cleanup_evidence"]
+            if action == "missing":
+                proof.pop("load_state")
+            else:
+                proof["verified_by_external_hypervisor"] = True
+            with self.subTest(action=action):
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
 
     def test_s1_22_rejects_missing_or_contradictory_isolation_evidence(self):
         mutations = [

@@ -112,6 +112,35 @@ def _valid_scope(unit: object) -> bool:
     return isinstance(unit, str) and SCOPE_PATTERN.fullmatch(unit) is not None
 
 
+def _verified_scope_cleanup(unit: object, proof: object) -> bool:
+    """Validate the full output contract of stop_and_attest_scope().
+
+    systemd can collect a transient scope before the final status query.
+    Both a loaded+inactive and a collected+not-found scope are valid.
+    They must not be mixed, and the cleanup acknowledgement must match
+    its own scope rather than trusting a generic success label.
+    """
+    if not _valid_scope(unit) or not isinstance(proof, dict):
+        return False
+    expected = {
+        "scope", "verified", "scope_quiescent", "stop_request_accepted",
+        "load_state", "active_state", "sub_state", "scope_collected",
+        "cgroup_unpopulated",
+    }
+    return (set(proof) == expected
+            and proof.get("scope") == unit
+            and proof.get("verified") is True
+            and proof.get("scope_quiescent") is True
+            and proof.get("cgroup_unpopulated") is True
+            and type(proof.get("stop_request_accepted")) is bool
+            and type(proof.get("scope_collected")) is bool
+            and proof.get("load_state") in ("loaded", "not-found")
+            and proof.get("scope_collected")
+                is (proof.get("load_state") == "not-found")
+            and proof.get("active_state") == "inactive"
+            and proof.get("sub_state") == "dead")
+
+
 def validate_native_acceptance_report(report: dict) -> None:
     """Reject CI-like or incomplete summaries without arch kernel evidence."""
     if not isinstance(report, dict) or report.get("status") != "PASS_PE_S1_5_ARCH_VM":
@@ -141,6 +170,22 @@ def validate_native_acceptance_report(report: dict) -> None:
     cleanup = descendants.get("descendant_cleanup_evidence")
     initial_cleanup = initial.get("scope_cleanup_evidence")
     initial_budget = initial.get("quota_private_proof")
+    # Each lifecycle's own status must be self-consistent. Separate scopes
+    # are allowed to have different stop_request_accepted outcomes.
+    for scope, proof in (
+        (initial.get("scope"), initial_cleanup),
+        (descendants.get("scope"), cleanup),
+        (probe.get("scope"), probe.get("scope_cleanup_evidence")),
+        (combined.get("scope"), combined.get("scope_cleanup_evidence")),
+    ):
+        if not _verified_scope_cleanup(scope, proof):
+            raise AcceptanceReceiptError(
+                "Inconsistent native scope cleanup lifecycle")
+    if (type(combined.get("scope_stop_accepted")) is not bool
+            or combined["scope_stop_accepted"] is not
+               combined["scope_cleanup_evidence"]["stop_request_accepted"]):
+        raise AcceptanceReceiptError(
+            "Ghidra stop acknowledgement contradicts private cleanup proof")
     if (initial.get("status") != "PASS_NATIVE_ARCH_CGROUP"
             or initial.get("windows_binary_executed") is not False
             or initial.get("ghidra_executed") is not False
