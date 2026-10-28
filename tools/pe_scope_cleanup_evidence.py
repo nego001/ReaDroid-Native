@@ -77,9 +77,11 @@ def _cgroup_unpopulated(relative: str, unit_name: str,
     a virtual kernel file with st_size often equal to zero, so bound its READ
     length instead of relying on stat().st_size.
     """
-    if not relative:
+    if not isinstance(relative, str):
+        return False
+    if relative == "":
         return True
-    if not isinstance(relative, str) or not relative.startswith("/"):
+    if not relative.startswith("/"):
         return False
     components = relative[1:].split("/")
     if (components[-1] != unit_name
