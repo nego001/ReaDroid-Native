@@ -15,6 +15,9 @@ import os
 from pathlib import Path
 import stat
 
+from pe_resource_limits import (MEMORY_MAX_BYTES, TASKS_MAX,
+                                CPU_QUOTA_PERCENT, SCOPE_PATTERN)
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_FILES = (
     "tools/pe_arch_vm_evidence.py",
@@ -59,6 +62,34 @@ def _canonical(obj: object) -> bytes:
         raise AcceptanceReceiptError("Non-serializable acceptance report") from exc
 
 
+def _finite_budget(values: object, *, private: bool) -> bool:
+    """Check actual finite kernel numbers, not merely a PASS status label.
+
+    Each stage runs in a different transient scope, so the values may be
+    stricter than the requested budgets and need not be identical across
+    stages. A string, bool, empty object, unbounded max, or larger number is
+    not an effective quota.
+    """
+    if not isinstance(values, dict):
+        return False
+    if private and values.get("verification") != "guard_verified_before_bwrap":
+        return False
+    names = (("memory_max_bytes", "tasks_max", "cpu_quota", "cpu_period")
+             if private else
+             ("memory_max", "pids_max", "cpu_quota", "cpu_period"))
+    if any(type(values.get(k)) is not int for k in names):
+        return False
+    memory, tasks, quota, period = (values[k] for k in names)
+    return (0 < memory <= MEMORY_MAX_BYTES
+            and 0 < tasks <= TASKS_MAX
+            and 0 < quota and 0 < period
+            and quota * 100 <= period * CPU_QUOTA_PERCENT)
+
+
+def _valid_scope(unit: object) -> bool:
+    return isinstance(unit, str) and SCOPE_PATTERN.fullmatch(unit) is not None
+
+
 def validate_native_acceptance_report(report: dict) -> None:
     """Reject CI-like or incomplete summaries without arch kernel evidence."""
     if not isinstance(report, dict) or report.get("status") != "PASS_PE_S1_5_ARCH_VM":
@@ -84,6 +115,19 @@ def validate_native_acceptance_report(report: dict) -> None:
             or not isinstance(descendants, dict)):
         raise AcceptanceReceiptError("Missing native lifecycle reports")
     cleanup = descendants.get("descendant_cleanup_evidence")
+    scopes = [descendants.get("scope"), probe.get("scope"),
+              combined.get("scope")]
+    if (not all(_valid_scope(unit) for unit in scopes)
+            or len(set(scopes)) != 3
+            or not _finite_budget(report.get("cgroup"), private=False)
+            or not _finite_budget(descendants.get("quota_private_proof"),
+                                  private=True)
+            or not _finite_budget(probe.get("cgroup_verification"),
+                                  private=True)
+            or not _finite_budget(combined.get("quotas_verified_before_bwrap"),
+                                  private=True)):
+        raise AcceptanceReceiptError(
+            "Invalid/replayed scope identity or unbounded kernel quotas")
     if (descendants.get("status") != "PASS_NATIVE_ARCH_DESCENDANTS"
             or descendants.get("detached_sigterm_ignoring_child_terminated") is not True
             or descendants.get("systemd_stop_succeeded") is not True
@@ -127,10 +171,16 @@ def validate_native_acceptance_report(report: dict) -> None:
     jvm = combined.get("ghidra_jvm_seccomp_evidence")
     if (not isinstance(jvm, dict) or jvm.get("verified") is not True
             or jvm.get("measured_process") != "ghidra_headless_jvm"
+            or jvm.get("measurement_source") != "/proc/self/status"
+            or type(jvm.get("seccomp_mode")) is not int
             or jvm.get("seccomp_mode") != 2
             or type(jvm.get("filters_before_bwrap")) is not int
             or type(jvm.get("filters_in_ghidra")) is not int
-            or jvm["filters_in_ghidra"] <= jvm["filters_before_bwrap"]):
+            or not 0 <= jvm["filters_before_bwrap"] <= 4096
+            or not jvm["filters_before_bwrap"] < jvm["filters_in_ghidra"] <= 4096
+            or type(jvm.get("additional_filters_observed")) is not int
+            or jvm["additional_filters_observed"] != (
+                jvm["filters_in_ghidra"] - jvm["filters_before_bwrap"])):
         raise AcceptanceReceiptError("Ghidra JVM seccomp proof incomplete")
 
 
