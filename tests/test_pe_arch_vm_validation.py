@@ -69,9 +69,53 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                             validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         ghidra.assert_not_called()
 
+    def test_unproven_initial_scope_blocks_descendant_experiment(self):
+        for rejected in (
+                {"status": "PASS_NATIVE_ARCH_CGROUP"},
+                {"status": "PASS_NATIVE_ARCH_CGROUP",
+                 "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                 "quota_private_proof": {
+                     "verification": "guard_verified_before_bwrap"},
+                 "scope_cleanup_evidence": {
+                     "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                     "verified": True, "scope_quiescent": False,
+                     "cgroup_unpopulated": False,
+                     "active_state": "active", "sub_state": "running"}},
+        ):
+            with self.subTest(rejected=rejected):
+                with (
+                    mock.patch.object(validation, "verify_arch_vm",
+                                      return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+                    mock.patch.object(validation, "run_smoke",
+                                      return_value=rejected),
+                    mock.patch.object(validation, "run_native_descendant_smoke") as descendant,
+                    mock.patch.object(validation, "validate_real_ghidra") as ghidra,
+                ):
+                    with self.assertRaisesRegex(
+                            validation.ArchVmValidationError,
+                            "Initial native cgroup"):
+                        validation.run_acceptance(
+                            Path("/sample/ghidra"), Path("/sample/zip"))
+                descendant.assert_not_called()
+                ghidra.assert_not_called()
+
     def test_acceptance_requires_ghidra_and_two_real_smokes(self):
-        quotas = {"status": "PASS_NATIVE_ARCH_CGROUP", "memory_max": 4294967296,
-                  "pids_max": 128, "cpu_quota": 200000, "cpu_period": 100000}
+        quotas = {
+            "status": "PASS_NATIVE_ARCH_CGROUP",
+            "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+            "memory_max": 4294967296, "pids_max": 128,
+            "cpu_quota": 200000, "cpu_period": 100000,
+            "quota_private_proof": {
+                "verification": "guard_verified_before_bwrap",
+                "memory_max_bytes": 4294967296, "tasks_max": 128,
+                "cpu_quota": 200000, "cpu_period": 100000},
+            "scope_cleanup_evidence": {
+                "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                "verified": True, "scope_quiescent": True,
+                "cgroup_unpopulated": True,
+                "active_state": "inactive", "sub_state": "dead"},
+            "ghidra_executed": False, "windows_binary_executed": False,
+        }
         descendant = {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
                       "scope": "negresco-pe-0123456789abcdef01234567.scope",
                       "detached_sigterm_ignoring_child_terminated": True,
@@ -101,15 +145,31 @@ class ArchVmAcceptanceTests(unittest.TestCase):
         policy.assert_called_once_with(result)
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
         self.assertFalse(result["windows_binary_executed"])
+        self.assertEqual(result["cgroup_lifecycle"], quotas)
+        self.assertTrue(result["cgroup_lifecycle"][
+            "scope_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertTrue(result["descendant_lifecycle"][
             "descendant_cleanup_evidence"]["cgroup_unpopulated"])
 
     def test_stdout_pass_without_valid_private_receipt_policy_is_refused(self):
         # A forged-looking PASS from internal stages cannot reach stdout just
         # because --evidence-output was omitted. The final gate still runs.
-        quotas = {"status": "PASS_NATIVE_ARCH_CGROUP",
-                  "memory_max": 4294967296, "pids_max": 128,
-                  "cpu_quota": 200000, "cpu_period": 100000}
+        quotas = {
+            "status": "PASS_NATIVE_ARCH_CGROUP",
+            "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+            "memory_max": 4294967296, "pids_max": 128,
+            "cpu_quota": 200000, "cpu_period": 100000,
+            "quota_private_proof": {
+                "verification": "guard_verified_before_bwrap",
+                "memory_max_bytes": 4294967296, "tasks_max": 128,
+                "cpu_quota": 200000, "cpu_period": 100000},
+            "scope_cleanup_evidence": {
+                "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                "verified": True, "scope_quiescent": True,
+                "cgroup_unpopulated": True,
+                "active_state": "inactive", "sub_state": "dead"},
+            "ghidra_executed": False, "windows_binary_executed": False,
+        }
         descendant = {
             "status": "PASS_NATIVE_ARCH_DESCENDANTS",
             "scope": "negresco-pe-0123456789abcdef01234567.scope",
