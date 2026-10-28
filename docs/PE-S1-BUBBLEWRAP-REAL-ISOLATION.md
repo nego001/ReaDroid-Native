@@ -696,7 +696,9 @@ da homologação Arch VM:
    sintético deliberadamente resistente a SIGTERM em um workstation
    Arch fora de uma VM descartável. Agora o método reexecuta
    `verify_arch_vm()` **antes de criar um novo scope**; recusará
-   host físico, container, root ou VM sem user bus.
+   host físico, container, root ou VM sem user bus. Os modos
+   auxiliares `--worker` e `--grandchild` também exigem a VM
+   descartável **antes** de entrar no loop resistente a SIGTERM.
 2. A confirmação do desaparecimento da identidade PID/starttime
    do descendente não prova por si só que todo o cgroup ficou vazio.
    Após solicitar parada do scope com o filho **ainda ativo**,
