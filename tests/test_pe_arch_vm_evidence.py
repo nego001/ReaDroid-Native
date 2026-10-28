@@ -37,6 +37,22 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             "descendants_terminated": True,
             "cgroup": {"memory_max": 4294967296, "pids_max": 128,
                        "cpu_quota": 200000, "cpu_period": 100000},
+            "cgroup_lifecycle": {
+                "status": "PASS_NATIVE_ARCH_CGROUP",
+                "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                "memory_max": 4294967296, "pids_max": 128,
+                "cpu_quota": 200000, "cpu_period": 100000,
+                "quota_private_proof": {
+                    "verification": "guard_verified_before_bwrap",
+                    "memory_max_bytes": 4294967296, "tasks_max": 128,
+                    "cpu_quota": 200000, "cpu_period": 100000},
+                "scope_cleanup_evidence": {
+                    "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                    "verified": True, "scope_quiescent": True,
+                    "cgroup_unpopulated": True,
+                    "active_state": "inactive", "sub_state": "dead"},
+                "ghidra_executed": False, "windows_binary_executed": False,
+            },
             "descendant_lifecycle": {
                 "status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": "negresco-pe-0123456789abcdef01234567.scope",
@@ -246,6 +262,42 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                     entry["scope_cleanup_evidence"] = {
                         **entry["scope_cleanup_evidence"], "scope": wrong}
                     report["ghidra"][section] = entry
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_refuses_initial_cgroup_lifecycle_missing_or_unproven(self):
+        source = self.report["cgroup_lifecycle"]
+        for modification in (
+                None, {"status": "PASS_NATIVE_ARCH_CGROUP"},
+                {**source, "quota_private_proof": {}},
+                {**source, "scope_cleanup_evidence": {}},
+                {**source, "scope_cleanup_evidence": {
+                    **source["scope_cleanup_evidence"],
+                    "cgroup_unpopulated": False}},
+                {**source, "scope": self.report["descendant_lifecycle"]["scope"]},
+                {**source, "memory_max": 8 * 1024 ** 3},
+                {**source, "ghidra_executed": True},
+        ):
+            with self.subTest(modification=modification):
+                report = copy.deepcopy(self.report)
+                if modification is None:
+                    report.pop("cgroup_lifecycle")
+                else:
+                    report["cgroup_lifecycle"] = modification
+                with self.assertRaises(evidence.AcceptanceReceiptError):
+                    self.write(report=report)
+                self.assertFalse(self.dest.exists())
+
+    def test_initial_private_proof_must_match_numeric_summary(self):
+        for key, value in (
+                ("memory_max_bytes", 2147483648),
+                ("tasks_max", 32),
+                ("cpu_period", 50000),
+                ("cpu_quota", 100000)):
+            with self.subTest(key=key):
+                report = copy.deepcopy(self.report)
+                report["cgroup_lifecycle"]["quota_private_proof"][key] = value
                 with self.assertRaises(evidence.AcceptanceReceiptError):
                     self.write(report=report)
                 self.assertFalse(self.dest.exists())
