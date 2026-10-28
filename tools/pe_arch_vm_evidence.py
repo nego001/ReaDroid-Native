@@ -436,7 +436,8 @@ def build_receipt(report: dict, source_root: Path = ROOT, *,
     if len(canonical_report) > MAX_REPORT_BYTES:
         raise AcceptanceReceiptError("Acceptance report exceeds safety bound")
     sources = {}
-    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    # Prevent an attacker-controlled FIFO source from blocking before fstat.
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
         # Pin the source checkout via every ancestor, not just its leaf.
         with ExitStack() as checkout_stack:

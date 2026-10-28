@@ -48,7 +48,9 @@ def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
 def _read_private_receipt(path: Path) -> bytes:
     if not path.is_absolute() or path.name in ("", ".", ".."):
         raise ReceiptReviewError("Absolute private receipt path required")
-    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    # O_NONBLOCK ensures a substituted FIFO cannot hang before fstat
+    # checks that the receipt or manifest source is a regular file.
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     with ExitStack() as stack:
         parent_fd = open_absolute_directory_nofollow(path.parent, stack)
         directory = os.fstat(parent_fd)
@@ -81,7 +83,9 @@ def _read_source(source_root: Path, relative: str) -> bytes:
     if (not relative or relative.startswith("/")
             or any(part in (".", "..", "") for part in parts)):
         raise ReceiptReviewError("Invalid source manifest path")
-    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    # O_NONBLOCK ensures a substituted FIFO cannot hang before fstat
+    # checks that the receipt or manifest source is a regular file.
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     with ExitStack() as stack:
         root_fd = open_absolute_directory_nofollow(source_root, stack)
         directory_fd = root_fd

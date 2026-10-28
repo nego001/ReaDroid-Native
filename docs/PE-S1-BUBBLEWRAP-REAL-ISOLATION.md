@@ -1289,3 +1289,26 @@ O formato externo do recibo permanece v2 com desafio independente,
 sem novas informações pessoais. A PR #47 permanece Draft,
 sem merge, publicação APK/OTA ou liberação do executor
 principal `--require-seccomp --require-cgroup-limits`.
+
+## PE-S1.30 | Bloqueio de FIFO nos leitores de recibos e fontes
+
+Foram identificados três caminhos em que um arquivo substituído por
+FIFO poderia paralisar a validação: leitura offline do recibo
+`_read_private_receipt()`, leitura offline de fonte `_read_source()`
+e leitura de fonte no momento da geração por `build_receipt()`.
+Esses caminhos já usavam descritores ancorados com `O_NOFOLLOW`
+e conferiam `S_ISREG`, mas `open(O_RDONLY)` em FIFO pode bloquear
+**antes** de `fstat()`, impossibilitando uma recusa rápida.
+
+Agora cada abertura de arquivo de entrada usa também `O_NONBLOCK`.
+Isso não altera a semântica de leitura dos arquivos regulares nem o
+formato externo do recibo v2, mas permite rejeitar FIFO como tipo não
+regular sem depender de alguém abrir sua ponta de escrita. Os três
+novos testes criam FIFOs sem escritores e exigem recusa, incluindo
+a ausência de recibo parcial pela rotina de gravação.
+
+**Limites:** isso previne uma forma de travamento por arquivo
+especial, não substitui timeout geral de operações no filesystem,
+não autentica a origem do recibo e não prova medições do kernel em
+VM Arch independente. A PR segue Draft; `main`, APK/OTA e
+os controles combinados seccomp+cgroup permanecem intocados.

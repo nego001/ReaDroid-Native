@@ -517,6 +517,29 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
             with self.assertRaises(review.ReceiptReviewError):
                 review.verify_local_receipt(self.dest, self.root, expected_challenge=self.challenge)
 
+    def test_s1_30_offline_reviewer_refuses_fifo_receipt_without_hanging(self):
+        # FIFO has no writer: a blocking read open would never reach fstat.
+        fifo = self.private / "fifo-receipt.json"
+        os.mkfifo(fifo, 0o600)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(
+                fifo, self.root, expected_challenge=self.challenge)
+
+    def test_s1_30_writer_refuses_fifo_source_without_hanging(self):
+        self.source.unlink()
+        os.mkfifo(self.source, 0o600)
+        with self.assertRaises(evidence.AcceptanceReceiptError):
+            self.write()
+        self.assertFalse(self.dest.exists())
+
+    def test_s1_30_offline_reviewer_refuses_fifo_source_without_hanging(self):
+        self.write()
+        self.source.unlink()
+        os.mkfifo(self.source, 0o600)
+        with self.assertRaises(review.ReceiptReviewError):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge)
+
     def test_offline_audit_refuses_untrusted_private_paths(self):
         self.write()
         alias = self.root / "linked-proof"
