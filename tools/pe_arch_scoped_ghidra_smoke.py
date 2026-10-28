@@ -143,6 +143,7 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             runtime = read_ghidra_seccomp_proof(
                 workspace / "ghidra-seccomp-runtime.json", baseline)
             limits = read_scope_proof(proof_path, unit)
+            corroborate_guard_receipt(lines, limits)
             inventory = _validated_function_evidence(
                 workspace / "ghidra-functions.json")
             preview = _validated_deep_evidence(workspace / "ghidra-deep.json")
