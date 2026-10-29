@@ -15,6 +15,10 @@ import re
 import shutil
 import subprocess
 import sys
+
+# Do not create __pycache__ in the pinned source checkout before Git status.
+# Existing cache/untracked files are still refused; this is not an ignore rule.
+sys.dont_write_bytecode = True
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
