@@ -84,6 +84,11 @@ def _read_private_receipt(path: Path) -> bytes:
                 or not stat.S_ISREG(before.st_mode)
                 or before.st_uid != os.geteuid()
                 or before.st_mode & 0o077
+                # The atomic writer unlinks its staging name before
+                # releasing the directory lock; published receipts have one
+                # link. Extra hardlinks can expose the inode outside the
+                # private directory without changing its mode or digest.
+                or before.st_nlink != 1
                 or not 1 <= before.st_size <= MAX_RECEIPT_BYTES):
             raise ReceiptReviewError("Receipt owner/mode/length unsafe")
         # Actual descriptor is pinned; compare source and resulting metadata.
