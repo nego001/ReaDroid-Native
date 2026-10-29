@@ -1,0 +1,195 @@
+"""PE-S1.45: test the reviewer-selected source pin without native VM runs."""
+from __future__ import annotations
+
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+import pe_arch_vm_checkout_pin as pin
+import pe_arch_vm_validation as validation
+
+COMMIT = "abc01234" * 5
+SOURCES = ("tools/synthetic.py", "tests/fixture.c")
+CHALLENGE = "a1bcde23" * 8
+
+
+class LocalReviewerPinTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.calls = []
+
+    def fake_git(self, root, *args):
+        self.calls.append(args)
+        if args == ("rev-parse", "--show-toplevel"):
+            return str(root)
+        if args == ("rev-parse", "--verify", "HEAD^{commit}"):
+            return COMMIT
+        if args[:2] == ("ls-files", "--cached"):
+            return "\n".join(SOURCES)
+        if args[:2] == ("status", "--porcelain=v1"):
+            return ""
+        raise AssertionError("Unexpected git invocation: " + repr(args))
+
+    def check(self):
+        with mock.patch.object(pin, "_git", side_effect=self.fake_git):
+            return pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
+
+    def test_s1_45_clean_matching_commit_and_full_manifest_accepted(self):
+        result = self.check()
+        self.assertEqual(result["status"], "LOCAL_GIT_CHECKOUT_PIN_MATCHED")
+        self.assertEqual(result["expected_commit"], COMMIT)
+        self.assertEqual(result["checked_manifest_entries"], 2)
+        self.assertFalse(result["native_vm_or_kernel_verified"])
+        self.assertFalse(result["git_authorship_or_signature_verified"])
+        self.assertEqual(len(self.calls), 4)
+
+    def test_s1_45_bad_commit_rejected_before_accessing_git(self):
+        for commit in ("", "A" * 40, "a" * 39, "z" * 40, None):
+            with self.subTest(commit=commit):
+                with mock.patch.object(pin, "_git") as git:
+                    with self.assertRaisesRegex(
+                            pin.CheckoutPinError, "full lowercase"):
+                        pin.verify_source_checkout_pin(self.root, commit, SOURCES)
+                    git.assert_not_called()
+
+    def test_s1_45_rejects_mismatched_commit_even_if_tree_is_clean(self):
+        def bad_commit(root, *args):
+            if args == ("rev-parse", "--verify", "HEAD^{commit}"):
+                return "f" * 40
+            return self.fake_git(root, *args)
+        with mock.patch.object(pin, "_git", side_effect=bad_commit):
+            with self.assertRaisesRegex(pin.CheckoutPinError, "differs"):
+                pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
+
+    def test_s1_45_rejects_dirty_worktree(self):
+        def changed(root, *args):
+            if args[:2] == ("status", "--porcelain=v1"):
+                return " M tools/synthetic.py"
+            return self.fake_git(root, *args)
+        with mock.patch.object(pin, "_git", side_effect=changed):
+            with self.assertRaisesRegex(pin.CheckoutPinError, "dirty"):
+                pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
+
+    def test_s1_45_rejects_missing_tracked_manifest_file(self):
+        def missing(root, *args):
+            if args[:2] == ("ls-files", "--cached"):
+                return "tools/synthetic.py"
+            return self.fake_git(root, *args)
+        with mock.patch.object(pin, "_git", side_effect=missing):
+            with self.assertRaisesRegex(pin.CheckoutPinError, "untracked"):
+                pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
+
+    def test_s1_45_rejects_root_mismatch_and_symlink_alias(self):
+        def nested(root, *args):
+            if args == ("rev-parse", "--show-toplevel"):
+                return str(root.parent)
+            return self.fake_git(root, *args)
+        with mock.patch.object(pin, "_git", side_effect=nested):
+            with self.assertRaisesRegex(pin.CheckoutPinError, "exact"):
+                pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
+        alias = self.root.parent / (self.root.name + "-alias")
+        alias.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(alias.unlink)
+        with mock.patch.object(pin, "_git") as git:
+            with self.assertRaisesRegex(pin.CheckoutPinError, "absolute"):
+                pin.verify_source_checkout_pin(alias, COMMIT, SOURCES)
+            git.assert_not_called()
+
+    def test_s1_45_sanitizes_git_environment_before_readonly_inspection(self):
+        with (mock.patch.object(pin.shutil, "which", return_value="/usr/bin/git"),
+              mock.patch.object(pin.subprocess, "run",
+                                return_value=mock.Mock(returncode=0, stdout="ok\n"))
+              as run,
+              mock.patch.dict(pin.os.environ, {
+                  "GIT_DIR": "/host/other",
+                  "GIT_WORK_TREE": "/host",
+                  "GIT_CONFIG_COUNT": "2"})):
+            self.assertEqual(pin._git(self.root, "rev-parse", "HEAD"), "ok")
+        options = run.call_args
+        self.assertEqual(options.kwargs["env"].get("GIT_DIR"), None)
+        self.assertEqual(options.kwargs["env"].get("GIT_CONFIG_COUNT"), None)
+        self.assertEqual(options.kwargs["env"]["GIT_CONFIG_GLOBAL"], os.devnull)
+        self.assertEqual(options.kwargs["stdin"], pin.subprocess.DEVNULL)
+        self.assertNotIn("shell", options.kwargs)
+        self.assertIn("core.fsmonitor=false", options.args[0])
+
+    def test_s1_45_requires_external_commit_challenge_and_receipt_first(self):
+        incomplete = [
+            ["--reviewer-pinned-checkout"],
+            ["--reviewer-pinned-checkout", "--expected-source-commit", COMMIT],
+            ["--reviewer-pinned-checkout", "--reviewer-challenge", CHALLENGE],
+            ["--expected-source-commit", COMMIT],
+            ["--reviewer-pinned-checkout", "--reviewer-challenge", CHALLENGE,
+             "--evidence-output", "/tmp/synthetic-receipt.json"],
+        ]
+        base = [
+            "pe_arch_vm_validation.py", "--ghidra-home", "/no/ghidra",
+            "--ghidra-archive", "/no/ghidra.zip",
+        ]
+        for options in incomplete:
+            with self.subTest(options=options):
+                with (mock.patch.object(validation.sys, "argv", base + options),
+                      mock.patch.object(validation, "run_acceptance") as native,
+                      mock.patch.object(validation, "verify_source_checkout_pin") as git,
+                      redirect_stderr(StringIO())):
+                    self.assertEqual(validation.main(), 2)
+                native.assert_not_called()
+                git.assert_not_called()
+
+    def test_s1_45_dirty_or_wrong_commit_blocks_native_workloads(self):
+        argv = [
+            "pe_arch_vm_validation.py", "--ghidra-home", "/no/ghidra",
+            "--ghidra-archive", "/no/ghidra.zip",
+            "--evidence-output", "/no/private/receipt.json",
+            "--reviewer-challenge", CHALLENGE,
+            "--reviewer-pinned-checkout", "--expected-source-commit", COMMIT,
+        ]
+        with (mock.patch.object(validation.sys, "argv", argv),
+              mock.patch.object(validation, "verify_source_checkout_pin",
+                                side_effect=pin.CheckoutPinError("dirty tree")),
+              mock.patch.object(validation, "run_acceptance") as native,
+              mock.patch.object(validation, "write_receipt_no_overwrite") as writer,
+              redirect_stderr(StringIO())):
+            self.assertEqual(validation.main(), 2)
+        native.assert_not_called()
+        writer.assert_not_called()
+
+    def test_s1_45_checkout_pin_is_not_in_native_receipt_v2(self):
+        argv = [
+            "pe_arch_vm_validation.py", "--ghidra-home", "/no/ghidra",
+            "--ghidra-archive", "/no/ghidra.zip",
+            "--evidence-output", "/no/private/receipt.json",
+            "--reviewer-challenge", CHALLENGE,
+            "--reviewer-pinned-checkout", "--expected-source-commit", COMMIT,
+        ]
+        native_report = {"status": "synthetic-test-report"}
+        local_pin = {"status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
+                     "native_vm_or_kernel_verified": False}
+        out = StringIO()
+        with (mock.patch.object(validation.sys, "argv", argv),
+              mock.patch.object(validation, "verify_source_checkout_pin",
+                                return_value=local_pin),
+              mock.patch.object(validation, "run_acceptance",
+                                return_value=native_report),
+              mock.patch.object(validation, "write_receipt_no_overwrite",
+                                return_value={"receipt_sha256": "1" * 64})
+              as writer, redirect_stdout(out)):
+            self.assertEqual(validation.main(), 0)
+        self.assertEqual(writer.call_args.args[0], native_report)
+        published = json.loads(out.getvalue())
+        self.assertEqual(published["local_source_checkout_pin"], local_pin)
+        self.assertNotIn("local_source_checkout_pin", native_report)
+        self.assertIn("local_receipt", published)
+
+
+if __name__ == "__main__":
+    unittest.main()
