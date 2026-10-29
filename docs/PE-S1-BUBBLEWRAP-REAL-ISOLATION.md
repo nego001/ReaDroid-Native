@@ -1622,3 +1622,45 @@ necessários checkout imutável, isolamento do revisor e evidência
 independente. A revisão permanece offline, auto-relatada, sem assinatura
 nem homologação de VM/kernel Arch. PR Draft, sem merge,
 APK/OTA não publicados e sem liberação conjunta seccomp+cgroups.
+
+
+## PE-S1.40 | Nome e inode dos ancestrais absolutos do checkout
+
+A PE-S1.39 verificava os componentes internos relativos ao
+`source_root`, mas a função de percurso absoluto
+`open_absolute_directory_nofollow()` apenas abria os ancestrais com
+`O_NOFOLLOW`. Uma pasta acima do checkout podia ser renomeada ou
+substituída **depois de aberta**, mantendo os descritores antigos
+válidos, sem o revisor notar que o nome público já não apontava para
+a árvore lida.
+
+O revisor offline agora percorre `source_root` desde `/`, abre cada
+componente com `O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC` ancorado no FD pai
+e registra `(FD-pai, nome, FD-filho, identidade)`. Confere o nome
+contra a identidade do FD antes e depois da abertura, e novamente
+após ler o arquivo-fonte. O mesmo vale para o **próprio diretório
+`source_root`**. Uma troca observável por outro diretório ou por
+symlink causa recusa sem resultado PASS. O helper genérico de
+percursos de diretórios não foi alterado, para evitar regressões em
+outros módulos.
+
+Nos ancestrais absolutos, a identidade conferida usa device, inode,
+modo/tipo e UID. Não compara timestamps de diretórios amplamente
+compartilhados, como `/tmp`, pois alterações alheias ao checkout
+causariam recusas intermitentes. Os componentes relativos internos
+continuam usando as checagens mais estritas da PE-S1.39.
+
+Cinco novos testes cobrem: checkout aninhado legítimo, substituição
+do próprio checkout durante `read`, substituição de um diretório acima
+dele, troca entre `stat` e `open`, e troca por symlink durante a
+leitura. O formato do recibo **v2** e o pin opcional SHA-256 externo
+permanecem inalterados.
+
+**Escopo e limites:** é uma observação pontual de nomes/identidades,
+não um snapshot atômico. Não detecta necessariamente troca temporária
+revertida antes da última checagem, nem alterações posteriores, nem
+um adversário que controle os dados e a referência externa do hash.
+O revisor permanece local e auto-relatado, sem assinatura, atestação
+de hipervisor ou homologação independente em kernel/VM Arch.
+A PR continua Draft, sem merge na main, APK/OTA ou liberação da
+execução conjunta seccomp+cgroups.
