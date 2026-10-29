@@ -1474,3 +1474,41 @@ Arch independente. Recibos continuam auto-relatados, sem
 assinatura/atestado independente. PR Draft, sem merge
 na `main`, sem publicação APK/OTA ou liberação conjunta
 seccomp+cgroup.
+
+## PE-S1.36 | Leitura estável dos recibos definitivos e das fontes
+
+Uma revisão offline podia abrir um recibo enquanto o gravador
+ainda aguardava `fsync(directory)` ou tentava reverter uma
+publicação falhada, pois o leitor não participava do `flock`
+adicionado na PE-S1.35. Um arquivo temporário com JSON completo
+também podia ser passado ao revisor sob o nome
+`.negresco-receipt-<token>.tmp`, apesar de **nunca** ter
+sido efetivamente publicado.
+
+O leitor agora exige `LOCK_SH|LOCK_NB` no mesmo diretório
+privado `0700` antes de abrir o nome definitivo. Se o gravador
+estiver com `LOCK_EX`, a revisão falha sem aguardar.
+Nomes de estágio `.tmp` são recusados mesmo quando os bytes
+contêm um JSON aparentemente válido.
+
+Além de comparar `fstat()` do FD antes/depois, o revisor
+faz `stat(..., follow_symlinks=False)` ancorado no diretório
+para verificar se o nome ainda aponta para o **mesmo inode**
+e se identidade, tamanho, permissões, proprietário, contagem
+de links e marcas de tempo continuam coerentes. O mesmo
+controle de nome estável é exigido de cada arquivo no manifesto
+de fontes. Isso fecha o caso em que um arquivo é substituído
+por outro inode com **bytes idênticos** durante a leitura,
+mas o FD antigo permanece válido.
+
+Cinco novos testes exercitam recusa de `.tmp`, bloqueio de
+leitura quando o gravador está ativo, manutenção de lock
+durante leitura e troca real de nomes de recibo e fonte
+com conteúdo idêntico. Essas verificações continuam locais,
+consultivas e não oferecem proteção contra um atacante do
+mesmo UID que ignore os locks ou altere arquivos **depois**
+da leitura. O recibo não é assinado e não representa
+homologação nativa independente em VM Arch.
+
+A PR permanece Draft; `main`, APK/OTA e executor conjunto
+seccomp+cgroups permanecem sem alterações de publicação.

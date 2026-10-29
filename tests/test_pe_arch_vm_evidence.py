@@ -689,6 +689,112 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_36_reviewer_refuses_valid_json_in_unpublished_stage(self):
+        self.write()
+        staged = self.private / (
+            ".negresco-receipt-" + "e" * 32 + ".tmp")
+        staged.write_bytes(self.dest.read_bytes())
+        staged.chmod(0o600)
+        with self.assertRaisesRegex(
+                review.ReceiptReviewError, "Unpublished temporary stage"):
+            review.verify_local_receipt(
+                staged, self.root, expected_challenge=self.challenge)
+        # A final named receipt still validates normally.
+        self.assertEqual(
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge
+            )["status"], "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+
+    def test_s1_36_reviewer_refuses_directory_busy_with_writer_lock(self):
+        import fcntl
+        self.write()
+        holder = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(review.ReceiptReviewError):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge)
+            self.assertTrue(self.dest.is_file())
+        finally:
+            os.close(holder)
+        self.assertEqual(
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge
+            )["status"], "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+
+    def test_s1_36_shared_reader_lock_held_while_reading_receipt(self):
+        import fcntl
+        self.write()
+        original_read = os.read
+        expected = self.dest.stat().st_ino
+        observed = []
+
+        def check_lock(fd, amount):
+            if os.fstat(fd).st_ino == expected:
+                competing = os.open(
+                    self.private, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(
+                            competing, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    observed.append("shared-lock-protected-read")
+                finally:
+                    os.close(competing)
+            return original_read(fd, amount)
+
+        with mock.patch.object(review.os, "read", side_effect=check_lock):
+            result = review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge)
+        self.assertEqual(result["status"],
+                         "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+        self.assertEqual(observed, ["shared-lock-protected-read"])
+
+    def test_s1_36_reviewer_rejects_replaced_receipt_name_same_bytes(self):
+        self.write()
+        replacement = self.private / "replacement.json"
+        replacement.write_bytes(self.dest.read_bytes())
+        replacement.chmod(0o600)
+        original_read = os.read
+        old_inode = self.dest.stat().st_ino
+        swapped = []
+
+        def swap_name_while_reading(fd, amount):
+            if os.fstat(fd).st_ino == old_inode and not swapped:
+                os.replace(replacement, self.dest)
+                swapped.append(True)
+            return original_read(fd, amount)
+
+        with mock.patch.object(
+                review.os, "read", side_effect=swap_name_while_reading):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "name or inode changed"):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge)
+        self.assertEqual(swapped, [True])
+        self.assertTrue(self.dest.exists())
+        self.assertFalse(replacement.exists())
+
+    def test_s1_36_reviewer_rejects_replaced_source_name_same_bytes(self):
+        replacement = self.root / "tools" / "replacement.py"
+        replacement.write_bytes(self.source.read_bytes())
+        original_read = os.read
+        old_inode = self.source.stat().st_ino
+        swapped = []
+
+        def swap_source_while_reading(fd, amount):
+            if os.fstat(fd).st_ino == old_inode and not swapped:
+                os.replace(replacement, self.source)
+                swapped.append(True)
+            return original_read(fd, amount)
+
+        with mock.patch.object(
+                review.os, "read", side_effect=swap_source_while_reading):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "name or inode changed"):
+                review._read_source(self.root, "tools/synthetic.py")
+        self.assertEqual(swapped, [True])
+        self.assertFalse(replacement.exists())
+
     def test_s1_35_busy_directory_lock_blocks_write_without_creating_stage(self):
         import fcntl
         owner = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)

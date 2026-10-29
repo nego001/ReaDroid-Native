@@ -45,9 +45,21 @@ def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
     return result
 
 
+def _unchanged_name_entry(descriptor: os.stat_result,
+                          entry: os.stat_result) -> bool:
+    """Require the directory entry to still name the opened inode."""
+    fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_nlink",
+              "st_size", "st_mtime_ns", "st_ctime_ns")
+    return all(getattr(descriptor, key) == getattr(entry, key)
+               for key in fields)
+
+
 def _read_private_receipt(path: Path) -> bytes:
     if not path.is_absolute() or path.name in ("", ".", ".."):
         raise ReceiptReviewError("Absolute private receipt path required")
+    if evidence.STAGE_PATTERN.fullmatch(path.name) is not None:
+        raise ReceiptReviewError(
+            "Unpublished temporary stage is not a final receipt")
     # O_NONBLOCK ensures a substituted FIFO cannot hang before fstat
     # checks that the receipt or manifest source is a regular file.
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -58,10 +70,18 @@ def _read_private_receipt(path: Path) -> bytes:
                 or directory.st_uid != os.geteuid()
                 or directory.st_mode & 0o077):
             raise ReceiptReviewError("Receipt directory is not owner-only")
+        # Cooperate with the writer's exclusive directory flock: a reader
+        # must not attest an entry published before directory fsync (or
+        # while the writer is still rolling back a failed publication).
+        evidence._lock_private_receipt_directory(
+            parent_fd, exclusive=False)
         fd = os.open(path.name, flags, dir_fd=parent_fd)
         stack.callback(os.close, fd)
         before = os.fstat(fd)
-        if (not stat.S_ISREG(before.st_mode)
+        opened_entry = os.stat(
+            path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if (not _unchanged_name_entry(before, opened_entry)
+                or not stat.S_ISREG(before.st_mode)
                 or before.st_uid != os.geteuid()
                 or before.st_mode & 0o077
                 or not 1 <= before.st_size <= MAX_RECEIPT_BYTES):
@@ -69,12 +89,13 @@ def _read_private_receipt(path: Path) -> bytes:
         # Actual descriptor is pinned; compare source and resulting metadata.
         raw = os.read(fd, MAX_RECEIPT_BYTES + 1)
         after = os.fstat(fd)
-        if (len(raw) != before.st_size or
-                (after.st_dev, after.st_ino, after.st_size,
-                 after.st_mtime_ns, after.st_ctime_ns) !=
-                (before.st_dev, before.st_ino, before.st_size,
-                 before.st_mtime_ns, before.st_ctime_ns)):
-            raise ReceiptReviewError("Receipt changed during read")
+        current_entry = os.stat(
+            path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if (len(raw) != before.st_size
+                or not _unchanged_name_entry(before, after)
+                or not _unchanged_name_entry(before, current_entry)):
+            raise ReceiptReviewError(
+                "Receipt name or inode changed during read")
         return raw
 
 
@@ -96,17 +117,21 @@ def _read_source(source_root: Path, relative: str) -> bytes:
         fd = os.open(parts[-1], flags, dir_fd=directory_fd)
         stack.callback(os.close, fd)
         before = os.fstat(fd)
-        if (not stat.S_ISREG(before.st_mode)
+        opened_entry = os.stat(
+            parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+        if (not _unchanged_name_entry(before, opened_entry)
+                or not stat.S_ISREG(before.st_mode)
                 or not 1 <= before.st_size <= evidence.MAX_SOURCE_BYTES):
             raise ReceiptReviewError("Source file missing/oversized")
         raw = os.read(fd, evidence.MAX_SOURCE_BYTES + 1)
         after = os.fstat(fd)
-        if (len(raw) != before.st_size or
-                (after.st_dev, after.st_ino, after.st_size,
-                 after.st_mtime_ns, after.st_ctime_ns) !=
-                (before.st_dev, before.st_ino, before.st_size,
-                 before.st_mtime_ns, before.st_ctime_ns)):
-            raise ReceiptReviewError("Source changed during verification")
+        current_entry = os.stat(
+            parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+        if (len(raw) != before.st_size
+                or not _unchanged_name_entry(before, after)
+                or not _unchanged_name_entry(before, current_entry)):
+            raise ReceiptReviewError(
+                "Source name or inode changed during verification")
         return raw
 
 
