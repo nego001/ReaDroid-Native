@@ -689,6 +689,121 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_40_nested_absolute_checkout_accepts_unchanged_source(self):
+        checkout = self.root / "outer" / "checkout"
+        (checkout / "tools").mkdir(parents=True)
+        (checkout / "tools" / "synthetic.py").write_bytes(
+            self.source.read_bytes())
+        issued = self.write()
+        result = review.verify_local_receipt(
+            self.dest, checkout, expected_challenge=self.challenge,
+            expected_receipt_sha256=issued["receipt_sha256"])
+        self.assertEqual(result["source_files_rechecked"], 1)
+        self.assertTrue(result["external_receipt_sha256_pin_matched"])
+
+    def test_s1_40_rejects_checkout_root_replaced_during_read(self):
+        checkout = self.root / "checkout"
+        replacement = self.root / "checkout-next"
+        for directory in (checkout, replacement):
+            (directory / "tools").mkdir(parents=True)
+            (directory / "tools" / "synthetic.py").write_bytes(
+                self.source.read_bytes())
+        old_inode = (checkout / "tools" / "synthetic.py").stat().st_ino
+        original_read = os.read
+        replaced = []
+
+        def swap_checkout(fd, length):
+            if os.fstat(fd).st_ino == old_inode and not replaced:
+                checkout.rename(self.root / "checkout-old")
+                replacement.rename(checkout)
+                replaced.append(True)
+            return original_read(fd, length)
+
+        with mock.patch.object(review.os, "read",
+                               side_effect=swap_checkout):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source root ancestor name or inode changed during read"):
+                review._read_source(checkout, "tools/synthetic.py")
+        self.assertEqual(replaced, [True])
+
+    def test_s1_40_rejects_parent_above_checkout_replaced_during_read(self):
+        first = self.root / "parent-a"
+        second = self.root / "parent-b"
+        for parent in (first, second):
+            (parent / "checkout" / "tools").mkdir(parents=True)
+            (parent / "checkout" / "tools" / "synthetic.py").write_bytes(
+                self.source.read_bytes())
+        checkout = first / "checkout"
+        old_inode = (checkout / "tools" / "synthetic.py").stat().st_ino
+        original_read = os.read
+        replaced = []
+
+        def swap_parent(fd, length):
+            if os.fstat(fd).st_ino == old_inode and not replaced:
+                first.rename(self.root / "parent-a-old")
+                second.rename(first)
+                replaced.append(True)
+            return original_read(fd, length)
+
+        with mock.patch.object(review.os, "read", side_effect=swap_parent):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source root ancestor name or inode changed during read"):
+                review._read_source(checkout, "tools/synthetic.py")
+        self.assertEqual(replaced, [True])
+
+    def test_s1_40_rejects_ancestor_replaced_between_stat_and_open(self):
+        checkout = self.root / "checkout"
+        replacement = self.root / "checkout-next"
+        for directory in (checkout, replacement):
+            (directory / "tools").mkdir(parents=True)
+            (directory / "tools" / "synthetic.py").write_bytes(
+                self.source.read_bytes())
+        original_open = os.open
+        replaced = []
+
+        def swap_at_open(name, flags, *args, **kwargs):
+            if (name == "checkout" and kwargs.get("dir_fd") is not None
+                    and flags & os.O_DIRECTORY and not replaced):
+                checkout.rename(self.root / "checkout-old")
+                replacement.rename(checkout)
+                replaced.append(True)
+            return original_open(name, flags, *args, **kwargs)
+
+        with mock.patch.object(review.os, "open", side_effect=swap_at_open):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source root ancestor name or inode changed during open"):
+                review._read_source(checkout, "tools/synthetic.py")
+        self.assertEqual(replaced, [True])
+
+    def test_s1_40_rejects_ancestor_symlink_swap_during_read(self):
+        parent = self.root / "top"
+        checkout = parent / "checkout"
+        (checkout / "tools").mkdir(parents=True)
+        (checkout / "tools" / "synthetic.py").write_bytes(
+            self.source.read_bytes())
+        old_inode = (checkout / "tools" / "synthetic.py").stat().st_ino
+        original_read = os.read
+        replaced = []
+
+        def swap_for_symlink(fd, length):
+            if os.fstat(fd).st_ino == old_inode and not replaced:
+                old = self.root / "top-old"
+                parent.rename(old)
+                parent.symlink_to(old, target_is_directory=True)
+                replaced.append(True)
+            return original_read(fd, length)
+
+        with mock.patch.object(review.os, "read",
+                               side_effect=swap_for_symlink):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source root ancestor name or inode changed during read"):
+                review._read_source(checkout, "tools/synthetic.py")
+        self.assertEqual(replaced, [True])
+
     def test_s1_39_nested_source_path_remains_valid(self):
         nested = self.root / "tools" / "deep"
         nested.mkdir()
