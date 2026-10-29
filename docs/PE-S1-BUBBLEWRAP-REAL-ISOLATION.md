@@ -1798,32 +1798,32 @@ modo conjunto seccomp+cgroups ainda bloqueado.
 
 A PE-S1.43 testou somente a leitura isolada de uma fonte sintética. A
 PE-S1.44 acrescenta a execução do **CLI completo**
-\`pe_arch_vm_receipt_verify.py\` usando um recibo privado v2 previamente
-emitido no host, manifesto de **todos** os arquivos de \`SOURCE_FILES\`,
+`pe_arch_vm_receipt_verify.py` usando um recibo privado v2 previamente
+emitido no host, manifesto de **todos** os arquivos de `SOURCE_FILES`,
 desafio fornecido separadamente e SHA-256 do recibo retido pelo host.
 
-O teste \`tests/pe_readonly_receipt_real_ci.py\` prepara uma cópia apenas
+O teste `tests/pe_readonly_receipt_real_ci.py` prepara uma cópia apenas
 dos arquivos incluídos no manifesto, gera um relatório sintético
 auto-relatado aproveitando o fixture de testes existente e publica
-o recibo com \`write_receipt_no_overwrite()\`, dentro de diretório
+o recibo com `write_receipt_no_overwrite()`, dentro de diretório
 privado 0700. Confere o SHA-256 e que o recibo final tem um único
 hardlink. Depois executa seis processos Python distintos dentro do
-perfil real \`pe_ghidra_sandbox.build_command()\`, substituindo
+perfil real `pe_ghidra_sandbox.build_command()`, substituindo
 somente o comando final do analisador por Python. Montagens e
-\`fstatvfs\` são reais; não existe fallback para execução sem
+`fstatvfs` são reais; não existe fallback para execução sem
 Bubblewrap nem simulação de flags de readonly. O recibo é exposto por
-um \`--ro-bind\` separado da fonte, e o hash esperado entra como
+um `--ro-bind` separado da fonte, e o hash esperado entra como
 argumento de revisão, não como valor lido do próprio recibo.
 
 Os seis cenários são:
 
-1. checkout \`--ro-bind\` intacto e recibo íntegro: **aprovar** o CLI
-   com a política \`--require-readonly-source-view\`, duas passagens,
+1. checkout `--ro-bind` intacto e recibo íntegro: **aprovar** o CLI
+   com a política `--require-readonly-source-view`, duas passagens,
    manifesto completo e pin externo;
-2. checkout \`--bind\` gravável: **recusar** mesmo se os bytes coincidirem;
-3. checkout \`--ro-bind\` com \`tools\` sobreposto por um \`--bind\`
+2. checkout `--bind` gravável: **recusar** mesmo se os bytes coincidirem;
+3. checkout `--ro-bind` com `tools` sobreposto por um `--bind`
    gravável de bytes equivalentes: **recusar**;
-4. cópia adulterada previamente, mas exposta por \`--ro-bind\`:
+4. cópia adulterada previamente, mas exposta por `--ro-bind`:
    **recusar por divergência do manifesto**;
 5. checkout íntegro readonly com SHA-256 externo incorreto:
    **recusar**;
@@ -1831,7 +1831,7 @@ Os seis cenários são:
 
 O GitHub Actions exige sete registros JSON: seis provas com código
 de saída 0 apenas no caso positivo e 2 nos negativos, mais um
-resumo \`PASS_PE_S1_44_REAL_READONLY_FULL_RECEIPT\`. O job recusa
+resumo `PASS_PE_S1_44_REAL_READONLY_FULL_RECEIPT`. O job recusa
 falhas de import, mount, abertura, JSON, validação ou timeout, sem
 substituir evidência real por mock. Não executa programas Windows
 nem o Ghidra neste passo; as suítes existentes de Ghidra real
