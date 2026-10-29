@@ -1699,3 +1699,57 @@ prova externa. Esta etapa só verifica consistência local; continua
 sem assinatura, sem atestação independente de kernel/VM Arch e sem
 analisar binários hostis. PR Draft, sem merge, APK/OTA intocados,
 modo combinado seccomp+cgroup ainda bloqueado.
+
+
+## PE-S1.42 | Política opcional para visão de fontes em montagem somente leitura
+
+A dupla checagem PE-S1.41 identifica muitas trocas de arquivo, mas ainda
+depende de fontes em filesystem potencialmente gravável. Nesta etapa,
+o revisor offline ganha a política estrita **opt-in**
+`--require-readonly-source-view`. Sem essa flag o comportamento
+anterior permanece compatível.
+
+Com a flag, a revisão falha fechada caso o kernel Linux **não**
+informe `ST_RDONLY` para a visão de montagem dos descritores
+**já abertos** com `os.fstatvfs(fd)`. A verificação ocorre no
+`source_root`, em cada diretório intermediário e no arquivo de cada
+entrada do manifesto, **antes e depois** da leitura, nas duas
+passagens da PE-S1.41. Isso evita aprovar apenas porque os bits de
+permissão foram removidos por `chmod`, ou porque o checkout raiz está
+readonly mas um subdiretório ou arquivo pertence a outra montagem
+gravável. Não há tentativa de remount, chmod, cópia ou bypass.
+
+Exemplo de revisão de um checkout que **já tenha sido montado readonly**
+por um operador em um ambiente controlado:
+
+```bash
+python3 tools/pe_arch_vm_receipt_verify.py \
+  --receipt /local/privado/acceptance.json \
+  --source-root /mnt/checkout-somente-leitura \
+  --expected-challenge "$DESAFIO_DO_REVISOR" \
+  --expected-receipt-sha256 "$SHA256_PREVIAMENTE_GUARDADO" \
+  --require-readonly-source-view
+```
+
+Ao passar, o resultado da revisão inclui
+`readonly_source_view_verified=true`; sem a política o campo é
+`false`. O formato do recibo emitido **continua v2** e a proteção
+SHA-256 externa permanece independente. Se `fstatvfs` falhar ou a
+montagem estiver gravável, a revisão é recusada.
+
+Seis testes novos incluem comportamento legado, rejeição real do
+checkout temporário gravável da CI, flags readonly **simuladas**,
+arquivo em uma visão gravável simulada dentro do checkout, relaxamento
+simulado da montagem após `read`, e recusa no CLI/argumento inválido.
+**Os testes positivos de montagem readonly são simulados**; não são
+homologação de um bind mount readonly real.
+
+**Não é imutabilidade plena:** `ST_RDONLY` descreve a visão de
+montagem **deste processo**, não prova que os mesmos inodes não
+sejam alterados por outra montagem gravável, outro processo, root,
+ou pelo host. Não autentica quem preparou a montagem e nem impede
+mudanças posteriores. Para prova de origem e imutabilidade contra
+um host adversário ainda é necessário armazenamento/snapshot
+verificado por entidade independente e uma VM/hypervisor confiável.
+A PR continua Draft, sem merge, APK/OTA ou liberação conjunta
+seccomp+cgroups.
