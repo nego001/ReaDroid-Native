@@ -27,6 +27,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: PE-S1.45 reviewer Git checkout pin and safe contract tests (not native VM)
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_pe_arch_vm_checkout_pin.py' -v
+          python3 tools/pe_arch_vm_checkout_pin.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --expected-commit "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/pe-s1-45-local-git-pin.json"
+          python3 - "$RUNNER_TEMP/pe-s1-45-local-git-pin.json" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert record["status"] == "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
+          assert record["expected_commit"] == sys.argv[2]
+          assert record["checked_manifest_entries"] >= 25
+          assert record["worktree_status_clean"] is True
+          assert record["native_vm_or_kernel_verified"] is False
+          assert record["git_authorship_or_signature_verified"] is False
+          print("PE-S1.45 CI Git commit pin passed; this does NOT attest a native Arch VM.")
+          PY
+          if python3 tools/pe_arch_vm_checkout_pin.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --expected-commit "ffffffffffffffffffffffffffffffffffffffff"; then
+            echo "PE-S1.45 incorrect external Git pin was accepted" >&2
+            exit 1
+          fi
+          echo "PE-S1.45 incorrect external Git pin rejected: PASS"
       - name: Install Bubblewrap and Windows cross-compiler
         run: |
           set -euo pipefail
@@ -476,4 +504,5 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scope_cleanup_evidence.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_evidence.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_checkout_pin.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
