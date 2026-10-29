@@ -1753,3 +1753,42 @@ um host adversário ainda é necessário armazenamento/snapshot
 verificado por entidade independente e uma VM/hypervisor confiável.
 A PR continua Draft, sem merge, APK/OTA ou liberação conjunta
 seccomp+cgroups.
+
+
+## PE-S1.43 | Montagens Bubblewrap reais com readonly por descritor
+
+A PE-S1.42 incluiu uma política `--require-readonly-source-view`,
+mas os casos positivos de montagem readonly eram **mockados**. Esta
+etapa adiciona ao job Ubuntu de Ghidra/Bubblewrap a integração
+`tests/pe_readonly_mount_real_ci.py`: usa a implementação real de
+`pe_ghidra_sandbox.build_command()` (sem bypass do perfil) e substitui
+somente o comando final do analisador por Python com uma pequena
+fonte de texto sintética. Nenhum executável Windows é iniciado.
+
+O smoke cria um diretório de origem gravável, mas o expõe em três
+processos Bubblewrap separados, cada um verificando os valores reais
+de `os.statvfs` e da política `_read_source(...,
+require_readonly_source_view=True)` **sem mockar `fstatvfs`**:
+
+1. `--ro-bind`: a montagem de checkout, subdiretório e arquivo deve
+   sinalizar `ST_RDONLY` e a leitura segura é aceita.
+2. `--bind`: o checkout é realmente gravável, embora o arquivo tenha
+   permissões 0444, e deve ser rejeitado.
+3. `--ro-bind` do checkout **com `--bind` gravável sobre o subdiretório**
+   `tools`: o checkout raiz continua readonly, mas a origem
+   interna não, portanto a política deve rejeitar.
+
+O job exige quatro registros JSON: três provas por modo e um resumo
+`PASS_PE_S1_43_ACTUAL_BWRAP_READONLY_MOUNT_POLICY`. Erro de
+namespace, montagem, execução, flag, stdout ausente ou retorno não-zero
+é falha. A prova executa com Bubblewrap real no runner Ubuntu 22.04,
+não no Arch em contêiner. Não testa Ghidra neste novo passo; os
+demais passos Ghidra/seccomp existentes permanecem obrigatórios.
+
+**Limites:** esta é uma prova da visão de montagem readonly observada
+por um processo dentro do namespace Linux. Não comprova uma montagem
+imutável para o host, nem que os inodes não possam ser modificados por
+outra montagem gravável; não é um snapshot transacional nem
+homologação de VM/kernel Arch. O CLI existente e o esquema de recibo
+v2 não mudam. PR Draft, sem merge em `main`, APK/OTA não publicados e
+modo conjunto seccomp+cgroups ainda bloqueado.
