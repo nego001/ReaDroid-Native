@@ -324,8 +324,6 @@ def main() -> int:
                 args.expected_source_commit, evidence.SOURCE_FILES)
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
-        if checkout_pin is not None:
-            proof = {**proof, "local_source_checkout_pin": checkout_pin}
         if args.evidence_output is not None:
             receipt = write_receipt_no_overwrite(
                 proof, args.evidence_output,
@@ -333,6 +331,10 @@ def main() -> int:
             # Printed acknowledgement is separate from the hashed source
             # report inside the receipt. A digest is NOT a digital signature.
             proof = {**proof, "local_receipt": receipt}
+        if checkout_pin is not None:
+            # Print the local pin *outside* the strict native report v2
+            # schema, after the actual receipt has been published intact.
+            proof = {**proof, "local_source_checkout_pin": checkout_pin}
         print(json.dumps(proof, sort_keys=True))
         return 0
     except (CheckoutPinError, ArchVmUnavailable, ArchVmValidationError,
