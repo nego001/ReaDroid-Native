@@ -54,12 +54,19 @@ cd ReaDroid-Native
 git fetch origin "$REVIEWER_COMMIT"
 git switch --detach "$REVIEWER_COMMIT"
 
-python3 tools/pe_arch_vm_checkout_pin.py \
+python3 -B tools/pe_arch_vm_checkout_pin.py \
   --source-root "$PWD" \
   --expected-commit "$REVIEWER_COMMIT"
 
-python3 tools/pe_arch_vm_gate.py
+python3 -B tools/pe_arch_vm_gate.py
 ```
+
+Usar sempre `python3 -B` ou exportar `PYTHONDONTWRITEBYTECODE=1`
+antes dos comandos Python deste checkout. O primeiro preflight
+deve ocorrer numa árvore realmente limpa; caches `__pycache__` de
+uma execução anterior são recusados, não ignorados. Se a árvore
+já estiver suja, descartar a cópia e preparar outra, em vez
+de apagar arquivos desconhecidos indiscriminadamente.
 
 É obrigatório obter `LOCAL_GIT_CHECKOUT_PIN_MATCHED` e
 `ARCH_VM_PREFLIGHT_PASSED`. Ambos são observações locais, não
@@ -78,7 +85,7 @@ umask 077
 mkdir -m 700 "$HOME/negresco-arch-vm-evidence"
 export JAVA_HOME="/caminho/real/para/jdk-25"
 
-python3 tools/pe_arch_vm_validation.py \
+python3 -B tools/pe_arch_vm_validation.py \
   --ghidra-home "/caminho/absoluto/ghidra_12.2_PUBLIC" \
   --ghidra-archive "/caminho/absoluto/ghidra_12.2_PUBLIC_20261016.zip" \
   --reviewer-pinned-checkout \
@@ -119,11 +126,11 @@ essa condição via `ST_RDONLY`; somente fazer `chmod 0444`
 não é suficiente.
 
 ```bash
-python3 tools/pe_arch_vm_checkout_pin.py \
+python3 -B tools/pe_arch_vm_checkout_pin.py \
   --source-root "/mnt/checkout-readonly" \
   --expected-commit "$REVIEWER_COMMIT"
 
-python3 tools/pe_arch_vm_receipt_verify.py \
+python3 -B tools/pe_arch_vm_receipt_verify.py \
   --receipt "/caminho/privado/acceptance.json" \
   --source-root "/mnt/checkout-readonly" \
   --expected-challenge "$REVIEWER_CHALLENGE" \
