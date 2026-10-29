@@ -18,6 +18,9 @@ import sys
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
+from pe_arch_vm_checkout_pin import (verify_source_checkout_pin,
+                                     CheckoutPinError)
+import pe_arch_vm_evidence as evidence
 from pe_arch_cgroup_smoke import run_smoke
 from pe_arch_descendant_smoke import run_native_descendant_smoke
 from pe_auto_ghidra import inspect_functions, HeadlessError
@@ -286,15 +289,43 @@ def main() -> int:
                         help="Optional new JSON receipt file inside an owner-only 0700 directory; never overwrites")
     parser.add_argument("--reviewer-challenge",
                         help="External 64-hex challenge chosen BEFORE VM execution; required with --evidence-output")
+    parser.add_argument(
+        "--reviewer-pinned-checkout", action="store_true",
+        help="Opt-in reviewer protocol: require external full commit pin, "
+             "challenge and private receipt before running native tests")
+    parser.add_argument(
+        "--expected-source-commit",
+        help="Full lowercase Git commit chosen by reviewer outside the VM")
     args = parser.parse_args()
     try:
+        if args.reviewer_pinned_checkout:
+            if args.evidence_output is None or args.reviewer_challenge is None:
+                raise ArchVmValidationError(
+                    "Reviewer-pinned checkout requires private receipt "
+                    "and external reviewer challenge")
+            if args.expected_source_commit is None:
+                raise ArchVmValidationError(
+                    "Reviewer-pinned checkout requires external source commit")
+        elif args.expected_source_commit is not None:
+            raise ArchVmValidationError(
+                "Expected source commit requires --reviewer-pinned-checkout")
         if args.evidence_output is not None:
             require_reviewer_challenge(args.reviewer_challenge)
         elif args.reviewer_challenge is not None:
             raise ArchVmValidationError(
                 "Reviewer challenge requires --evidence-output")
+        # Refuse mismatch/dirty/untracked inputs BEFORE any cgroup,
+        # descendant or Ghidra workload is started. This only checks local
+        # Git state, never authenticity of the VM or the Git host.
+        checkout_pin = None
+        if args.reviewer_pinned_checkout:
+            checkout_pin = verify_source_checkout_pin(
+                Path(__file__).resolve().parents[1],
+                args.expected_source_commit, evidence.SOURCE_FILES)
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
+        if checkout_pin is not None:
+            proof = {**proof, "local_source_checkout_pin": checkout_pin}
         if args.evidence_output is not None:
             receipt = write_receipt_no_overwrite(
                 proof, args.evidence_output,
@@ -304,7 +335,8 @@ def main() -> int:
             proof = {**proof, "local_receipt": receipt}
         print(json.dumps(proof, sort_keys=True))
         return 0
-    except (ArchVmUnavailable, ArchVmValidationError, GhidraIntegrityError,
+    except (CheckoutPinError, ArchVmUnavailable, ArchVmValidationError,
+            GhidraIntegrityError,
             ScopedSeccompSmokeError, ScopedGhidraError,
             HeadlessError, AcceptanceReceiptError,
             RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
