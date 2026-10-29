@@ -115,9 +115,24 @@ def _read_source(source_root: Path, relative: str) -> bytes:
     with ExitStack() as stack:
         root_fd = open_absolute_directory_nofollow(source_root, stack)
         directory_fd = root_fd
+        # The descriptor alone is not enough: a directory can be renamed
+        # after open, leaving us reading a detached source tree. Pin each
+        # name to its parent and require a stable entry throughout the read.
+        directory_chain = []
         for part in parts[:-1]:
+            named_before = os.stat(
+                part, dir_fd=directory_fd, follow_symlinks=False)
             fd = os.open(part, flags | os.O_DIRECTORY, dir_fd=directory_fd)
             stack.callback(os.close, fd)
+            opened = os.fstat(fd)
+            named_after = os.stat(
+                part, dir_fd=directory_fd, follow_symlinks=False)
+            if (not stat.S_ISDIR(opened.st_mode)
+                    or not _unchanged_name_entry(opened, named_before)
+                    or not _unchanged_name_entry(opened, named_after)):
+                raise ReceiptReviewError(
+                    "Source directory name or inode changed during open")
+            directory_chain.append((directory_fd, part, fd, opened))
             directory_fd = fd
         fd = os.open(parts[-1], flags, dir_fd=directory_fd)
         stack.callback(os.close, fd)
@@ -137,6 +152,14 @@ def _read_source(source_root: Path, relative: str) -> bytes:
                 or not _unchanged_name_entry(before, current_entry)):
             raise ReceiptReviewError(
                 "Source name or inode changed during verification")
+        for parent_fd, component, opened_fd, initial in directory_chain:
+            current = os.fstat(opened_fd)
+            named = os.stat(
+                component, dir_fd=parent_fd, follow_symlinks=False)
+            if (not _unchanged_name_entry(initial, current)
+                    or not _unchanged_name_entry(initial, named)):
+                raise ReceiptReviewError(
+                    "Source directory name or inode changed during read")
         return raw
 
 
