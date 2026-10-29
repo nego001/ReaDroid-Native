@@ -689,6 +689,84 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_38_atomically_published_receipt_has_one_link(self):
+        issued = self.write()
+        self.assertEqual(self.dest.stat().st_nlink, 1)
+        self.assertEqual(
+            list(self.private.glob(".negresco-receipt-*.tmp")), [])
+        verified = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge,
+            expected_receipt_sha256=issued["receipt_sha256"])
+        self.assertTrue(verified["external_receipt_sha256_pin_matched"])
+
+    def test_s1_38_reviewer_refuses_external_hardlink_without_pin(self):
+        self.write()
+        external_name = self.root / "receipt-alias.json"
+        os.link(self.dest, external_name)
+        self.assertEqual(self.dest.stat().st_nlink, 2)
+        with self.assertRaisesRegex(
+                review.ReceiptReviewError, "owner/mode/length unsafe"):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge)
+        self.assertEqual(external_name.read_bytes(), self.dest.read_bytes())
+        external_name.unlink()
+        self.assertEqual(self.dest.stat().st_nlink, 1)
+        self.assertEqual(
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge)[
+                    "status"], "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+
+    def test_s1_38_reviewer_refuses_internal_hardlink_even_with_pin(self):
+        issued = self.write()
+        other_name = self.private / "second-final-name.json"
+        os.link(self.dest, other_name)
+        with self.assertRaisesRegex(
+                review.ReceiptReviewError, "owner/mode/length unsafe"):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                expected_receipt_sha256=issued["receipt_sha256"])
+        self.assertTrue(other_name.exists())
+
+    def test_s1_38_reviewer_refuses_hardlink_added_during_receipt_read(self):
+        self.write()
+        alternate = self.root / "created-during-read.json"
+        original_read = os.read
+        old_inode = self.dest.stat().st_ino
+        linked = []
+
+        def add_link_during_read(fd, amount):
+            if os.fstat(fd).st_ino == old_inode and not linked:
+                os.link(self.dest, alternate)
+                linked.append(True)
+            return original_read(fd, amount)
+
+        with mock.patch.object(review.os, "read",
+                               side_effect=add_link_during_read):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "name or inode changed"):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge)
+        self.assertEqual(linked, [True])
+        alternate.unlink()
+
+    def test_s1_38_cli_rejects_hardlinked_receipt(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        issued = self.write()
+        alias = self.root / "other-link.json"
+        os.link(self.dest, alias)
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            code = review.main([
+                "--receipt", str(self.dest),
+                "--source-root", str(self.root),
+                "--expected-challenge", self.challenge,
+                "--expected-receipt-sha256", issued["receipt_sha256"]])
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            json.loads(stderr.getvalue())["status"],
+            "REJECTED_LOCAL_RECEIPT")
+
     def test_s1_37_external_receipt_pin_accepts_exact_prior_digest(self):
         issued = self.write()
         expected = issued["receipt_sha256"]
