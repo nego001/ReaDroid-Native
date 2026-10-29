@@ -689,6 +689,132 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_41_unchanged_two_file_manifest_passes_both_checks(self):
+        second = self.root / "tools" / "second.py"
+        second.write_text("print('second fixture')\\n", encoding="utf-8")
+        sources = ("tools/synthetic.py", "tools/second.py")
+        with mock.patch.object(evidence, "SOURCE_FILES", sources):
+            issued = self.write()
+            verified = review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                expected_receipt_sha256=issued["receipt_sha256"])
+        self.assertEqual(verified["source_files_rechecked"], 2)
+        self.assertTrue(verified["external_receipt_sha256_pin_matched"])
+        self.assertFalse(verified["independent_vm_attestation"])
+
+    def test_s1_41_rejects_earlier_file_changed_after_first_check(self):
+        second = self.root / "tools" / "second.py"
+        second.write_bytes(b"second fixture")
+        sources = ("tools/synthetic.py", "tools/second.py")
+        original = review._read_source
+        seen = []
+
+        def change_after_first_pass(root, relative, **kwargs):
+            result = original(root, relative, **kwargs)
+            seen.append(relative)
+            if seen == list(sources):
+                self.source.write_bytes(b"tampered after first check")
+            return result
+
+        with mock.patch.object(evidence, "SOURCE_FILES", sources):
+            self.write()
+            with mock.patch.object(review, "_read_source",
+                                   side_effect=change_after_first_pass):
+                with self.assertRaisesRegex(
+                        review.ReceiptReviewError,
+                        "Source set changed between verification passes"):
+                    review.verify_local_receipt(
+                        self.dest, self.root,
+                        expected_challenge=self.challenge)
+        self.assertGreaterEqual(len(seen), 3)
+
+    def test_s1_41_rejects_identical_bytes_new_inode_between_passes(self):
+        second = self.root / "tools" / "second.py"
+        second.write_bytes(b"second fixture")
+        sources = ("tools/synthetic.py", "tools/second.py")
+        original = review._read_source
+        replacement = self.root / "tools" / "replacement.py"
+        replacement.write_bytes(self.source.read_bytes())
+        original_inode = self.source.stat().st_ino
+        seen = []
+
+        def replace_after_first_pass(root, relative, **kwargs):
+            result = original(root, relative, **kwargs)
+            seen.append(relative)
+            if seen == list(sources):
+                replacement.replace(self.source)
+            return result
+
+        with mock.patch.object(evidence, "SOURCE_FILES", sources):
+            self.write()
+            with mock.patch.object(review, "_read_source",
+                                   side_effect=replace_after_first_pass):
+                with self.assertRaisesRegex(
+                        review.ReceiptReviewError,
+                        "Source set changed between verification passes"):
+                    review.verify_local_receipt(
+                        self.dest, self.root,
+                        expected_challenge=self.challenge)
+        self.assertNotEqual(original_inode, self.source.stat().st_ino)
+
+    def test_s1_41_rejects_identical_tree_replacement_between_passes(self):
+        second = self.root / "tools" / "second.py"
+        second.write_bytes(b"second fixture")
+        sources = ("tools/synthetic.py", "tools/second.py")
+        other = self.root / "tools-new"
+        other.mkdir()
+        for name in ("synthetic.py", "second.py"):
+            (other / name).write_bytes((self.root / "tools" / name).read_bytes())
+        original = review._read_source
+        seen = []
+
+        def replace_after_first_pass(root, relative, **kwargs):
+            result = original(root, relative, **kwargs)
+            seen.append(relative)
+            if seen == list(sources):
+                (self.root / "tools").rename(self.root / "tools-old")
+                other.rename(self.root / "tools")
+            return result
+
+        with mock.patch.object(evidence, "SOURCE_FILES", sources):
+            self.write()
+            with mock.patch.object(review, "_read_source",
+                                   side_effect=replace_after_first_pass):
+                with self.assertRaisesRegex(
+                        review.ReceiptReviewError,
+                        "Source set changed between verification passes"):
+                    review.verify_local_receipt(
+                        self.dest, self.root,
+                        expected_challenge=self.challenge)
+        self.assertEqual(
+            (self.root / "tools" / "synthetic.py").read_bytes(),
+            (self.root / "tools-old" / "synthetic.py").read_bytes())
+
+    def test_s1_41_rejects_missing_first_source_on_second_pass(self):
+        second = self.root / "tools" / "second.py"
+        second.write_bytes(b"second fixture")
+        sources = ("tools/synthetic.py", "tools/second.py")
+        original = review._read_source
+        seen = []
+
+        def remove_after_first_pass(root, relative, **kwargs):
+            result = original(root, relative, **kwargs)
+            seen.append(relative)
+            if seen == list(sources):
+                self.source.unlink()
+            return result
+
+        with mock.patch.object(evidence, "SOURCE_FILES", sources):
+            self.write()
+            with mock.patch.object(review, "_read_source",
+                                   side_effect=remove_after_first_pass):
+                with self.assertRaises(review.ReceiptReviewError):
+                    review.verify_local_receipt(
+                        self.dest, self.root,
+                        expected_challenge=self.challenge)
+        self.assertEqual(seen[:2], list(sources))
+        self.assertFalse(self.source.exists())
+
     def test_s1_40_nested_absolute_checkout_accepts_unchanged_source(self):
         checkout = self.root / "outer" / "checkout"
         (checkout / "tools").mkdir(parents=True)
