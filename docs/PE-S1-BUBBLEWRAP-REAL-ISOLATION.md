@@ -1557,3 +1557,33 @@ independente de hipervisor nem defesa contra comprometimento
 da fonte do pin. O SHA-256 externo não prova uma VM Arch real.
 PR permanece Draft; `main`, APK/OTA e execução conjunta
 seccomp+cgroups permanecem sem liberação.
+
+
+## PE-S1.38 | Recusa de hardlinks para recibos definitivos
+
+A leitura privada já exigia nome/inode estável, diretório owner-only,
+permissões restritas e hashes consistentes, mas não rejeitava um
+**segundo hardlink** para o mesmo inode do recibo. Um hardlink criado fora
+do diretório privado preserva bytes, SHA-256 e modo, e deixa o conteúdo
+acessível por outro caminho (sujeito às permissões do arquivo). O
+`flock` sobre o diretório do recibo não coordena um nome externo.
+
+Agora o revisor offline exige **`st_nlink == 1`** no arquivo regular
+definitivo, além de manter a comparação de `st_nlink` antes e depois
+da leitura. O gravador da PE-S1.33 publica via hardlink atômico, remove
+o estágio sob `LOCK_EX`, sincroniza o diretório e só então libera o
+lock. Portanto, recibos publicados normalmente ficam com um único
+link e continuam sendo aceitos (com ou sem pin externo).
+
+Cinco novos testes de regressão cobrem: publicação normal com um link,
+segundo link fora da pasta, alias na própria pasta com pin SHA-256
+correto, segundo link criado durante `os.read`, e recusa do CLI sem
+emitir status de aprovação.
+
+**Limitação:** `st_nlink == 1` não impede leitura ou alteração posterior
+pelo próprio dono, nem um adversário do mesmo UID que retire
+temporariamente um link antes da verificação. Não substitui guardar o
+SHA-256 **fora** do ambiente, não autentica o emissor, nem atesta kernel
+ou VM Arch. CI Arch ainda exercita userspace em container; a ponte
+Ubuntu ainda usa cgroup simulado. PR continua Draft, sem merge,
+APK/OTA ou liberação do executor conjunto seccomp+cgroups.
