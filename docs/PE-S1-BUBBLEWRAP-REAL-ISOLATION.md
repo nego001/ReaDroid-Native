@@ -1512,3 +1512,48 @@ homologação nativa independente em VM Arch.
 
 A PR permanece Draft; `main`, APK/OTA e executor conjunto
 seccomp+cgroups permanecem sem alterações de publicação.
+
+## PE-S1.37 | SHA-256 externo para detectar substituição posterior de recibo
+
+O revisor offline já verificava a consistência do JSON, os hashes
+das fontes e o desafio externo, mas o hash total do recibo era
+calculado **apenas depois** da leitura e retornado ao operador.
+Se um agente com acesso aos arquivos alterasse uma alegação ainda
+válida pelo esquema, recalculasse `report_sha256` e trocasse o
+recibo, a revisão sem referência externa continuaria aprovando
+um documento auto-consistente.
+
+O parâmetro **opcional** `--expected-receipt-sha256` permite ao
+revisor comparar os bytes brutos do arquivo com um SHA-256 de
+64 dígitos hexadecimais minúsculos, obtido **antes** da revisão
+e guardado fora do arquivo auditado:
+
+```bash
+python3 tools/pe_arch_vm_receipt_verify.py \
+  --receipt /local/privado/acceptance.json \
+  --source-root /checkout/verificado \
+  --expected-challenge "$DESAFIO_DO_REVISOR" \
+  --expected-receipt-sha256 "$SHA256_PREVIAMENTE_GUARDADO"
+```
+
+Um valor inválido é recusado antes de abrir o recibo; um hash
+válido que não corresponda aos bytes lidos causa recusa antes
+da interpretação do JSON. O resultado de sucesso distingue
+explicitamente `external_receipt_sha256_pin_matched=true`
+de uma validação sem referência externa (`false`).
+O formato do recibo gerado permanece **v2** inalterado, e
+verificações legadas sem pin ainda funcionam.
+
+Cinco testes cobrem sucesso com referência exata, substituição
+de prova com alteração semântica e hashes internos recalculados,
+formatos incorretos, recusa antes de leitura e comportamento
+do CLI. A própria regressão demonstra que uma revisão
+**sem** pin pode aceitar alegações internas auto-consistentes
+adulteradas: o pin só funciona se sua referência foi capturada
+e preservada independentemente do arquivo alterável.
+
+Isso **não** é assinatura, autenticação da origem, atestação
+independente de hipervisor nem defesa contra comprometimento
+da fonte do pin. O SHA-256 externo não prova uma VM Arch real.
+PR permanece Draft; `main`, APK/OTA e execução conjunta
+seccomp+cgroups permanecem sem liberação.

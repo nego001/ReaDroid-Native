@@ -136,11 +136,26 @@ def _read_source(source_root: Path, relative: str) -> bytes:
 
 
 def verify_local_receipt(receipt: Path, source_root: Path, *,
-                         expected_challenge: str) -> dict:
-    """Correlate an unsigned receipt to a challenge known BEFORE the run."""
+                         expected_challenge: str,
+                         expected_receipt_sha256: str | None = None) -> dict:
+    """Correlate the unsigned receipt with a prior challenge and optional pin.
+
+    An expected digest must come from an independently retained earlier
+    observation. The self-reported digest alone is not authenticated.
+    """
     try:
         evidence.require_reviewer_challenge(expected_challenge)
+        if (expected_receipt_sha256 is not None
+                and (not isinstance(expected_receipt_sha256, str)
+                     or HEX64.fullmatch(expected_receipt_sha256) is None)):
+            raise ReceiptReviewError(
+                "Expected receipt SHA-256 must be 64 lowercase hex digits")
         raw = _read_private_receipt(Path(receipt))
+        observed_receipt_sha256 = hashlib.sha256(raw).hexdigest()
+        if (expected_receipt_sha256 is not None
+                and observed_receipt_sha256 != expected_receipt_sha256):
+            raise ReceiptReviewError(
+                "Receipt differs from independently retained SHA-256")
         record = json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=_no_duplicate_keys,
@@ -198,7 +213,9 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
             "security_classification": "UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION",
             "source_files_rechecked": len(evidence.SOURCE_FILES),
             "report_sha256": digest,
-            "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+            "receipt_sha256": observed_receipt_sha256,
+            "external_receipt_sha256_pin_matched": (
+                expected_receipt_sha256 is not None),
             "native_kernel_execution_independently_verified": False,
             "windows_binary_executed_by_reviewer": False,
             "reviewer_challenge_correlated": True,
@@ -217,12 +234,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="Exact source checkout used during VM acceptance")
     parser.add_argument("--expected-challenge", required=True,
                         help="Original random 64-hex token supplied by an outside reviewer")
+    parser.add_argument(
+        "--expected-receipt-sha256",
+        help="Optional exact lowercase SHA-256 retained outside the receipt "
+             "BEFORE this review; detects later replacements, not a signature")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(
             verify_local_receipt(
                 args.receipt, args.source_root,
-                expected_challenge=args.expected_challenge),
+                expected_challenge=args.expected_challenge,
+                expected_receipt_sha256=args.expected_receipt_sha256),
             sort_keys=True))
         return 0
     except ReceiptReviewError as exc:

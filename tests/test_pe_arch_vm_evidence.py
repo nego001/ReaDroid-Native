@@ -689,6 +689,98 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_37_external_receipt_pin_accepts_exact_prior_digest(self):
+        issued = self.write()
+        expected = issued["receipt_sha256"]
+        self.assertEqual(expected, hashlib.sha256(
+            self.dest.read_bytes()).hexdigest())
+        pinned = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge,
+            expected_receipt_sha256=expected)
+        self.assertEqual(pinned["receipt_sha256"], expected)
+        self.assertTrue(pinned["external_receipt_sha256_pin_matched"])
+        unpinned = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge)
+        self.assertFalse(unpinned["external_receipt_sha256_pin_matched"])
+        self.assertFalse(pinned["independent_vm_attestation"])
+        self.assertFalse(pinned["native_kernel_execution_independently_verified"])
+
+    def test_s1_37_rejects_replaced_self_consistent_receipt_with_rehashed_report(self):
+        issued = self.write()
+        original_digest = issued["receipt_sha256"]
+        record = json.loads(self.dest.read_text(encoding="utf-8"))
+        combined = record["native_acceptance_report"]["ghidra"][
+            "arch_real_ghidra_with_both"]
+        self.assertEqual(combined["decompiled_functions"], 2)
+        # A forged local report still satisfies its own evidence contracts.
+        combined["decompiled_functions"] = 3
+        record["report_sha256"] = hashlib.sha256(
+            evidence._canonical(record["native_acceptance_report"])).hexdigest()
+        self.dest.write_bytes(evidence._canonical(record))
+        self.dest.chmod(0o600)
+        self.assertNotEqual(
+            hashlib.sha256(self.dest.read_bytes()).hexdigest(), original_digest)
+        # A local consistency check alone cannot notice self-consistent lies.
+        unpinned = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge)
+        self.assertEqual(unpinned["status"],
+                         "LOCAL_RECEIPT_CONSISTENCY_VALIDATED")
+        with self.assertRaisesRegex(
+                review.ReceiptReviewError, "independently retained"):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                expected_receipt_sha256=original_digest)
+
+    def test_s1_37_external_pin_rejects_wrong_or_invalid_digest(self):
+        self.write()
+        actual = hashlib.sha256(self.dest.read_bytes()).hexdigest()
+        for invalid in ("0" * 64, "f" * 63, "G" * 64, "A" * 64,
+                        "", 42, True, b"f" * 64, "f" * 65):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(review.ReceiptReviewError):
+                    review.verify_local_receipt(
+                        self.dest, self.root, expected_challenge=self.challenge,
+                        expected_receipt_sha256=invalid)
+        self.assertEqual(
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                expected_receipt_sha256=actual)[
+                    "external_receipt_sha256_pin_matched"], True)
+
+    def test_s1_37_bad_external_pin_refused_before_receipt_read(self):
+        with mock.patch.object(
+                review, "_read_private_receipt",
+                side_effect=AssertionError("must not open receipt")):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "64 lowercase hex"):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge,
+                    expected_receipt_sha256="not-a-digest")
+
+    def test_s1_37_cli_checks_external_pin_and_reports_explicit_match(self):
+        from contextlib import redirect_stdout, redirect_stderr
+        from io import StringIO
+        issued = self.write()
+        base_args = [
+            "--receipt", str(self.dest), "--source-root", str(self.root),
+            "--expected-challenge", self.challenge]
+        output = StringIO()
+        with redirect_stdout(output):
+            status = review.main(
+                base_args + ["--expected-receipt-sha256",
+                             issued["receipt_sha256"]])
+        self.assertEqual(status, 0)
+        result = json.loads(output.getvalue())
+        self.assertTrue(result["external_receipt_sha256_pin_matched"])
+        self.assertFalse(result["independent_vm_attestation"])
+        error = StringIO()
+        with redirect_stderr(error):
+            code = review.main(
+                base_args + ["--expected-receipt-sha256", "f" * 64])
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            json.loads(error.getvalue())["status"], "REJECTED_LOCAL_RECEIPT")
+
     def test_s1_36_reviewer_refuses_valid_json_in_unpublished_stage(self):
         self.write()
         staged = self.private / (
