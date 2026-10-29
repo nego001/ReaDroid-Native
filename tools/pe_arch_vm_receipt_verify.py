@@ -104,6 +104,59 @@ def _read_private_receipt(path: Path) -> bytes:
         return raw
 
 
+
+def _same_directory_identity(a: os.stat_result, b: os.stat_result) -> bool:
+    """Compare stable directory identity, not busy parent timestamps.
+
+    Ancestors like /tmp change timestamps from unrelated operations. Name,
+    device, inode, type, owner and mode determine this local path check;
+    filesystem snapshot or history is explicitly not claimed.
+    """
+    return all(getattr(a, key) == getattr(b, key) for key in (
+        "st_dev", "st_ino", "st_mode", "st_uid"))
+
+
+def _open_checked_source_root(path: Path, stack: ExitStack
+                              ) -> tuple[int, list[tuple[int, str, int, os.stat_result]]]:
+    """Pin every absolute ancestor and the checkout root by its parent name."""
+    raw = os.fspath(path)
+    if not isinstance(raw, str) or not raw.startswith("/"):
+        raise ReceiptReviewError("Absolute source root required")
+    parts = [] if raw == "/" else raw[1:].split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ReceiptReviewError("Noncanonical source root path")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    current_fd = os.open("/", flags)
+    stack.callback(os.close, current_fd)
+    ancestry = []
+    for part in parts:
+        before = os.stat(part, dir_fd=current_fd, follow_symlinks=False)
+        opened_fd = os.open(part, flags, dir_fd=current_fd)
+        stack.callback(os.close, opened_fd)
+        opened = os.fstat(opened_fd)
+        after = os.stat(part, dir_fd=current_fd, follow_symlinks=False)
+        if (not stat.S_ISDIR(opened.st_mode)
+                or not _same_directory_identity(opened, before)
+                or not _same_directory_identity(opened, after)):
+            raise ReceiptReviewError(
+                "Source root ancestor name or inode changed during open")
+        ancestry.append((current_fd, part, opened_fd, opened))
+        current_fd = opened_fd
+    return current_fd, ancestry
+
+
+def _check_source_ancestry(
+        ancestry: list[tuple[int, str, int, os.stat_result]]) -> None:
+    """Check names still lead to the pinned checkout after the source read."""
+    for parent_fd, name, opened_fd, initial in ancestry:
+        descriptor = os.fstat(opened_fd)
+        named = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (not _same_directory_identity(initial, descriptor)
+                or not _same_directory_identity(initial, named)):
+            raise ReceiptReviewError(
+                "Source root ancestor name or inode changed during read")
+
+
 def _read_source(source_root: Path, relative: str) -> bytes:
     parts = relative.split("/")
     if (not relative or relative.startswith("/")
@@ -113,7 +166,8 @@ def _read_source(source_root: Path, relative: str) -> bytes:
     # checks that the receipt or manifest source is a regular file.
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     with ExitStack() as stack:
-        root_fd = open_absolute_directory_nofollow(source_root, stack)
+        root_fd, source_ancestry = _open_checked_source_root(
+            source_root, stack)
         directory_fd = root_fd
         # The descriptor alone is not enough: a directory can be renamed
         # after open, leaving us reading a detached source tree. Pin each
@@ -160,6 +214,7 @@ def _read_source(source_root: Path, relative: str) -> bytes:
                     or not _unchanged_name_entry(initial, named)):
                 raise ReceiptReviewError(
                     "Source directory name or inode changed during read")
+        _check_source_ancestry(source_ancestry)
         return raw
 
 
