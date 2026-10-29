@@ -157,8 +157,22 @@ def _check_source_ancestry(
                 "Source root ancestor name or inode changed during read")
 
 
+
+def _require_readonly_source_fd(fd: int) -> None:
+    """Require the effective mount view of an already-open source FD is ro.
+
+    File mode bits and chmod are not evidence of a readonly mount. Linux
+    fstatvfs inspects the opened mount, avoiding a fresh path lookup.
+    """
+    if not os.fstatvfs(fd).f_flag & os.ST_RDONLY:
+        raise ReceiptReviewError(
+            "Source view is writable; readonly mount required")
+
+
 def _read_source(source_root: Path, relative: str, *,
-                 with_identity: bool = False) -> bytes | tuple[bytes, tuple]:
+                 with_identity: bool = False,
+                 require_readonly_source_view: bool = False
+                 ) -> bytes | tuple[bytes, tuple]:
     """Read a checked source and optionally report path/inode identity.
 
     The identity permits a second, independent path traversal to detect
@@ -175,6 +189,8 @@ def _read_source(source_root: Path, relative: str, *,
     with ExitStack() as stack:
         root_fd, source_ancestry = _open_checked_source_root(
             source_root, stack)
+        if require_readonly_source_view:
+            _require_readonly_source_fd(root_fd)
         directory_fd = root_fd
         # The descriptor alone is not enough: a directory can be renamed
         # after open, leaving us reading a detached source tree. Pin each
@@ -193,6 +209,8 @@ def _read_source(source_root: Path, relative: str, *,
                     or not _unchanged_name_entry(opened, named_after)):
                 raise ReceiptReviewError(
                     "Source directory name or inode changed during open")
+            if require_readonly_source_view:
+                _require_readonly_source_fd(fd)
             directory_chain.append((directory_fd, part, fd, opened))
             directory_fd = fd
         fd = os.open(parts[-1], flags, dir_fd=directory_fd)
@@ -204,6 +222,8 @@ def _read_source(source_root: Path, relative: str, *,
                 or not stat.S_ISREG(before.st_mode)
                 or not 1 <= before.st_size <= evidence.MAX_SOURCE_BYTES):
             raise ReceiptReviewError("Source file missing/oversized")
+        if require_readonly_source_view:
+            _require_readonly_source_fd(fd)
         raw = os.read(fd, evidence.MAX_SOURCE_BYTES + 1)
         after = os.fstat(fd)
         current_entry = os.stat(
@@ -222,6 +242,13 @@ def _read_source(source_root: Path, relative: str, *,
                 raise ReceiptReviewError(
                     "Source directory name or inode changed during read")
         _check_source_ancestry(source_ancestry)
+        if require_readonly_source_view:
+            # Recheck after reading: observe a remount or source bind mount
+            # relaxation rather than claim a protected source view.
+            _require_readonly_source_fd(root_fd)
+            for _, _, opened_fd, _ in directory_chain:
+                _require_readonly_source_fd(opened_fd)
+            _require_readonly_source_fd(fd)
         if not with_identity:
             return raw
         # Cross-pass comparison excludes mutable timestamps on shared
@@ -241,7 +268,8 @@ def _read_source(source_root: Path, relative: str, *,
 
 def verify_local_receipt(receipt: Path, source_root: Path, *,
                          expected_challenge: str,
-                         expected_receipt_sha256: str | None = None) -> dict:
+                         expected_receipt_sha256: str | None = None,
+                         require_readonly_source_view: bool = False) -> dict:
     """Correlate the unsigned receipt with a prior challenge and optional pin.
 
     An expected digest must come from an independently retained earlier
@@ -249,6 +277,8 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
     """
     try:
         evidence.require_reviewer_challenge(expected_challenge)
+        if type(require_readonly_source_view) is not bool:
+            raise ReceiptReviewError("Readonly source policy must be a boolean")
         if (expected_receipt_sha256 is not None
                 and (not isinstance(expected_receipt_sha256, str)
                      or HEX64.fullmatch(expected_receipt_sha256) is None)):
@@ -313,7 +343,8 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
                     or not HEX64.fullmatch(entry["sha256"])):
                 raise ReceiptReviewError("Invalid source manifest entry")
             content, identity = _read_source(
-                Path(source_root), relative, with_identity=True)
+                Path(source_root), relative, with_identity=True,
+                require_readonly_source_view=require_readonly_source_view)
             if (len(content) != entry["bytes"]
                     or hashlib.sha256(content).hexdigest() != entry["sha256"]):
                 raise ReceiptReviewError(
@@ -322,7 +353,8 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
                 (relative, entry["bytes"], entry["sha256"], identity))
         for relative, expected_size, expected_hash, first_identity in first_pass:
             current, second_identity = _read_source(
-                Path(source_root), relative, with_identity=True)
+                Path(source_root), relative, with_identity=True,
+                require_readonly_source_view=require_readonly_source_view)
             if (second_identity != first_identity
                     or len(current) != expected_size
                     or hashlib.sha256(current).hexdigest() != expected_hash):
@@ -337,6 +369,7 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
             "receipt_sha256": observed_receipt_sha256,
             "external_receipt_sha256_pin_matched": (
                 expected_receipt_sha256 is not None),
+            "readonly_source_view_verified": require_readonly_source_view,
             "native_kernel_execution_independently_verified": False,
             "windows_binary_executed_by_reviewer": False,
             "reviewer_challenge_correlated": True,
@@ -359,13 +392,19 @@ def main(argv: list[str] | None = None) -> int:
         "--expected-receipt-sha256",
         help="Optional exact lowercase SHA-256 retained outside the receipt "
              "BEFORE this review; detects later replacements, not a signature")
+    parser.add_argument(
+        "--require-readonly-source-view", action="store_true",
+        help="Opt-in fail-closed: require Linux readonly mount flags on the "
+             "opened checkout and every manifest source during both passes; "
+             "not a tamperproof snapshot or VM attestation")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(
             verify_local_receipt(
                 args.receipt, args.source_root,
                 expected_challenge=args.expected_challenge,
-                expected_receipt_sha256=args.expected_receipt_sha256),
+                expected_receipt_sha256=args.expected_receipt_sha256,
+                require_readonly_source_view=args.require_readonly_source_view),
             sort_keys=True))
         return 0
     except ReceiptReviewError as exc:
