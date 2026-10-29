@@ -157,7 +157,14 @@ def _check_source_ancestry(
                 "Source root ancestor name or inode changed during read")
 
 
-def _read_source(source_root: Path, relative: str) -> bytes:
+def _read_source(source_root: Path, relative: str, *,
+                 with_identity: bool = False) -> bytes | tuple[bytes, tuple]:
+    """Read a checked source and optionally report path/inode identity.
+
+    The identity permits a second, independent path traversal to detect
+    replaced files and directories, including replacements with same bytes.
+    This is not an atomic multi-file snapshot.
+    """
     parts = relative.split("/")
     if (not relative or relative.startswith("/")
             or any(part in (".", "..", "") for part in parts)):
@@ -215,7 +222,21 @@ def _read_source(source_root: Path, relative: str) -> bytes:
                 raise ReceiptReviewError(
                     "Source directory name or inode changed during read")
         _check_source_ancestry(source_ancestry)
-        return raw
+        if not with_identity:
+            return raw
+        # Cross-pass comparison excludes mutable timestamps on shared
+        # absolute ancestors (for example /tmp), but pins their identities.
+        directory_keys = ("st_dev", "st_ino", "st_mode", "st_uid")
+        file_keys = directory_keys + (
+            "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+        absolute = tuple(tuple(getattr(original, key)
+                               for key in directory_keys)
+                         for _, _, _, original in source_ancestry)
+        relative_dirs = tuple(tuple(getattr(original, key)
+                                    for key in directory_keys)
+                              for _, _, _, original in directory_chain)
+        file_identity = tuple(getattr(before, key) for key in file_keys)
+        return raw, (absolute, relative_dirs, file_identity)
 
 
 def verify_local_receipt(receipt: Path, source_root: Path, *,
@@ -277,6 +298,11 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
         if (not isinstance(manifest, dict)
                 or set(manifest) != set(evidence.SOURCE_FILES)):
             raise ReceiptReviewError("Source manifest missing or altered")
+        # Verify the whole manifest twice. The first pass checks the
+        # receipt hashes and captures path/inode identities; the second pass
+        # catches files/directories replaced after an earlier entry passed.
+        # No lock or filesystem snapshot exists across these observations.
+        first_pass = []
         for relative in evidence.SOURCE_FILES:
             entry = manifest[relative]
             if (not isinstance(entry, dict)
@@ -286,11 +312,23 @@ def verify_local_receipt(receipt: Path, source_root: Path, *,
                     or not isinstance(entry["sha256"], str)
                     or not HEX64.fullmatch(entry["sha256"])):
                 raise ReceiptReviewError("Invalid source manifest entry")
-            content = _read_source(Path(source_root), relative)
+            content, identity = _read_source(
+                Path(source_root), relative, with_identity=True)
             if (len(content) != entry["bytes"]
                     or hashlib.sha256(content).hexdigest() != entry["sha256"]):
                 raise ReceiptReviewError(
                     "Source does not match original acceptance: " + relative)
+            first_pass.append(
+                (relative, entry["bytes"], entry["sha256"], identity))
+        for relative, expected_size, expected_hash, first_identity in first_pass:
+            current, second_identity = _read_source(
+                Path(source_root), relative, with_identity=True)
+            if (second_identity != first_identity
+                    or len(current) != expected_size
+                    or hashlib.sha256(current).hexdigest() != expected_hash):
+                raise ReceiptReviewError(
+                    "Source set changed between verification passes: "
+                    + relative)
         return {
             "status": "LOCAL_RECEIPT_CONSISTENCY_VALIDATED",
             "security_classification": "UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION",
