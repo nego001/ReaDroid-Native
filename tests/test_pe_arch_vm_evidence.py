@@ -689,6 +689,101 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_42_default_mode_preserves_legacy_success(self):
+        self.write()
+        result = review.verify_local_receipt(
+            self.dest, self.root, expected_challenge=self.challenge)
+        self.assertFalse(result["readonly_source_view_verified"])
+        self.assertEqual(result["source_files_rechecked"], 1)
+
+    def test_s1_42_writable_checkout_rejected_when_policy_requested(self):
+        self.write()
+        self.assertFalse(os.statvfs(self.root).f_flag & os.ST_RDONLY)
+        with self.assertRaisesRegex(
+                review.ReceiptReviewError, "readonly mount required"):
+            review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                require_readonly_source_view=True)
+
+    def test_s1_42_simulated_readonly_view_requires_all_checked_fds(self):
+        self.write()
+        visited = []
+        def readonly(fd):
+            inode = os.fstat(fd)
+            visited.append((inode.st_ino, stat.S_ISREG(inode.st_mode)))
+            return mock.Mock(f_flag=os.ST_RDONLY)
+        with mock.patch.object(review.os, "fstatvfs", side_effect=readonly):
+            accepted = review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                require_readonly_source_view=True)
+        self.assertTrue(accepted["readonly_source_view_verified"])
+        self.assertGreaterEqual(sum(is_file for _, is_file in visited), 2)
+        self.assertIn((self.source.stat().st_ino, True), visited)
+
+    def test_s1_42_simulated_writable_nested_source_mount_rejected(self):
+        self.write()
+        def readonly_except_files(fd):
+            return mock.Mock(
+                f_flag=0 if stat.S_ISREG(os.fstat(fd).st_mode)
+                else os.ST_RDONLY)
+        with mock.patch.object(
+                review.os, "fstatvfs", side_effect=readonly_except_files):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "readonly mount required"):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge,
+                    require_readonly_source_view=True)
+
+    def test_s1_42_mount_becomes_writable_during_source_read(self):
+        self.write()
+        original_read = os.read
+        file_inode = self.source.stat().st_ino
+        changed = []
+
+        def read_and_relax(fd, length):
+            data = original_read(fd, length)
+            if os.fstat(fd).st_ino == file_inode and not changed:
+                changed.append(True)
+            return data
+
+        def mount_flags(fd):
+            if changed and os.fstat(fd).st_ino == file_inode:
+                return mock.Mock(f_flag=0)
+            return mock.Mock(f_flag=os.ST_RDONLY)
+
+        with (mock.patch.object(review.os, "read", side_effect=read_and_relax),
+              mock.patch.object(review.os, "fstatvfs",
+                                side_effect=mount_flags)):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "readonly mount required"):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge,
+                    require_readonly_source_view=True)
+        self.assertEqual(changed, [True])
+
+    def test_s1_42_cli_fails_closed_and_bad_policy_type_before_read(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        self.write()
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            code = review.main([
+                "--receipt", str(self.dest),
+                "--source-root", str(self.root),
+                "--expected-challenge", self.challenge,
+                "--require-readonly-source-view"])
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            json.loads(stderr.getvalue())["status"], "REJECTED_LOCAL_RECEIPT")
+        with mock.patch.object(
+                review, "_read_private_receipt",
+                side_effect=AssertionError("must not read receipt")):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError, "must be a boolean"):
+                review.verify_local_receipt(
+                    self.dest, self.root, expected_challenge=self.challenge,
+                    require_readonly_source_view="true")
+
     def test_s1_41_unchanged_two_file_manifest_passes_both_checks(self):
         second = self.root / "tools" / "second.py"
         second.write_text("print('second fixture')\\n", encoding="utf-8")
