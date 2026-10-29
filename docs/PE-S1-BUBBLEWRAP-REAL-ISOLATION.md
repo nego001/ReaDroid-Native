@@ -1664,3 +1664,38 @@ O revisor permanece local e auto-relatado, sem assinatura, atestação
 de hipervisor ou homologação independente em kernel/VM Arch.
 A PR continua Draft, sem merge na main, APK/OTA ou liberação da
 execução conjunta seccomp+cgroups.
+
+
+## PE-S1.41 | Dupla verificação do conjunto de fontes
+
+O revisor offline validava cada arquivo do manifesto apenas uma vez.
+Se um arquivo que já havia sido conferido fosse alterado enquanto
+outro arquivo ainda era inspecionado, o relatório podia terminar
+aprovado sem detectar a alteração posterior do arquivo anterior.
+
+Agora o manifesto é lido em **duas passagens completas**. A primeira
+confere formato, tamanho, SHA-256 e as proteções locais de nomes/inodes
+da PE-S1.39/40 e registra, para cada fonte, identidade do arquivo,
+diretórios relativos e ancestrais absolutos do checkout. A segunda
+abre **novamente pelo caminho seguro** cada entrada, confirma SHA-256
+e tamanho e compara toda a cadeia de identidades à primeira passagem.
+Trocas de arquivo ou diretório por novos inodes com **bytes idênticos**
+também causam recusa. O leitor padrão `_read_source()` ainda retorna
+apenas bytes; a identidade é opt-in interno do revisor. Não mudam o
+esquema do recibo v2, o CLI nem o pin SHA-256 externo.
+
+Cinco testes novos verificam aprovação legítima com duas fontes,
+alteração da primeira fonte após a primeira conferência, substituição
+por outro inode de bytes idênticos, troca de um diretório com
+conteúdo idêntico e exclusão da primeira fonte entre as passagens.
+
+**Limites importantes:** isso detecta mudanças observadas entre
+as leituras, **não** cria snapshot atômico de todos os arquivos, nem
+impede alterações após a segunda leitura ou trocas rápidas revertidas
+entre observações. Não existe lock global obrigatório no checkout.
+Uma fonte hostil de mesmo UID ainda pode manipular o filesystem.
+Para atestação forte são necessários isolamento, dados imutáveis e
+prova externa. Esta etapa só verifica consistência local; continua
+sem assinatura, sem atestação independente de kernel/VM Arch e sem
+analisar binários hostis. PR Draft, sem merge, APK/OTA intocados,
+modo combinado seccomp+cgroup ainda bloqueado.
