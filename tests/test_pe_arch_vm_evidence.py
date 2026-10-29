@@ -689,6 +689,120 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
                          "REJECTED_LOCAL_RECEIPT")
 
 
+    def test_s1_39_nested_source_path_remains_valid(self):
+        nested = self.root / "tools" / "deep"
+        nested.mkdir()
+        payload = nested / "fixture.py"
+        payload.write_bytes(b"print('safe nested source')\\n")
+        relative = "tools/deep/fixture.py"
+        self.assertEqual(review._read_source(self.root, relative),
+                         payload.read_bytes())
+        with mock.patch.object(evidence, "SOURCE_FILES", (relative,)):
+            issued = self.write()
+            checked = review.verify_local_receipt(
+                self.dest, self.root, expected_challenge=self.challenge,
+                expected_receipt_sha256=issued["receipt_sha256"])
+        self.assertEqual(checked["source_files_rechecked"], 1)
+
+    def test_s1_39_rejects_identical_directory_replaced_during_read(self):
+        original_dir = self.root / "tools"
+        replacement = self.root / "replacement-tools"
+        replacement.mkdir()
+        (replacement / "synthetic.py").write_bytes(self.source.read_bytes())
+        original_read = os.read
+        old_source_inode = self.source.stat().st_ino
+        swapped = []
+
+        def replace_directory(fd, length):
+            if os.fstat(fd).st_ino == old_source_inode and not swapped:
+                original_dir.rename(self.root / "tools-original")
+                replacement.rename(original_dir)
+                swapped.append(True)
+            return original_read(fd, length)
+
+        with mock.patch.object(review.os, "read",
+                               side_effect=replace_directory):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source directory name or inode changed during read"):
+                review._read_source(self.root, "tools/synthetic.py")
+        self.assertEqual(swapped, [True])
+        self.assertEqual(self.source.read_bytes(),
+                         (self.root / "tools-original" / "synthetic.py").read_bytes())
+
+    def test_s1_39_rejects_directory_replaced_between_stat_and_open(self):
+        original_dir = self.root / "tools"
+        replacement = self.root / "replacement-tools"
+        replacement.mkdir()
+        (replacement / "synthetic.py").write_bytes(self.source.read_bytes())
+        original_open = os.open
+        swapped = []
+
+        def swap_before_open(path, flags, *args, **kwargs):
+            if (path == "tools" and kwargs.get("dir_fd") is not None
+                    and flags & os.O_DIRECTORY and not swapped):
+                original_dir.rename(self.root / "tools-old")
+                replacement.rename(original_dir)
+                swapped.append(True)
+            return original_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(review.os, "open",
+                               side_effect=swap_before_open):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source directory name or inode changed during open"):
+                review._read_source(self.root, "tools/synthetic.py")
+        self.assertEqual(swapped, [True])
+
+    def test_s1_39_rejects_nested_directory_replaced_during_read(self):
+        source_dir = self.root / "tools" / "nested"
+        source_dir.mkdir()
+        nested_source = source_dir / "fixture.py"
+        nested_source.write_bytes(b"intact fixture")
+        replacement = self.root / "tools" / "nested-new"
+        replacement.mkdir()
+        (replacement / "fixture.py").write_bytes(nested_source.read_bytes())
+        opened_inode = nested_source.stat().st_ino
+        original_read = os.read
+        swapped = []
+
+        def replace_nested_directory(fd, length):
+            if os.fstat(fd).st_ino == opened_inode and not swapped:
+                source_dir.rename(self.root / "tools" / "nested-old")
+                replacement.rename(source_dir)
+                swapped.append(True)
+            return original_read(fd, length)
+
+        with mock.patch.object(review.os, "read",
+                               side_effect=replace_nested_directory):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source directory name or inode changed during read"):
+                review._read_source(self.root, "tools/nested/fixture.py")
+        self.assertEqual(swapped, [True])
+
+    def test_s1_39_rejects_source_directory_changed_to_symlink(self):
+        source_dir = self.root / "tools"
+        original_read = os.read
+        source_inode = self.source.stat().st_ino
+        replaced = []
+
+        def install_symlink_during_read(fd, length):
+            if os.fstat(fd).st_ino == source_inode and not replaced:
+                source_dir.rename(self.root / "tools-original")
+                source_dir.symlink_to(self.root / "tools-original",
+                                      target_is_directory=True)
+                replaced.append(True)
+            return original_read(fd, length)
+
+        with mock.patch.object(review.os, "read",
+                               side_effect=install_symlink_during_read):
+            with self.assertRaisesRegex(
+                    review.ReceiptReviewError,
+                    "Source directory name or inode changed during read"):
+                review._read_source(self.root, "tools/synthetic.py")
+        self.assertEqual(replaced, [True])
+
     def test_s1_38_atomically_published_receipt_has_one_link(self):
         issued = self.write()
         self.assertEqual(self.dest.stat().st_nlink, 1)
