@@ -181,8 +181,12 @@ def _host(ghidra_home: Path) -> int:
         shutil.copyfile(__file__, work / "readonly_receipt_smoke.py")
         code = root / "code"
         code.mkdir()
+        # These modules are direct dependencies of pe_arch_vm_evidence.
+        # Expose only the smallest explicit reviewed module set, not the
+        # working checkout or host Python module search path.
         for module in ("pe_arch_vm_receipt_verify.py", "pe_arch_vm_evidence.py",
-                       "pe_nofollow_paths.py"):
+                       "pe_nofollow_paths.py", "pe_ghidra_integrity.py",
+                       "pe_resource_limits.py"):
             shutil.copyfile(repository / "tools" / module, code / module)
 
         base = build_command(ghidra_home, work, 120)
