@@ -153,6 +153,37 @@ jobs:
                   raise RuntimeError(
                       "REAL BUBBLEWRAP FD/NAMESPACE PROBE FAILED CLOSED")
           PY
+      - name: PE-S1.43 actual read-only bind source policy (no mocks, synthetic Python only)
+        run: |
+          set -euo pipefail
+          python3 tests/pe_readonly_mount_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s1-43-real-mount.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-43-real-mount.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.strip().startswith("{")]
+          assert len(records) == 4, "missing actual Bubblewrap mount probes"
+          expected = [
+              "PASS_ACTUAL_RO_BIND",
+              "REJECTED_ACTUAL_RW_BIND",
+              "REJECTED_ACTUAL_NESTED_RW_BIND",
+              "PASS_PE_S1_43_ACTUAL_BWRAP_READONLY_MOUNT_POLICY",
+          ]
+          assert [record["status"] for record in records] == expected
+          summary = records[-1]
+          assert summary["mount_tests"] == 3
+          assert summary["actual_readonly_bind_accepted"] is True
+          assert summary["actual_writable_bind_rejected"] is True
+          assert summary["actual_nested_writable_bind_rejected"] is True
+          assert summary["fstatvfs_mocked"] is False
+          assert summary["native_arch_vm_attestation"] is False
+          assert summary["windows_binary_executed"] is False
+          print("PE-S1.43: actual kernel readonly mount PASS; writable mounts rejected.")
+          print("This is Ubuntu Bubblewrap only; not an Arch VM or immutable-host proof.")
+          PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
         run: |
           set -euo pipefail
