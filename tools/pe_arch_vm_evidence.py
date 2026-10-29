@@ -42,6 +42,7 @@ SOURCE_FILES = (
     "tools/pe_auto_behavior.py",
     "tools/pe_ghidra_integrity.py",
     "tools/pe_arch_vm_validation.py",
+    "tools/pe_arch_vm_checkout_pin.py",
     "tools/pe_arch_scoped_ghidra_smoke.py",
     "tools/pe_arch_scoped_seccomp_smoke.py",
     "tools/pe_scoped_seccomp_launcher.py",
