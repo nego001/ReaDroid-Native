@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -503,6 +504,25 @@ def build_receipt(report: dict, source_root: Path = ROOT, *,
     }
 
 
+
+def _lock_private_receipt_directory(directory_fd: int, *,
+                                    exclusive: bool) -> None:
+    """Cooperate with receipt writers/cleanup without waiting on busy locks.
+
+    flock on an already pinned directory descriptor serializes writers and
+    cleanup across independent processes, including aliases of the same inode.
+    It is advisory: malicious or legacy same-UID processes may ignore it.
+    Closing the descriptor releases this lock on every exit path.
+    """
+    mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    try:
+        fcntl.flock(directory_fd, mode | fcntl.LOCK_NB)
+    except OSError as exc:
+        raise AcceptanceReceiptError(
+            "Private receipt directory busy or advisory lock unavailable"
+        ) from exc
+
+
 def cleanup_orphan_receipt_stages(
         directory: Path, *, min_age_seconds: int = MIN_STAGE_AGE_SECONDS,
         apply: bool = False) -> dict:
@@ -526,6 +546,9 @@ def cleanup_orphan_receipt_stages(
                     or private.st_mode & 0o077):
                 raise AcceptanceReceiptError(
                     "Stage cleanup requires owner-only directory")
+            # Preview can coexist with other previews, but never with a
+            # writer. Apply requires exclusive access through the last unlink.
+            _lock_private_receipt_directory(fd, exclusive=apply)
             now_ns = time.time_ns()
             cutoff = now_ns - min_age_seconds * 1_000_000_000
             candidates = []
@@ -619,6 +642,10 @@ def write_receipt_no_overwrite(report: dict, destination: Path,
                     or meta.st_mode & 0o077):
                 raise AcceptanceReceiptError(
                     "Receipt parent must be owner-only (0700)")
+            # This conflicts with cleanup --apply and other cooperating
+            # writers; fail closed rather than waiting on a possibly hung
+            # process. The lock lasts through file+directory fsync.
+            _lock_private_receipt_directory(directory_fd, exclusive=True)
             # A completed receipt must never be observable under its final
             # name while it is still being written or fsynced. An owner-only
             # staging file receives the full bytes before atomic publication.

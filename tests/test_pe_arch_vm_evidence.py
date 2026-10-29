@@ -688,6 +688,123 @@ class PrivateNativeArchReceiptTests(unittest.TestCase):
         self.assertEqual(json.loads(stderr.getvalue())["status"],
                          "REJECTED_LOCAL_RECEIPT")
 
+
+    def test_s1_35_busy_directory_lock_blocks_write_without_creating_stage(self):
+        import fcntl
+        owner = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaisesRegex(
+                    evidence.AcceptanceReceiptError, "directory busy"):
+                self.write()
+            self.assertFalse(self.dest.exists())
+            self.assertEqual(list(self.private.iterdir()), [])
+        finally:
+            os.close(owner)
+        self.write()
+        self.assertTrue(self.dest.is_file())
+
+    def test_s1_35_busy_writer_blocks_cleanup_preview_and_apply(self):
+        import fcntl
+        stage = self.private / (".negresco-receipt-" + "1" * 32 + ".tmp")
+        stage.write_bytes(b"unfinished")
+        stage.chmod(0o600)
+        now = stage.stat().st_ctime_ns + 50 * 3600 * 10 ** 9
+        owner = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with mock.patch.object(evidence.time, "time_ns", return_value=now):
+                for apply in (False, True):
+                    with self.subTest(apply=apply):
+                        with self.assertRaisesRegex(
+                                evidence.AcceptanceReceiptError,
+                                "directory busy"):
+                            evidence.cleanup_orphan_receipt_stages(
+                                self.private, apply=apply)
+                        self.assertTrue(stage.exists())
+        finally:
+            os.close(owner)
+        with mock.patch.object(evidence.time, "time_ns", return_value=now):
+            result = evidence.cleanup_orphan_receipt_stages(
+                self.private, apply=True)
+        self.assertEqual(result["removed_stages"], [stage.name])
+
+    def test_s1_35_shared_preview_allows_previews_but_blocks_mutations(self):
+        import fcntl
+        reader = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(reader, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            self.assertEqual(
+                evidence.cleanup_orphan_receipt_stages(self.private)[
+                    "status"], "STAGE_CLEANUP_PREVIEW")
+            with self.assertRaisesRegex(
+                    evidence.AcceptanceReceiptError, "directory busy"):
+                evidence.cleanup_orphan_receipt_stages(
+                    self.private, apply=True)
+            with self.assertRaisesRegex(
+                    evidence.AcceptanceReceiptError, "directory busy"):
+                self.write()
+            self.assertFalse(self.dest.exists())
+        finally:
+            os.close(reader)
+
+    def test_s1_35_writer_lock_covers_atomic_publication(self):
+        import fcntl
+        real_link = os.link
+        observed = []
+
+        def inspect_lock_during_link(src, dst, **kwargs):
+            second = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(
+                        second, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                observed.append("writer-exclusive")
+            finally:
+                os.close(second)
+            return real_link(src, dst, **kwargs)
+
+        with mock.patch.object(evidence.os, "link",
+                               side_effect=inspect_lock_during_link):
+            self.write()
+        self.assertEqual(observed, ["writer-exclusive"])
+        self.assertTrue(self.dest.exists())
+        second = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(second, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(second)
+
+    def test_s1_35_cleanup_lock_covers_removal(self):
+        import fcntl
+        stage = self.private / (".negresco-receipt-" + "2" * 32 + ".tmp")
+        stage.write_bytes(b"old incomplete receipt")
+        stage.chmod(0o600)
+        now = stage.stat().st_ctime_ns + 50 * 3600 * 10 ** 9
+        real_unlink = os.unlink
+        observed = []
+
+        def inspect_lock_during_unlink(name, *args, **kwargs):
+            if name == stage.name:
+                second = os.open(self.private, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(
+                            second, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    observed.append("cleanup-exclusive")
+                finally:
+                    os.close(second)
+            return real_unlink(name, *args, **kwargs)
+
+        with (mock.patch.object(evidence.time, "time_ns", return_value=now),
+              mock.patch.object(evidence.os, "unlink",
+                                side_effect=inspect_lock_during_unlink)):
+            result = evidence.cleanup_orphan_receipt_stages(
+                self.private, apply=True)
+        self.assertEqual(observed, ["cleanup-exclusive"])
+        self.assertEqual(result["removed_stages"], [stage.name])
+        self.assertFalse(stage.exists())
+
     def test_s1_34_preview_then_explicit_cleanup_of_old_single_link_stage(self):
         from pe_receipt_stage_cleanup import main
         stage = self.private / (".negresco-receipt-" + "a" * 32 + ".tmp")

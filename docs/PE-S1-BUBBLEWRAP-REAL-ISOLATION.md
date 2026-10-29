@@ -1436,3 +1436,41 @@ e não deve ser executado por tarefa periódica. Resultados
 apenas sobre manutenção local, não atestação nativa ou prova
 independente. PR permanece Draft, sem merge na main,
 sem publicação APK/OTA e sem desbloqueio seccomp+cgroups.
+
+## PE-S1.35 | Bloqueio cooperativo de diretório contra corrida de limpeza
+
+A PE-S1.34 exige limpeza manual de estágios antigos, mas o
+gravador e o limpador podiam abrir o mesmo diretório sem
+coordenação. Uma limpeza `--apply` poderia examinar arquivos
+enquanto um gravador ativo (ou travado) ainda os alterasse.
+
+A PE-S1.35 acrescenta `fcntl.flock()` **não bloqueante** sobre
+o descritor do próprio diretório privado, aberto com
+`open_absolute_directory_nofollow()` e validado como
+pertencente ao usuário e `0700`:
+
+- O gravador de recibos obtém `LOCK_EX|LOCK_NB` antes de
+  criar o estágio e o mantém até `fsync` do diretório.
+- A limpeza com `--apply` obtém `LOCK_EX|LOCK_NB`
+  durante toda a inspeção, revalidação e exclusão.
+- A visualização usa `LOCK_SH|LOCK_NB`, permitindo
+  consultas simultâneas, mas não durante a gravação.
+- Bloqueio ocupado ou indisponível rejeita a operação
+  imediatamente, sem ficar aguardando um processo travado.
+  O fechamento do FD libera o bloqueio inclusive em erros.
+
+Cinco novos testes verificam exclusão mútua,
+prévia compartilhada, recusa sem efeitos colaterais,
+e retenção do lock durante a publicação e durante a
+remoção. O `flock` é **consultivo**: outro programa do
+mesmo UID que o ignore ainda pode renomear/trocar
+um arquivo entre verificação e `unlink`. A exigência
+operacional de encerrar todos os escritores antes de
+usar `--apply` **permanece**, e nenhuma limpeza é
+executada automaticamente.
+
+CI Arch testa contratos em contêiner, não em kernel de VM
+Arch independente. Recibos continuam auto-relatados, sem
+assinatura/atestado independente. PR Draft, sem merge
+na `main`, sem publicação APK/OTA ou liberação conjunta
+seccomp+cgroup.
