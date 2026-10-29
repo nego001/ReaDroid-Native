@@ -184,6 +184,52 @@ jobs:
           print("PE-S1.43: actual kernel readonly mount PASS; writable mounts rejected.")
           print("This is Ubuntu Bubblewrap only; not an Arch VM or immutable-host proof.")
           PY
+      - name: PE-S1.44 full offline receipt CLI on real readonly/writable Bubblewrap mounts
+        run: |
+          set -euo pipefail
+          python3 tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s1-44-full-receipt.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-44-full-receipt.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.strip().startswith("{")]
+          statuses = [
+              "PASS_REAL_READONLY_FULL_RECEIPT",
+              "REJECT_REAL_WRITABLE_FULL_RECEIPT",
+              "REJECT_REAL_NESTED_WRITABLE_FULL_RECEIPT",
+              "REJECT_REAL_READONLY_TAMPERED_SOURCE",
+              "REJECT_REAL_READONLY_WRONG_PIN",
+              "REJECT_REAL_READONLY_WRONG_CHALLENGE",
+              "PASS_PE_S1_44_REAL_READONLY_FULL_RECEIPT",
+          ]
+          assert len(records) == len(statuses), "missing real full receipt probes"
+          assert [record.get("status") for record in records] == statuses
+          for record in records[:-1]:
+              assert record["source_manifest_files"] >= 20
+              assert record["external_pin_provided_separately"] is True
+              assert record["fstatvfs_mocked"] is False
+              assert record["synthetic_self_asserted_report"] is True
+              assert record["windows_binary_executed"] is False
+              assert record["independent_arch_vm_attestation"] is False
+          assert records[0]["cli_exit_code"] == 0
+          assert all(record["cli_exit_code"] == 2 for record in records[1:-1])
+          summary = records[-1]
+          assert summary["cases"] == 6
+          assert summary["real_readonly_receipt_approved"] is True
+          assert summary["real_writable_source_rejected"] is True
+          assert summary["real_nested_writable_source_rejected"] is True
+          assert summary["real_readonly_tampered_source_rejected"] is True
+          assert summary["real_wrong_external_pin_rejected"] is True
+          assert summary["real_wrong_challenge_rejected"] is True
+          assert summary["fstatvfs_mocked"] is False
+          assert summary["native_arch_vm_attestation"] is False
+          assert summary["windows_binary_executed"] is False
+          print("PE-S1.44: real readonly full offline receipt CLI PASS; all negative cases fail closed.")
+          print("Fixture report is self-asserted: NOT native Arch VM/kernel attestation.")
+          PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
         run: |
           set -euo pipefail
