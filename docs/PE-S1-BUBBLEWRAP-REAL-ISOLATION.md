@@ -1587,3 +1587,38 @@ SHA-256 **fora** do ambiente, não autentica o emissor, nem atesta kernel
 ou VM Arch. CI Arch ainda exercita userspace em container; a ponte
 Ubuntu ainda usa cgroup simulado. PR continua Draft, sem merge,
 APK/OTA ou liberação do executor conjunto seccomp+cgroups.
+
+
+## PE-S1.39 | Diretórios intermediários estáveis na revisão offline
+
+Na verificação de arquivos presentes no manifesto de fontes, o leitor já
+abria o diretório raiz e cada componente com descritores ancorados e
+`O_NOFOLLOW`. Porém, se um diretório intermediário fosse renomeado e
+substituído **depois** de ser aberto, o descritor ainda apontaria para a
+árvore antiga, e a comparação de nome/inode verificava apenas o arquivo
+final. Isso poderia validar bytes de uma árvore que já não corresponde ao
+caminho visível no checkout.
+
+A revisão offline registra, para cada componente de diretório relativo
+ao `source_root`, o descritor do diretório pai, o nome do componente,
+o inode aberto e seus metadados. Confere identidade ao abrir e
+novamente **após a leitura** do arquivo. Renomear, substituir por
+diretório de bytes iguais ou trocar por symlink causa recusa antes
+de declarar o manifesto validado. Nenhum componente é reaberto
+pelo caminho absoluto; verificações permanecem ancoradas nos FDs.
+
+Cinco testes PE-S1.39 cobrem: leitura e recibo legítimos com dois níveis
+de diretório, substituição de pasta com conteúdo idêntico durante a
+leitura, troca entre `stat` e `open`, troca de subdiretório mais
+profundo e substituição do diretório por symlink durante a leitura.
+
+**Limites:** a verificação observa identidade em instantes definidos,
+não é uma operação atômica sobre toda a árvore. Um processo hostil com
+o mesmo UID pode trocar nomes depois da última conferência, ou realizar
+trocas temporárias não observáveis; o próprio `source_root` e os
+ancestrais absolutos continuam dependentes do percurso ancorado, sem
+atestado de snapshot do filesystem. Para garantias fortes são
+necessários checkout imutável, isolamento do revisor e evidência
+independente. A revisão permanece offline, auto-relatada, sem assinatura
+nem homologação de VM/kernel Arch. PR Draft, sem merge,
+APK/OTA não publicados e sem liberação conjunta seccomp+cgroups.
