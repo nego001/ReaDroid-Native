@@ -16,6 +16,10 @@ import shutil
 import subprocess
 import sys
 
+# Do not create __pycache__ in the pinned source checkout before Git status.
+# Existing cache/untracked files are still refused; this is not an ignore rule.
+sys.dont_write_bytecode = True
+
 COMMIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
