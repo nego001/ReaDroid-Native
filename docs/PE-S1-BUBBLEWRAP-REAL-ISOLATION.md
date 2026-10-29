@@ -1846,3 +1846,35 @@ mas não impede manipulação de inodes por outra visão gravável.
 Não há validação independente do kernel/hypervisor Arch nem
 homologação do executor conjunto seccomp+cgroups. PR Draft,
 sem merge, APK/OTA não publicados.
+
+
+## PE-S1.45 | Handoff reproduzível para revisor independente (ainda não homologado)
+
+Foi adicionado o guia operacional
+[PE-S1-NATIVE-ARCH-INDEPENDENT-REVIEW.md](PE-S1-NATIVE-ARCH-INDEPENDENT-REVIEW.md)
+com separação entre revisor e operador de VM descartável, seleção prévia
+de SHA-1 Git completo e challenge 256-bit fora da VM, ZIP Ghidra 12.2
+pinado, preflight do Arch Linux nativo, execução de aceitação sintética,
+recibo privado v2, hash SHA-256 retido separadamente e verificação offline
+da fonte em montagem readonly.
+
+A nova CLI local `tools/pe_arch_vm_checkout_pin.py` compara
+`HEAD^{commit}` com o SHA previamente escolhido pelo revisor,
+exige raiz exata do worktree, fontes do manifesto rastreadas e
+status limpo. Na CLI nativa, `--reviewer-pinned-checkout` exige
+`--expected-source-commit`, `--reviewer-challenge` e
+`--evidence-output`, recusando ausência ou divergência **antes**
+de iniciar lifecycle/cgroup/Ghidra. O resultado de pin de Git é
+impresso fora do relatório estrito do recibo v2. O novo helper
+foi incluído em `evidence.SOURCE_FILES` para que sua própria
+versão faça parte da evidência.
+
+A CI só executa **contratos simulados de recusa** e **consulta
+real a Git de um checkout Ubuntu**, inclusive com hash de commit
+intencionalmente incorreto. Nenhuma VM Arch é criada ou iniciada
+por essa etapa. Checagem Git não valida assinaturas, máquina,
+kernel, origem do repositório ou snapshot contra host adversário.
+
+**Estado: protocolo pronto para revisão externa, mas sem
+homologação independente.** PR Draft, sem merge/produção/APK/OTA,
+sem liberar modo combinado seccomp+cgroups para amostras externas.
