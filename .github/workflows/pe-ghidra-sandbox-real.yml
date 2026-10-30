@@ -261,6 +261,49 @@ jobs:
           print("PE-S1.44: real readonly full offline receipt CLI PASS; all negative cases fail closed.")
           print("Fixture report is self-asserted: NOT native Arch VM/kernel attestation.")
           PY
+      - name: PE-S1.47 verify real readonly operator handoff with two external SHA pins
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --run-handoff > "$RUNNER_TEMP/pe-s1-47-real-handoff.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-47-real-handoff.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines()
+                     if x.strip().startswith("{")]
+          expected = [
+              "PASS_REAL_READONLY_OPERATOR_HANDOFF",
+              "REJECT_REAL_WRONG_OPERATOR_HASH",
+              "REJECT_REAL_PINNED_OPERATOR_REPORT_MISMATCH",
+              "PASS_PE_S1_47_REAL_READONLY_HANDOFF",
+          ]
+          assert [entry.get("status") for entry in records] == expected
+          assert len(records) == 4
+          for item in records[:3]:
+              assert item["source_manifest_files"] >= 25
+              assert item["actual_readonly_mount"] is True
+              assert item["git_real_checkout"] is True
+              assert item["operator_hash_external"] is True
+              assert item["receipt_hash_external"] is True
+              assert item["fstatvfs_mocked"] is False
+              assert item["self_reported_synthetic_fixture"] is True
+              assert item["native_arch_vm_attestation"] is False
+              assert item["windows_binary_executed"] is False
+          assert records[0]["exit_code"] == 0
+          assert records[1]["exit_code"] == 2
+          assert records[2]["exit_code"] == 2
+          final = records[-1]
+          assert final["cases"] == 3
+          assert final["real_readonly_handoff_accepted"] is True
+          assert final["wrong_operator_pin_rejected"] is True
+          assert final["operator_report_mismatch_rejected"] is True
+          assert final["git_real_checkout"] is True
+          assert final["fstatvfs_mocked"] is False
+          assert final["native_arch_vm_attestation"] is False
+          print("PE-S1.47: real readonly two-pin handoff PASS (synthetic claims only).")
+          PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
         run: |
           set -euo pipefail
