@@ -277,7 +277,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
             operator_file = private / "operator.json"
             operator_file.write_bytes((
                 json.dumps(operator, sort_keys=True, separators=(",", ":"))
-                + "\\n").replace("\\n", "\n").encode("utf-8"))
+                + "\n").encode("utf-8"))
             operator_file.chmod(0o600)
             operator_hash = hashlib.sha256(operator_file.read_bytes()).hexdigest()
             corrupted_report = copy.deepcopy(operator)
@@ -285,7 +285,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
             corrupted_file = private / "operator-modified.json"
             corrupted_file.write_bytes((
                 json.dumps(corrupted_report, sort_keys=True, separators=(",", ":"))
-                + "\\n").replace("\\n", "\n").encode("utf-8"))
+                + "\n").encode("utf-8"))
             corrupted_file.chmod(0o600)
             changed_hash = hashlib.sha256(corrupted_file.read_bytes()).hexdigest()
 
