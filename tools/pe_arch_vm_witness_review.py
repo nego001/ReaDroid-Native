@@ -65,13 +65,17 @@ def _read_pinned(root: Path, name: str, expected: str) -> bytes:
 
 def _ssh_verify(raw_statement: bytes, raw_signature: bytes,
                 trusted_signers: bytes, witness_id: str, *,
-                namespace: str = NAMESPACE) -> None:
+                namespace: str | None = None) -> None:
     """Real detached signature verification with the openSSH client.
 
     Only the pinned bytes are handed to ssh-keygen, never mutable input
     paths or commands supplied by the operator. Uses a private temporary
     directory outside the source checkout; no network or shell.
     """
+    # Resolve the legacy default at call time. The PE-S1.51 reviewer
+    # explicitly supplies its distinct namespace; legacy callers retain
+    # the PE-S1.49 namespace and negative tests can override it.
+    resolved_namespace = NAMESPACE if namespace is None else namespace
     executable = shutil.which("ssh-keygen")
     if not executable or not os.path.isabs(executable):
         raise WitnessReviewError("OpenSSH signature verifier unavailable")
@@ -92,7 +96,7 @@ def _ssh_verify(raw_statement: bytes, raw_signature: bytes,
         try:
             result = subprocess.run(
                 [executable, "-Y", "verify", "-f", str(allowed),
-                 "-I", witness_id, "-n", namespace, "-s", str(sig)],
+                 "-I", witness_id, "-n", resolved_namespace, "-s", str(sig)],
                 input=raw_statement, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, timeout=15,
                 check=False, close_fds=True, env=env)
