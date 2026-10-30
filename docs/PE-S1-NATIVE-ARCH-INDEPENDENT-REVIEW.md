@@ -164,3 +164,36 @@ Não converte hash SHA-256 sem chave em prova de autoria.
 
 **Conservar a PR Draft, sem merge na main, sem APK/OTA e sem
 liberar seccomp+cgroups combinados para binários externos.**
+
+
+## PE-S1.46 | Artifacts ignorados, tipos Git e revalidação pós-execução
+
+O Git pode retornar `git status --porcelain=v1` vazio mesmo que
+arquivos ignorados pela configuração de `.gitignore` tenham sido
+inseridos. Para uma cópia de revisão **descartável e exclusiva**, isso
+não comprova uma árvore sem artefatos auxiliares. A partir desta etapa,
+o helper PE-S1.45 também consulta `git ls-files --others --ignored
+--exclude-standard --directory --no-empty-directory` e **recusa
+qualquer arquivo ou diretório ignorado não rastreado**.
+
+Cada entrada de `SOURCE_FILES` também deve ser uma entrada Git
+normal `100644` ou `100755` em estágio 0. Entradas `120000`
+(symlink), `160000` (gitlink/submódulo), conflitos de índice e
+diferenças no conjunto de nomes são recusadas, mesmo quando o HEAD
+corresponde ao pin e o worktree parece limpo.
+
+No modo `--reviewer-pinned-checkout`, o gate agora **verifica o
+pin novamente após a aceitação nativa e antes de publicar o recibo
+privado**. Alteração de fonte, artefato ignorado produzido por testes
+ou divergência de identidade observável nesse momento impedem que
+seja publicado um PASS. Para prevenir artefatos de bytecode gerados
+pelo próprio script, usar `python3 -B` e um checkout novo e limpo
+de propósito. Não apagar arquivos ignorados de checkout desconhecido
+na tentativa de satisfazer a validação.
+
+Os testes incluem casos de Git real com um arquivo ignorado
+oculto ao `status --porcelain` e um symlink rastreado, bem como
+recusa simulada de alterações depois da carga nativa. Isso é
+uma proteção local contra diferenças **observáveis**; não garante
+snapshot atômico, confiança na implementação do Git ou que o
+operador/host é honesto. Não é homologação de VM Arch.
