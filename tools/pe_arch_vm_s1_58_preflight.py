@@ -100,7 +100,8 @@ def native_readiness(ghidra_home: Path, release_zip: Path,
         # The native gate itself is only a self-observation, not an identity
         # attestation of an external hypervisor/reviewer.
         guest = verify_arch_vm()
-        if (guest.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
+        if (not isinstance(guest, dict)
+                or guest.get("status") != "ARCH_VM_PREFLIGHT_PASSED"
                 or guest.get("vm_confirmed") is not True
                 or guest.get("container") is not False
                 or guest.get("root") is not False
@@ -109,7 +110,8 @@ def native_readiness(ghidra_home: Path, release_zip: Path,
             raise NativePreflightError("Native Arch VM gate incomplete")
         first = verify_source_checkout_pin(
             source, expected_source_commit, SOURCE_FILES)
-        if (first.get("status") != "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
+        if (not isinstance(first, dict)
+                or first.get("status") != "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
                 or first.get("expected_commit") != expected_source_commit
                 or first.get("worktree_status_clean") is not True
                 or first.get("checked_manifest_entries") != len(SOURCE_FILES)
@@ -119,7 +121,8 @@ def native_readiness(ghidra_home: Path, release_zip: Path,
         java25_preflight()
         validate_ghidra_122_install(home)
         integrity = verify_pinned_ghidra_tree(home, archive)
-        if (integrity.get("verified") is not True
+        if (not isinstance(integrity, dict)
+                or integrity.get("verified") is not True
                 or integrity.get("release_sha256") != GHIDRA_RELEASE_SHA256
                 or type(integrity.get("matched_files")) is not int
                 or integrity["matched_files"] < 1
