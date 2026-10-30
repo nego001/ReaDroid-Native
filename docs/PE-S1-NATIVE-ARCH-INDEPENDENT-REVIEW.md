@@ -845,3 +845,49 @@ merge, APK ou OTA.
 A CI testa 13 cenários próprios, com chaves Ed25519 temporárias
 reais **somente no Ubuntu** e testes de lógica no Arch userspace.
 Nenhum deles comprova uma VM Arch independente.
+
+
+## PE-S1.55 | Verificador completo dentro de montagem Bubblewrap somente leitura
+
+A CI Ubuntu executa tests/pe_signed_readonly_real_ci.py como usuário
+não-root, com o **mesmo perfil Bubblewrap** já usado pelo Ghidra. Ela monta
+um checkout Git de teste e uma pasta privada de evidências em /audit/source
+e /audit/private com --ro-bind; monta os módulos do revisor em
+/audit/code também com --ro-bind. O verificador integral PE-S1.54 é
+invocado **dentro** do namespace, com --require-readonly-source-view,
+checagens reais do Git e duas verificações criptográficas com OpenSSH real.
+A montagem readonly é conferida pelos flags efetivos do kernel, e não
+inferida de permissões chmod ou de mocks.
+
+O operador do teste constrói **apenas dados sintéticos** de supostos
+eventos no guest e cria duas chaves Ed25519 novas e descartáveis. As
+chaves privadas ficam fora de qualquer montagem da sandbox; somente
+os arquivos de assinaturas e chaves **públicas** são montados. Os pins
+SHA-256 de teste são calculados no processo externo antes de invocar a
+sandbox. Isso não substitui um canal confiável de distribuição de pins
+em uma auditoria real.
+
+Cinco casos obrigatórios:
+
+- Pacote íntegro, cronologia declarada coerente, ambas as assinaturas
+  válidas, checkout limpo e todas as fontes readonly: **aceitar**.
+- SHA-256 externo do índice errado: **recusar**.
+- Log estruturado modificado, índice atualizado e declaração da
+  testemunha não reassinada: **recusar**.
+- Assinatura do aprovador modificada e seu SHA-256 atualizado:
+  **recusar criptograficamente**.
+- Fonte efetivamente montada com --bind de escrita, apesar do restante
+  do pacote readonly: **recusar**.
+
+O workflow exige cinco registros de caso e um resumo final, em JSON,
+sem aceitar skip, ausência de OpenSSH, fallback fora do Bubblewrap
+ou testes de assinatura mockados. Os testes de contrato PE-S1.54 continuam
+na matriz Ubuntu/Arch userspace, separados dessa integração real.
+
+**Limites:** este teste observa mounts e OpenSSH no runner **Ubuntu**;
+o Git local de teste é produzido no próprio runner e as observações do
+guest são sintéticas. Não há atestação de hardware, do kernel ou
+hipervisor Arch, do horário real, da independência humana dos
+signatários ou dos limites combinados seccomp+cgroups na VM Arch.
+Não executar PE externo, não promover PR Draft, não mesclar na
+main, não publicar APK ou OTA.
