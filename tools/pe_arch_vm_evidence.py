@@ -36,6 +36,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_custody_review.py",
     "tools/pe_arch_vm_witness_review.py",
     "tools/pe_arch_vm_witness_trust_review.py",
+    "tools/pe_arch_vm_dual_control_review.py",
     "tools/pe_nofollow_paths.py",
     "tools/pe_arch_vm_gate.py",
     "tools/pe_arch_cgroup_smoke.py",
