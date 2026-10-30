@@ -86,13 +86,16 @@ def _read_bounded(path: Path, *, limit: int) -> str:
             raw = f.read(limit + 1)
     except OSError as exc:
         raise ObservationError("Required kernel metadata unavailable") from exc
-    if not raw or len(raw) > limit:
+    # Empty cgroup.subtree_control is a legitimate observation on a
+    # cgroup-v2 root. The controllers *available* file is still required.
+    if len(raw) > limit or (not raw and
+            path != Path("/sys/fs/cgroup/cgroup.subtree_control")):
         raise ObservationError("Kernel metadata missing or too large")
     try:
         value = raw.decode("ascii").strip()
     except UnicodeError as exc:
         raise ObservationError("Non-ASCII kernel metadata") from exc
-    if not value or "\x00" in value:
+    if (not value and path != Path("/sys/fs/cgroup/cgroup.subtree_control")) or "\x00" in value:
         raise ObservationError("Malformed kernel metadata")
     return value
 
