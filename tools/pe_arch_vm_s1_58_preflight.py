@@ -104,13 +104,16 @@ def native_readiness(ghidra_home: Path, release_zip: Path,
                 or guest.get("vm_confirmed") is not True
                 or guest.get("container") is not False
                 or guest.get("root") is not False
+                or guest.get("systemd_user_bus") is not True
                 or guest.get("real_cgroup_test_executed") is not False):
             raise NativePreflightError("Native Arch VM gate incomplete")
         first = verify_source_checkout_pin(
             source, expected_source_commit, SOURCE_FILES)
         if (first.get("status") != "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
+                or first.get("expected_commit") != expected_source_commit
                 or first.get("worktree_status_clean") is not True
                 or first.get("checked_manifest_entries") != len(SOURCE_FILES)
+                or first.get("git_authorship_or_signature_verified") is not False
                 or first.get("native_vm_or_kernel_verified") is not False):
             raise NativePreflightError("Local checkout pin unproven")
         java25_preflight()
