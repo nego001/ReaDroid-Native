@@ -658,4 +658,5 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
