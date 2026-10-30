@@ -748,4 +748,33 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
+          # Arch Linux userspace in a container is NOT an independently
+          # provisioned VM. Refusal must be a structured exit code 2.
+          private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
+          rc=0
+          runuser -u nobody -- python -B tools/pe_arch_vm_s1_58_preflight.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --ghidra-home /missing/ghidra_12.2_PUBLIC \
+            --ghidra-archive /missing/ghidra_12.2.zip \
+            --evidence-output "$private/acceptance.json" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            > "$RUNNER_TEMP/arch-s1-58-stdout.json" \
+            2> "$RUNNER_TEMP/arch-s1-58-rejection.json" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/arch-s1-58-stdout.json"
+          test ! -e "$private/acceptance.json"
+          python - "$RUNNER_TEMP/arch-s1-58-rejection.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert record["status"] == "REJECTED_PE_S1_58_VM_PREFLIGHT_NOT_HOMOLOGATED"
+          assert record["independent_vm_attestation"] is False
+          assert record["unknown_windows_pe_execution_authorized"] is False
+          assert record["apk_or_ota_publication_authorized"] is False
+          print("PE-S1.58 real Arch container rejection: PASS, no receipt.")
+          PY
+          rm -rf -- "$private"
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
