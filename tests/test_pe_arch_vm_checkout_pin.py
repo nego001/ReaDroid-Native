@@ -14,10 +14,36 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_checkout_pin as pin
 import pe_arch_vm_validation as validation
+import pe_arch_vm_s1_58_preflight as preflight
+import pe_arch_vm_evidence as evidence
 
 COMMIT = "abc01234" * 5
 SOURCES = ("tools/synthetic.py", "tests/fixture.c")
 CHALLENGE = "a1bcde23" * 8
+
+
+def _mock_s1_59_local_preflight_ready():
+    # These PE-S1.45/46 tests exercise Git mutation AFTER the new
+    # readiness gate. Preflight is synthetic and explicitly mocked.
+    return {
+        "status": preflight.STATUS,
+        "source_commit": COMMIT,
+        "source_files_rechecked": len(evidence.SOURCE_FILES),
+        "reviewer_challenge_format_valid": True,
+        "native_guest_preflight_locally_passed": True,
+        "source_git_commit_and_clean_tree_locally_verified": True,
+        "pinned_ghidra_install_locally_verified": True,
+        "ghidra_release_sha256": preflight.GHIDRA_RELEASE_SHA256,
+        "receipt_destination_unused_private": True,
+        "any_receipt_written": False,
+        "any_cgroup_scope_created": False,
+        "ghidra_or_windows_binary_executed": False,
+        "independent_vm_attestation": False,
+        "independent_reviewer_or_hypervisor_verified": False,
+        "native_seccomp_and_cgroups_execution_verified": False,
+        "unknown_windows_pe_execution_authorized": False,
+        "apk_or_ota_publication_authorized": False,
+    }
 
 
 class LocalReviewerPinTests(unittest.TestCase):
@@ -231,6 +257,8 @@ class LocalReviewerPinTests(unittest.TestCase):
         with (mock.patch.object(validation.sys, "argv", argv),
               mock.patch.object(validation, "verify_source_checkout_pin",
                                 side_effect=[first, changed]) as check,
+              mock.patch.object(preflight, "native_readiness",
+                                return_value=_mock_s1_59_local_preflight_ready()),
               mock.patch.object(validation, "run_acceptance",
                                 return_value={"status": "mocked"}) as native,
               mock.patch.object(validation, "write_receipt_no_overwrite")
@@ -256,6 +284,8 @@ class LocalReviewerPinTests(unittest.TestCase):
                       {"status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED"},
                       pin.CheckoutPinError("ignored file created during run"),
                   ]),
+              mock.patch.object(preflight, "native_readiness",
+                                return_value=_mock_s1_59_local_preflight_ready()),
               mock.patch.object(validation, "run_acceptance",
                                 return_value={"status": "mocked"}) as native,
               mock.patch.object(validation, "write_receipt_no_overwrite")
@@ -280,6 +310,8 @@ class LocalReviewerPinTests(unittest.TestCase):
         with (mock.patch.object(validation.sys, "argv", argv),
               mock.patch.object(validation, "verify_source_checkout_pin",
                                 return_value=local_pin),
+              mock.patch.object(preflight, "native_readiness",
+                                return_value=_mock_s1_59_local_preflight_ready()),
               mock.patch.object(validation, "run_acceptance",
                                 return_value=native_report),
               mock.patch.object(validation, "write_receipt_no_overwrite",
