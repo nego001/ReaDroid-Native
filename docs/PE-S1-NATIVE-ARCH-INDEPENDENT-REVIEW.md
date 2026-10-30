@@ -693,7 +693,7 @@ O operador entrega esses dois arquivos junto ao recibo e à
 saída de aceitação. O revisor recolhe os arquivos, calcula os
 quatro hashes e cria seu próprio índice PE-S1.48; não usa hashes
 fornecidos pelo operador como âncora de confiança. A CI tem
-15 testes com dados sintéticos e exige que o host Ubuntu real
+16 testes com dados sintéticos e exige que o host Ubuntu real
 **recuse** o preflight, sem produzir arquivos.
 
 O status `LOCAL_PRIVATE_OBSERVATIONS_PUBLISHED_NOT_ATTESTED`
