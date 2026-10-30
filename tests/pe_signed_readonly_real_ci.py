@@ -167,6 +167,15 @@ def _child(mode: str, host_private_keys: tuple[str, str]) -> int:
                 or result.get("operator_logs_authenticated") is not False
                 or result.get("independent_vm_attestation") is not False):
             raise RuntimeError("Missing verified readonly/dual-signature proof")
+        # The full cryptographic review happened inside Bubblewrap; export
+        # ONLY its public/local result to the privately owned host scratch.
+        # The S1.57 guard later consumes these exact inner-namespace bytes.
+        release_out = Path("/work/review-private/signed-review.json")
+        raw = out.getvalue().encode("utf-8")
+        fd = os.open(release_out, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                     | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as file:
+            file.write(raw)
     else:
         if rc != 2 or out.getvalue():
             raise RuntimeError("Negative scenario unexpectedly accepted")
@@ -197,6 +206,7 @@ def _host(ghidra_home: Path) -> int:
     sys.path.insert(0, str(repo / "tools"))
     from pe_ghidra_sandbox import build_command
     import pe_arch_vm_evidence as evidence
+    import pe_arch_vm_s1_57_release_guard as release_guard
     import pe_arch_vm_custody_review as custody
     import pe_arch_vm_witness_review as witness
     import pe_arch_vm_witness_trust_review as trust
@@ -342,6 +352,7 @@ def _host(ghidra_home: Path) -> int:
         work = root / "work"
         (work / "scripts").mkdir(parents=True, mode=0o700)
         (work / "project").mkdir(mode=0o700)
+        (work / "review-private").mkdir(mode=0o700)
         shutil.copyfile(repo / "tools/ghidra_scripts/NegrescoFunctionInventory.java",
                         work / "scripts/NegrescoFunctionInventory.java")
         shutil.copyfile(__file__, work / "pe_signed_review_smoke.py")
@@ -363,6 +374,8 @@ def _host(ghidra_home: Path) -> int:
             "Synthetic CI Reviewer:/work:/usr/bin/false\n", encoding="ascii")
         group_fixture.write_text(
             f"ci-reviewer:x:{os.getegid()}:\n", encoding="ascii")
+        guard_checked = False
+        elevation_rejected = False
         for mode in MODES:
             case_private = root / ("private-" + mode)
             shutil.copytree(private, case_private)
@@ -468,7 +481,41 @@ def _host(ghidra_home: Path) -> int:
                     or proof.get("native_arch_vm_attestation") is not False
                     or proof.get("windows_binary_executed") is not False):
                 raise RuntimeError("Unsigned/incomplete kernel integration evidence")
+            if mode == "valid":
+                signed_file = work / "review-private/signed-review.json"
+                raw = signed_file.read_bytes()
+                params = {
+                    "expected_review_sha256": sha(raw),
+                    "expected_source_commit": commit,
+                    "expected_custody_sha256": pins["expected_custody_sha256"],
+                    "expected_policy_revision": pins["expected_policy_revision"],
+                    "expected_reviewer_id": REVIEWER_ID,
+                    "expected_witness_id": WITNESS_ID,
+                }
+                held = release_guard.evaluate_signed_review(signed_file, **params)
+                if (held.get("status") != release_guard.STATUS
+                        or held.get("local_signed_review_pin_matched") is not True
+                        or held.get("native_arch_vm_independently_verified") is not False
+                        or held.get("unknown_windows_pe_execution_authorized") is not False
+                        or held.get("apk_or_ota_publication_authorized") is not False):
+                    raise RuntimeError("S1.57 did not block signed synthetic promotion")
+                guard_checked = True
+                forged = json.loads(raw)
+                forged["independent_vm_attestation"] = True
+                fake_file = work / "review-private/elevated-review.json"
+                publish(fake_file, forged)
+                try:
+                    release_guard.evaluate_signed_review(
+                        fake_file, **{**params,
+                                     "expected_review_sha256":
+                                         sha(fake_file.read_bytes())})
+                except release_guard.ReleaseGuardError:
+                    elevation_rejected = True
+                else:
+                    raise RuntimeError("S1.57 accepted rehashed false VM attestation")
             print(json.dumps(proof, sort_keys=True), flush=True)
+        if not guard_checked or not elevation_rejected:
+            raise RuntimeError("S1.57 signed-to-release boundary not exercised")
         print(json.dumps({
             "status": "PASS_PE_S1_56_READONLY_ROLES_AND_SECRET_BOUNDARY",
             "cases": len(MODES), "real_bubblewrap": True,
@@ -480,6 +527,8 @@ def _host(ghidra_home: Path) -> int:
             "signed_suspended_policy_rejected": True,
             "same_key_two_roles_rejected": True,
             "wrong_reviewer_signature_namespace_rejected": True,
+            "s1_57_signed_review_release_hold_verified": guard_checked,
+            "s1_57_rehashed_attestation_forgery_rejected": elevation_rejected,
             "independent_arch_vm_attestation": False,
             "windows_binary_executed": False,
         }, sort_keys=True))
