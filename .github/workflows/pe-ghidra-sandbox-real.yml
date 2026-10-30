@@ -63,6 +63,20 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
+          # The actual Ubuntu host must NOT pass the native Arch VM gate.
+          mkdir -p "$RUNNER_TEMP/pe-s1-52-refusal"
+          chmod 700 "$RUNNER_TEMP/pe-s1-52-refusal"
+          if python3 -B tools/pe_arch_vm_observation.py \
+            --output-directory "$RUNNER_TEMP/pe-s1-52-refusal" \
+            --source-root "$GITHUB_WORKSPACE" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef; then
+            echo "Ubuntu host incorrectly accepted as an Arch VM" >&2
+            exit 1
+          fi
+          test -z "$(find "$RUNNER_TEMP/pe-s1-52-refusal" -mindepth 1 -print -quit)"
+          echo "PE-S1.52 real Ubuntu non-VM rejection PASS; no guest files produced."
       - name: Install Bubblewrap and Windows cross-compiler
         run: |
           set -euo pipefail
@@ -603,4 +617,5 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
