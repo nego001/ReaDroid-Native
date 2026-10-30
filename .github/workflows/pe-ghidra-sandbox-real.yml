@@ -366,6 +366,43 @@ jobs:
           assert summary["windows_binary_executed"] is False
           print("PE-S1.48: real four-artifact custody PASS; untrusted guest logs remain non-attestation.")
           PY
+      - name: PE-S1.53 structured guest observation custody under real readonly Bubblewrap
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --run-observation > "$RUNNER_TEMP/pe-s1-53-observation.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-53-observation.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          rows = [json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines()
+                  if x.strip().startswith("{")]
+          expected = [
+              "PASS_REAL_READONLY_STRUCTURED_GUEST_CUSTODY",
+              "REJECT_REAL_WRONG_OBSERVATION_INDEX_PIN",
+              "REJECT_REAL_DIFFERENT_GUEST_OBSERVATION_BATCH",
+              "PASS_PE_S1_53_REAL_READONLY_OBSERVATION_CUSTODY",
+          ]
+          assert [r.get("status") for r in rows] == expected
+          assert len(rows) == 4
+          for row in rows[:3]:
+              assert row["source_manifest_files"] >= 25
+              assert row["actual_readonly_mount"] is True
+              assert row["git_real_checkout"] is True
+              assert row["fstatvfs_mocked"] is False
+              assert row["synthetic_operator_reports"] is True
+              assert row["independent_arch_vm_attestation"] is False
+              assert row["windows_binary_executed"] is False
+          assert [r["cli_exit_code"] for r in rows[:3]] == [0, 2, 2]
+          assert rows[-1]["cases"] == 3
+          assert rows[-1]["rehashed_mismatched_batch_rejected"] is True
+          assert rows[-1]["external_index_pin_mismatch_rejected"] is True
+          assert rows[-1]["valid_structured_observation_accepted"] is True
+          assert rows[-1]["fstatvfs_mocked"] is False
+          assert rows[-1]["native_arch_vm_attestation"] is False
+          print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
+          PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
         run: |
           set -euo pipefail
