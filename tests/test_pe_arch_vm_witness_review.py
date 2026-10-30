@@ -185,9 +185,15 @@ class WitnessAcknowledgementTests(unittest.TestCase):
 
     def test_s1_49_witness_files_changed_after_signature_rejected(self):
         original = self.signers_path.read_bytes()
+        original_custody_review = witness.custody.verify_custody_index
+
         def tamper(*args, **kwargs):
+            # Invoke the genuine review exactly once, THEN change the
+            # witness key. Re-entering the patched function would recurse.
+            result = original_custody_review(*args, **kwargs)
             self.signers_path.write_bytes(original + b"extra\n")
-            return self.fixture.review()
+            return result
+
         with mock.patch.object(
                 witness.custody, "verify_custody_index",
                 side_effect=tamper):
@@ -196,6 +202,7 @@ class WitnessAcknowledgementTests(unittest.TestCase):
                 self.review()
 
     def test_s1_49_cli_rejects_missing_signature_without_execution(self):
+        external_signers_hash = self.options()["expected_signers_sha256"]
         self.signature_path.unlink()
         err = StringIO()
         args = [
@@ -204,7 +211,7 @@ class WitnessAcknowledgementTests(unittest.TestCase):
             "--expected-custody-sha256", self.fixture.index_sha256,
             "--expected-statement-sha256", self.statement_sha,
             "--expected-signature-sha256", "e" * 64,
-            "--expected-signers-sha256", self.options()["expected_signers_sha256"],
+            "--expected-signers-sha256", external_signers_hash,
             "--expected-source-commit", COMMIT,
             "--expected-challenge", self.fixture.case.fixture.challenge,
             "--expected-witness-id", WITNESS_ID,
