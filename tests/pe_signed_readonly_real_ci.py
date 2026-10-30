@@ -27,6 +27,8 @@ REVIEWER_ID = "policy-approver@example.invalid"
 MODES = (
     "valid", "wrong-index-pin", "rehashed-without-resigning",
     "reviewer-signature-tampered-repinned", "writable-source",
+    "reviewer-namespace-swapped-repinned", "suspended-policy-resigned",
+    "same-key-two-roles-resigned",
 )
 STATUSES = {
     "valid": "PASS_PE_S1_55_REAL_READONLY_DUAL_ED25519",
@@ -35,6 +37,10 @@ STATUSES = {
     "reviewer-signature-tampered-repinned":
         "REJECT_PE_S1_55_TAMPERED_REVIEWER_SIGNATURE",
     "writable-source": "REJECT_PE_S1_55_WRITABLE_SOURCE",
+    "reviewer-namespace-swapped-repinned":
+        "REJECT_PE_S1_56_WRONG_REVIEWER_NAMESPACE",
+    "suspended-policy-resigned": "REJECT_PE_S1_56_SUSPENDED_SIGNED_POLICY",
+    "same-key-two-roles-resigned": "REJECT_PE_S1_56_KEY_REUSE_TWO_ROLES",
 }
 
 
@@ -63,7 +69,7 @@ def _sign(key: Path, namespace: str, source: Path, dest: Path) -> None:
     dest.chmod(0o600)
 
 
-def _child(mode: str) -> int:
+def _child(mode: str, host_private_keys: tuple[str, str]) -> int:
     # Imports intentionally only inside the jailed process. Never mock
     # Git, OpenSSH verification, fstatvfs or the reviewer's CLI.
     import pe_arch_vm_end_to_end_review as full
@@ -81,6 +87,30 @@ def _child(mode: str) -> int:
             or source_ro != should_be_ro
             or any(flag != should_be_ro for flag in source_flags)):
         raise RuntimeError("Actual kernel readonly flags do not match case")
+
+    # PE-S1.56: verify the actual namespace does not expose signing
+    # secrets, host login records, or a writable synthetic identity.
+    import pwd
+    if pwd.getpwuid(os.geteuid()).pw_name != "ci-reviewer":
+        raise RuntimeError("Unexpected passwd identity inside Bubblewrap")
+    passwd_path = Path("/etc/passwd")
+    if (passwd_path.read_text("ascii").count("\n") != 1
+            or not passwd_path.read_text("ascii").startswith("ci-reviewer:x:")
+            or not (os.statvfs(passwd_path).f_flag & os.ST_RDONLY)
+            or Path("/etc/shadow").exists()
+            or Path("/etc/ssh").exists()):
+        raise RuntimeError("Host login or SSH identity leaked into sandbox")
+    if len(host_private_keys) != 2:
+        raise RuntimeError("Both disposable host key paths required")
+    for secret in host_private_keys:
+        if not secret.startswith("/"):
+            raise RuntimeError("Nonabsolute host secret path")
+        try:
+            with open(secret, "rb") as handle:
+                handle.read(1)
+        except FileNotFoundError:
+            continue
+        raise RuntimeError("Host signing secret accessible inside sandbox")
 
     pins = json.loads(Path("/work/test-pins.json").read_text("utf-8"))
     if mode == "wrong-index-pin":
@@ -154,6 +184,9 @@ def _child(mode: str) -> int:
         "two_real_disposable_ed25519_signers_verified": valid,
         "ssh_verifier_mocked": False, "git_verifier_mocked": False,
         "fstatvfs_mocked": False, "synthetic_operator_logs": True,
+        "host_signing_keys_inaccessible": True,
+        "host_passwd_and_ssh_config_not_exposed": True,
+        "synthetic_identity_readonly": True,
         "native_arch_vm_attestation": False, "windows_binary_executed": False,
     }, sort_keys=True))
     return 0
@@ -356,6 +389,44 @@ def _host(ghidra_home: Path) -> int:
                 signature.chmod(0o600)
                 case_pins["expected_reviewer_signature_sha256"] = sha(
                     signature.read_bytes())
+            if mode == "reviewer-namespace-swapped-repinned":
+                # A fresh, cryptographically valid reviewer signature in the
+                # WITNESS namespace must not authorize the trust policy.
+                _sign(reviewer_key, witness.NAMESPACE,
+                      case_private / trust.TRUST_FILENAME,
+                      case_private / dual.REVIEWER_SIGNATURE)
+                case_pins["expected_reviewer_signature_sha256"] = sha(
+                    (case_private / dual.REVIEWER_SIGNATURE).read_bytes())
+            if mode == "suspended-policy-resigned":
+                # The reviewer signs a real SUSPENDED policy. Correct pins
+                # and valid signature do not override key lifecycle policy.
+                active = case_private / trust.TRUST_FILENAME
+                policy = json.loads(active.read_text("utf-8"))
+                policy["decision"] = "SUSPENDED"
+                publish(active, policy)
+                _sign(reviewer_key, dual.NAMESPACE, active,
+                      case_private / dual.REVIEWER_SIGNATURE)
+                case_pins["expected_policy_sha256"] = sha(active.read_bytes())
+                case_pins["expected_reviewer_signature_sha256"] = sha(
+                    (case_private / dual.REVIEWER_SIGNATURE).read_bytes())
+            if mode == "same-key-two-roles-resigned":
+                # Deliberately sign both roles with one Ed25519 private key,
+                # but separate principal names and namespaces. Not sufficient
+                # for independently separated reviewer/witness authorization.
+                allowed = case_private / dual.REVIEWER_SIGNERS
+                witness_line = (case_private / witness.FILES["allowed_signers"]
+                                ).read_text("ascii").split()
+                allowed.write_text(
+                    REVIEWER_ID + " " + witness_line[1] + " "
+                    + witness_line[2] + "\n", encoding="ascii")
+                allowed.chmod(0o600)
+                _sign(witness_key, dual.NAMESPACE,
+                      case_private / trust.TRUST_FILENAME,
+                      case_private / dual.REVIEWER_SIGNATURE)
+                case_pins["expected_reviewer_signers_sha256"] = sha(
+                    allowed.read_bytes())
+                case_pins["expected_reviewer_signature_sha256"] = sha(
+                    (case_private / dual.REVIEWER_SIGNATURE).read_bytes())
             (work / "test-pins.json").write_text(
                 json.dumps(case_pins, sort_keys=True), encoding="ascii")
             (work / "test-pins.json").chmod(0o600)
@@ -371,6 +442,8 @@ def _host(ghidra_home: Path) -> int:
                 "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
                 "--", "/usr/bin/python3", "/work/pe_signed_review_smoke.py",
                 "--child", mode,
+                "--host-witness-private-key", str(witness_key),
+                "--host-reviewer-private-key", str(reviewer_key),
             ]
             proc = subprocess.run(
                 argv, stdin=subprocess.DEVNULL, capture_output=True,
@@ -387,6 +460,9 @@ def _host(ghidra_home: Path) -> int:
                     or proof.get("reviewer_code_mount_readonly") is not True
                     or proof.get("source_manifest_files") != len(evidence.SOURCE_FILES)
                     or proof.get("fstatvfs_mocked") is not False
+                    or proof.get("host_signing_keys_inaccessible") is not True
+                    or proof.get("host_passwd_and_ssh_config_not_exposed") is not True
+                    or proof.get("synthetic_identity_readonly") is not True
                     or proof.get("git_verifier_mocked") is not False
                     or proof.get("ssh_verifier_mocked") is not False
                     or proof.get("native_arch_vm_attestation") is not False
@@ -394,12 +470,16 @@ def _host(ghidra_home: Path) -> int:
                 raise RuntimeError("Unsigned/incomplete kernel integration evidence")
             print(json.dumps(proof, sort_keys=True), flush=True)
         print(json.dumps({
-            "status": "PASS_PE_S1_55_REAL_READONLY_SIGNED_REVIEW_INTEGRATION",
+            "status": "PASS_PE_S1_56_READONLY_ROLES_AND_SECRET_BOUNDARY",
             "cases": len(MODES), "real_bubblewrap": True,
             "real_git": True, "real_openssh_two_ed25519_keys": True,
             "source_and_private_readonly": True,
             "negative_cases_rejected": len(MODES) - 1,
             "mocked_git_or_crypto": False,
+            "private_signing_keys_excluded_from_sandbox": True,
+            "signed_suspended_policy_rejected": True,
+            "same_key_two_roles_rejected": True,
+            "wrong_reviewer_signature_namespace_rejected": True,
             "independent_arch_vm_attestation": False,
             "windows_binary_executed": False,
         }, sort_keys=True))
@@ -410,9 +490,14 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ghidra-home", type=Path)
     p.add_argument("--child", choices=MODES)
+    p.add_argument("--host-witness-private-key")
+    p.add_argument("--host-reviewer-private-key")
     args = p.parse_args()
     if args.child:
-        return _child(args.child)
+        if not args.host_witness_private_key or not args.host_reviewer_private_key:
+            p.error("Both host private key paths required for namespace test")
+        return _child(
+            args.child, (args.host_witness_private_key, args.host_reviewer_private_key))
     if args.ghidra_home is None:
         p.error("--ghidra-home is required")
     return _host(args.ghidra_home)
