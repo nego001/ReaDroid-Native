@@ -40,6 +40,7 @@ SOURCE_FILES = (
     "tools/pe_nofollow_paths.py",
     "tools/pe_arch_vm_gate.py",
     "tools/pe_arch_vm_observation.py",
+    "tools/pe_arch_vm_observation_review.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
     "tools/pe_auto_ghidra.py",
