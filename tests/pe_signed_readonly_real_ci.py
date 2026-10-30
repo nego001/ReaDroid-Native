@@ -320,6 +320,16 @@ def _host(ghidra_home: Path) -> int:
 
         base = build_command(ghidra_home, work, 120)
         before_command = base.index("--")
+        # The normal Ghidra profile intentionally hides host /etc/passwd.
+        # OpenSSH's keygen verifier requires getpwuid() on some builds.
+        # Supply ONLY a synthetic local identity, never the host database.
+        passwd_fixture = root / "synthetic-passwd"
+        group_fixture = root / "synthetic-group"
+        passwd_fixture.write_text(
+            f"ci-reviewer:x:{os.geteuid()}:{os.getegid()}:"
+            "Synthetic CI Reviewer:/work:/usr/bin/false\n", encoding="ascii")
+        group_fixture.write_text(
+            f"ci-reviewer:x:{os.getegid()}:\n", encoding="ascii")
         for mode in MODES:
             case_private = root / ("private-" + mode)
             shutil.copytree(private, case_private)
@@ -352,6 +362,8 @@ def _host(ghidra_home: Path) -> int:
             source_flag = "--bind" if mode == "writable-source" else "--ro-bind"
             argv = base[:before_command] + [
                 "--dir", "/audit",
+                "--ro-bind", str(passwd_fixture), "/etc/passwd",
+                "--ro-bind", str(group_fixture), "/etc/group",
                 "--ro-bind", str(code), "/audit/code",
                 source_flag, str(source), "/audit/source",
                 "--ro-bind", str(case_private), "/audit/private",
