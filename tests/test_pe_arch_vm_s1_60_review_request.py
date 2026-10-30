@@ -46,6 +46,31 @@ class LocalReviewerRequestTests(unittest.TestCase):
         return request.verify_request(
             self.file, **{**self.options(), **changes})
 
+    def custody_record(self, *, readonly=False):
+        return {
+            "schema": request.custody.SCHEMA,
+            "status": "LOCAL_CUSTODY_PACKAGE_CORRELATED",
+            "security_classification": request.custody.CLASSIFICATION,
+            "source_commit": COMMIT,
+            "custody_index_sha256": CUSTODY,
+            "artifact_sha256": {
+                name: "d" * 64 for name in request.custody.ARTIFACT_NAMES
+            },
+            "artifact_count": len(request.custody.ARTIFACT_NAMES),
+            "source_files_rechecked": len(evidence.SOURCE_FILES),
+            "readonly_source_view_verified": readonly,
+            "review_observed_at_utc": "2026-10-30T22:00:00+00:00",
+            "observed_by": "local_reviewer_process_not_external_witness",
+            "operator_kernel_log_authenticated": False,
+            "operator_cgroup_log_authenticated": False,
+            "external_signature_verified": False,
+            "native_kernel_execution_independently_verified": False,
+            "independent_vm_attestation": False,
+            "host_or_git_authenticity_verified": False,
+            "windows_binary_executed_by_reviewer": False,
+        }
+
+
     def patch_record(self, edit):
         obj = json.loads(self.file.read_text(encoding="utf-8"))
         edit(obj)
@@ -185,12 +210,7 @@ class LocalReviewerRequestTests(unittest.TestCase):
                 missing, expected_source_commit=COMMIT, reviewer_id=REVIEWER)
 
     def test_readonly_custody_correlation_contract_mocked_not_vm(self):
-        synthetic = {
-            "status": "LOCAL_CUSTODY_PACKAGE_CORRELATED",
-            "source_files_rechecked": len(evidence.SOURCE_FILES),
-            "native_kernel_execution_independently_verified": False,
-            "independent_vm_attestation": False,
-        }
+        synthetic = self.custody_record(readonly=True)
         with mock.patch.object(request.custody, "verify_custody_index",
                                return_value=synthetic) as cust:
             r = request.correlate_request_custody(
@@ -206,18 +226,43 @@ class LocalReviewerRequestTests(unittest.TestCase):
         self.assertFalse(r["apk_or_ota_publication_authorized"])
 
     def test_wrong_operator_custody_cannot_promote_result(self):
-        synthetic = {
-            "status": "LOCAL_CUSTODY_PACKAGE_CORRELATED",
-            "source_files_rechecked": len(evidence.SOURCE_FILES),
-            "native_kernel_execution_independently_verified": True,
-            "independent_vm_attestation": False,
-        }
+        synthetic = self.custody_record()
+        synthetic["native_kernel_execution_independently_verified"] = True
         with mock.patch.object(request.custody, "verify_custody_index",
                                return_value=synthetic):
             with self.assertRaises(request.RequestReviewError):
                 request.correlate_request_custody(
                     self.file, self.dir, Path("/review/source"),
                     expected_custody_sha256=CUSTODY, **self.options())
+
+    def test_incomplete_custody_contract_fails_closed(self):
+        for key in ("artifact_sha256", "operator_kernel_log_authenticated",
+                    "readonly_source_view_verified", "source_commit"):
+            with self.subTest(field=key):
+                payload = self.custody_record()
+                payload.pop(key)
+                with mock.patch.object(request.custody, "verify_custody_index",
+                                       return_value=payload):
+                    with self.assertRaises(request.RequestReviewError):
+                        request.correlate_request_custody(
+                            self.file, self.dir, Path("/review/source"),
+                            expected_custody_sha256=CUSTODY, **self.options())
+
+    def test_inconsistent_custody_hash_readonly_or_identity_fails_closed(self):
+        for key, value in (("custody_index_sha256", "e" * 64),
+                           ("readonly_source_view_verified", True),
+                           ("source_commit", "f" * 40),
+                           ("artifact_count", True),
+                           ("operator_cgroup_log_authenticated", True)):
+            with self.subTest(field=key):
+                payload = self.custody_record()
+                payload[key] = value
+                with mock.patch.object(request.custody, "verify_custody_index",
+                                       return_value=payload):
+                    with self.assertRaises(request.RequestReviewError):
+                        request.correlate_request_custody(
+                            self.file, self.dir, Path("/review/source"),
+                            expected_custody_sha256=CUSTODY, **self.options())
 
     def test_wrong_custody_hash_blocks_custody_reader(self):
         with mock.patch.object(request.custody,
@@ -233,12 +278,7 @@ class LocalReviewerRequestTests(unittest.TestCase):
             self.patch_record(lambda d: d.update(
                 reviewer_local_issued_at_utc_not_attested=
                     "2026-10-30T19:00:00+00:00"))
-            return {
-                "status": "LOCAL_CUSTODY_PACKAGE_CORRELATED",
-                "source_files_rechecked": len(evidence.SOURCE_FILES),
-                "native_kernel_execution_independently_verified": False,
-                "independent_vm_attestation": False,
-            }
+            return self.custody_record()
         with mock.patch.object(request.custody,
                                "verify_custody_index", side_effect=tamper):
             with self.assertRaises(request.RequestReviewError):
