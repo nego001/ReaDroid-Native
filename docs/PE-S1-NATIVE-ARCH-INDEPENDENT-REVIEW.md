@@ -701,3 +701,70 @@ indica **autodeclaração local, não atestação do kernel ou da VM**.
 A coleta não verifica quotas efetivas, cleanup de descendentes
 ou seccomp+cgroups juntos. A PR continua Draft, sem merge,
 APK/OTA ou execução de binários externos.
+
+
+## PE-S1.53 | Revisão estruturada das observações PE-S1.52
+
+O inventário PE-S1.48 verifica o SHA-256 de arquivos privados, mas
+trata os logs do guest como **dados opacos**. Isso é intencional
+para manter compatibilidade com pacotes mais antigos. A PE-S1.53
+adiciona um **verificador offline opcional e mais rigoroso**:
+`tools/pe_arch_vm_observation_review.py`. Ele exige o formato
+JSON estruturado que o coletor PE-S1.52 produz.
+
+O revisor prepara uma cópia privada dos quatro arquivos do
+pacote PE-S1.48, recalcula os hashes dos arquivos recebidos,
+cria seu índice privado e guarda **fora do pacote** o SHA-256
+do índice, commit Git completo e challenge estabelecidos antes
+da execução. A revisão deve ocorrer num checkout readonly
+verificado independentemente:
+
+```bash
+python3 -B tools/pe_arch_vm_observation_review.py \
+  --private-dir "/caminho/privado/do-revisor" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-custody-sha256 "$PIN_SHA256_DO_INDICE" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --require-readonly-source-view
+```
+
+O comando exige campos exatos, sem chaves JSON duplicadas,
+NaN ou claims adicionais. Confere o mesmo commit, challenge,
+classificação de autodeclaração e **mesmo timestamp declarado**
+nos dois registros; exige `pid1_comm=systemd`, formato de
+metadados bounded, controladores cgroup disponíveis
+`cpu/memory/pids`, ausência de duplicatas e que os
+controladores habilitados sejam um subconjunto dos disponíveis.
+Um `cgroup_v2_root_subtree_control` vazio continua válido.
+
+Uma divergência de lote ou uma alegação
+`independent_vm_attestation=true` é rejeitada **mesmo que um
+operador recalcule os hashes locais**. Após examinar esses
+campos, o verificador exige o resultado integral PE-S1.48,
+que por sua vez verifica o recibo PE-S1.47, challenge, fontes
+e checkout Git. Relê índice e observações para detectar
+mudanças persistentes ocorridas durante a revisão.
+
+Sucesso: `LOCAL_GUEST_OBSERVATION_CUSTODY_CORRELATED_NOT_ATTESTED`,
+com os SHA-256 e
+`observation_pins_and_structure_correlated=true`,
+mas **obrigatoriamente**
+`operator_logs_authenticated=false`,
+`native_kernel_execution_independently_verified=false` e
+`independent_vm_attestation=false`.
+
+Essa validação **não** compara cgroups efetivos no host nem
+atesta uma VM. Uma mesma pessoa pode criar logs e inventário
+aparentemente coerentes. Um horário coincidente entre dois
+arquivos é só uma igualdade de strings, não carimbo de tempo
+confiável. O operador deve passar pela validação nativa
+independente PE-S1.45 e por uma testemunha externa real para
+fundamentar qualquer homologação posterior.
+
+A CI realiza **17 testes de regressão** com dados sintéticos,
+mais três verificações no **Bubblewrap readonly real do Ubuntu**:
+lote correto, pin externo errado e lote inconsistente mesmo
+com inventário refeito. A CI não executa VM Arch nativa nem
+Windows PE de terceiros. A PR segue Draft e sem publicação
+APK/OTA ou execução conjunta de arquivos externos.
