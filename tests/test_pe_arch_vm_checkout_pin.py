@@ -311,7 +311,7 @@ class RealLocalGitPinIntegrationTests(unittest.TestCase):
         (self.root / "tests/fixture.c").write_text(
             "int test(void){return 0;}\\n", encoding="utf-8")
         (self.root / ".gitignore").write_text(
-            "*.ignored\\n__pycache__/\\n", encoding="utf-8")
+            "*.ignored\n__pycache__/\n", encoding="utf-8")
         self.run_git("init", "-q")
         self.run_git("config", "user.email", "ci-fixture@example.invalid")
         self.run_git("config", "user.name", "Synthetic CI Fixture")
