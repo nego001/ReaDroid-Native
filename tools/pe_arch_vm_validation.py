@@ -326,6 +326,62 @@ def main() -> int:
             checkout_pin = verify_source_checkout_pin(
                 Path(__file__).resolve().parents[1],
                 args.expected_source_commit, evidence.SOURCE_FILES)
+            # PE-S1.59: make the safe PE-S1.58 readiness check mandatory
+            # for the reviewer-pinned acceptance route, BEFORE any initial
+            # quota probe, descendant experiment, or Ghidra invocation.
+            # Imported lazily to avoid cyclic imports: the read-only
+            # preflight reuses our JDK/Ghidra metadata validation helpers.
+            import pe_arch_vm_s1_58_preflight as preflight
+            readiness = preflight.native_readiness(
+                args.ghidra_home, args.ghidra_archive,
+                Path(__file__).resolve().parents[1], args.evidence_output,
+                expected_source_commit=args.expected_source_commit,
+                reviewer_challenge=args.reviewer_challenge)
+            expected_readiness_fields = {
+                "status", "source_commit", "source_files_rechecked",
+                "reviewer_challenge_format_valid",
+                "native_guest_preflight_locally_passed",
+                "source_git_commit_and_clean_tree_locally_verified",
+                "pinned_ghidra_install_locally_verified",
+                "ghidra_release_sha256", "receipt_destination_unused_private",
+                "any_receipt_written", "any_cgroup_scope_created",
+                "ghidra_or_windows_binary_executed",
+                "independent_vm_attestation",
+                "independent_reviewer_or_hypervisor_verified",
+                "native_seccomp_and_cgroups_execution_verified",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized",
+            }
+            positive = (
+                "reviewer_challenge_format_valid",
+                "native_guest_preflight_locally_passed",
+                "source_git_commit_and_clean_tree_locally_verified",
+                "pinned_ghidra_install_locally_verified",
+                "receipt_destination_unused_private",
+            )
+            negative = (
+                "any_receipt_written", "any_cgroup_scope_created",
+                "ghidra_or_windows_binary_executed",
+                "independent_vm_attestation",
+                "independent_reviewer_or_hypervisor_verified",
+                "native_seccomp_and_cgroups_execution_verified",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized",
+            )
+            if (not isinstance(readiness, dict)
+                    or set(readiness) != expected_readiness_fields
+                    or readiness["status"] != preflight.STATUS
+                    or readiness["source_commit"] != args.expected_source_commit
+                    or type(readiness["source_files_rechecked"]) is not int
+                    or readiness["source_files_rechecked"] != len(evidence.SOURCE_FILES)
+                    or readiness["ghidra_release_sha256"] !=
+                       preflight.GHIDRA_RELEASE_SHA256
+                    or any(readiness[name] is not True for name in positive)
+                    or any(readiness[name] is not False for name in negative)):
+                raise ArchVmValidationError(
+                    "PE-S1.59 pinned native preflight incomplete; workloads blocked")
+            # Do not append preflight to the exact operator stdout contract:
+            # it is a local gate, never an attestation of the guest.
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
         if checkout_pin is not None:
