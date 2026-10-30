@@ -108,9 +108,22 @@ def _child(mode: str) -> int:
                     require_readonly_source_view=True)
             except Exception as diagnostic:
                 import traceback
+                import pe_arch_vm_dual_control_review as dual
+                import pe_arch_vm_witness_trust_review as trust
+                checked = subprocess.run(
+                    ["/usr/bin/ssh-keygen", "-Y", "verify",
+                     "-f", str(private / dual.REVIEWER_SIGNERS),
+                     "-I", REVIEWER_ID, "-n", dual.NAMESPACE,
+                     "-s", str(private / dual.REVIEWER_SIGNATURE)],
+                    input=(private / trust.TRUST_FILENAME).read_bytes(),
+                    capture_output=True, check=False, timeout=15,
+                    env={"HOME": "/tmp", "LANG": "C", "LC_ALL": "C"})
                 raise RuntimeError(
-                    "Synthetic integration diagnostic:\n" +
-                    "".join(traceback.format_exception(diagnostic))[-3500:]
+                    "Synthetic readonly OpenSSH rc=" + str(checked.returncode)
+                    + " stderr=" + checked.stderr.decode("utf-8", "replace")[-700:]
+                    + " stdout=" + checked.stdout.decode("utf-8", "replace")[-300:]
+                    + "\nSynthetic integration diagnostic:\n"
+                    + "".join(traceback.format_exception(diagnostic))[-3500:]
                 ) from diagnostic
             raise RuntimeError("Signed readonly CLI unexpectedly rejected: " +
                                err.getvalue()[-900:])
