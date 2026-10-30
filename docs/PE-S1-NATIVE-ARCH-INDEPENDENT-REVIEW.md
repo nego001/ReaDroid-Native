@@ -357,3 +357,113 @@ reais com Git/Bubblewrap Ubuntu: pacote coerente, índice com
 hash externo incorreto e observação de kernel adulterada após
 o pin. Nada libera amostras externas, merge, APK/OTA ou modo
 combinado seccomp+cgroups.
+
+
+## PE-S1.49 | Assinatura destacada de uma testemunha da custódia
+
+A assinatura desta etapa comprova **a posse da chave Ed25519
+previamente confiada**, vinculada à declaração de custódia. Não
+comprova origem do kernel, hipervisor, cgroups, autenticidade dos
+logs do operador nem horário certificado. **A testemunha assina
+uma declaração de recebimento/revisão da custódia, e não uma
+atestação de VM Arch.**
+
+O revisor deve estabelecer antecipadamente, por canal
+independente do operador, a identidade da testemunha
+(`WITNESS_ID`) e sua chave pública `ssh-ed25519`. A
+testemunha deve guardar a **chave privada fora da VM, fora do
+pacote do operador e fora do repositório Git**. Nenhum teste
+da CI produz uma assinatura de uma testemunha real; as chaves
+de teste são geradas e descartadas na execução do runner.
+
+A testemunha examina os hashes e o inventário da PE-S1.48,
+concorda com os limites da declaração e prepara um
+`witness-statement.json` UTF-8 com os campos exatos:
+
+```json
+{
+  "schema": "negresco_pe_s1_49_witness_custody_ack_v1",
+  "security_classification": "SIGNED_CUSTODY_ACKNOWLEDGEMENT_NOT_VM_ATTESTATION",
+  "witness_id": "revisor@example.invalid",
+  "source_commit": "SUBSTITUIR_POR_SHA1_GIT_COMPLETO",
+  "reviewer_challenge": "SUBSTITUIR_POR_CHALLENGE_64_HEX",
+  "custody_index_sha256": "SUBSTITUIR_POR_SHA256_DO_INDICE",
+  "acknowledgement_utc": "2026-10-29T12:00:00Z",
+  "vm_attestation_claimed": false
+}
+```
+
+**A data é exemplo**, não é prova de registro de horário. Todos
+os placeholders devem ser substituídos por valores reais e
+referências guardadas previamente. A testemunha assina **os
+bytes exatos** do arquivo com OpenSSH (`ssh-keygen -Y`),
+usando namespace próprio para impedir a reutilização de
+assinatura de outra finalidade:
+
+```bash
+ssh-keygen -Y sign \
+  -f "/caminho/seguro/chave-privada-da-testemunha" \
+  -n negresco-pe-s1-49-custody \
+  "/caminho/privado/witness-statement.json"
+```
+
+A assinatura destacada gerada pode ser copiada, pelo
+revisor, para `witness-statement.sig` na pasta privada.
+A chave pública aprovada **antes** da entrega fica em
+`witness-allowed-signers`, em **uma única linha**:
+
+```text
+revisor@example.invalid ssh-ed25519 AAAA_CHAVE_PUBLICA_REAL
+```
+
+Esse exemplo **não é chave válida**. O revisor obtém a chave
+por canal confiável, não do próprio arquivo do operador.
+O formato aceito pela PE-S1.49 é um único principal e uma
+única chave pública Ed25519, sem `*`, certificadora wildcard
+ou múltiplos signatários. Os três arquivos de testemunha
+são regulares 0600, sem symlinks e sem hardlinks adicionais,
+numa pasta privada 0700 junto dos cinco arquivos da PE-S1.48.
+
+O revisor conserva separadamente, antes da conferência,
+os quatro SHA-256: índice PE-S1.48, declaração assinada,
+assinatura destacada e chave de confiança. Executa:
+
+```bash
+python3 -B tools/pe_arch_vm_witness_review.py \
+  --private-dir "/caminho/privado" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-custody-sha256 "$PIN_SHA256_DO_INDICE" \
+  --expected-statement-sha256 "$PIN_SHA256_DECLARACAO" \
+  --expected-signature-sha256 "$PIN_SHA256_ASSINATURA" \
+  --expected-signers-sha256 "$PIN_SHA256_CHAVE_CONFIAVEL" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-witness-id "$WITNESS_ID" \
+  --require-readonly-source-view
+```
+
+Sem OpenSSH disponível, assinatura inválida, namespace errado,
+substituição de chave, alteração de qualquer SHA ou divergência
+do índice, o verificador **recusa**, sem fallback silencioso.
+O resultado positivo é
+`SIGNED_CUSTODY_ACKNOWLEDGEMENT_VERIFIED`, com
+`detached_witness_signature_verified=true` e
+`trusted_witness_key_pin_matched=true`, mas ainda traz
+`guest_logs_authenticated=false`,
+`witness_time_independently_verified=false` e
+`independent_vm_attestation=false`.
+
+**Limites de ameaça:** a pessoa ou serviço que controla a chave
+Ed25519 pode assinar qualquer conteúdo, inclusive um relato
+enganoso. Uma assinatura válida prova a chave usada, não
+boa-fé ou a realidade dos dados. O pin da chave deve ser
+externo e registrado antes de qualquer dado do operador.
+Não há prova de tempo, revogação automática, assinatura de
+hipervisor, TPM, VTPM ou prova de kernel Arch. A chave
+**privada nunca deve ser anexada à PR, à VM ou aos logs**.
+
+A CI executa testes criptográficos reais com chaves Ed25519
+**descartáveis e sintéticas** no runner Ubuntu e regressões
+de recusa. Não foi coletada uma assinatura de testemunha
+independente nem executada uma VM Arch nativa. Sem merge,
+APK/OTA e sem liberar o executor combinado.
