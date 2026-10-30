@@ -357,6 +357,10 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
 
         if run_custody:
             import pe_arch_vm_custody_review as custody
+            # The production handoff name is fixed by the custody schema.
+            (private / "operator-run-output.json").write_bytes(
+                operator_file.read_bytes())
+            (private / "operator-run-output.json").chmod(0o600)
             guest_kernel = private / "guest-kernel-observation.txt"
             guest_cgroup = private / "guest-cgroup-observation.txt"
             guest_kernel.write_bytes(b"synthetic guest uname (untrusted)\\n".replace(
@@ -366,7 +370,6 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
                     b"\\n", b"\n"))
             guest_kernel.chmod(0o600)
             guest_cgroup.chmod(0o600)
-            content_kernel = guest_kernel.read_bytes()
             index_path = private / "reviewer-custody-index.json"
             record = {
                 "schema": custody.SCHEMA,
