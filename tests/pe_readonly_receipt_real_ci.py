@@ -29,6 +29,11 @@ CASE_EXPECTED = {
     "wrong-pin": "REJECT_REAL_READONLY_WRONG_PIN",
     "wrong-challenge": "REJECT_REAL_READONLY_WRONG_CHALLENGE",
 }
+HANDOFF_EXPECTED = {
+    "valid": "PASS_REAL_READONLY_OPERATOR_HANDOFF",
+    "wrong-operator-pin": "REJECT_REAL_WRONG_OPERATOR_HASH",
+    "different-report": "REJECT_REAL_PINNED_OPERATOR_REPORT_MISMATCH",
+}
 
 
 def _fixture_report(repository: Path) -> dict:
@@ -130,7 +135,79 @@ def _child(mode: str, pin: str) -> int:
     return 0
 
 
-def _host(ghidra_home: Path) -> int:
+
+def _child_handoff(
+        mode: str, receipt_pin: str, operator_pin: str,
+        commit: str, changed_pin: str) -> int:
+    import pe_arch_vm_evidence as evidence
+    import pe_arch_vm_handoff_review as handoff
+
+    if not all(
+            os.statvfs(Path("/audit/source") / rel).f_flag & os.ST_RDONLY
+            for rel in evidence.SOURCE_FILES):
+        raise AssertionError("Full source manifest must be truly readonly")
+    if not (os.statvfs("/audit/source").f_flag & os.ST_RDONLY):
+        raise AssertionError("Checkout mount must be genuinely readonly")
+    output_file = ("/audit/private/operator-modified.json"
+                   if mode == "different-report" else
+                   "/audit/private/operator.json")
+    expected_pin = (
+        "f" * 64 if mode == "wrong-operator-pin"
+        else changed_pin if mode == "different-report" else operator_pin)
+    if expected_pin == operator_pin and mode != "valid":
+        raise AssertionError("Negative test cannot reuse unmodified pin")
+    args = [
+        "--operator-output", output_file,
+        "--receipt", "/audit/private/acceptance.json",
+        "--source-root", "/audit/source",
+        "--expected-source-commit", commit,
+        "--expected-challenge", CHALLENGE,
+        "--expected-receipt-sha256", receipt_pin,
+        "--expected-operator-sha256", expected_pin,
+        "--require-readonly-source-view",
+    ]
+    stdout, stderr = StringIO(), StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        result = handoff.main(args)
+    if mode == "valid":
+        if result != 0 or stderr.getvalue():
+            raise AssertionError("Genuine readonly handoff was rejected")
+        review = json.loads(stdout.getvalue())
+        if (review.get("status") != "LOCAL_OPERATOR_HANDOFF_CORRELATED"
+                or review.get("source_files_rechecked") != len(evidence.SOURCE_FILES)
+                or review.get("readonly_source_view_verified") is not True
+                or review.get("independent_vm_attestation") is not False
+                or review.get("native_kernel_execution_independently_verified")
+                   is not False):
+            raise AssertionError("Handoff produced ungrounded security claims")
+    else:
+        if result != 2 or stdout.getvalue():
+            raise AssertionError("Unsafe operator handoff was accepted")
+        review = json.loads(stderr.getvalue())
+        expected_reason = (
+            "externally retained SHA-256"
+            if mode == "wrong-operator-pin" else
+            "does not match the exact receipt report")
+        if (review.get("status") != "REJECTED_LOCAL_OPERATOR_HANDOFF"
+                or expected_reason not in review.get("reason", "")):
+            raise AssertionError("Unexpected handoff rejection result")
+    print(json.dumps({
+        "status": HANDOFF_EXPECTED[mode],
+        "source_manifest_files": len(evidence.SOURCE_FILES),
+        "exit_code": result,
+        "actual_readonly_mount": True,
+        "git_real_checkout": True,
+        "operator_hash_external": True,
+        "receipt_hash_external": True,
+        "fstatvfs_mocked": False,
+        "self_reported_synthetic_fixture": True,
+        "native_arch_vm_attestation": False,
+        "windows_binary_executed": False,
+    }, sort_keys=True))
+    return 0
+
+
+def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
     repository = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repository / "tools"))
     import pe_arch_vm_evidence as evidence
@@ -158,19 +235,59 @@ def _host(ghidra_home: Path) -> int:
             raise AssertionError("Empty fixture source unexpectedly allowed")
         changed.write_bytes(bytes([original[0] ^ 1]) + original[1:])
 
+        if run_handoff:
+            if not shutil.which("git"):
+                raise RuntimeError("Real Git unavailable; no handoff fallback")
+            for command in (
+                    ("init", "-q"),
+                    ("config", "user.name", "Synthetic CI Reviewer"),
+                    ("config", "user.email", "fixture@example.invalid"),
+                    ("add", "--all"),
+                    ("commit", "-qm", "Synthetic evidence-only checkout")):
+                subprocess.run(
+                    ["git", "-C", str(source), *command],
+                    stdin=subprocess.DEVNULL, capture_output=True,
+                    timeout=20, check=True, close_fds=True)
+            head = subprocess.run(
+                ["git", "-C", str(source), "rev-parse", "HEAD"],
+                stdin=subprocess.DEVNULL, capture_output=True,
+                text=True, timeout=10, check=True).stdout.strip()
         overlay = root / "writable-tools"
         shutil.copytree(source / "tools", overlay)
         private = root / "private"
         private.mkdir(mode=0o700)
         dest = private / "acceptance.json"
+        native_report = _fixture_report(repository)
         receipt = evidence.write_receipt_no_overwrite(
-            _fixture_report(repository), dest, source_root=source,
+            native_report, dest, source_root=source,
             reviewer_challenge=CHALLENGE)
         observed_digest = hashlib.sha256(dest.read_bytes()).hexdigest()
         if receipt["receipt_sha256"] != observed_digest:
             raise RuntimeError("Published receipt digest differs from host pin")
         if dest.stat().st_nlink != 1:
             raise RuntimeError("Published private receipt is not a unique link")
+
+        if run_handoff:
+            from pe_arch_vm_checkout_pin import verify_source_checkout_pin
+            local_pin = verify_source_checkout_pin(
+                source, head, evidence.SOURCE_FILES)
+            operator = {
+                **native_report, "local_receipt": receipt,
+                "local_source_checkout_pin": local_pin}
+            operator_file = private / "operator.json"
+            operator_file.write_bytes((
+                json.dumps(operator, sort_keys=True, separators=(",", ":"))
+                + "\\n").replace("\\n", "\n").encode("utf-8"))
+            operator_file.chmod(0o600)
+            operator_hash = hashlib.sha256(operator_file.read_bytes()).hexdigest()
+            corrupted_report = copy.deepcopy(operator)
+            corrupted_report["ghidra"]["ghidra_functions"] += 1
+            corrupted_file = private / "operator-modified.json"
+            corrupted_file.write_bytes((
+                json.dumps(corrupted_report, sort_keys=True, separators=(",", ":"))
+                + "\\n").replace("\\n", "\n").encode("utf-8"))
+            corrupted_file.chmod(0o600)
+            changed_hash = hashlib.sha256(corrupted_file.read_bytes()).hexdigest()
 
         work = root / "work"
         (work / "scripts").mkdir(parents=True, mode=0o700)
@@ -185,12 +302,63 @@ def _host(ghidra_home: Path) -> int:
         # Expose only the smallest explicit reviewed module set, not the
         # working checkout or host Python module search path.
         for module in ("pe_arch_vm_receipt_verify.py", "pe_arch_vm_evidence.py",
+                       "pe_arch_vm_checkout_pin.py", "pe_arch_vm_handoff_review.py",
                        "pe_nofollow_paths.py", "pe_ghidra_integrity.py",
                        "pe_resource_limits.py"):
             shutil.copyfile(repository / "tools" / module, code / module)
 
         base = build_command(ghidra_home, work, 120)
         boundary = base.index("--")
+
+        if run_handoff:
+            for mode in HANDOFF_EXPECTED:
+                mounts = [
+                    "--dir", "/audit",
+                    "--ro-bind", str(code), "/audit/code",
+                    "--ro-bind", str(source), "/audit/source",
+                    "--ro-bind", str(private), "/audit/private",
+                    "--setenv", "PYTHONPATH", "/audit/code",
+                    "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
+                ]
+                argv = base[:boundary] + mounts + [
+                    "--", "/usr/bin/python3", "/work/readonly_receipt_smoke.py",
+                    "--child-handoff", mode,
+                    "--pin", observed_digest,
+                    "--operator-pin", operator_hash,
+                    "--changed-operator-pin", changed_hash,
+                    "--commit", head,
+                ]
+                run = subprocess.run(
+                    argv, stdin=subprocess.DEVNULL, capture_output=True,
+                    text=True, timeout=90, check=False, close_fds=True)
+                if run.returncode != 0:
+                    raise RuntimeError(
+                        f"Real Bubblewrap handoff {mode} did not fail closed: "
+                        f"rc={run.returncode}, stderr={run.stderr[-1700:]!r}, "
+                        f"stdout={run.stdout[-1700:]!r}")
+                record = json.loads(run.stdout.strip())
+                if (record.get("status") != HANDOFF_EXPECTED[mode]
+                        or record.get("source_manifest_files")
+                           != len(evidence.SOURCE_FILES)
+                        or record.get("actual_readonly_mount") is not True
+                        or record.get("git_real_checkout") is not True
+                        or record.get("fstatvfs_mocked") is not False
+                        or record.get("native_arch_vm_attestation") is not False
+                        or record.get("windows_binary_executed") is not False):
+                    raise RuntimeError("Incomplete real handoff review evidence")
+                print(json.dumps(record, sort_keys=True), flush=True)
+            print(json.dumps({
+                "status": "PASS_PE_S1_47_REAL_READONLY_HANDOFF",
+                "cases": len(HANDOFF_EXPECTED),
+                "real_readonly_handoff_accepted": True,
+                "wrong_operator_pin_rejected": True,
+                "operator_report_mismatch_rejected": True,
+                "git_real_checkout": True,
+                "fstatvfs_mocked": False,
+                "native_arch_vm_attestation": False,
+                "windows_binary_executed": False,
+            }, sort_keys=True))
+            return 0
         proofs = []
         for mode in CASE_EXPECTED:
             chosen = alternate if mode == "tampered" else source
@@ -251,15 +419,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ghidra-home", type=Path)
     parser.add_argument("--child", choices=tuple(CASE_EXPECTED))
+    parser.add_argument("--child-handoff", choices=tuple(HANDOFF_EXPECTED))
+    parser.add_argument("--run-handoff", action="store_true")
     parser.add_argument("--pin")
+    parser.add_argument("--operator-pin")
+    parser.add_argument("--changed-operator-pin")
+    parser.add_argument("--commit")
     args = parser.parse_args()
+    if args.child_handoff:
+        if not all((args.pin, args.operator_pin, args.changed_operator_pin,
+                    args.commit)):
+            parser.error("Both external pins and commit required")
+        return _child_handoff(
+            args.child_handoff, args.pin, args.operator_pin,
+            args.commit, args.changed_operator_pin)
     if args.child:
         if not args.pin:
             parser.error("--pin required for the child reviewer")
         return _child(args.child, args.pin)
     if args.ghidra_home is None:
         parser.error("--ghidra-home required for the real mount test")
-    return _host(args.ghidra_home)
+    return _host(args.ghidra_home, run_handoff=args.run_handoff)
 
 
 if __name__ == "__main__":
