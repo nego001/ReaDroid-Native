@@ -328,6 +328,16 @@ def main() -> int:
                 args.expected_source_commit, evidence.SOURCE_FILES)
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
                                timeout_seconds=args.timeout_seconds)
+        if checkout_pin is not None:
+            # The workload may have created files after the preflight.
+            # Refuse to publish a receipt if the pinned checkout changed
+            # during the native lifecycle; do not claim atomicity.
+            checkout_pin_after = verify_source_checkout_pin(
+                Path(__file__).resolve().parents[1],
+                args.expected_source_commit, evidence.SOURCE_FILES)
+            if checkout_pin_after != checkout_pin:
+                raise ArchVmValidationError(
+                    "Source checkout pin changed during native acceptance")
         if args.evidence_output is not None:
             receipt = write_receipt_no_overwrite(
                 proof, args.evidence_output,
