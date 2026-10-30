@@ -660,3 +660,44 @@ CI usam duas chaves temporárias criadas no runner Ubuntu,
 e nenhuma testemunha independente real assina uma VM.
 O verificador não executa programas Windows. Não liberar
 seccomp+cgroups em arquivos externos, merge, APK ou OTA.
+
+## PE-S1.52 | Coleta local de metadados do guest Arch
+
+`tools/pe_arch_vm_observation.py` publica os arquivos
+`guest-kernel-observation.txt` e `guest-cgroup-observation.txt`
+necessários ao inventário PE-S1.48. O programa verifica antes de
+qualquer coleta o commit completo escolhido pelo revisor, checkout
+limpo, challenge externo e preflight de VM Arch nativa. Não inicia
+Ghidra, executáveis Windows nem um scope cgroup.
+
+O coletor limita as leituras a versão do kernel sem hostname,
+PID 1, indicação local de virtualização, versão systemd, user
+ControlGroup e controladores cgroup v2. Não lê variáveis de ambiente,
+credenciais ou logs gerais. O diretório de destino deve existir,
+pertencer ao usuário e ser 0700; os dois arquivos são 0600 e não
+podem sobrescrever arquivos anteriores.
+
+Exemplo, executado no checkout limpo em uma VM Arch descartável:
+
+```bash
+umask 077
+mkdir -m 700 "$HOME/negresco-arch-observations"
+python3 -B tools/pe_arch_vm_observation.py \
+  --output-directory "$HOME/negresco-arch-observations" \
+  --source-root "$PWD" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --reviewer-challenge "$REVIEWER_CHALLENGE"
+```
+
+O operador entrega esses dois arquivos junto ao recibo e à
+saída de aceitação. O revisor recolhe os arquivos, calcula os
+quatro hashes e cria seu próprio índice PE-S1.48; não usa hashes
+fornecidos pelo operador como âncora de confiança. A CI tem
+15 testes com dados sintéticos e exige que o host Ubuntu real
+**recuse** o preflight, sem produzir arquivos.
+
+O status `LOCAL_PRIVATE_OBSERVATIONS_PUBLISHED_NOT_ATTESTED`
+indica **autodeclaração local, não atestação do kernel ou da VM**.
+A coleta não verifica quotas efetivas, cleanup de descendentes
+ou seccomp+cgroups juntos. A PR continua Draft, sem merge,
+APK/OTA ou execução de binários externos.
