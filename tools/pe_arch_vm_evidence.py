@@ -32,6 +32,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_evidence.py",
     "tools/pe_receipt_stage_cleanup.py",
     "tools/pe_arch_vm_receipt_verify.py",
+    "tools/pe_arch_vm_handoff_review.py",
     "tools/pe_nofollow_paths.py",
     "tools/pe_arch_vm_gate.py",
     "tools/pe_arch_cgroup_smoke.py",
