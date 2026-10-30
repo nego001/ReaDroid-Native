@@ -67,6 +67,37 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_57_release_guard.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
+          # Real Ubuntu host MUST NOT be confused for a native Arch VM.
+          # It must reject before reading Ghidra, creating a scope or
+          # producing any receipt. Both the exit code and rejection schema
+          # are checked (an arbitrary Python crash is NOT considered PASS).
+          mkdir -p "$RUNNER_TEMP/pe-s1-58-private"
+          chmod 700 "$RUNNER_TEMP/pe-s1-58-private"
+          rc=0
+          python3 -B tools/pe_arch_vm_s1_58_preflight.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --ghidra-home "$RUNNER_TEMP/nonexistent-ghidra" \
+            --ghidra-archive "$RUNNER_TEMP/nonexistent-ghidra.zip" \
+            --evidence-output "$RUNNER_TEMP/pe-s1-58-private/forbidden.json" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            > "$RUNNER_TEMP/pe-s1-58-stdout.json" \
+            2> "$RUNNER_TEMP/pe-s1-58-rejection.json" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/pe-s1-58-stdout.json"
+          test ! -e "$RUNNER_TEMP/pe-s1-58-private/forbidden.json"
+          python3 - "$RUNNER_TEMP/pe-s1-58-rejection.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          evidence = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert evidence["status"] == "REJECTED_PE_S1_58_VM_PREFLIGHT_NOT_HOMOLOGATED"
+          assert evidence["independent_vm_attestation"] is False
+          assert evidence["unknown_windows_pe_execution_authorized"] is False
+          assert evidence["apk_or_ota_publication_authorized"] is False
+          print("PE-S1.58 Ubuntu native-Arch preflight refusal PASS; no receipt.")
+          PY
           # The actual Ubuntu host must NOT pass the native Arch VM gate.
           mkdir -p "$RUNNER_TEMP/pe-s1-52-refusal"
           chmod 700 "$RUNNER_TEMP/pe-s1-52-refusal"
