@@ -1008,3 +1008,82 @@ exige rejeicao estrutural mesmo com o pin recalculado.
 
 **Politica:** a PR #47 continua Draft; nao mesclar nem liberar
 execucao de PEs hostis, APK ou OTA com a evidência atual.
+
+
+## PE-S1.58 | Preflight nativo seguro antes dos testes com cgroups
+
+O novo \`tools/pe_arch_vm_s1_58_preflight.py\` é uma verificação
+**exclusivamente local e de leitura**, a executar manualmente numa VM
+Arch Linux **descartável e provida separadamente**. Ela não provisiona
+uma VM, não inicializa Ghidra, não cria scope/cgroup, não gera
+recibo, não analisa PE externo e não autoriza APK/OTA.
+
+Antes de sequer validar o ambiente, exige commit completo e challenge
+64-hex não-zero **obtidos previamente do revisor externo**. Também
+exige o destino novo de recibo, fora do checkout e da instalação
+Ghidra, num diretório existente 0700 do usuário. Não segue symlinks,
+não sobrescreve um nome existente e verifica novamente o destino
+após os checks de integridade.
+
+O pré-voo chama os verificadores existentes para:
+- confirmar Arch Linux com systemd e usuário não-root, rejeitando
+  containers e runners Ubuntu; **isto é apenas uma observação local**;
+- confirmar o checkout exato do próprio código, o commit externo,
+  o manifesto rastreado, a ausência de alterações e de arquivos
+  ignorados inesperados, antes e depois dos demais checks;
+- confirmar Java 25 operacional e Ghidra 12.2 conforme o **ZIP oficial
+  SHA-256 pinado**, comparando todos os arquivos extraídos e recusando
+  symlinks e arquivos imprevistos.
+
+### Execução manual: somente na VM descartável
+
+O revisor precisa obter commit/challenge **por canal externo**, não
+copiar valores de um recibo produzido pelo próprio operador. Use um
+checkout dedicado de exato commit, um arquivo ZIP oficial do Ghidra
+12.2 com hash pinado e um destino novo de recibo.
+
+\`\`\`bash
+cd /caminho/do/checkout/rea-droid
+mkdir -m 700 -p "$HOME/negresco-arch-private"
+
+python3 -B tools/pe_arch_vm_s1_58_preflight.py \
+  --source-root "$PWD" \
+  --ghidra-home "/opt/ghidra_12.2_PUBLIC" \
+  --ghidra-archive "/opt/ghidra_12.2.zip" \
+  --evidence-output "$HOME/negresco-arch-private/acceptance.json" \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --reviewer-challenge "$CHALLENGE_FIXADO_PELO_REVISOR"
+\`\`\`
+
+Somente um resultado
+\`READY_LOCAL_PE_S1_58_NATIVE_ARCH_VM_PREFLIGHT_NOT_ATTESTED\`
+com **exit code 0** confirma a adequação dos *insumos locais*.
+Não significa que cgroups/seccomp foram executados, que a VM é
+autêntica ou que os signatários são independentes. Se falhar,
+não execute as próximas fases; preserve o erro e investigue a
+configuração da VM sem enfraquecer os gates.
+
+Após o pré-voo e **somente com supervisão independente**, o teste
+nativo já implementado pode ser invocado separadamente:
+
+\`\`\`bash
+python3 -B tools/pe_arch_vm_validation.py \
+  --ghidra-home "/opt/ghidra_12.2_PUBLIC" \
+  --ghidra-archive "/opt/ghidra_12.2.zip" \
+  --reviewer-pinned-checkout \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --reviewer-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
+  --evidence-output "$HOME/negresco-arch-private/acceptance.json"
+\`\`\`
+
+Essa segunda operação já executa probes nativos e gera recibo, e
+**não faz parte da PE-S1.58**. Ela deve ser realizada somente em
+VM isolada, descartável e autorizada, nunca na máquina pessoal.
+Se a execução nativa terminar localmente em PASS, o revisor ainda
+precisa validar a origem da VM, os controles no kernel e a custódia
+por um canal realmente independente.
+
+A CI só executa os **18 testes de contrato** com mocks controlados
+e um teste **real de rejeição do Ubuntu** com saída 2 e nenhum
+recibo. Não há sucesso positivo de VM Arch no GitHub Actions
+desta etapa. O gate de liberação PE-S1.57 permanece HOLD.
