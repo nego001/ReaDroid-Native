@@ -42,6 +42,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_observation.py",
     "tools/pe_arch_vm_observation_review.py",
     "tools/pe_arch_vm_end_to_end_review.py",
+    "tools/pe_arch_vm_s1_57_release_guard.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
     "tools/pe_auto_ghidra.py",
