@@ -560,3 +560,103 @@ reais com OpenSSH Ed25519 no Ubuntu, com chaves temporárias
 e cenário de rotação. Nenhum signatário independente real foi
 envolvido e nenhuma VM Arch nativa foi homologada. A PR segue
 Draft, sem merge na main, APK/OTA ou liberação de binários externos.
+
+
+## PE-S1.51 | Duplo controle de confiança: testemunha e revisor
+
+A PE-S1.50 impede o uso de chaves de testemunha revogadas, mas
+a política de autorização ainda poderia ser alterada por quem
+controlasse apenas seus arquivos e pins locais. A PE-S1.51
+acrescenta a **assinatura destacada da política exata** por um
+**revisor separado**, num namespace SSH exclusivo:
+
+- **Testemunha:** assina `witness-statement.json`, com
+  `negresco-pe-s1-49-custody`; sua chave deve estar ativa na
+  política PE-S1.50.
+- **Revisor responsável pela política:** assina os bytes exatos
+  de `reviewer-witness-trust-policy.json`, com o namespace
+  `negresco-pe-s1-51-reviewer-trust-policy`. Usa chave privada
+  Ed25519 distinta, controlada fora da VM e do operador.
+
+O verificador exige **principal SSH e bytes públicos distintos**,
+comparando as chaves binárias em formato SSH, não apenas nomes.
+Exige o SHA-256 do arquivo de signatários do revisor,
+da assinatura do revisor, da política e o número de revisão,
+todos escolhidos/retidos por fonte sob controle independente.
+Uma mesma chave com duas identidades é **rejeitada**.
+Uma assinatura emitida para o namespace da testemunha também
+não autoriza alterações na política.
+
+O revisor cria `reviewer-policy-allowed-signers` em formato
+OpenSSH, com **exatamente uma identidade**, e guarda
+seu hash por canal próprio. A chave privada correspondente
+**não** deve aparecer no pacote, na VM, no Git ou em logs:
+
+```text
+aprovador@example.invalid ssh-ed25519 SUBSTITUIR_PELA_CHAVE_PUBLICA_REAL
+```
+
+Assina a política corrente com sua chave privada, em máquina
+independente e após verificar a lista de revogações:
+
+```bash
+ssh-keygen -Y sign \
+  -f "/caminho/seguro/chave-privada-do-revisor" \
+  -n negresco-pe-s1-51-reviewer-trust-policy \
+  "/diretorio/privado/reviewer-witness-trust-policy.json"
+```
+
+Guarda a assinatura destacada resultante com nome fixo
+`reviewer-witness-trust-policy.sig` e permissão 0600.
+O arquivo `reviewer-policy-allowed-signers` também deve ser
+0600 dentro do mesmo diretório 0700. Registrar os dois
+SHA-256 **antes** da verificação por canal independente.
+Os outros pins PE-S1.49/50 continuam obrigatórios.
+
+Com a própria cópia do checkout em montagem real readonly
+e os dois conjuntos de chaves autorizados previamente,
+o revisor executa:
+
+```bash
+python3 -B tools/pe_arch_vm_dual_control_review.py \
+  --private-dir "/diretorio/privado" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-policy-sha256 "$PIN_SHA256_POLITICA_ATUAL" \
+  --expected-policy-revision "$REVISAO_POLITICA_ATUAL" \
+  --expected-reviewer-signers-sha256 "$PIN_SHA256_CHAVE_REVISOR" \
+  --expected-reviewer-signature-sha256 "$PIN_SHA256_ASSINATURA_REVISOR" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-custody-sha256 "$PIN_SHA256_DO_INDICE" \
+  --expected-statement-sha256 "$PIN_SHA256_DECLARACAO_TESTEMUNHA" \
+  --expected-signature-sha256 "$PIN_SHA256_ASSINATURA_TESTEMUNHA" \
+  --expected-signers-sha256 "$PIN_SHA256_CHAVE_TESTEMUNHA" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-witness-id "$WITNESS_ID" \
+  --require-readonly-source-view
+```
+
+A ordem é **falhar antes de confiar**: checar hash externo e
+duas identidades e chaves distintas, conferir a assinatura real
+do revisor sobre a política (namespace próprio), validar
+a política ativa e então a assinatura da testemunha e os
+recibos/fontes da PE-S1.47/48. Os arquivos relevantes são
+relidos após a conferência para detectar substituição persistente.
+
+Um resultado de sucesso,
+`DUAL_CONTROL_CUSTODY_AUTHORIZATION_VERIFIED`, demonstra
+somente *duas assinaturas de chaves distintas sobre dois
+objetos distintos*. É preciso verificar por canais humanos
+e institucionais separados quem detém cada chave. Uma
+única pessoa ainda poderia controlar duas chaves diferentes
+e passar na checagem criptográfica. O resultado mantém
+`independent_reviewer_identity_verified=false` e
+`independent_vm_attestation=false`.
+
+**Limites:** não existe certificação de identidade de pessoas,
+timestamp externo, revogação online, assinatura TPM/vTPM,
+oráculo de hipervisor ou prova de kernel Arch. Os testes da
+CI usam duas chaves temporárias criadas no runner Ubuntu,
+e nenhuma testemunha independente real assina uma VM.
+O verificador não executa programas Windows. Não liberar
+seccomp+cgroups em arquivos externos, merge, APK ou OTA.
