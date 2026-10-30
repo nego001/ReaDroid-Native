@@ -215,6 +215,56 @@ class LocalReviewerPinTests(unittest.TestCase):
         native.assert_not_called()
         writer.assert_not_called()
 
+    def test_s1_46_post_acceptance_checkout_change_blocks_receipt(self):
+        argv = [
+            "pe_arch_vm_validation.py", "--ghidra-home", "/no/ghidra",
+            "--ghidra-archive", "/no/ghidra.zip",
+            "--evidence-output", "/no/private/receipt.json",
+            "--reviewer-challenge", CHALLENGE,
+            "--reviewer-pinned-checkout", "--expected-source-commit", COMMIT,
+        ]
+        first = {"status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
+                 "expected_commit": COMMIT}
+        changed = {"status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
+                   "expected_commit": COMMIT,
+                   "unexpected": "different"}
+        with (mock.patch.object(validation.sys, "argv", argv),
+              mock.patch.object(validation, "verify_source_checkout_pin",
+                                side_effect=[first, changed]) as check,
+              mock.patch.object(validation, "run_acceptance",
+                                return_value={"status": "mocked"}) as native,
+              mock.patch.object(validation, "write_receipt_no_overwrite")
+              as writer, redirect_stderr(StringIO()) as stderr):
+            self.assertEqual(validation.main(), 2)
+        self.assertEqual(check.call_count, 2)
+        native.assert_called_once()
+        writer.assert_not_called()
+        self.assertIn("pin changed during native acceptance",
+                      stderr.getvalue())
+
+    def test_s1_46_post_acceptance_checkout_rejection_blocks_receipt(self):
+        argv = [
+            "pe_arch_vm_validation.py", "--ghidra-home", "/no/ghidra",
+            "--ghidra-archive", "/no/ghidra.zip",
+            "--evidence-output", "/no/private/receipt.json",
+            "--reviewer-challenge", CHALLENGE,
+            "--reviewer-pinned-checkout", "--expected-source-commit", COMMIT,
+        ]
+        with (mock.patch.object(validation.sys, "argv", argv),
+              mock.patch.object(validation, "verify_source_checkout_pin",
+                  side_effect=[
+                      {"status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED"},
+                      pin.CheckoutPinError("ignored file created during run"),
+                  ]),
+              mock.patch.object(validation, "run_acceptance",
+                                return_value={"status": "mocked"}) as native,
+              mock.patch.object(validation, "write_receipt_no_overwrite")
+              as writer, redirect_stderr(StringIO()) as stderr):
+            self.assertEqual(validation.main(), 2)
+        native.assert_called_once()
+        writer.assert_not_called()
+        self.assertIn("ignored file created during run", stderr.getvalue())
+
     def test_s1_45_checkout_pin_is_not_in_native_receipt_v2(self):
         argv = [
             "pe_arch_vm_validation.py", "--ghidra-home", "/no/ghidra",
@@ -241,6 +291,62 @@ class LocalReviewerPinTests(unittest.TestCase):
         self.assertEqual(published["local_source_checkout_pin"], local_pin)
         self.assertNotIn("local_source_checkout_pin", native_report)
         self.assertIn("local_receipt", published)
+
+
+class RealLocalGitPinIntegrationTests(unittest.TestCase):
+    """Actual Git integration; optional where the Arch container lacks Git."""
+
+    def setUp(self):
+        if not __import__("shutil").which("git"):
+            self.skipTest("Git binary absent in this userspace")
+        import subprocess
+        self.git_subprocess = subprocess
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "tools").mkdir()
+        (self.root / "tests").mkdir()
+        (self.root / "tools/synthetic.py").write_text(
+            "print('synthetic')\\n", encoding="utf-8")
+        (self.root / "tests/fixture.c").write_text(
+            "int test(void){return 0;}\\n", encoding="utf-8")
+        (self.root / ".gitignore").write_text(
+            "*.ignored\\n__pycache__/\\n", encoding="utf-8")
+        self.run_git("init", "-q")
+        self.run_git("config", "user.email", "ci-fixture@example.invalid")
+        self.run_git("config", "user.name", "Synthetic CI Fixture")
+        self.run_git("add", "--all")
+        self.run_git("commit", "-qm", "Synthetic local-only fixture")
+        self.commit = self.run_git("rev-parse", "HEAD").strip()
+
+    def run_git(self, *arguments):
+        result = self.git_subprocess.run(
+            ["git", "-C", str(self.root), *arguments],
+            capture_output=True, text=True, timeout=15, check=True)
+        return result.stdout
+
+    def test_s1_46_real_git_clean_checkout_and_ignored_drop_in(self):
+        result = pin.verify_source_checkout_pin(
+            self.root, self.commit, SOURCES)
+        self.assertEqual(result["status"], "LOCAL_GIT_CHECKOUT_PIN_MATCHED")
+        (self.root / "tools/injected.ignored").write_bytes(b"unexpected")
+        self.assertEqual(self.run_git("status", "--porcelain=v1").strip(), "")
+        with self.assertRaisesRegex(
+                pin.CheckoutPinError, "ignored or hidden"):
+            pin.verify_source_checkout_pin(self.root, self.commit, SOURCES)
+
+    def test_s1_46_real_git_symlink_is_rejected_even_clean(self):
+        target = self.root / "source-target.txt"
+        target.write_text("synthetic target", encoding="utf-8")
+        link = self.root / "tools/synthetic.py"
+        link.unlink()
+        link.symlink_to("../source-target.txt")
+        self.run_git("add", "--all")
+        self.run_git("commit", "-qm", "Fixture with tracked symlink")
+        commit = self.run_git("rev-parse", "HEAD").strip()
+        self.assertEqual(self.run_git("status", "--porcelain=v1").strip(), "")
+        with self.assertRaisesRegex(pin.CheckoutPinError, "symlink, gitlink"):
+            pin.verify_source_checkout_pin(self.root, commit, SOURCES)
 
 
 if __name__ == "__main__":
