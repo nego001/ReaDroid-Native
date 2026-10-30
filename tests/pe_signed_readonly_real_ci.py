@@ -99,6 +99,19 @@ def _child(mode: str) -> int:
     valid = mode == "valid"
     if valid:
         if rc != 0 or err.getvalue():
+            # This CI scenario uses exclusively synthetic records and
+            # disposable keys. Show the nested reason without weakening the
+            # production CLI's deliberately generic refusal.
+            try:
+                full.verify_complete_review(
+                    private, source, **pins,
+                    require_readonly_source_view=True)
+            except Exception as diagnostic:
+                import traceback
+                raise RuntimeError(
+                    "Synthetic integration diagnostic:\n" +
+                    "".join(traceback.format_exception(diagnostic))[-3500:]
+                ) from diagnostic
             raise RuntimeError("Signed readonly CLI unexpectedly rejected: " +
                                err.getvalue()[-900:])
         result = json.loads(out.getvalue())
