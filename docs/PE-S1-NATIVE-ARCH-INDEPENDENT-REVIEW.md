@@ -467,3 +467,96 @@ A CI executa testes criptográficos reais com chaves Ed25519
 de recusa. Não foi coletada uma assinatura de testemunha
 independente nem executada uma VM Arch nativa. Sem merge,
 APK/OTA e sem liberar o executor combinado.
+
+
+## PE-S1.50 | Política externa de chaves, suspensão, revogação e rotação
+
+A PE-S1.49 verifica uma assinatura Ed25519 contra uma chave
+previamente aprovada; por si só, esse teste **não conhece revogações
+posteriores**. A PE-S1.50 exige uma decisão separada do revisor,
+guardada em `reviewer-witness-trust-policy.json` (0600 em diretório
+privado 0700). Essa política **não é fornecida como autoridade pelo
+operador**: o revisor escolhe e guarda previamente seu SHA-256 e
+seu número de revisão **em canal independente**.
+
+O conteúdo exato do arquivo JSON tem estas chaves; os valores
+ilustrativos abaixo devem ser substituídos pelos dados reais:
+
+```json
+{
+  "schema": "negresco_pe_s1_50_reviewer_witness_trust_v1",
+  "security_classification": "EXTERNAL_REVIEWER_PINNED_KEY_LIFECYCLE_NOT_VM_ATTESTATION",
+  "witness_id": "revisor@example.invalid",
+  "signature_namespace": "negresco-pe-s1-49-custody",
+  "policy_revision": 1,
+  "decision": "ACTIVE",
+  "active_public_key_sha256": "SUBSTITUIR_PELO_SHA256_DOS_BYTES_DA_CHAVE_PUBLICA_SSH",
+  "revoked_public_key_sha256": []
+}
+```
+
+O identificador de chave `active_public_key_sha256` é
+**SHA-256 dos bytes binários da chave pública Ed25519 em
+formato wire SSH**, obtidos decodificando a última parte em
+Base64 de `witness-allowed-signers`, **não** é o hash do
+arquivo `witness-allowed-signers` completo. O arquivo
+`witness-allowed-signers` continua com seu próprio SHA-256
+retido externamente conforme PE-S1.49.
+
+A política exige exatamente uma identidade, um namespace fixo,
+um número inteiro positivo de revisão e uma lista ordenada,
+sem duplicatas, de no máximo 64 chaves revogadas. Somente
+`decision = "ACTIVE"` permite a conferência da assinatura.
+`SUSPENDED`, `REVOKED` ou a presença da chave ativa na
+lista de revogação **recusam** qualquer assinatura, inclusive
+uma criptograficamente válida.
+
+Ao realizar uma **rotação**, a testemunha gera **uma nova
+chave privada fora da VM** e assina novamente a mesma declaração
+de custódia com o namespace da PE-S1.49. O revisor verifica
+separadamente a nova chave pública, retém sua identidade e
+a cópia dos dados anteriores, eleva `policy_revision`,
+coloca a chave antiga na lista de revogadas e atualiza o
+SHA-256 externo da política. Nunca copiar ou publicar a
+chave privada. Sem pin externo da política atual, **não
+prosseguir com a revisão**.
+
+```bash
+python3 -B tools/pe_arch_vm_witness_trust_review.py \
+  --private-dir "/caminho/privado" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-policy-sha256 "$PIN_SHA256_POLITICA_ATUAL" \
+  --expected-policy-revision "$REVISAO_POLITICA_ATUAL" \
+  --expected-custody-sha256 "$PIN_SHA256_DO_INDICE" \
+  --expected-statement-sha256 "$PIN_SHA256_DECLARACAO" \
+  --expected-signature-sha256 "$PIN_SHA256_ASSINATURA" \
+  --expected-signers-sha256 "$PIN_SHA256_CHAVE_CONFIAVEL" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-witness-id "$WITNESS_ID" \
+  --require-readonly-source-view
+```
+
+O novo comando realiza **primeiro** a validação da política
+externa, inclusive revogação e chave ativa, e **somente
+depois** reutiliza a validação criptográfica e o handoff
+completo das etapas PE-S1.49/48/47. Relê a política e o
+arquivo de chave após a verificação para detectar mudanças
+persistentes. Mantém `independent_vm_attestation=false`
+e `native_kernel_execution_independently_verified=false`.
+
+**Atenção ao rollback:** o verificador detecta uma revisão
+antiga somente se o revisor fornecer o **número e o SHA-256
+atuais**. Não existe serviço remoto confiável de revogação,
+CRL, OCSP, timestamp independente, prova de atualidade da
+política, mecanismo de distribuição de revogação, autenticação
+da VM nem detecção de um host malicioso. A PE-S1.49 permanece
+como verificador legado de assinatura **sem política de ciclo
+de vida**; para decisão de confiança atualizada, o protocolo
+deve usar o novo comando PE-S1.50.
+
+**CI:** testes sintéticos de recusa no Arch userspace e testes
+reais com OpenSSH Ed25519 no Ubuntu, com chaves temporárias
+e cenário de rotação. Nenhum signatário independente real foi
+envolvido e nenhuma VM Arch nativa foi homologada. A PR segue
+Draft, sem merge na main, APK/OTA ou liberação de binários externos.
