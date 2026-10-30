@@ -18,7 +18,11 @@ import sys
 sys.dont_write_bytecode = True
 
 import pe_arch_vm_custody_review as custody
-import pe_arch_vm_observation as obs
+# Mirror PE-S1.52's fixed wire contract without importing guest preflight or
+# observer execution dependencies into the offline reviewer environment.
+OBSERVATION_CLASSIFICATION = (
+    "OPERATOR_SELF_REPORTED_NATIVE_ARCH_OBSERVATION_NOT_ATTESTED")
+MAX_OBSERVATION_BYTES = 16384
 import pe_arch_vm_receipt_verify as receipts
 from pe_arch_vm_checkout_pin import COMMIT_SHA
 
@@ -54,7 +58,7 @@ class ObservationReviewError(RuntimeError):
 
 def _parse_observation(raw: bytes, *, expected_artifact: str,
                        commit: str, challenge: str) -> dict:
-    if not isinstance(raw, bytes) or not 0 < len(raw) <= obs.MAX_FILE_BYTES:
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_OBSERVATION_BYTES:
         raise ObservationReviewError("Guest observation exceeds strict byte limit")
     try:
         parsed = json.loads(
@@ -70,7 +74,7 @@ def _parse_observation(raw: bytes, *, expected_artifact: str,
             else CGROUP):
         raise ObservationReviewError("Guest observation fields missing or unexpected")
     if (parsed["artifact"] != expected_artifact
-            or parsed["classification"] != obs.STATUS
+            or parsed["classification"] != OBSERVATION_CLASSIFICATION
             or parsed["source_commit"] != commit
             or parsed["reviewer_challenge"] != challenge
             or parsed["native_arch_vm_gate_local_pass"] is not True
