@@ -1134,7 +1134,7 @@ ou homologada por essa verificacao**.
 
 O revisor pode agora criar, numa máquina **sob seu próprio controle,
 fora da VM do operador**, um pedido com desafio aleatório de 256 bits
-gerado por \`secrets.token_hex(32)\`. O comando **não executa** Ghidra,
+gerado por `secrets.token_hex(32)`. O comando **não executa** Ghidra,
 PE Windows, cgroups, VM, rede nem ferramentas do sistema. Ele cria um
 arquivo privado **0600**, dentro de diretório **0700** do mesmo usuário,
 com proteção contra sobrescrita e symlinks, fsync e SHA-256 calculado
@@ -1148,16 +1148,16 @@ podem ser falsificados. O pedido é **sem assinatura** e a hora registrada
 
 ### Antes de preparar a VM: revisor independente
 
-\`\`\`bash
+```bash
 install -d -m 700 "$HOME/negresco-reviewer-private"
 
 python3 -B tools/pe_arch_vm_s1_60_review_request.py issue \
   --output "$HOME/negresco-reviewer-private/review-request-001.json" \
   --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
   --reviewer-id "$REVIEWER_ID"
-\`\`\`
+```
 
-O JSON de saída traz \`reviewer_challenge\` e \`request_sha256\`.
+O JSON de saída traz `reviewer_challenge` e `request_sha256`.
 **Guardar hash, challenge, commit e identidade do revisor por um canal
 confiável separado do operador**, antes de transmitir o desafio à VM.
 Não aceitar hashes "externos" simplesmente copiados do próprio
@@ -1167,16 +1167,16 @@ metadados de solicitação; não coloque credenciais ou chaves nele.
 Depois de receber uma cópia do pedido, o revisor confere os
 valores previamente retidos:
 
-\`\`\`bash
+```bash
 python3 -B tools/pe_arch_vm_s1_60_review_request.py verify \
   --request "$HOME/negresco-reviewer-private/review-request-001.json" \
   --expected-request-sha256 "$PIN_SHA256_PEDIDO" \
   --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
   --expected-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
   --expected-reviewer-id "$REVIEWER_ID"
-\`\`\`
+```
 
-O resultado \`LOCAL_REVIEW_REQUEST_PIN_MATCHED_NOT_VM_ATTESTED\`
+O resultado `LOCAL_REVIEW_REQUEST_PIN_MATCHED_NOT_VM_ATTESTED`
 valida somente **integridade e coerência local** com os valores
 informados pelo revisor. Não é autorização de release.
 
@@ -1186,7 +1186,7 @@ Somente num checkout de revisão próprio, o revisor pode conferir o
 pedido contra o índice de custódia PE-S1.48, seus quatro artefatos e
 as fontes correspondentes, idealmente em montagem readonly:
 
-\`\`\`bash
+```bash
 python3 -B tools/pe_arch_vm_s1_60_review_request.py correlate \
   --request "$HOME/negresco-reviewer-private/review-request-001.json" \
   --private-dir "$HOME/negresco-operator-evidence" \
@@ -1197,13 +1197,13 @@ python3 -B tools/pe_arch_vm_s1_60_review_request.py correlate \
   --expected-reviewer-id "$REVIEWER_ID" \
   --expected-custody-sha256 "$PIN_SHA256_INDICE_CUSTODIA" \
   --require-readonly-source-view
-\`\`\`
+```
 
 Esse comando reutiliza a verificação PE-S1.48 do recibo, stdout,
 checkout e quatro artefatos; revalida o pedido antes e depois.
 Ele nunca afirma que logs do operador foram autenticados nem que
 seccomp+cgroups foram observados independentemente. O resultado
-\`LOCAL_REQUEST_AND_CUSTODY_CORRELATED_NOT_VM_ATTESTED\` **não**
+`LOCAL_REQUEST_AND_CUSTODY_CORRELATED_NOT_VM_ATTESTED` **não**
 substitui a revisão assinada PE-S1.54/56, a liberação PE-S1.57
 (**HOLD**) ou a atestação efetiva de kernel/hipervisor.
 
