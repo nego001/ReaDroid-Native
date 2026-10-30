@@ -254,3 +254,106 @@ da saída errado recusado e relatório alterado recusado mesmo
 quando seu novo SHA externo é informado. Nenhum desses testes
 substitui prova de execução do kernel/cgroups numa VM Arch
 independente. A PR continua Draft, sem merge/produção/APK/OTA.
+
+
+## PE-S1.48 | Índice de custódia com quatro artefatos
+
+A PE-S1.47 verifica recibo e saída JSON do operador. Esta etapa
+adiciona um **inventário sob controle do revisor**, com SHA-256
+de quatro arquivos privados de uma única revisão:
+
+| Chave fixa | Arquivo | Proveniência |
+|---|---|---|
+| `receipt` | `acceptance.json` | Recibo auto-relatado v2 |
+| `operator_output` | `operator-run-output.json` | Saída auto-relatada do operador |
+| `guest_kernel_observation` | `guest-kernel-observation.txt` | Observação textual do operador, **não atestada** |
+| `guest_cgroup_observation` | `guest-cgroup-observation.txt` | Observação textual do operador, **não atestada** |
+
+O operador pode coletar observações inofensivas dentro da VM,
+como `uname -a`, `systemctl --version` e
+`systemctl --user show` das unidades usadas em sua execução,
+mas os textos devem ser interpretados como **declarações do
+operador**, não como prova de origem da VM. Não coletar segredos,
+chaves, credenciais, arquivos pessoais, `journalctl` geral ou
+registros de terceiros. Os arquivos de teste da CI usam somente
+**texto sintético**, e não logs reais.
+
+O revisor copia os quatro arquivos para uma pasta **privada
+0700**, com todos os arquivos regulares **0600, sem symlinks,
+hardlinks adicionais nem nomes alternativos**. Os arquivos
+precisam ser não vazios e ter no máximo 1 MiB cada. Calcula
+o SHA-256 de cada um separadamente. Um índice
+`reviewer-custody-index.json` (também 0600, na mesma pasta)
+é criado pelo **revisor**, com este esquema estrito:
+
+```json
+{
+  "schema": "negresco_pe_s1_48_local_custody_index_v1",
+  "security_classification": "UNSIGNED_REVIEWER_LOCAL_CUSTODY_NOT_VM_ATTESTATION",
+  "reviewer_challenge": "DESAFIO_PREVIAMENTE_GUARDADO_64_HEX",
+  "source_commit": "COMMIT_PREVIAMENTE_ESCOLHIDO_40_HEX",
+  "artifacts": {
+    "receipt": {
+      "filename": "acceptance.json",
+      "sha256": "SHA256_REAL_64_HEX"
+    },
+    "operator_output": {
+      "filename": "operator-run-output.json",
+      "sha256": "SHA256_REAL_64_HEX"
+    },
+    "guest_kernel_observation": {
+      "filename": "guest-kernel-observation.txt",
+      "sha256": "SHA256_REAL_64_HEX"
+    },
+    "guest_cgroup_observation": {
+      "filename": "guest-cgroup-observation.txt",
+      "sha256": "SHA256_REAL_64_HEX"
+    }
+  }
+}
+```
+
+Os valores ilustrativos **não funcionam** até serem substituídos
+por digests reais e referências do revisor. Depois de escrever o
+índice, o revisor guarda seu SHA-256 em um local **separado da
+entrega**, antes de rodar a verificação:
+
+```bash
+sha256sum "/diretorio/privado/reviewer-custody-index.json"
+python3 -B tools/pe_arch_vm_custody_review.py \
+  --private-dir "/diretorio/privado" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-custody-sha256 "$PIN_SHA256_DO_INDICE" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --require-readonly-source-view
+```
+
+O verificador exige cinco arquivos seguros (índice + quatro
+artefatos), esquema e digests exatos, invoca **o verificador
+completo PE-S1.47**, compara o commit e challenge previamente
+fixados e relê os cinco arquivos para detectar alterações
+persistentes durante a revisão. Em sucesso, emite
+`LOCAL_CUSTODY_PACKAGE_CORRELATED`, os hashes observados,
+a hora **local do processo revisor** em UTC e as declarações
+obrigatórias:
+
+- `operator_kernel_log_authenticated=false`;
+- `operator_cgroup_log_authenticated=false`;
+- `external_signature_verified=false`;
+- `native_kernel_execution_independently_verified=false`;
+- `independent_vm_attestation=false`.
+
+A hora observada não é um timestamp assinado. Os arquivos de
+logs não são interpretados nem autenticados. O índice SHA-256
+também **não é assinatura**, nem âncora de tempo independente.
+A revisão não cria um snapshot atômico de filesystem nem prova
+que os logs vieram de um kernel Arch; para isso ainda seria
+necessária infraestrutura externa de medição e revisor
+independente da VM e do host.
+
+**Teste CI:** doze regressões sem executar VM/PE e três casos
+reais com Git/Bubblewrap Ubuntu: pacote coerente, índice com
+hash externo incorreto e observação de kernel adulterada após
+o pin. Nada libera amostras externas, merge, APK/OTA ou modo
+combinado seccomp+cgroups.
