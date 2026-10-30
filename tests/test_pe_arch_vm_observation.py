@@ -242,6 +242,19 @@ class OperatorObservationTests(unittest.TestCase):
                     source_root=self.root)
         self.assertEqual(list(self.private.iterdir()), [])
 
+    def test_s1_52_empty_root_subtree_control_is_recordable(self):
+        # Empty subtree_control is valid cgroup-v2 state; it does not prove
+        # an absence of cgroup v2 on the guest.
+        with mock.patch.object(
+                Path, "open", mock.mock_open(read_data=b"")):
+            self.assertEqual(
+                observer._read_bounded(
+                    Path("/sys/fs/cgroup/cgroup.subtree_control"), limit=1024),
+                "")
+            with self.assertRaises(observer.ObservationError):
+                observer._read_bounded(
+                    Path("/sys/fs/cgroup/cgroup.controllers"), limit=1024)
+
     def test_s1_52_whitelist_rejects_environment_dump_command(self):
         with self.assertRaisesRegex(observer.ObservationError,
                                     "Unapproved observation command"):
