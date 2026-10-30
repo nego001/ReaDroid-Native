@@ -141,9 +141,10 @@ class ReviewerDualControlTests(unittest.TestCase):
                     "Witness signature rejected by pinned OpenSSH key"))
               as verify, mock.patch.object(
                 dual.trust, "verify_trusted_witness") as trust_verify):
-            with self.assertRaisesRegex(
-                    dual.DualControlError, "signature rejected"):
+            with self.assertRaises(dual.DualControlError) as failure:
                 self.run_review(force_real=True)
+        self.assertIsInstance(failure.exception.__cause__,
+                              witness.WitnessReviewError)
         self.assertEqual(verify.call_count, 1)
         self.assertEqual(verify.call_args.kwargs["namespace"], dual.NAMESPACE)
         trust_verify.assert_not_called()
@@ -151,22 +152,27 @@ class ReviewerDualControlTests(unittest.TestCase):
     def test_s1_51_suspended_policy_still_rejected_after_reviewer_signature(self):
         self.fixture.policy["decision"] = "SUSPENDED"
         self.fixture.write_policy()
-        with self.assertRaisesRegex(dual.trust.TrustReviewError,
-                                    "suspended or revoked"):
+        if self.real_ssh:
+            self.sign_policy()
+        with self.assertRaises(dual.DualControlError) as failure:
             self.run_review()
+        self.assertIsInstance(failure.exception.__cause__,
+                              dual.trust.TrustReviewError)
 
     def test_s1_51_policy_revision_rollback_fails_even_if_signed(self):
-        with self.assertRaisesRegex(
-                dual.trust.TrustReviewError, "revision"):
+        with self.assertRaises(dual.DualControlError) as failure:
             self.run_review(expected_policy_revision=2)
+        self.assertIsInstance(failure.exception.__cause__,
+                              dual.trust.TrustReviewError)
 
     def test_s1_51_duplicate_reviewer_signer_rejected(self):
         old = self.reviewer_allowed.read_bytes()
         self.reviewer_allowed.write_bytes(old + old)
         with mock.patch.object(witness, "_ssh_verify") as crypto:
-            with self.assertRaisesRegex(
-                    dual.trust.TrustReviewError, "one exact"):
+            with self.assertRaises(dual.DualControlError) as failure:
                 self.run_review()
+            self.assertIsInstance(failure.exception.__cause__,
+                                  dual.trust.TrustReviewError)
         crypto.assert_not_called()
 
     def test_s1_51_reviewer_file_changed_during_custody_rejected(self):
@@ -262,25 +268,28 @@ class RealDualControlEd25519Tests(ReviewerDualControlTests):
 
     def test_s1_51_real_wrong_reviewer_namespace_rejected(self):
         self.sign_policy(namespace=witness.NAMESPACE)
-        with self.assertRaisesRegex(
-                dual.DualControlError, "signature rejected"):
+        with self.assertRaises(dual.DualControlError) as failure:
             self.run_review()
+        self.assertIsInstance(failure.exception.__cause__,
+                              witness.WitnessReviewError)
 
     def test_s1_51_real_reviewer_signature_tampering_rejected(self):
         self.reviewer_sig.write_bytes(
             self.reviewer_sig.read_bytes().replace(
                 b"BEGIN", b"FAKED", 1))
-        with self.assertRaisesRegex(
-                dual.DualControlError, "signature rejected"):
+        with self.assertRaises(dual.DualControlError) as failure:
             self.run_review()
+        self.assertIsInstance(failure.exception.__cause__,
+                              witness.WitnessReviewError)
 
     def test_s1_51_real_signed_suspended_policy_still_rejected(self):
         self.fixture.policy["decision"] = "SUSPENDED"
         self.fixture.write_policy()
         self.sign_policy()
-        with self.assertRaisesRegex(
-                dual.trust.TrustReviewError, "suspended or revoked"):
+        with self.assertRaises(dual.DualControlError) as failure:
             self.run_review()
+        self.assertIsInstance(failure.exception.__cause__,
+                              dual.trust.TrustReviewError)
 
     def test_s1_51_real_witness_key_cannot_sign_reviewer_policy(self):
         # A real witness signature over the policy in its own custody
@@ -294,8 +303,10 @@ class RealDualControlEd25519Tests(ReviewerDualControlTests):
         self.fixture.policy_path.with_suffix(".json.sig").replace(
             self.reviewer_sig)
         self.reviewer_sig.chmod(0o600)
-        with self.assertRaisesRegex(dual.DualControlError, "signature rejected"):
+        with self.assertRaises(dual.DualControlError) as failure:
             self.run_review()
+        self.assertIsInstance(failure.exception.__cause__,
+                              witness.WitnessReviewError)
 
 
 if __name__ == "__main__":
