@@ -404,7 +404,7 @@ jobs:
           assert rows[-1]["native_arch_vm_attestation"] is False
           print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
           PY
-      - name: PE-S1.55 real readonly Bubblewrap full review with two genuine Ed25519 signatures
+      - name: PE-S1.55-56 real readonly signed review and key isolation boundary
         run: |
           set -euo pipefail
           python3 -B tests/pe_signed_readonly_real_ci.py \
@@ -423,7 +423,10 @@ jobs:
               "REJECT_PE_S1_55_REHASHED_LOG_WITHOUT_SIGNATURE",
               "REJECT_PE_S1_55_TAMPERED_REVIEWER_SIGNATURE",
               "REJECT_PE_S1_55_WRITABLE_SOURCE",
-              "PASS_PE_S1_55_REAL_READONLY_SIGNED_REVIEW_INTEGRATION",
+              "REJECT_PE_S1_56_WRONG_REVIEWER_NAMESPACE",
+              "REJECT_PE_S1_56_SUSPENDED_SIGNED_POLICY",
+              "REJECT_PE_S1_56_KEY_REUSE_TWO_ROLES",
+              "PASS_PE_S1_56_READONLY_ROLES_AND_SECRET_BOUNDARY",
           ]
           assert [r.get("status") for r in records] == expected
           for record in records[:-1]:
@@ -435,18 +438,25 @@ jobs:
               assert record["git_verifier_mocked"] is False
               assert record["ssh_verifier_mocked"] is False
               assert record["fstatvfs_mocked"] is False
+              assert record["host_signing_keys_inaccessible"] is True
+              assert record["host_passwd_and_ssh_config_not_exposed"] is True
+              assert record["synthetic_identity_readonly"] is True
               assert record["synthetic_operator_logs"] is True
               assert record["native_arch_vm_attestation"] is False
               assert record["windows_binary_executed"] is False
           final = records[-1]
-          assert final["cases"] == 5
+          assert final["cases"] == 8
           assert final["real_bubblewrap"] is True
           assert final["real_git"] is True
           assert final["real_openssh_two_ed25519_keys"] is True
-          assert final["negative_cases_rejected"] == 4
+          assert final["negative_cases_rejected"] == 7
           assert final["mocked_git_or_crypto"] is False
+          assert final["private_signing_keys_excluded_from_sandbox"] is True
+          assert final["signed_suspended_policy_rejected"] is True
+          assert final["same_key_two_roles_rejected"] is True
+          assert final["wrong_reviewer_signature_namespace_rejected"] is True
           assert final["independent_arch_vm_attestation"] is False
-          print("PE-S1.55: REAL readonly Bubblewrap, Git and two Ed25519 signatures: PASS")
+          print("PE-S1.56: REAL readonly Bubblewrap, key isolation and distinct signature roles: PASS")
           print("All observations SYNTHETIC; Ubuntu test is NOT independent Arch VM attestation.")
           PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
