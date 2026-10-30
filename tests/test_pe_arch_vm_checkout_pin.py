@@ -35,7 +35,13 @@ class LocalReviewerPinTests(unittest.TestCase):
             return COMMIT
         if args[:2] == ("ls-files", "--cached"):
             return "\n".join(SOURCES)
+        if args[:2] == ("ls-files", "--stage"):
+            return "\n".join(
+                "100644 " + "a" * 40 + " 0\t" + path
+                for path in SOURCES)
         if args[:2] == ("status", "--porcelain=v1"):
+            return ""
+        if args[:3] == ("ls-files", "--others", "--ignored"):
             return ""
         raise AssertionError("Unexpected git invocation: " + repr(args))
 
@@ -50,7 +56,7 @@ class LocalReviewerPinTests(unittest.TestCase):
         self.assertEqual(result["checked_manifest_entries"], 2)
         self.assertFalse(result["native_vm_or_kernel_verified"])
         self.assertFalse(result["git_authorship_or_signature_verified"])
-        self.assertEqual(len(self.calls), 4)
+        self.assertEqual(len(self.calls), 6)
 
     def test_s1_45_bad_commit_rejected_before_accessing_git(self):
         for commit in ("", "A" * 40, "a" * 39, "z" * 40, None):
@@ -121,6 +127,52 @@ class LocalReviewerPinTests(unittest.TestCase):
         self.assertEqual(options.kwargs["stdin"], pin.subprocess.DEVNULL)
         self.assertNotIn("shell", options.kwargs)
         self.assertIn("core.fsmonitor=false", options.args[0])
+
+    def test_s1_46_ignored_artifact_is_rejected_after_clean_status(self):
+        def ignored(root, *args):
+            if args[:3] == ("ls-files", "--others", "--ignored"):
+                return "tools/__pycache__/"
+            return self.fake_git(root, *args)
+        with mock.patch.object(pin, "_git", side_effect=ignored):
+            with self.assertRaisesRegex(pin.CheckoutPinError,
+                                        "ignored or hidden"):
+                pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
+
+    def test_s1_46_git_symlink_or_submodule_is_rejected(self):
+        for mode in ("120000", "160000", "100644"):
+            with self.subTest(mode=mode):
+                def staged(root, *args):
+                    if args[:2] == ("ls-files", "--stage"):
+                        return (
+                            f"{mode} " + "a" * 40
+                            + " 0\\ttools/synthetic.py\\n"
+                            + "100644 " + "b" * 40
+                            + " 0\\ttests/fixture.c").replace(
+                                "\\t", "\t").replace("\\n", "\n")
+                    return self.fake_git(root, *args)
+                with mock.patch.object(pin, "_git", side_effect=staged):
+                    if mode == "100644":
+                        self.assertEqual(pin.verify_source_checkout_pin(
+                            self.root, COMMIT, SOURCES)["checked_manifest_entries"], 2)
+                    else:
+                        with self.assertRaisesRegex(
+                                pin.CheckoutPinError, "symlink, gitlink"):
+                            pin.verify_source_checkout_pin(
+                                self.root, COMMIT, SOURCES)
+
+    def test_s1_46_unmerged_index_entries_are_rejected(self):
+        def unmerged(root, *args):
+            if args[:2] == ("ls-files", "--stage"):
+                return ("100644 " + "a" * 40
+                        + " 2\\ttools/synthetic.py\\n"
+                        + "100644 " + "b" * 40
+                        + " 0\\ttests/fixture.c").replace(
+                            "\\t", "\t").replace("\\n", "\n")
+            return self.fake_git(root, *args)
+        with mock.patch.object(pin, "_git", side_effect=unmerged):
+            with self.assertRaisesRegex(
+                    pin.CheckoutPinError, "unmerged"):
+                pin.verify_source_checkout_pin(self.root, COMMIT, SOURCES)
 
     def test_s1_45_requires_external_commit_challenge_and_receipt_first(self):
         incomplete = [
