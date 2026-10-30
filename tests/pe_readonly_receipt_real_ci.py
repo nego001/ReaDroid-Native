@@ -34,6 +34,11 @@ HANDOFF_EXPECTED = {
     "wrong-operator-pin": "REJECT_REAL_WRONG_OPERATOR_HASH",
     "different-report": "REJECT_REAL_PINNED_OPERATOR_REPORT_MISMATCH",
 }
+CUSTODY_EXPECTED = {
+    "valid": "PASS_REAL_READONLY_FOUR_ARTIFACT_CUSTODY",
+    "wrong-index-pin": "REJECT_REAL_WRONG_CUSTODY_INDEX_PIN",
+    "modified-kernel": "REJECT_REAL_MODIFIED_GUEST_KERNEL_LOG",
+}
 
 
 def _fixture_report(repository: Path) -> dict:
@@ -207,7 +212,67 @@ def _child_handoff(
     return 0
 
 
-def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
+
+def _child_custody(mode: str, index_hash: str, commit: str) -> int:
+    import pe_arch_vm_custody_review as custody
+    import pe_arch_vm_evidence as evidence
+
+    if not all(
+            os.statvfs(Path("/audit/source") / rel).f_flag & os.ST_RDONLY
+            for rel in evidence.SOURCE_FILES):
+        raise AssertionError("Custody source mount is not genuinely readonly")
+    selected = ("f" * 64 if mode == "wrong-index-pin" else index_hash)
+    if mode == "wrong-index-pin" and selected == index_hash:
+        raise AssertionError("Bad custody pin unexpectedly equals original")
+    stdout, stderr = StringIO(), StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        rc = custody.main([
+            "--private-dir", "/audit/private",
+            "--source-root", "/audit/source",
+            "--expected-custody-sha256", selected,
+            "--expected-source-commit", commit,
+            "--expected-challenge", CHALLENGE,
+            "--require-readonly-source-view",
+        ])
+    if mode == "valid":
+        if rc != 0 or stderr.getvalue():
+            raise AssertionError("Valid readonly custody index refused")
+        data = json.loads(stdout.getvalue())
+        if (data.get("status") != "LOCAL_CUSTODY_PACKAGE_CORRELATED"
+                or data.get("artifact_count") != 4
+                or data.get("source_files_rechecked") != len(evidence.SOURCE_FILES)
+                or data.get("independent_vm_attestation") is not False
+                or data.get("operator_cgroup_log_authenticated") is not False
+                or data.get("operator_kernel_log_authenticated") is not False):
+            raise AssertionError("Custody review contains unsupported claim")
+    else:
+        if rc != 2 or stdout.getvalue():
+            raise AssertionError("Bad custody package unexpectedly passed")
+        data = json.loads(stderr.getvalue())
+        required = ("independently retained SHA-256"
+                    if mode == "wrong-index-pin" else
+                    "pinned index")
+        if (data.get("status") != "REJECTED_LOCAL_CUSTODY_PACKAGE"
+                or required not in data.get("reason", "")):
+            raise AssertionError("Unexpected custody rejection result")
+
+    print(json.dumps({
+        "status": CUSTODY_EXPECTED[mode],
+        "cli_exit_code": rc,
+        "source_manifest_files": len(evidence.SOURCE_FILES),
+        "actual_readonly_mount": True,
+        "four_artifacts": True,
+        "git_real_checkout": True,
+        "fstatvfs_mocked": False,
+        "synthetic_guest_logs": True,
+        "independent_arch_vm_attestation": False,
+        "windows_binary_executed": False,
+    }, sort_keys=True))
+    return 0
+
+
+def _host(ghidra_home: Path, *, run_handoff: bool = False,
+          run_custody: bool = False) -> int:
     repository = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repository / "tools"))
     import pe_arch_vm_evidence as evidence
@@ -235,7 +300,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
             raise AssertionError("Empty fixture source unexpectedly allowed")
         changed.write_bytes(bytes([original[0] ^ 1]) + original[1:])
 
-        if run_handoff:
+        if run_handoff or run_custody:
             if not shutil.which("git"):
                 raise RuntimeError("Real Git unavailable; no handoff fallback")
             for command in (
@@ -267,7 +332,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
         if dest.stat().st_nlink != 1:
             raise RuntimeError("Published private receipt is not a unique link")
 
-        if run_handoff:
+        if run_handoff or run_custody:
             from pe_arch_vm_checkout_pin import verify_source_checkout_pin
             local_pin = verify_source_checkout_pin(
                 source, head, evidence.SOURCE_FILES)
@@ -289,6 +354,40 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
             corrupted_file.chmod(0o600)
             changed_hash = hashlib.sha256(corrupted_file.read_bytes()).hexdigest()
 
+
+        if run_custody:
+            import pe_arch_vm_custody_review as custody
+            guest_kernel = private / "guest-kernel-observation.txt"
+            guest_cgroup = private / "guest-cgroup-observation.txt"
+            guest_kernel.write_bytes(b"synthetic guest uname (untrusted)\\n".replace(
+                b"\\n", b"\n"))
+            guest_cgroup.write_bytes(
+                b"synthetic guest systemd cgroup (untrusted)\\n".replace(
+                    b"\\n", b"\n"))
+            guest_kernel.chmod(0o600)
+            guest_cgroup.chmod(0o600)
+            content_kernel = guest_kernel.read_bytes()
+            index_path = private / "reviewer-custody-index.json"
+            record = {
+                "schema": custody.SCHEMA,
+                "security_classification": custody.CLASSIFICATION,
+                "source_commit": head,
+                "reviewer_challenge": CHALLENGE,
+                "artifacts": {
+                    label: {
+                        "filename": name,
+                        "sha256": hashlib.sha256(
+                            (private / name).read_bytes()).hexdigest(),
+                    }
+                    for label, name in custody.ARTIFACT_NAMES.items()
+                },
+            }
+            index_path.write_bytes((
+                json.dumps(record, sort_keys=True, separators=(",", ":"))
+                + "\n").encode("utf-8"))
+            index_path.chmod(0o600)
+            custody_pin = hashlib.sha256(index_path.read_bytes()).hexdigest()
+
         work = root / "work"
         (work / "scripts").mkdir(parents=True, mode=0o700)
         (work / "project").mkdir(mode=0o700)
@@ -303,6 +402,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
         # working checkout or host Python module search path.
         for module in ("pe_arch_vm_receipt_verify.py", "pe_arch_vm_evidence.py",
                        "pe_arch_vm_checkout_pin.py", "pe_arch_vm_handoff_review.py",
+                       "pe_arch_vm_custody_review.py",
                        "pe_nofollow_paths.py", "pe_ghidra_integrity.py",
                        "pe_resource_limits.py"):
             shutil.copyfile(repository / "tools" / module, code / module)
@@ -354,6 +454,58 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False) -> int:
                 "wrong_operator_pin_rejected": True,
                 "operator_report_mismatch_rejected": True,
                 "git_real_checkout": True,
+                "fstatvfs_mocked": False,
+                "native_arch_vm_attestation": False,
+                "windows_binary_executed": False,
+            }, sort_keys=True))
+            return 0
+
+        if run_custody:
+            for mode in CUSTODY_EXPECTED:
+                if mode == "modified-kernel":
+                    guest_kernel.write_bytes(b"tampered guest log after pin\\n".replace(
+                        b"\\n", b"\n"))
+                mounts = [
+                    "--dir", "/audit",
+                    "--ro-bind", str(code), "/audit/code",
+                    "--ro-bind", str(source), "/audit/source",
+                    "--ro-bind", str(private), "/audit/private",
+                    "--setenv", "PYTHONPATH", "/audit/code",
+                    "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
+                ]
+                argv = base[:boundary] + mounts + [
+                    "--", "/usr/bin/python3", "/work/readonly_receipt_smoke.py",
+                    "--child-custody", mode,
+                    "--custody-pin", custody_pin,
+                    "--commit", head,
+                ]
+                run = subprocess.run(
+                    argv, stdin=subprocess.DEVNULL, capture_output=True,
+                    text=True, timeout=90, check=False, close_fds=True)
+                if run.returncode != 0:
+                    raise RuntimeError(
+                        f"Real custody {mode} test failed closed: "
+                        f"rc={run.returncode}, stderr={run.stderr[-1300:]!r}, "
+                        f"stdout={run.stdout[-1300:]!r}")
+                record = json.loads(run.stdout.strip())
+                if (record.get("status") != CUSTODY_EXPECTED[mode]
+                        or record.get("source_manifest_files")
+                           != len(evidence.SOURCE_FILES)
+                        or record.get("actual_readonly_mount") is not True
+                        or record.get("four_artifacts") is not True
+                        or record.get("git_real_checkout") is not True
+                        or record.get("fstatvfs_mocked") is not False
+                        or record.get("synthetic_guest_logs") is not True
+                        or record.get("independent_arch_vm_attestation") is not False
+                        or record.get("windows_binary_executed") is not False):
+                    raise RuntimeError("Missing real custody evidence: " + mode)
+                print(json.dumps(record, sort_keys=True), flush=True)
+            print(json.dumps({
+                "status": "PASS_PE_S1_48_REAL_READONLY_CUSTODY",
+                "cases": len(CUSTODY_EXPECTED),
+                "real_custody_valid": True,
+                "external_index_sha256_mismatch_rejected": True,
+                "tampered_guest_log_rejected": True,
                 "fstatvfs_mocked": False,
                 "native_arch_vm_attestation": False,
                 "windows_binary_executed": False,
@@ -420,12 +572,19 @@ def main() -> int:
     parser.add_argument("--ghidra-home", type=Path)
     parser.add_argument("--child", choices=tuple(CASE_EXPECTED))
     parser.add_argument("--child-handoff", choices=tuple(HANDOFF_EXPECTED))
+    parser.add_argument("--child-custody", choices=tuple(CUSTODY_EXPECTED))
     parser.add_argument("--run-handoff", action="store_true")
+    parser.add_argument("--run-custody", action="store_true")
+    parser.add_argument("--custody-pin")
     parser.add_argument("--pin")
     parser.add_argument("--operator-pin")
     parser.add_argument("--changed-operator-pin")
     parser.add_argument("--commit")
     args = parser.parse_args()
+    if args.child_custody:
+        if not args.custody_pin or not args.commit:
+            parser.error("--custody-pin and --commit required")
+        return _child_custody(args.child_custody, args.custody_pin, args.commit)
     if args.child_handoff:
         if not all((args.pin, args.operator_pin, args.changed_operator_pin,
                     args.commit)):
@@ -439,7 +598,11 @@ def main() -> int:
         return _child(args.child, args.pin)
     if args.ghidra_home is None:
         parser.error("--ghidra-home required for the real mount test")
-    return _host(args.ghidra_home, run_handoff=args.run_handoff)
+    if args.run_handoff and args.run_custody:
+        parser.error("Select one integration probe at a time")
+    return _host(
+        args.ghidra_home, run_handoff=args.run_handoff,
+        run_custody=args.run_custody)
 
 
 if __name__ == "__main__":
