@@ -891,3 +891,46 @@ hipervisor Arch, do horário real, da independência humana dos
 signatários ou dos limites combinados seccomp+cgroups na VM Arch.
 Não executar PE externo, não promover PR Draft, não mesclar na
 main, não publicar APK ou OTA.
+
+
+## PE-S1.56 | Resistencia a confusao de papeis e vazamento de chaves privadas
+
+O mesmo smoke PE-S1.55 executa tres testes negativos adicionais no
+Bubblewrap real, com OpenSSH e Git reais (sem mocks de assinatura ou
+checkout). Nao sao avaliados executaveis Windows externos.
+
+1. **Namespace errado com assinatura valida:** o aprovador assina novamente
+   a politica usando o namespace reservado a testemunha, e o SHA-256
+   externo da assinatura e atualizado. A verificacao deve recusar.
+2. **Politica suspensa mas validamente assinada:** o campo `decision`
+   vira `SUSPENDED`, o aprovador assina os novos bytes no namespace
+   correto e os dois pins sao atualizados. Assinatura correta nao pode
+   suplantar o ciclo de vida da politica.
+3. **Uma chave para dois papeis:** os nomes do aprovador/testemunha
+   continuam diferentes e cada objeto recebe uma assinatura Ed25519
+   valida no namespace adequado, mas a chave publica e a mesma. A
+   verificacao deve recusar a duplicacao binaria da chave.
+
+Todos os oito cenarios (cinco anteriores e tres novos) exercitam ainda
+uma **prova de isolamento real da sandbox**: as duas chaves privadas
+descartaveis sao criadas no host de CI fora de qualquer montagem visivel
+ao processo filho. O filho tenta abrir seus caminhos absolutos e exige
+`FileNotFoundError`. A biblioteca de contas do processo deve identificar
+exclusivamente um usuario sintético local; `/etc/passwd` e
+`/etc/group` sinteticos sao montados readonly. Os caminhos
+`/etc/shadow` e `/etc/ssh` do host nao devem estar presentes.
+
+A verificacao exige que todas essas assercoes acontecam **dentro do
+Bubblewrap** e que a CI rejeite qualquer registro ausente, sinal de
+mock ou alteracao das garantias da montagem. A identidade sintetica
+permite o funcionamento do OpenSSH sem revelar a base de usuarios do
+runner.
+
+**Escopo estrito:** trata-se de teste de isolamento no Ubuntu CI e
+consistencia criptografica/estrutural de dados sinteticos. A ausencia
+de dois arquivos de chave observada na sandbox nao prova resistencia
+a fuga de kernel nem impossibilidade de exfiltracao por outros canais.
+Duas chaves diferentes nao provam dois seres humanos distintos.
+A VM Arch real independente, identidade do hipervisor, tempo confiavel,
+seccomp+cgroups simultaneos e o comportamento de binarios hostis
+continuam sem homologacao.
