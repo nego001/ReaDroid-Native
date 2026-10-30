@@ -66,6 +66,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_57_release_guard.py' -v
           # The actual Ubuntu host must NOT pass the native Arch VM gate.
           mkdir -p "$RUNNER_TEMP/pe-s1-52-refusal"
           chmod 700 "$RUNNER_TEMP/pe-s1-52-refusal"
@@ -404,7 +405,7 @@ jobs:
           assert rows[-1]["native_arch_vm_attestation"] is False
           print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
           PY
-      - name: PE-S1.55-56 real readonly signed review and key isolation boundary
+      - name: PE-S1.55-57 real readonly signed review and mandatory release HOLD
         run: |
           set -euo pipefail
           python3 -B tests/pe_signed_readonly_real_ci.py \
@@ -455,8 +456,10 @@ jobs:
           assert final["signed_suspended_policy_rejected"] is True
           assert final["same_key_two_roles_rejected"] is True
           assert final["wrong_reviewer_signature_namespace_rejected"] is True
+          assert final["s1_57_signed_review_release_hold_verified"] is True
+          assert final["s1_57_rehashed_attestation_forgery_rejected"] is True
           assert final["independent_arch_vm_attestation"] is False
-          print("PE-S1.56: REAL readonly Bubblewrap, key isolation and distinct signature roles: PASS")
+          print("PE-S1.57: signed reviewer evidence accepted only as local proof; VM release HOLD: PASS")
           print("All observations SYNTHETIC; Ubuntu test is NOT independent Arch VM attestation.")
           PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
