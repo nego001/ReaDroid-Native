@@ -69,6 +69,67 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_57_release_guard.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_60_review_request.py' -v
+          # PE-S1.60: real os.urandom-backed challenge and private request
+          # on the Ubuntu host; this does NOT demonstrate external reviewer
+          # control or native Arch VM provenance.
+          mkdir -m 700 -p "$RUNNER_TEMP/pe-s1-60-request-private"
+          python3 -B tools/pe_arch_vm_s1_60_review_request.py issue \
+            --output "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-id ci-reviewer@example.invalid \
+            > "$RUNNER_TEMP/pe-s1-60-issued.json"
+          python3 - "$RUNNER_TEMP/pe-s1-60-issued.json" \
+            "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" <<'PY'
+          import hashlib, json, stat, sys
+          from pathlib import Path
+          issued = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          evidence_file = Path(sys.argv[2])
+          assert issued["status"] == "LOCAL_REVIEW_REQUEST_ISSUED_NOT_VM_ATTESTED"
+          assert issued["request_sha256"] == hashlib.sha256(evidence_file.read_bytes()).hexdigest()
+          assert len(issued["reviewer_challenge"]) == 64
+          assert stat.S_IMODE(evidence_file.stat().st_mode) == 0o600
+          assert issued["independent_vm_attestation"] is False
+          assert issued["operator_evidence_accepted"] is False
+          assert issued["release_authorized"] is False
+          print("PE-S1.60 real local reviewer request: issued with no VM attestation")
+          PY
+          python3 -B tools/pe_arch_vm_s1_60_review_request.py verify \
+            --request "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" \
+            --expected-request-sha256 "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["request_sha256"])' "$RUNNER_TEMP/pe-s1-60-issued.json")" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --expected-challenge "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewer_challenge"])' "$RUNNER_TEMP/pe-s1-60-issued.json")" \
+            --expected-reviewer-id ci-reviewer@example.invalid \
+            > "$RUNNER_TEMP/pe-s1-60-verified.json"
+          python3 - "$RUNNER_TEMP/pe-s1-60-verified.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert record["status"] == "LOCAL_REVIEW_REQUEST_PIN_MATCHED_NOT_VM_ATTESTED"
+          assert record["independent_vm_attestation"] is False
+          assert record["release_authorized"] is False
+          print("PE-S1.60 real local request verification PASS; no native VM claim")
+          PY
+          rc=0
+          python3 -B tools/pe_arch_vm_s1_60_review_request.py verify \
+            --request "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" \
+            --expected-request-sha256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+            --expected-source-commit "$GITHUB_SHA" \
+            --expected-challenge "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewer_challenge"])' "$RUNNER_TEMP/pe-s1-60-issued.json")" \
+            --expected-reviewer-id ci-reviewer@example.invalid \
+            > "$RUNNER_TEMP/pe-s1-60-rejected-stdout" \
+            2> "$RUNNER_TEMP/pe-s1-60-rejected-stderr" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/pe-s1-60-rejected-stdout"
+          python3 - "$RUNNER_TEMP/pe-s1-60-rejected-stderr" <<'PY'
+          import json, sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert record["status"] == "REJECTED_PE_S1_60_LOCAL_REQUEST_OR_CUSTODY"
+          assert record["independent_vm_attestation"] is False
+          assert record["release_authorized"] is False
+          print("PE-S1.60 forged external request pin rejected: PASS")
+          PY
           # Real Ubuntu host MUST NOT be confused for a native Arch VM.
           # It must reject before reading Ghidra, creating a scope or
           # producing any receipt. Both the exit code and rejection schema
@@ -751,6 +812,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_60_review_request.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
           private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
