@@ -64,7 +64,8 @@ def _read_pinned(root: Path, name: str, expected: str) -> bytes:
 
 
 def _ssh_verify(raw_statement: bytes, raw_signature: bytes,
-                trusted_signers: bytes, witness_id: str) -> None:
+                trusted_signers: bytes, witness_id: str, *,
+                namespace: str = NAMESPACE) -> None:
     """Real detached signature verification with the openSSH client.
 
     Only the pinned bytes are handed to ssh-keygen, never mutable input
@@ -91,7 +92,7 @@ def _ssh_verify(raw_statement: bytes, raw_signature: bytes,
         try:
             result = subprocess.run(
                 [executable, "-Y", "verify", "-f", str(allowed),
-                 "-I", witness_id, "-n", NAMESPACE, "-s", str(sig)],
+                 "-I", witness_id, "-n", namespace, "-s", str(sig)],
                 input=raw_statement, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, timeout=15,
                 check=False, close_fds=True, env=env)
