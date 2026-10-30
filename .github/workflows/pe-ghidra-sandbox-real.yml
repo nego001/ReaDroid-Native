@@ -68,6 +68,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_57_release_guard.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
           # Real Ubuntu host MUST NOT be confused for a native Arch VM.
           # It must reject before reading Ghidra, creating a scope or
           # producing any receipt. Both the exit code and rejection schema
@@ -749,6 +750,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
           private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
