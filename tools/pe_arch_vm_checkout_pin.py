@@ -85,12 +85,35 @@ def verify_source_checkout_pin(source_root: Path, expected_commit: str,
     sources = _git(root, "ls-files", "--cached", "--", *required_files)
     if set(sources.splitlines()) != set(required_files):
         raise CheckoutPinError("Source manifest has missing or untracked files")
+    # A tracked path can be a symlink (120000), a submodule (160000) or
+    # an unmerged index entry. The native reviewer must only attest regular
+    # files from the pinned Git commit, never an indirect path target.
+    staged = _git(root, "ls-files", "--stage", "--", *required_files)
+    paths = []
+    for entry in staged.splitlines():
+        item = re.fullmatch(
+            r"(100644|100755) [0-9a-f]{40} 0\t([^\r\n]+)", entry)
+        if item is None:
+            raise CheckoutPinError(
+                "Source manifest includes symlink, gitlink or unmerged index")
+        paths.append(item.group(2))
+    if len(paths) != len(required_files) or set(paths) != set(required_files):
+        raise CheckoutPinError(
+            "Source manifest contains unexpected Git entry types or paths")
     # This includes staged and unstaged changes; nonignored untracked files
     # fail closed. Git ignore rules are not evidence of clean ignored files.
     dirty = _git(root, "status", "--porcelain=v1",
                  "--untracked-files=all", "--ignore-submodules=none")
     if dirty:
         raise CheckoutPinError("Source checkout is dirty or has untracked files")
+    # Normal porcelain status hides paths covered by .gitignore. In a
+    # dedicated review checkout, ignored build outputs or injected Python
+    # modules are still unexpected filesystem data. Fail closed.
+    ignored = _git(root, "ls-files", "--others", "--ignored",
+                   "--exclude-standard", "--directory", "--no-empty-directory")
+    if ignored:
+        raise CheckoutPinError(
+            "Source checkout contains ignored or hidden untracked artifacts")
     return {
         "status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
         "expected_commit": expected_commit,
