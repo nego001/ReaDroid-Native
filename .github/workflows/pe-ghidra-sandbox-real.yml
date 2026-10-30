@@ -305,6 +305,48 @@ jobs:
           assert final["native_arch_vm_attestation"] is False
           print("PE-S1.47: real readonly two-pin handoff PASS (synthetic claims only).")
           PY
+      - name: PE-S1.48 four-artifact local custody package under real readonly Bubblewrap
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --run-custody > "$RUNNER_TEMP/pe-s1-48-real-custody.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-48-real-custody.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines()
+                     if x.strip().startswith("{")]
+          expected = [
+              "PASS_REAL_READONLY_FOUR_ARTIFACT_CUSTODY",
+              "REJECT_REAL_WRONG_CUSTODY_INDEX_PIN",
+              "REJECT_REAL_MODIFIED_GUEST_KERNEL_LOG",
+              "PASS_PE_S1_48_REAL_READONLY_CUSTODY",
+          ]
+          assert [entry.get("status") for entry in records] == expected
+          assert len(records) == 4
+          for item in records[:3]:
+              assert item["source_manifest_files"] >= 25
+              assert item["actual_readonly_mount"] is True
+              assert item["four_artifacts"] is True
+              assert item["git_real_checkout"] is True
+              assert item["fstatvfs_mocked"] is False
+              assert item["synthetic_guest_logs"] is True
+              assert item["independent_arch_vm_attestation"] is False
+              assert item["windows_binary_executed"] is False
+          assert records[0]["cli_exit_code"] == 0
+          assert records[1]["cli_exit_code"] == 2
+          assert records[2]["cli_exit_code"] == 2
+          summary = records[-1]
+          assert summary["cases"] == 3
+          assert summary["real_custody_valid"] is True
+          assert summary["external_index_sha256_mismatch_rejected"] is True
+          assert summary["tampered_guest_log_rejected"] is True
+          assert summary["fstatvfs_mocked"] is False
+          assert summary["native_arch_vm_attestation"] is False
+          assert summary["windows_binary_executed"] is False
+          print("PE-S1.48: real four-artifact custody PASS; untrusted guest logs remain non-attestation.")
+          PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
         run: |
           set -euo pipefail
