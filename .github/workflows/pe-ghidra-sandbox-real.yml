@@ -62,6 +62,7 @@ jobs:
           command -v ssh-keygen
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
       - name: Install Bubblewrap and Windows cross-compiler
         run: |
           set -euo pipefail
@@ -601,4 +602,5 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_custody_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_review.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
