@@ -768,3 +768,80 @@ lote correto, pin externo errado e lote inconsistente mesmo
 com inventário refeito. A CI não executa VM Arch nativa nem
 Windows PE de terceiros. A PR segue Draft e sem publicação
 APK/OTA ou execução conjunta de arquivos externos.
+
+
+## PE-S1.54 | Revisão ponta a ponta assinada + observações estruturadas
+
+A PE-S1.53 exige coerência estrutural dos dois logs autodeclarados
+do guest. A PE-S1.51 exige assinaturas Ed25519 distintas da
+testemunha (sobre custódia) e do revisor (sobre política de
+chaves). **As duas verificações isoladas não eram uma aprovação
+única do mesmo pacote.**
+
+O novo `tools/pe_arch_vm_end_to_end_review.py` exige **ambas**
+com exatamente os mesmos pins externos, commit e challenge,
+revalidando a cadeia de recibos/fontes PE-S1.47/48 e a política
+ativa PE-S1.50. Também confere a **cronologia declarada**:
+a hora autodeclarada da coleta dos logs não pode anteceder a
+hora autodeclarada de emissão do recibo de aceitação. Isso
+é somente comparação de relógios informados pelo operador;
+não prova hora real, identidade da VM ou sua procedência.
+
+### Uso pelo revisor
+
+O revisor deve obter todos os SHA-256, identidades de chaves,
+revisão atual da política e challenge por **canal externo**
+aos arquivos do operador e **antes** da revisão. A pasta privada
+0700 contém os arquivos protegidos 0600 exigidos pelas etapas
+PE-S1.48 a 51. A fonte deve estar em montagem readonly real:
+
+```bash
+python3 -B tools/pe_arch_vm_end_to_end_review.py \
+  --private-dir "/caminho/privado/do-revisor" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-policy-sha256 "$PIN_SHA256_POLITICA_ATUAL" \
+  --expected-policy-revision "$REVISAO_POLITICA_ATUAL" \
+  --expected-reviewer-signers-sha256 "$PIN_SHA256_CHAVE_REVISOR" \
+  --expected-reviewer-signature-sha256 "$PIN_SHA256_ASSINATURA_REVISOR" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-custody-sha256 "$PIN_SHA256_DO_INDICE" \
+  --expected-statement-sha256 "$PIN_SHA256_DECLARACAO_TESTEMUNHA" \
+  --expected-signature-sha256 "$PIN_SHA256_ASSINATURA_TESTEMUNHA" \
+  --expected-signers-sha256 "$PIN_SHA256_CHAVE_TESTEMUNHA" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-witness-id "$WITNESS_ID" \
+  --require-readonly-source-view
+```
+
+O programa abre somente os dez arquivos privados previamente
+nomeados, exige hashes externos e campos sem claims indevidos,
+valida o lote do guest e então verifica as duas assinaturas
+com namespaces distintos. Depois lê novamente os arquivos
+privados para detectar alterações persistentes. Não cria
+assinaturas, não carrega chaves privadas, não executa PE e
+não contata servidores externos. A comparação de revisões
+de confiança só detecta rollback se o revisor conhecer os
+pins mais recentes previamente.
+
+Sucesso: `LOCAL_SIGNED_CUSTODY_AND_GUEST_LOGS_CORRELATED_NOT_VM_ATTESTED`
+com `structured_guest_logs_consistent_with_custody=true`
+e `separate_reviewer_and_witness_signatures_verified=true`.
+Mesmo assim, `operator_clock_independently_verified=false`,
+`witness_identity_independently_verified=false`,
+`operator_logs_authenticated=false`,
+`native_kernel_execution_independently_verified=false`
+e `independent_vm_attestation=false`.
+
+**Segurança:** o operador pode produzir dados sintéticos
+internamente coerentes e controlar um relógio falso. Os
+dois signatários podem não ser pessoas distintas se alguém
+controlar suas duas chaves. A verificação é de **consistência
+criptográfica e estrutural local**, não uma atestação independente
+de hardware, hipervisor, kernel ou quotas/cgroups realmente
+executados. Não há liberação de execução de PE externo,
+merge, APK ou OTA.
+
+A CI testa 13 cenários próprios, com chaves Ed25519 temporárias
+reais **somente no Ubuntu** e testes de lógica no Arch userspace.
+Nenhum deles comprova uma VM Arch independente.
