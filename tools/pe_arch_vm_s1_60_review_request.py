@@ -241,14 +241,57 @@ def correlate_request_custody(
             expected_source_commit=expected_source_commit,
             expected_challenge=expected_challenge,
             require_readonly_source_view=require_readonly_source_view)
+        fields = frozenset({
+            "schema", "status", "security_classification", "source_commit",
+            "custody_index_sha256", "artifact_sha256", "artifact_count",
+            "source_files_rechecked", "readonly_source_view_verified",
+            "review_observed_at_utc", "observed_by",
+            "operator_kernel_log_authenticated",
+            "operator_cgroup_log_authenticated", "external_signature_verified",
+            "native_kernel_execution_independently_verified",
+            "independent_vm_attestation", "host_or_git_authenticity_verified",
+            "windows_binary_executed_by_reviewer",
+        })
+        false_claims = (
+            "operator_kernel_log_authenticated",
+            "operator_cgroup_log_authenticated", "external_signature_verified",
+            "native_kernel_execution_independently_verified",
+            "independent_vm_attestation", "host_or_git_authenticity_verified",
+            "windows_binary_executed_by_reviewer",
+        )
+        hashes = (evidence_result.get("artifact_sha256")
+                  if isinstance(evidence_result, dict) else None)
         if (not isinstance(evidence_result, dict)
-                or evidence_result.get("status") != "LOCAL_CUSTODY_PACKAGE_CORRELATED"
-                or evidence_result.get("independent_vm_attestation") is not False
-                or evidence_result.get("native_kernel_execution_independently_verified")
-                   is not False
-                or evidence_result.get("source_files_rechecked") !=
-                    len(evidence.SOURCE_FILES)):
-            raise RequestReviewError("Local custody validation not proven")
+                or set(evidence_result) != fields
+                or evidence_result["schema"] != custody.SCHEMA
+                or evidence_result["status"] !=
+                   "LOCAL_CUSTODY_PACKAGE_CORRELATED"
+                or evidence_result["security_classification"] !=
+                   custody.CLASSIFICATION
+                or evidence_result["source_commit"] != expected_source_commit
+                or evidence_result["custody_index_sha256"] !=
+                   expected_custody_sha256
+                or type(evidence_result["artifact_count"]) is not int
+                or evidence_result["artifact_count"] !=
+                   len(custody.ARTIFACT_NAMES)
+                or not isinstance(hashes, dict)
+                or set(hashes) != set(custody.ARTIFACT_NAMES)
+                or any(not isinstance(digest, str) or
+                       HEX64.fullmatch(digest) is None
+                       for digest in hashes.values())
+                or type(evidence_result["source_files_rechecked"]) is not int
+                or evidence_result["source_files_rechecked"] !=
+                   len(evidence.SOURCE_FILES)
+                or evidence_result["readonly_source_view_verified"] is not
+                   require_readonly_source_view
+                or evidence_result["observed_by"] !=
+                   "local_reviewer_process_not_external_witness"
+                or not isinstance(evidence_result["review_observed_at_utc"], str)
+                or len(evidence_result["review_observed_at_utc"]) > 64
+                or any(evidence_result[name] is not False
+                       for name in false_claims)):
+            raise RequestReviewError(
+                "Local custody contract incomplete or contains unsupported claims")
     except custody.CustodyReviewError as exc:
         raise RequestReviewError("Local custody package unsafe") from exc
     after = verify_request(
