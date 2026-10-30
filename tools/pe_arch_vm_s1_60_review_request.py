@@ -242,7 +242,7 @@ def correlate_request_custody(
             expected_challenge=expected_challenge,
             require_readonly_source_view=require_readonly_source_view)
         if (not isinstance(evidence_result, dict)
-                or evidence_result.get("status") != custody.STATUS
+                or evidence_result.get("status") != "LOCAL_CUSTODY_PACKAGE_CORRELATED"
                 or evidence_result.get("independent_vm_attestation") is not False
                 or evidence_result.get("native_kernel_execution_independently_verified")
                    is not False
