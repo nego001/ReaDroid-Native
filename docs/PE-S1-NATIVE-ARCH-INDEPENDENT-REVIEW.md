@@ -934,3 +934,77 @@ Duas chaves diferentes nao provam dois seres humanos distintos.
 A VM Arch real independente, identidade do hipervisor, tempo confiavel,
 seccomp+cgroups simultaneos e o comportamento de binarios hostis
 continuam sem homologacao.
+
+
+## PE-S1.57 | Release HOLD obrigatorio apos pacote assinado local
+
+A integracao PE-S1.55/56 pode comprovar, no runner Ubuntu, um pacote
+localmente consistente com **duas assinaturas reais Ed25519**, Git local
+limpo e montagem Bubblewrap readonly real. Essa verificacao nao comprova
+que algum kernel Arch nativo rodou numa VM independente.
+
+O novo `tools/pe_arch_vm_s1_57_release_guard.py` exige que o revisor
+apresente o **JSON de resultado local** gerado pelo PE-S1.54, armazenado
+num arquivo privado 0600 de diretorio privado 0700, e os seguintes pins
+externamente retidos: SHA256 desse resultado, SHA256 da custodia, commit
+fonte completo, revisao da politica e os dois IDs distintos. O arquivo
+nao pode ser symlink ou ter hardlinks. JSON duplicado, campos extras,
+marcas de elevacao indevida, revisao incorreta e pins divergentes sao
+recusados.
+
+Mesmo o documento valido retorna **exit code 2** e:
+`HOLD_PE_S1_57_INDEPENDENT_ARCH_VM_PROOF_MISSING`.
+Nenhum objeto JSON fornecido pelo operador possui caminho para autorizar
+execucao de Windows PE desconhecido ou publicar APK/OTA. O resultado
+compara claims locais e registra as **faltas de prova independentes**;
+ele NAO cria atestacao de kernel, assinatura de hardware ou um revisor.
+
+### Exemplo de decisao no host do revisor
+
+O resultado assinado deve primeiro ser gerado pelo verificador completo
+PE-S1.54 **com as chaves publicas e SHA256 obtidos por canal externo**.
+Guardar o JSON gerado em um arquivo privado; obter o hash por um canal
+do revisor controlado separadamente. O comando abaixo **sempre recusa
+promocao a homologacao nativa** (codigo 2), inclusive no caso local
+consistente:
+
+```bash
+python3 -B tools/pe_arch_vm_s1_57_release_guard.py \
+  --review-result "/privado/signed-review-result.json" \
+  --expected-review-sha256 "$REVIEW_RESULT_SHA256" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-custody-sha256 "$CUSTODY_SHA256" \
+  --expected-policy-revision "$POLICY_REVISION" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-witness-id "$WITNESS_ID"
+```
+
+A CI Ubuntu testa o gate em 17 cenarios adversariais de contrato e,
+adicionalmente, entrega ao gate o JSON emitido dentro do Bubblewrap
+pelo teste real de duas assinaturas e exige `HOLD`. Depois falsifica
+`independent_vm_attestation=true`, atualiza o hash externo de teste e
+exige rejeicao estrutural mesmo com o pin recalculado.
+
+### Prova ainda necessaria para uma homologacao futura
+
+1. Revisao de um **operador independente** de uma VM Arch Linux descartavel,
+   com hipervisor, configuracao e cadeia de origem observados fora da
+   maquina controlada pelo operador dos logs.
+2. Execucao manual e autenticada de
+   `tools/pe_arch_vm_validation.py --reviewer-pinned-checkout` no
+   guest, utilizando checkout/commit e challenge fixados antes por
+   revisor externo, Ghidra 12.2 e ZIP previamente verificados e
+   somente a fixture PE sintetica incluida no repositorio.
+3. Observacao independente dos controles **simultaneos** no mesmo
+   cgroup/scope: cotas efetivas, seccomp mode 2 no processo Ghidra,
+   isolamento de rede e filesystem, limpeza de descendentes apos stop.
+   O operador nao pode atestar a si proprio somente com JSON ou hashes.
+4. Revisao separada do recibo e da cadeia de custodia assinada
+   mantendo o escopo exato de quem/onde/quando mediu, sem inferir
+   identidade humana a partir da simples posse de duas chaves.
+5. Somente depois: projeto/revisao de um *novo* gate de atestacao
+   com raizes de confianca externas explicitamente configuradas.
+   O guard PE-S1.57 **nao** e esse gate.
+
+**Politica:** a PR #47 continua Draft; nao mesclar nem liberar
+execucao de PEs hostis, APK ou OTA com a evidência atual.
