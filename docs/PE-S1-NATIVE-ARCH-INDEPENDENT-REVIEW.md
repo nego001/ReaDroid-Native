@@ -1199,7 +1199,7 @@ python3 -B tools/pe_arch_vm_s1_60_review_request.py correlate \
   --require-readonly-source-view
 ```
 
-Esse comando reutiliza a verificação PE-S1.48 do recibo, stdout,
+Esse comando exige o contrato completo de custódia (incluindo\nidentidade, hashes de quatro arquivos, confirmação de montagem\nreadonly e todas as flags negativas de segurança), recusando\nrespostas parciais ou alegações adicionais. Ele reutiliza a\nverificação PE-S1.48 do recibo, stdout,
 checkout e quatro artefatos; revalida o pedido antes e depois.
 Ele nunca afirma que logs do operador foram autenticados nem que
 seccomp+cgroups foram observados independentemente. O resultado
@@ -1209,7 +1209,7 @@ substitui a revisão assinada PE-S1.54/56, a liberação PE-S1.57
 
 ### Cobertura de CI
 
-A CI executa **21 cenários** unitários de emissão, leitura,
+A CI executa **23 cenários** unitários de emissão, leitura,
 manipulação, replay/pins incorretos, modos do arquivo, chaves JSON
 duplicadas e contrato de custódia (este último com mock explícito).
 O Ubuntu executa adicionalmente uma **emissão real** de desafio
