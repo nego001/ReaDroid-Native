@@ -1128,3 +1128,91 @@ do Ghidra, campos inesperados, commit e challenge externos, falha
 do preflight e ausencia de destino de recibo. Sao testes de logica
 com mocks intencionais: **nenhuma VM Arch real foi provisionada
 ou homologada por essa verificacao**.
+
+
+## PE-S1.60 | Pedido de revisão emitido FORA da VM + custódia correlacionada
+
+O revisor pode agora criar, numa máquina **sob seu próprio controle,
+fora da VM do operador**, um pedido com desafio aleatório de 256 bits
+gerado por \`secrets.token_hex(32)\`. O comando **não executa** Ghidra,
+PE Windows, cgroups, VM, rede nem ferramentas do sistema. Ele cria um
+arquivo privado **0600**, dentro de diretório **0700** do mesmo usuário,
+com proteção contra sobrescrita e symlinks, fsync e SHA-256 calculado
+sobre os bytes exatos.
+
+**Importante:** a independência real do revisor/máquina é uma condição
+operacional, não algo que o programa consiga provar. Se o operador
+controlar a máquina que emite o pedido, os mesmos arquivos e hashes
+podem ser falsificados. O pedido é **sem assinatura** e a hora registrada
+é apenas o relógio local não atestado.
+
+### Antes de preparar a VM: revisor independente
+
+\`\`\`bash
+install -d -m 700 "$HOME/negresco-reviewer-private"
+
+python3 -B tools/pe_arch_vm_s1_60_review_request.py issue \
+  --output "$HOME/negresco-reviewer-private/review-request-001.json" \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --reviewer-id "$REVIEWER_ID"
+\`\`\`
+
+O JSON de saída traz \`reviewer_challenge\` e \`request_sha256\`.
+**Guardar hash, challenge, commit e identidade do revisor por um canal
+confiável separado do operador**, antes de transmitir o desafio à VM.
+Não aceitar hashes "externos" simplesmente copiados do próprio
+artefato encaminhado pelo operador. O arquivo contém apenas
+metadados de solicitação; não coloque credenciais ou chaves nele.
+
+Depois de receber uma cópia do pedido, o revisor confere os
+valores previamente retidos:
+
+\`\`\`bash
+python3 -B tools/pe_arch_vm_s1_60_review_request.py verify \
+  --request "$HOME/negresco-reviewer-private/review-request-001.json" \
+  --expected-request-sha256 "$PIN_SHA256_PEDIDO" \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --expected-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
+  --expected-reviewer-id "$REVIEWER_ID"
+\`\`\`
+
+O resultado \`LOCAL_REVIEW_REQUEST_PIN_MATCHED_NOT_VM_ATTESTED\`
+valida somente **integridade e coerência local** com os valores
+informados pelo revisor. Não é autorização de release.
+
+### Depois do retorno do operador: correlacionar custódia
+
+Somente num checkout de revisão próprio, o revisor pode conferir o
+pedido contra o índice de custódia PE-S1.48, seus quatro artefatos e
+as fontes correspondentes, idealmente em montagem readonly:
+
+\`\`\`bash
+python3 -B tools/pe_arch_vm_s1_60_review_request.py correlate \
+  --request "$HOME/negresco-reviewer-private/review-request-001.json" \
+  --private-dir "$HOME/negresco-operator-evidence" \
+  --source-root "/mnt/reviewer-checkout-readonly" \
+  --expected-request-sha256 "$PIN_SHA256_PEDIDO" \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --expected-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-custody-sha256 "$PIN_SHA256_INDICE_CUSTODIA" \
+  --require-readonly-source-view
+\`\`\`
+
+Esse comando reutiliza a verificação PE-S1.48 do recibo, stdout,
+checkout e quatro artefatos; revalida o pedido antes e depois.
+Ele nunca afirma que logs do operador foram autenticados nem que
+seccomp+cgroups foram observados independentemente. O resultado
+\`LOCAL_REQUEST_AND_CUSTODY_CORRELATED_NOT_VM_ATTESTED\` **não**
+substitui a revisão assinada PE-S1.54/56, a liberação PE-S1.57
+(**HOLD**) ou a atestação efetiva de kernel/hipervisor.
+
+### Cobertura de CI
+
+A CI executa **21 cenários** unitários de emissão, leitura,
+manipulação, replay/pins incorretos, modos do arquivo, chaves JSON
+duplicadas e contrato de custódia (este último com mock explícito).
+O Ubuntu executa adicionalmente uma **emissão real** de desafio
+criptograficamente aleatório, verificação real do arquivo 0600 e
+rejeição real de hash errado. A matriz Arch userspace também executa
+os testes de contrato. **Não há VM Arch independente positiva na CI.**
