@@ -1087,3 +1087,44 @@ A CI só executa os **18 testes de contrato** com mocks controlados
 e um teste **real de rejeição do Ubuntu** com saída 2 e nenhum
 recibo. Não há sucesso positivo de VM Arch no GitHub Actions
 desta etapa. O gate de liberação PE-S1.57 permanece HOLD.
+
+
+## PE-S1.59 | Preflight obrigatorio no fluxo de aceite fixado pelo revisor
+
+A invocacao de `tools/pe_arch_vm_validation.py` com
+`--reviewer-pinned-checkout` agora **obriga** a validacao
+`pe_arch_vm_s1_58_preflight.native_readiness` antes de iniciar
+qualquer execucao de smoke com cgroups, experimentos de
+descendentes ou Ghidra.
+
+A sequencia obrigatoria fica:
+
+1. Validar commit e challenge informados pelo revisor externo,
+   exigir destino privado para o recibo.
+2. Conferir o checkout Git local, sem arquivos untracked/ignorados
+   inesperados.
+3. Executar o preflight PE-S1.58 sobre o **mesmo commit**, checkout,
+   Java 25, instalacao Ghidra SHA256-pinada e destino de recibo;
+   verificar todos os campos do resultado, recusando qualquer claim
+   adicional de homologacao ou liberacao.
+4. **Somente em caso de preflight valido:** iniciar os testes nativos
+   existentes de cgroup, descendentes, seccomp e Ghidra com a fixture
+   sintetica.
+5. Conferir novamente o checkout Git antes da gravacao do recibo
+   privado, usando a politica de publicacao atomica existente.
+
+O contrato de stdout/recibo PE-S1.45/47 continua inalterado:
+o preflight nao e acrescentado como uma suposta atestacao de VM.
+Um PASS local nao autenticado continua insuficiente para qualquer
+liberacao, de modo que o `PE-S1.57` permanece em HOLD.
+
+O comando de preflight manual PE-S1.58 permanece util como diagnostico
+antecipado; a execucao do fluxo fixado pelo revisor **repete
+obrigatoriamente** a verificacao para impedir que ela seja pulada.
+
+A CI Ubuntu e a matriz Arch userspace executam **11 testes** de contrato
+do PE-S1.59, cobrindo flags de seguranca falseadas, manifesto, hash
+do Ghidra, campos inesperados, commit e challenge externos, falha
+do preflight e ausencia de destino de recibo. Sao testes de logica
+com mocks intencionais: **nenhuma VM Arch real foi provisionada
+ou homologada por essa verificacao**.
