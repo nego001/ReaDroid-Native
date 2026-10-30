@@ -404,6 +404,51 @@ jobs:
           assert rows[-1]["native_arch_vm_attestation"] is False
           print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
           PY
+      - name: PE-S1.55 real readonly Bubblewrap full review with two genuine Ed25519 signatures
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_signed_readonly_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s1-55-real-signed-readonly.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-55-real-signed-readonly.jsonl" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          records = [json.loads(line) for line in
+                     Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+                     if line.strip()]
+          expected = [
+              "PASS_PE_S1_55_REAL_READONLY_DUAL_ED25519",
+              "REJECT_PE_S1_55_WRONG_EXTERNAL_INDEX_PIN",
+              "REJECT_PE_S1_55_REHASHED_LOG_WITHOUT_SIGNATURE",
+              "REJECT_PE_S1_55_TAMPERED_REVIEWER_SIGNATURE",
+              "REJECT_PE_S1_55_WRITABLE_SOURCE",
+              "PASS_PE_S1_55_REAL_READONLY_SIGNED_REVIEW_INTEGRATION",
+          ]
+          assert [r.get("status") for r in records] == expected
+          for record in records[:-1]:
+              assert record["source_manifest_files"] >= 30
+              assert record["private_mount_readonly"] is True
+              assert record["reviewer_code_mount_readonly"] is True
+              assert record["source_mount_readonly"] is (
+                  record["status"] != "REJECT_PE_S1_55_WRITABLE_SOURCE")
+              assert record["git_verifier_mocked"] is False
+              assert record["ssh_verifier_mocked"] is False
+              assert record["fstatvfs_mocked"] is False
+              assert record["synthetic_operator_logs"] is True
+              assert record["native_arch_vm_attestation"] is False
+              assert record["windows_binary_executed"] is False
+          final = records[-1]
+          assert final["cases"] == 5
+          assert final["real_bubblewrap"] is True
+          assert final["real_git"] is True
+          assert final["real_openssh_two_ed25519_keys"] is True
+          assert final["negative_cases_rejected"] == 4
+          assert final["mocked_git_or_crypto"] is False
+          assert final["independent_arch_vm_attestation"] is False
+          print("PE-S1.55: REAL readonly Bubblewrap, Git and two Ed25519 signatures: PASS")
+          print("All observations SYNTHETIC; Ubuntu test is NOT independent Arch VM attestation.")
+          PY
       - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
         run: |
           set -euo pipefail
