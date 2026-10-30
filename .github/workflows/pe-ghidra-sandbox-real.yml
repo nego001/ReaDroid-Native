@@ -64,6 +64,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
           # The actual Ubuntu host must NOT pass the native Arch VM gate.
           mkdir -p "$RUNNER_TEMP/pe-s1-52-refusal"
           chmod 700 "$RUNNER_TEMP/pe-s1-52-refusal"
