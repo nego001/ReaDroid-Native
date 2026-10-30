@@ -58,6 +58,7 @@ jobs:
           echo "PE-S1.45 incorrect external Git pin rejected: PASS"
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_checkout_pin.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_handoff_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_custody_review.py' -v
       - name: Install Bubblewrap and Windows cross-compiler
         run: |
           set -euo pipefail
@@ -552,4 +553,5 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_evidence.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_checkout_pin.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_handoff_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_custody_review.py' -v
           echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'
