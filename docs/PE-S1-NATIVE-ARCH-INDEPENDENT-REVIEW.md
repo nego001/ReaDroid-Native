@@ -197,3 +197,60 @@ recusa simulada de alterações depois da carga nativa. Isso é
 uma proteção local contra diferenças **observáveis**; não garante
 snapshot atômico, confiança na implementação do Git ou que o
 operador/host é honesto. Não é homologação de VM Arch.
+
+
+## PE-S1.47 | Conferência conjunta do recibo e da saída do operador
+
+O revisor independente deve receber **dois arquivos** em vez de
+confiar somente no recibo privado: `acceptance.json` (recibo v2)
+e `operator-run-output.json` (saída JSON completa produzida pelo
+CLI da aceitação nativa). O operador calcula os dois digests
+separadamente:
+
+```bash
+sha256sum "$HOME/negresco-arch-vm-evidence/acceptance.json"
+sha256sum "$HOME/negresco-arch-vm-evidence/operator-run-output.json"
+```
+
+O revisor guarda esses dois valores em um registro **fora da VM e
+separado dos arquivos recebidos**, antes de abrir a entrega para
+revisão. É essencial não confiar em SHA-256 informado dentro do
+próprio JSON sob análise. Para a verificação, guardar os dois
+arquivos como regulares de permissões 0600 num diretório privado
+0700 sob controle do revisor, sem symlink nem hardlink adicional.
+
+O novo verificador `tools/pe_arch_vm_handoff_review.py` verifica
+ambos os digests externos, challenge prévio, commit Git externo,
+a igualdade exata entre relatório impresso e relatório incluído
+no recibo v2, os metadados de publicação do recibo e o pin de
+checkout informado pelo operador. Também verifica o checkout
+do revisor **antes e depois** das duas passagens de hashes do
+manifesto. Se qualquer parte divergir, a entrega é recusada.
+
+```bash
+python3 -B tools/pe_arch_vm_handoff_review.py \
+  --operator-output "/caminho/privado/operator-run-output.json" \
+  --receipt "/caminho/privado/acceptance.json" \
+  --source-root "/mnt/checkout-readonly" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-receipt-sha256 "$PIN_SHA256_RECIBO" \
+  --expected-operator-sha256 "$PIN_SHA256_SAIDA_OPERADOR" \
+  --require-readonly-source-view
+```
+
+O status `LOCAL_OPERATOR_HANDOFF_CORRELATED` significa apenas que
+**essas duas observações locais são internamente coerentes**.
+O resultado sempre mantém
+`native_kernel_execution_independently_verified=false`,
+`independent_vm_attestation=false` e
+`host_or_git_authenticity_verified=false`. A verificação não
+executa um PE Windows nem Ghidra e não prova o ambiente do operador.
+
+A CI PE-S1.47 tem **12 testes de regressão sem VM** e três
+cenários de integração com **Git e Bubblewrap reais no runner
+Ubuntu** e fonte sintética: entrega coerente aceita, SHA externo
+da saída errado recusado e relatório alterado recusado mesmo
+quando seu novo SHA externo é informado. Nenhum desses testes
+substitui prova de execução do kernel/cgroups numa VM Arch
+independente. A PR continua Draft, sem merge/produção/APK/OTA.
