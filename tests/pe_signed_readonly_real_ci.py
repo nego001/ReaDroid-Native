@@ -225,7 +225,8 @@ def _host(ghidra_home: Path) -> int:
             "witness_id": WITNESS_ID, "source_commit": commit,
             "reviewer_challenge": CHALLENGE,
             "custody_index_sha256": sha(index_path.read_bytes()),
-            "acknowledgement_utc": stamp, "vm_attestation_claimed": False,
+            "acknowledgement_utc": stamp.replace("+00:00", "Z"),
+            "vm_attestation_claimed": False,
         }
         witness_path = private / witness.FILES["statement"]
         publish(witness_path, witness_statement)
