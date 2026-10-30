@@ -39,6 +39,11 @@ CUSTODY_EXPECTED = {
     "wrong-index-pin": "REJECT_REAL_WRONG_CUSTODY_INDEX_PIN",
     "modified-kernel": "REJECT_REAL_MODIFIED_GUEST_KERNEL_LOG",
 }
+OBSERVATION_EXPECTED = {
+    "valid": "PASS_REAL_READONLY_STRUCTURED_GUEST_CUSTODY",
+    "wrong-index-pin": "REJECT_REAL_WRONG_OBSERVATION_INDEX_PIN",
+    "different-batch": "REJECT_REAL_DIFFERENT_GUEST_OBSERVATION_BATCH",
+}
 
 
 def _fixture_report(repository: Path) -> dict:
@@ -271,8 +276,60 @@ def _child_custody(mode: str, index_hash: str, commit: str) -> int:
     return 0
 
 
+def _child_observation(mode: str, pin: str, commit: str) -> int:
+    import pe_arch_vm_observation_review as reviewer
+    import pe_arch_vm_evidence as evidence
+
+    if not all(
+            os.statvfs(Path("/audit/source") / file).f_flag & os.ST_RDONLY
+            for file in evidence.SOURCE_FILES):
+        raise AssertionError("Source view in observation review is writable")
+    selected_pin = "f" * 64 if mode == "wrong-index-pin" else pin
+    out, err = StringIO(), StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        rc = reviewer.main([
+            "--private-dir", "/audit/private",
+            "--source-root", "/audit/source",
+            "--expected-custody-sha256", selected_pin,
+            "--expected-source-commit", commit,
+            "--expected-challenge", CHALLENGE,
+            "--require-readonly-source-view",
+        ])
+    if mode == "valid":
+        if rc != 0 or err.getvalue():
+            raise AssertionError("Correct observation receipt rejected")
+        data = json.loads(out.getvalue())
+        if (data.get("status") != reviewer.STATUS
+                or data.get("source_files_rechecked") != len(evidence.SOURCE_FILES)
+                or data.get("operator_logs_authenticated") is not False
+                or data.get("independent_vm_attestation") is not False):
+            raise AssertionError("Observation result contains ungrounded claims")
+    else:
+        if rc != 2 or out.getvalue():
+            raise AssertionError("Unsafe guest observation accepted")
+        data = json.loads(err.getvalue())
+        expected_reason = (
+            "index hash differs" if mode == "wrong-index-pin"
+            else "same local batch")
+        if (data.get("status") != "REJECTED_GUEST_OBSERVATION_CUSTODY"
+                or expected_reason not in data.get("reason", "")):
+            raise AssertionError("Unsafe guest observation rejection missing")
+    print(json.dumps({
+        "status": OBSERVATION_EXPECTED[mode],
+        "source_manifest_files": len(evidence.SOURCE_FILES),
+        "actual_readonly_mount": True,
+        "git_real_checkout": True,
+        "fstatvfs_mocked": False,
+        "synthetic_operator_reports": True,
+        "independent_arch_vm_attestation": False,
+        "windows_binary_executed": False,
+        "cli_exit_code": rc,
+    }, sort_keys=True))
+    return 0
+
+
 def _host(ghidra_home: Path, *, run_handoff: bool = False,
-          run_custody: bool = False) -> int:
+          run_custody: bool = False, run_observation: bool = False) -> int:
     repository = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repository / "tools"))
     import pe_arch_vm_evidence as evidence
@@ -300,7 +357,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
             raise AssertionError("Empty fixture source unexpectedly allowed")
         changed.write_bytes(bytes([original[0] ^ 1]) + original[1:])
 
-        if run_handoff or run_custody:
+        if run_handoff or run_custody or run_observation:
             if not shutil.which("git"):
                 raise RuntimeError("Real Git unavailable; no handoff fallback")
             for command in (
@@ -332,7 +389,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
         if dest.stat().st_nlink != 1:
             raise RuntimeError("Published private receipt is not a unique link")
 
-        if run_handoff or run_custody:
+        if run_handoff or run_custody or run_observation:
             from pe_arch_vm_checkout_pin import verify_source_checkout_pin
             local_pin = verify_source_checkout_pin(
                 source, head, evidence.SOURCE_FILES)
@@ -355,7 +412,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
             changed_hash = hashlib.sha256(corrupted_file.read_bytes()).hexdigest()
 
 
-        if run_custody:
+        if run_custody or run_observation:
             import pe_arch_vm_custody_review as custody
             # The production handoff name is fixed by the custody schema.
             (private / "operator-run-output.json").write_bytes(
@@ -370,6 +427,44 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
                     b"\\n", b"\n"))
             guest_kernel.chmod(0o600)
             guest_cgroup.chmod(0o600)
+
+            if run_observation:
+                # These are explicitly SYNTHETIC guest logs and do not come
+                # from a native Arch VM or systemd. Match PE-S1.52 schema.
+                stamp = "2026-10-30T04:00:00+00:00"
+                common = {
+                    "classification":
+                        "OPERATOR_SELF_REPORTED_NATIVE_ARCH_OBSERVATION_NOT_ATTESTED",
+                    "source_commit": head,
+                    "reviewer_challenge": CHALLENGE,
+                    "operator_observed_at_utc_not_attested": stamp,
+                    "native_arch_vm_gate_local_pass": True,
+                    "independent_vm_attestation": False,
+                    "native_kernel_execution_independently_verified": False,
+                    "real_cgroup_limits_or_cleanup_tested_by_this_command": False,
+                    "windows_binary_executed": False,
+                }
+                guest_kernel.write_bytes((json.dumps({
+                    **common,
+                    "artifact": "guest_kernel_observation",
+                    "kernel_release": "6.15.2-arch1-1",
+                    "kernel_machine": "x86_64",
+                    "pid1_comm": "systemd",
+                    "systemd_version_first_line": "systemd 258",
+                    "virtualization_reported_by_local_systemd": "kvm",
+                }, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+                guest_cgroup.write_bytes((json.dumps({
+                    **common,
+                    "artifact": "guest_cgroup_observation",
+                    "cgroup_v2_controllers_available": [
+                        "cpu", "io", "memory", "pids"],
+                    "cgroup_v2_root_subtree_control": ["cpu", "memory", "pids"],
+                    "systemd_user_control_group_locally_observed":
+                        "/user.slice/user-1000.slice/user@1000.service",
+                    "cgroup_quotas_verified_by_this_command": False,
+                    "cgroup_descendant_cleanup_verified_by_this_command": False,
+                }, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+
             index_path = private / "reviewer-custody-index.json"
             record = {
                 "schema": custody.SCHEMA,
@@ -406,6 +501,7 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
         for module in ("pe_arch_vm_receipt_verify.py", "pe_arch_vm_evidence.py",
                        "pe_arch_vm_checkout_pin.py", "pe_arch_vm_handoff_review.py",
                        "pe_arch_vm_custody_review.py",
+                       "pe_arch_vm_observation_review.py",
                        "pe_nofollow_paths.py", "pe_ghidra_integrity.py",
                        "pe_resource_limits.py"):
             shutil.copyfile(repository / "tools" / module, code / module)
@@ -514,6 +610,71 @@ def _host(ghidra_home: Path, *, run_handoff: bool = False,
                 "windows_binary_executed": False,
             }, sort_keys=True))
             return 0
+
+        if run_observation:
+            for mode in OBSERVATION_EXPECTED:
+                if mode == "different-batch":
+                    # Re-pin the modified index as if a dishonest operator
+                    # recomputed every SHA. Strict cross-batch validation
+                    # must still reject mismatched timestamps.
+                    changed = json.loads(guest_cgroup.read_text("utf-8"))
+                    changed["operator_observed_at_utc_not_attested"] = (
+                        "2026-10-29T04:00:00+00:00")
+                    guest_cgroup.write_bytes((
+                        json.dumps(changed, sort_keys=True, separators=(",", ":"))
+                        + "\n").encode("utf-8"))
+                    record["artifacts"]["guest_cgroup_observation"]["sha256"] = (
+                        hashlib.sha256(guest_cgroup.read_bytes()).hexdigest())
+                    index_path.write_bytes((
+                        json.dumps(record, sort_keys=True, separators=(",", ":"))
+                        + "\n").encode("utf-8"))
+                    custody_pin = hashlib.sha256(index_path.read_bytes()).hexdigest()
+                mounts = [
+                    "--dir", "/audit",
+                    "--ro-bind", str(code), "/audit/code",
+                    "--ro-bind", str(source), "/audit/source",
+                    "--ro-bind", str(private), "/audit/private",
+                    "--setenv", "PYTHONPATH", "/audit/code",
+                    "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
+                ]
+                argv = base[:boundary] + mounts + [
+                    "--", "/usr/bin/python3", "/work/readonly_receipt_smoke.py",
+                    "--child-observation", mode, "--custody-pin", custody_pin,
+                    "--commit", head,
+                ]
+                process = subprocess.run(
+                    argv, stdin=subprocess.DEVNULL, capture_output=True,
+                    text=True, timeout=90, check=False, close_fds=True)
+                if process.returncode != 0:
+                    raise RuntimeError(
+                        f"PE-S1.53 real readonly observation {mode} failed: "
+                        f"rc={process.returncode}, "
+                        f"stderr={process.stderr[-1800:]!r}, "
+                        f"stdout={process.stdout[-1800:]!r}")
+                proof = json.loads(process.stdout.strip())
+                if (proof.get("status") != OBSERVATION_EXPECTED[mode]
+                        or proof.get("source_manifest_files")
+                           != len(evidence.SOURCE_FILES)
+                        or proof.get("actual_readonly_mount") is not True
+                        or proof.get("git_real_checkout") is not True
+                        or proof.get("fstatvfs_mocked") is not False
+                        or proof.get("synthetic_operator_reports") is not True
+                        or proof.get("independent_arch_vm_attestation") is not False
+                        or proof.get("windows_binary_executed") is not False):
+                    raise RuntimeError(
+                        "Missing actual Bubblewrap observation check")
+                print(json.dumps(proof, sort_keys=True), flush=True)
+            print(json.dumps({
+                "status": "PASS_PE_S1_53_REAL_READONLY_OBSERVATION_CUSTODY",
+                "cases": len(OBSERVATION_EXPECTED),
+                "rehashed_mismatched_batch_rejected": True,
+                "external_index_pin_mismatch_rejected": True,
+                "valid_structured_observation_accepted": True,
+                "fstatvfs_mocked": False,
+                "native_arch_vm_attestation": False,
+                "windows_binary_executed": False,
+            }, sort_keys=True))
+            return 0
         proofs = []
         for mode in CASE_EXPECTED:
             chosen = alternate if mode == "tampered" else source
@@ -576,14 +737,21 @@ def main() -> int:
     parser.add_argument("--child", choices=tuple(CASE_EXPECTED))
     parser.add_argument("--child-handoff", choices=tuple(HANDOFF_EXPECTED))
     parser.add_argument("--child-custody", choices=tuple(CUSTODY_EXPECTED))
+    parser.add_argument("--child-observation", choices=tuple(OBSERVATION_EXPECTED))
     parser.add_argument("--run-handoff", action="store_true")
     parser.add_argument("--run-custody", action="store_true")
+    parser.add_argument("--run-observation", action="store_true")
     parser.add_argument("--custody-pin")
     parser.add_argument("--pin")
     parser.add_argument("--operator-pin")
     parser.add_argument("--changed-operator-pin")
     parser.add_argument("--commit")
     args = parser.parse_args()
+    if args.child_observation:
+        if not args.custody_pin or not args.commit:
+            parser.error("Observation child needs external index pin and commit")
+        return _child_observation(
+            args.child_observation, args.custody_pin, args.commit)
     if args.child_custody:
         if not args.custody_pin or not args.commit:
             parser.error("--custody-pin and --commit required")
@@ -601,11 +769,11 @@ def main() -> int:
         return _child(args.child, args.pin)
     if args.ghidra_home is None:
         parser.error("--ghidra-home required for the real mount test")
-    if args.run_handoff and args.run_custody:
+    if sum((args.run_handoff, args.run_custody, args.run_observation)) > 1:
         parser.error("Select one integration probe at a time")
     return _host(
         args.ghidra_home, run_handoff=args.run_handoff,
-        run_custody=args.run_custody)
+        run_custody=args.run_custody, run_observation=args.run_observation)
 
 
 if __name__ == "__main__":
