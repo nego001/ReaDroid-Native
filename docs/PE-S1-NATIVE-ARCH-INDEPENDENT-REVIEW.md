@@ -1012,7 +1012,7 @@ execucao de PEs hostis, APK ou OTA com a evidência atual.
 
 ## PE-S1.58 | Preflight nativo seguro antes dos testes com cgroups
 
-O novo \`tools/pe_arch_vm_s1_58_preflight.py\` é uma verificação
+O novo `tools/pe_arch_vm_s1_58_preflight.py` é uma verificação
 **exclusivamente local e de leitura**, a executar manualmente numa VM
 Arch Linux **descartável e provida separadamente**. Ela não provisiona
 uma VM, não inicializa Ghidra, não cria scope/cgroup, não gera
@@ -1042,9 +1042,9 @@ copiar valores de um recibo produzido pelo próprio operador. Use um
 checkout dedicado de exato commit, um arquivo ZIP oficial do Ghidra
 12.2 com hash pinado e um destino novo de recibo.
 
-\`\`\`bash
+```bash
 cd /caminho/do/checkout/rea-droid
-mkdir -m 700 -p "$HOME/negresco-arch-private"
+install -d -m 700 "$HOME/negresco-arch-private"
 
 python3 -B tools/pe_arch_vm_s1_58_preflight.py \
   --source-root "$PWD" \
@@ -1053,10 +1053,10 @@ python3 -B tools/pe_arch_vm_s1_58_preflight.py \
   --evidence-output "$HOME/negresco-arch-private/acceptance.json" \
   --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
   --reviewer-challenge "$CHALLENGE_FIXADO_PELO_REVISOR"
-\`\`\`
+```
 
 Somente um resultado
-\`READY_LOCAL_PE_S1_58_NATIVE_ARCH_VM_PREFLIGHT_NOT_ATTESTED\`
+`READY_LOCAL_PE_S1_58_NATIVE_ARCH_VM_PREFLIGHT_NOT_ATTESTED`
 com **exit code 0** confirma a adequação dos *insumos locais*.
 Não significa que cgroups/seccomp foram executados, que a VM é
 autêntica ou que os signatários são independentes. Se falhar,
@@ -1066,7 +1066,7 @@ configuração da VM sem enfraquecer os gates.
 Após o pré-voo e **somente com supervisão independente**, o teste
 nativo já implementado pode ser invocado separadamente:
 
-\`\`\`bash
+```bash
 python3 -B tools/pe_arch_vm_validation.py \
   --ghidra-home "/opt/ghidra_12.2_PUBLIC" \
   --ghidra-archive "/opt/ghidra_12.2.zip" \
@@ -1074,7 +1074,7 @@ python3 -B tools/pe_arch_vm_validation.py \
   --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
   --reviewer-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
   --evidence-output "$HOME/negresco-arch-private/acceptance.json"
-\`\`\`
+```
 
 Essa segunda operação já executa probes nativos e gera recibo, e
 **não faz parte da PE-S1.58**. Ela deve ser realizada somente em
