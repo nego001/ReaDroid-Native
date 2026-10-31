@@ -779,9 +779,12 @@ jobs:
       - name: Install official Arch packages
         run: |
           set -euo pipefail
-          pacman -Syu --noconfirm --needed python bubblewrap util-linux libseccomp
+          pacman -Syu --noconfirm --needed python bubblewrap util-linux libseccomp openssh
           python --version
           bwrap --version
+          # PE-S1.62 uses genuine temporary Ed25519 keys; never silently
+          # skip the suite because OpenSSH is missing from Arch userspace.
+          command -v ssh-keygen
           cat /etc/os-release
       - name: Run profile and resource policy contracts as unprivileged user
         run: |
@@ -816,6 +819,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_60_review_request.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_61_runtime_matrix.py' -v
+          runuser -u nobody -- sh -c 'command -v ssh-keygen >/dev/null'
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_62_signed_runtime_hold.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
