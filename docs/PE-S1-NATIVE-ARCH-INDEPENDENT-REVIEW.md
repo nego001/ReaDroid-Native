@@ -1542,3 +1542,93 @@ A suíte PE-S1.64 traz **15 testes** de correlação e falsificação
 com assinaturas OpenSSH Ed25519 reais **apenas em fixtures
 sintéticas**. O job Arch da CI continua sendo contêiner
 userspace, **não VM Arch nativa**.
+
+
+## PE-S1.65 | Preparação prática de evidências do host pelo observador
+
+A ferramenta `tools/pe_arch_vm_s1_65_observer_prepare.py` prepara
+**uma única vez** o manifesto JSON de observações do host para
+revisão pela PE-S1.63 e correlação pela PE-S1.64. Ela **não**
+instala/provisiona VM, captura logs, executa subprocessos nem
+gera/importa chaves privadas. É necessário um observador externo,
+com acesso independente ao host/hipervisor, **capturar previamente**
+os quatro logs reais previstos pela PE-S1.63. Se os logs faltarem,
+a ferramenta **recusa** a preparação; não cria registros fictícios.
+
+### Pré-requisitos do observador
+
+- Executar como usuário normal em sistema Linux isolado e sob controle
+  próprio, não na VM do operador. Manter os dois diretórios em caminhos
+  absolutos, separados, com **0700**; os quatro logs e as três
+  entradas `allowed_signers` em **0600**, sem symlink/hardlink.
+- Os quatro logs são exatamente `reviewer-host-vm-launch.txt`,
+  `reviewer-host-guest-kernel.txt`,
+  `reviewer-host-seccomp-cgroups.txt` e
+  `reviewer-host-scope-cleanup.txt`, todos produzidos **antes**
+  por instrumentação externa. Limite de 64 KiB por log. Não guardar
+  chaves privadas, dados pessoais nem tokens neles.
+- A pasta do observador precisa conter
+  `external-observer-allowed-signers`. A pasta de custódia
+  precisa conter `reviewer-policy-allowed-signers` e
+  `witness-allowed-signers`. Cada entrada identifica uma chave
+  **Ed25519 diferente**. Os três hashes dessas chaves precisam ter
+  sido guardados por canal de confiança independente.
+- Guardar os pins `$REVIEWER_COMMIT`, `$REVIEWER_CHALLENGE`,
+  `$PIN_REQUEST`, `$PIN_CUSTODY` e `$PIN_RECEIPT`
+  previamente, fora dos arquivos recebidos do operador.
+
+### Gerar o manifesto, sem sobrescrever dados
+
+```bash
+python3 -B tools/pe_arch_vm_s1_65_observer_prepare.py \
+  --observer-dir "$OBSERVER_DIR" \
+  --custody-dir "$CUSTODY_DIR" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-request-sha256 "$PIN_REQUEST" \
+  --expected-custody-sha256 "$PIN_CUSTODY" \
+  --expected-receipt-sha256 "$PIN_RECEIPT" \
+  --expected-observer-signers-sha256 "$PIN_OBSERVER_PUBLIC_KEY" \
+  --expected-reviewer-signers-sha256 "$PIN_REVIEWER_PUBLIC_KEY" \
+  --expected-witness-signers-sha256 "$PIN_WITNESS_PUBLIC_KEY" \
+  --expected-observer-id "$OBSERVER_ID" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-witness-id "$WITNESS_ID"
+```
+
+O resultado de preparação é
+`UNSIGNED_PE_S1_65_HOST_MANIFEST_PREPARED_NOT_VM_ATTESTATION`
+(`exit 0` **somente porque o manifesto foi escrito**), informa o
+SHA-256 do manifesto e dos quatro arquivos, e fixa todas as flags
+de release/VM em `false`. Não produz assinatura nem atestação.
+
+A publicação utiliza descritores de diretórios sem symlink,
+`flock` exclusivo, staging com `fsync` e link atômico
+no-create para impedir substituição de manifesto já publicado.
+O programa recusa se existir manifesto **ou assinatura**, mesmo
+que seja um arquivo previamente criado pelo usuário.
+
+O próximo passo, executado **separadamente pelo observador**,
+é assinar o manifesto com a **chave privada mantida fora
+do repositório**:
+
+```bash
+ssh-keygen -Y sign -f "$THIRD_OBSERVER_PRIVATE_KEY" \
+  -n negresco-pe-s1-63-external-host-observations \
+  "$OBSERVER_DIR/external-observer-manifest.json"
+mv -n -- "$OBSERVER_DIR/external-observer-manifest.json.sig" \
+  "$OBSERVER_DIR/external-observer-manifest.sig"
+chmod 600 "$OBSERVER_DIR/external-observer-manifest.sig"
+```
+
+Em seguida, fixar por canal independente o hash da assinatura,
+verificar o pacote assinado com **PE-S1.63** e fazer a revisão
+combinada **PE-S1.64**. Os dois verificadores mantêm `exit 2`
+e `HOLD` mesmo para pacotes coerentes. Nunca usar o `exit 0`
+da simples preparação como aprovação de execução, kernel,
+hipervisor ou publicação de APK/OTA.
+
+**Estado real:** a CI cobre 17 testes novos PE-S1.65, inclusive
+uma assinatura OpenSSH Ed25519 de fixture sintética e recusa
+de dados ausentes/alterados. **Nenhuma VM Arch nativa independente
+foi criada, observada ou homologada por esta mudança.**
