@@ -1,0 +1,860 @@
+name: PE Sandbox | Real Bubblewrap and Ghidra
+
+on:
+  push:
+    branches:
+      - feature/pe-bubblewrap-real-smoke
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pe-bwrap-smoke
+  cancel-in-progress: true
+
+jobs:
+  sandbox-proof:
+    name: Probe real namespace and run Ghidra 12.2
+    runs-on: ubuntu-22.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: PE-S1.45 reviewer Git checkout pin and safe contract tests (not native VM)
+        run: |
+          set -euo pipefail
+          # Check a genuinely clean checkout BEFORE contract tests import
+          # modules, and suppress __pycache__ instead of ignoring dirty paths.
+          python3 -B tools/pe_arch_vm_checkout_pin.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --expected-commit "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/pe-s1-45-local-git-pin.json"
+          python3 - "$RUNNER_TEMP/pe-s1-45-local-git-pin.json" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert record["status"] == "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
+          assert record["expected_commit"] == sys.argv[2]
+          assert record["checked_manifest_entries"] >= 25
+          assert record["worktree_status_clean"] is True
+          assert record["native_vm_or_kernel_verified"] is False
+          assert record["git_authorship_or_signature_verified"] is False
+          print("PE-S1.45 CI Git commit pin passed; this does NOT attest a native Arch VM.")
+          PY
+          if python3 -B tools/pe_arch_vm_checkout_pin.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --expected-commit "ffffffffffffffffffffffffffffffffffffffff"; then
+            echo "PE-S1.45 incorrect external Git pin was accepted" >&2
+            exit 1
+          fi
+          echo "PE-S1.45 incorrect external Git pin rejected: PASS"
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_checkout_pin.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_handoff_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_custody_review.py' -v
+          command -v ssh-keygen
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_57_release_guard.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_60_review_request.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_61_runtime_matrix.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_62_signed_runtime_hold.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_63_external_observer.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_64_external_correlation_hold.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_65_observer_prepare.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_66_native_reviewer_launcher.py' -v
+          # PE-S1.60: real os.urandom-backed challenge and private request
+          # on the Ubuntu host; this does NOT demonstrate external reviewer
+          # control or native Arch VM provenance.
+          mkdir -m 700 -p "$RUNNER_TEMP/pe-s1-60-request-private"
+          python3 -B tools/pe_arch_vm_s1_60_review_request.py issue \
+            --output "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-id ci-reviewer@example.invalid \
+            > "$RUNNER_TEMP/pe-s1-60-issued.json"
+          python3 - "$RUNNER_TEMP/pe-s1-60-issued.json" \
+            "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" <<'PY'
+          import hashlib, json, stat, sys
+          from pathlib import Path
+          issued = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          evidence_file = Path(sys.argv[2])
+          assert issued["status"] == "LOCAL_REVIEW_REQUEST_ISSUED_NOT_VM_ATTESTED"
+          assert issued["request_sha256"] == hashlib.sha256(evidence_file.read_bytes()).hexdigest()
+          assert len(issued["reviewer_challenge"]) == 64
+          assert stat.S_IMODE(evidence_file.stat().st_mode) == 0o600
+          assert issued["independent_vm_attestation"] is False
+          assert issued["operator_evidence_accepted"] is False
+          assert issued["release_authorized"] is False
+          print("PE-S1.60 real local reviewer request: issued with no VM attestation")
+          PY
+          python3 -B tools/pe_arch_vm_s1_60_review_request.py verify \
+            --request "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" \
+            --expected-request-sha256 "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["request_sha256"])' "$RUNNER_TEMP/pe-s1-60-issued.json")" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --expected-challenge "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewer_challenge"])' "$RUNNER_TEMP/pe-s1-60-issued.json")" \
+            --expected-reviewer-id ci-reviewer@example.invalid \
+            > "$RUNNER_TEMP/pe-s1-60-verified.json"
+          python3 - "$RUNNER_TEMP/pe-s1-60-verified.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert record["status"] == "LOCAL_REVIEW_REQUEST_PIN_MATCHED_NOT_VM_ATTESTED"
+          assert record["independent_vm_attestation"] is False
+          assert record["release_authorized"] is False
+          print("PE-S1.60 real local request verification PASS; no native VM claim")
+          PY
+          rc=0
+          python3 -B tools/pe_arch_vm_s1_60_review_request.py verify \
+            --request "$RUNNER_TEMP/pe-s1-60-request-private/review-request-ci.json" \
+            --expected-request-sha256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+            --expected-source-commit "$GITHUB_SHA" \
+            --expected-challenge "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewer_challenge"])' "$RUNNER_TEMP/pe-s1-60-issued.json")" \
+            --expected-reviewer-id ci-reviewer@example.invalid \
+            > "$RUNNER_TEMP/pe-s1-60-rejected-stdout" \
+            2> "$RUNNER_TEMP/pe-s1-60-rejected-stderr" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/pe-s1-60-rejected-stdout"
+          python3 - "$RUNNER_TEMP/pe-s1-60-rejected-stderr" <<'PY'
+          import json, sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert record["status"] == "REJECTED_PE_S1_60_LOCAL_REQUEST_OR_CUSTODY"
+          assert record["independent_vm_attestation"] is False
+          assert record["release_authorized"] is False
+          print("PE-S1.60 forged external request pin rejected: PASS")
+          PY
+          # Real Ubuntu host MUST NOT be confused for a native Arch VM.
+          # It must reject before reading Ghidra, creating a scope or
+          # producing any receipt. Both the exit code and rejection schema
+          # are checked (an arbitrary Python crash is NOT considered PASS).
+          mkdir -p "$RUNNER_TEMP/pe-s1-58-private"
+          chmod 700 "$RUNNER_TEMP/pe-s1-58-private"
+          rc=0
+          python3 -B tools/pe_arch_vm_s1_58_preflight.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --ghidra-home "$RUNNER_TEMP/nonexistent-ghidra" \
+            --ghidra-archive "$RUNNER_TEMP/nonexistent-ghidra.zip" \
+            --evidence-output "$RUNNER_TEMP/pe-s1-58-private/forbidden.json" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            > "$RUNNER_TEMP/pe-s1-58-stdout.json" \
+            2> "$RUNNER_TEMP/pe-s1-58-rejection.json" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/pe-s1-58-stdout.json"
+          test ! -e "$RUNNER_TEMP/pe-s1-58-private/forbidden.json"
+          python3 - "$RUNNER_TEMP/pe-s1-58-rejection.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          evidence = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert evidence["status"] == "REJECTED_PE_S1_58_VM_PREFLIGHT_NOT_HOMOLOGATED"
+          assert evidence["independent_vm_attestation"] is False
+          assert evidence["unknown_windows_pe_execution_authorized"] is False
+          assert evidence["apk_or_ota_publication_authorized"] is False
+          print("PE-S1.58 Ubuntu native-Arch preflight refusal PASS; no receipt.")
+          PY
+          # The actual Ubuntu host must NOT pass the native Arch VM gate.
+          mkdir -p "$RUNNER_TEMP/pe-s1-52-refusal"
+          chmod 700 "$RUNNER_TEMP/pe-s1-52-refusal"
+          if python3 -B tools/pe_arch_vm_observation.py \
+            --output-directory "$RUNNER_TEMP/pe-s1-52-refusal" \
+            --source-root "$GITHUB_WORKSPACE" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef; then
+            echo "Ubuntu host incorrectly accepted as an Arch VM" >&2
+            exit 1
+          fi
+          test -z "$(find "$RUNNER_TEMP/pe-s1-52-refusal" -mindepth 1 -print -quit)"
+          echo "PE-S1.52 real Ubuntu non-VM rejection PASS; no guest files produced."
+      - name: Install Bubblewrap and Windows cross-compiler
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap gcc-mingw-w64-x86-64 libseccomp2
+          bwrap --version
+          java -version
+          for key in kernel.unprivileged_userns_clone kernel.apparmor_restrict_unprivileged_userns; do
+            sysctl "$key" || true
+          done
+      - name: Download Ghidra 12.2 from official GitHub release with pinned SHA256
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/ghidra_12.2.zip"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/ghidra_12.2_PUBLIC_20261016.zip \
+            --output "$archive"
+          echo "2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67  $archive" \
+            | sha256sum --check --status
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          test -x "$RUNNER_TEMP/ghidra_12.2_PUBLIC/support/analyzeHeadless"
+      - name: Verify extracted Ghidra installation matches pinned official ZIP
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/ghidra_12.2_PUBLIC" "$RUNNER_TEMP/ghidra_12.2.zip" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, str(Path("tools").resolve()))
+          from pe_ghidra_integrity import verify_pinned_ghidra_tree
+
+          install, archive = map(Path, sys.argv[1:3])
+          from pe_ghidra_integrity import GhidraIntegrityError
+
+          proof = verify_pinned_ghidra_tree(install, archive)
+          assert proof["verified"] is True
+          assert proof["matched_files"] >= 100
+          print("Pinned official Ghidra ZIP and all extracted files: PASS")
+          print(json.dumps(proof, sort_keys=True))
+
+          # Test a real tamper against the full genuine release. Restore the
+          # tree even on an assertion failure, then reattest before launching.
+          intruder = install / ".negresco-unlisted-synthetic-test"
+          assert not intruder.exists()
+          try:
+              intruder.write_text("synthetic-unlisted-test-file", encoding="utf-8")
+              try:
+                  verify_pinned_ghidra_tree(install, archive)
+              except GhidraIntegrityError as exc:
+                  assert "Unlisted or missing" in str(exc), str(exc)
+                  print("Real extracted-tree injection correctly rejected: PASS")
+              else:
+                  raise AssertionError("Tampered Ghidra tree was accepted")
+          finally:
+              intruder.unlink(missing_ok=True)
+          clean = verify_pinned_ghidra_tree(install, archive)
+          assert clean == proof
+          print("Ghidra tree reverified after tamper test: PASS")
+          PY
+      - name: Compile harmless nonexecuting PE fixture
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -O0 -g0 \
+            tests/fixtures/pe_headless_smoke.c -o "$RUNNER_TEMP/pe_sandbox_fixture.exe"
+          python3 tools/pe_auto_inventory.py "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            > "$RUNNER_TEMP/pe_inventory_sandbox.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["format"]=="PE32+" and r["architecture"]=="x86_64"' \
+            "$RUNNER_TEMP/pe_inventory_sandbox.json"
+      - name: Verify real Bubblewrap mounts, host home isolation and network namespace
+        run: |
+          set -euo pipefail
+          marker="$HOME/.negresco-bwrap-host-canary-$GITHUB_RUN_ID"
+          printf 'synthetic-marker' > "$marker"
+          chmod 600 "$marker"
+          trap 'rm -f "$marker"' EXIT
+          python3 - "$RUNNER_TEMP/ghidra_12.2_PUBLIC" "$RUNNER_TEMP/pe_sandbox_fixture.exe" "$marker" <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+
+          sys.path.insert(0, str(Path("tools").resolve()))
+          from pe_ghidra_sandbox import build_command
+
+          ghidra, fixture, canary = map(Path, sys.argv[1:])
+          with tempfile.TemporaryDirectory(prefix="negresco-bwrap-probe-") as root:
+              workspace = Path(root)
+              (workspace / "scripts").mkdir(mode=0o700)
+              shutil.copyfile("tools/ghidra_scripts/NegrescoFunctionInventory.java",
+                              workspace / "scripts/NegrescoFunctionInventory.java")
+              shutil.copyfile("tools/ghidra_scripts/NegrescoDeepPreview.java",
+                              workspace / "scripts/NegrescoDeepPreview.java")
+              shutil.copyfile(fixture, workspace / "input.exe")
+              (workspace / "project").mkdir(mode=0o700)
+              shutil.copyfile("tests/pe_sandbox_probe.py",
+                              workspace / "pe_sandbox_probe.py")
+              argv = build_command(ghidra, workspace, 120, deep_preview=True)
+              boundary = argv.index("--")
+              # Keep a real secret-bearing host FD intentionally inheritable
+              # in the parent, then prove the sandbox process cannot see its
+              # device/inode identity. This tests the actual process boundary.
+              host_fd = os.open(canary, os.O_RDONLY)
+              try:
+                  os.set_inheritable(host_fd, True)
+                  host_stat = os.fstat(host_fd)
+                  argv = argv[:boundary+1] + [
+                      "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+                      os.readlink("/proc/self/ns/net"), str(canary),
+                      str(host_stat.st_dev), str(host_stat.st_ino)]
+                  result = subprocess.run(argv, capture_output=True,
+                                          text=True, timeout=35, check=False,
+                                          close_fds=True)
+              finally:
+                  os.close(host_fd)
+              print((result.stdout + result.stderr)[:4000])
+              import json
+              if result.returncode != 0:
+                  raise RuntimeError("REAL BUBBLEWRAP PROBE FAILED CLOSED")
+              payload = json.loads(result.stdout.strip())
+              if (payload.get("isolation_probe") != "passed"
+                      or payload.get("inherited_host_fd_hidden") is not True):
+                  raise RuntimeError(
+                      "REAL BUBBLEWRAP FD/NAMESPACE PROBE FAILED CLOSED")
+          PY
+      - name: PE-S1.43 actual read-only bind source policy (no mocks, synthetic Python only)
+        run: |
+          set -euo pipefail
+          python3 tests/pe_readonly_mount_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s1-43-real-mount.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-43-real-mount.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.strip().startswith("{")]
+          assert len(records) == 4, "missing actual Bubblewrap mount probes"
+          expected = [
+              "PASS_ACTUAL_RO_BIND",
+              "REJECTED_ACTUAL_RW_BIND",
+              "REJECTED_ACTUAL_NESTED_RW_BIND",
+              "PASS_PE_S1_43_ACTUAL_BWRAP_READONLY_MOUNT_POLICY",
+          ]
+          assert [record["status"] for record in records] == expected
+          summary = records[-1]
+          assert summary["mount_tests"] == 3
+          assert summary["actual_readonly_bind_accepted"] is True
+          assert summary["actual_writable_bind_rejected"] is True
+          assert summary["actual_nested_writable_bind_rejected"] is True
+          assert summary["fstatvfs_mocked"] is False
+          assert summary["native_arch_vm_attestation"] is False
+          assert summary["windows_binary_executed"] is False
+          print("PE-S1.43: actual kernel readonly mount PASS; writable mounts rejected.")
+          print("This is Ubuntu Bubblewrap only; not an Arch VM or immutable-host proof.")
+          PY
+      - name: PE-S1.44 full offline receipt CLI on real readonly/writable Bubblewrap mounts
+        run: |
+          set -euo pipefail
+          python3 tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s1-44-full-receipt.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-44-full-receipt.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.strip().startswith("{")]
+          statuses = [
+              "PASS_REAL_READONLY_FULL_RECEIPT",
+              "REJECT_REAL_WRITABLE_FULL_RECEIPT",
+              "REJECT_REAL_NESTED_WRITABLE_FULL_RECEIPT",
+              "REJECT_REAL_READONLY_TAMPERED_SOURCE",
+              "REJECT_REAL_READONLY_WRONG_PIN",
+              "REJECT_REAL_READONLY_WRONG_CHALLENGE",
+              "PASS_PE_S1_44_REAL_READONLY_FULL_RECEIPT",
+          ]
+          assert len(records) == len(statuses), "missing real full receipt probes"
+          assert [record.get("status") for record in records] == statuses
+          for record in records[:-1]:
+              assert record["source_manifest_files"] >= 20
+              assert record["external_pin_provided_separately"] is True
+              assert record["fstatvfs_mocked"] is False
+              assert record["synthetic_self_asserted_report"] is True
+              assert record["windows_binary_executed"] is False
+              assert record["independent_arch_vm_attestation"] is False
+          assert records[0]["cli_exit_code"] == 0
+          assert all(record["cli_exit_code"] == 2 for record in records[1:-1])
+          summary = records[-1]
+          assert summary["cases"] == 6
+          assert summary["real_readonly_receipt_approved"] is True
+          assert summary["real_writable_source_rejected"] is True
+          assert summary["real_nested_writable_source_rejected"] is True
+          assert summary["real_readonly_tampered_source_rejected"] is True
+          assert summary["real_wrong_external_pin_rejected"] is True
+          assert summary["real_wrong_challenge_rejected"] is True
+          assert summary["fstatvfs_mocked"] is False
+          assert summary["native_arch_vm_attestation"] is False
+          assert summary["windows_binary_executed"] is False
+          print("PE-S1.44: real readonly full offline receipt CLI PASS; all negative cases fail closed.")
+          print("Fixture report is self-asserted: NOT native Arch VM/kernel attestation.")
+          PY
+      - name: PE-S1.47 verify real readonly operator handoff with two external SHA pins
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --run-handoff > "$RUNNER_TEMP/pe-s1-47-real-handoff.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-47-real-handoff.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines()
+                     if x.strip().startswith("{")]
+          expected = [
+              "PASS_REAL_READONLY_OPERATOR_HANDOFF",
+              "REJECT_REAL_WRONG_OPERATOR_HASH",
+              "REJECT_REAL_PINNED_OPERATOR_REPORT_MISMATCH",
+              "PASS_PE_S1_47_REAL_READONLY_HANDOFF",
+          ]
+          assert [entry.get("status") for entry in records] == expected
+          assert len(records) == 4
+          for item in records[:3]:
+              assert item["source_manifest_files"] >= 25
+              assert item["actual_readonly_mount"] is True
+              assert item["git_real_checkout"] is True
+              assert item["operator_hash_external"] is True
+              assert item["receipt_hash_external"] is True
+              assert item["fstatvfs_mocked"] is False
+              assert item["self_reported_synthetic_fixture"] is True
+              assert item["native_arch_vm_attestation"] is False
+              assert item["windows_binary_executed"] is False
+          assert records[0]["exit_code"] == 0
+          assert records[1]["exit_code"] == 2
+          assert records[2]["exit_code"] == 2
+          final = records[-1]
+          assert final["cases"] == 3
+          assert final["real_readonly_handoff_accepted"] is True
+          assert final["wrong_operator_pin_rejected"] is True
+          assert final["operator_report_mismatch_rejected"] is True
+          assert final["git_real_checkout"] is True
+          assert final["fstatvfs_mocked"] is False
+          assert final["native_arch_vm_attestation"] is False
+          print("PE-S1.47: real readonly two-pin handoff PASS (synthetic claims only).")
+          PY
+      - name: PE-S1.48 four-artifact local custody package under real readonly Bubblewrap
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --run-custody > "$RUNNER_TEMP/pe-s1-48-real-custody.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-48-real-custody.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          records = [json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines()
+                     if x.strip().startswith("{")]
+          expected = [
+              "PASS_REAL_READONLY_FOUR_ARTIFACT_CUSTODY",
+              "REJECT_REAL_WRONG_CUSTODY_INDEX_PIN",
+              "REJECT_REAL_MODIFIED_GUEST_KERNEL_LOG",
+              "PASS_PE_S1_48_REAL_READONLY_CUSTODY",
+          ]
+          assert [entry.get("status") for entry in records] == expected
+          assert len(records) == 4
+          for item in records[:3]:
+              assert item["source_manifest_files"] >= 25
+              assert item["actual_readonly_mount"] is True
+              assert item["four_artifacts"] is True
+              assert item["git_real_checkout"] is True
+              assert item["fstatvfs_mocked"] is False
+              assert item["synthetic_guest_logs"] is True
+              assert item["independent_arch_vm_attestation"] is False
+              assert item["windows_binary_executed"] is False
+          assert records[0]["cli_exit_code"] == 0
+          assert records[1]["cli_exit_code"] == 2
+          assert records[2]["cli_exit_code"] == 2
+          summary = records[-1]
+          assert summary["cases"] == 3
+          assert summary["real_custody_valid"] is True
+          assert summary["external_index_sha256_mismatch_rejected"] is True
+          assert summary["tampered_guest_log_rejected"] is True
+          assert summary["fstatvfs_mocked"] is False
+          assert summary["native_arch_vm_attestation"] is False
+          assert summary["windows_binary_executed"] is False
+          print("PE-S1.48: real four-artifact custody PASS; untrusted guest logs remain non-attestation.")
+          PY
+      - name: PE-S1.53 structured guest observation custody under real readonly Bubblewrap
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_readonly_receipt_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --run-observation > "$RUNNER_TEMP/pe-s1-53-observation.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-53-observation.jsonl" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          rows = [json.loads(x) for x in Path(sys.argv[1]).read_text().splitlines()
+                  if x.strip().startswith("{")]
+          expected = [
+              "PASS_REAL_READONLY_STRUCTURED_GUEST_CUSTODY",
+              "REJECT_REAL_WRONG_OBSERVATION_INDEX_PIN",
+              "REJECT_REAL_DIFFERENT_GUEST_OBSERVATION_BATCH",
+              "PASS_PE_S1_53_REAL_READONLY_OBSERVATION_CUSTODY",
+          ]
+          assert [r.get("status") for r in rows] == expected
+          assert len(rows) == 4
+          for row in rows[:3]:
+              assert row["source_manifest_files"] >= 25
+              assert row["actual_readonly_mount"] is True
+              assert row["git_real_checkout"] is True
+              assert row["fstatvfs_mocked"] is False
+              assert row["synthetic_operator_reports"] is True
+              assert row["independent_arch_vm_attestation"] is False
+              assert row["windows_binary_executed"] is False
+          assert [r["cli_exit_code"] for r in rows[:3]] == [0, 2, 2]
+          assert rows[-1]["cases"] == 3
+          assert rows[-1]["rehashed_mismatched_batch_rejected"] is True
+          assert rows[-1]["external_index_pin_mismatch_rejected"] is True
+          assert rows[-1]["valid_structured_observation_accepted"] is True
+          assert rows[-1]["fstatvfs_mocked"] is False
+          assert rows[-1]["native_arch_vm_attestation"] is False
+          print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
+          PY
+      - name: PE-S1.55-57 real readonly signed review and mandatory release HOLD
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_signed_readonly_real_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s1-55-real-signed-readonly.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s1-55-real-signed-readonly.jsonl" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          records = [json.loads(line) for line in
+                     Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+                     if line.strip()]
+          expected = [
+              "PASS_PE_S1_55_REAL_READONLY_DUAL_ED25519",
+              "REJECT_PE_S1_55_WRONG_EXTERNAL_INDEX_PIN",
+              "REJECT_PE_S1_55_REHASHED_LOG_WITHOUT_SIGNATURE",
+              "REJECT_PE_S1_55_TAMPERED_REVIEWER_SIGNATURE",
+              "REJECT_PE_S1_55_WRITABLE_SOURCE",
+              "REJECT_PE_S1_56_WRONG_REVIEWER_NAMESPACE",
+              "REJECT_PE_S1_56_SUSPENDED_SIGNED_POLICY",
+              "REJECT_PE_S1_56_KEY_REUSE_TWO_ROLES",
+              "PASS_PE_S1_56_READONLY_ROLES_AND_SECRET_BOUNDARY",
+          ]
+          assert [r.get("status") for r in records] == expected
+          for record in records[:-1]:
+              assert record["source_manifest_files"] >= 30
+              assert record["private_mount_readonly"] is True
+              assert record["reviewer_code_mount_readonly"] is True
+              assert record["source_mount_readonly"] is (
+                  record["status"] != "REJECT_PE_S1_55_WRITABLE_SOURCE")
+              assert record["git_verifier_mocked"] is False
+              assert record["ssh_verifier_mocked"] is False
+              assert record["fstatvfs_mocked"] is False
+              assert record["host_signing_keys_inaccessible"] is True
+              assert record["host_passwd_and_ssh_config_not_exposed"] is True
+              assert record["synthetic_identity_readonly"] is True
+              assert record["synthetic_operator_logs"] is True
+              assert record["native_arch_vm_attestation"] is False
+              assert record["windows_binary_executed"] is False
+          final = records[-1]
+          assert final["cases"] == 8
+          assert final["real_bubblewrap"] is True
+          assert final["real_git"] is True
+          assert final["real_openssh_two_ed25519_keys"] is True
+          assert final["negative_cases_rejected"] == 7
+          assert final["mocked_git_or_crypto"] is False
+          assert final["private_signing_keys_excluded_from_sandbox"] is True
+          assert final["signed_suspended_policy_rejected"] is True
+          assert final["same_key_two_roles_rejected"] is True
+          assert final["wrong_reviewer_signature_namespace_rejected"] is True
+          assert final["s1_57_signed_review_release_hold_verified"] is True
+          assert final["s1_57_rehashed_attestation_forgery_rejected"] is True
+          assert final["independent_arch_vm_attestation"] is False
+          print("PE-S1.57: signed reviewer evidence accepted only as local proof; VM release HOLD: PASS")
+          print("All observations SYNTHETIC; Ubuntu test is NOT independent Arch VM attestation.")
+          PY
+      - name: Exercise real seccomp BPF inside Bubblewrap (synthetic-only)
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/ghidra_12.2_PUBLIC" "$RUNNER_TEMP/pe_sandbox_fixture.exe" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+          sys.path.insert(0, str(Path("tools").resolve()))
+          from pe_ghidra_sandbox import build_command
+          from pe_seccomp_filter import (
+              attach_seccomp_fd, compile_seccomp_bpf_fd, seccomp_filter_count)
+          ghidra, fixture = map(Path, sys.argv[1:])
+          with tempfile.TemporaryDirectory(prefix="negresco-real-seccomp-") as temp:
+              root = Path(temp)
+              canary = root / "private-host-file"
+              canary.write_text("synthetic host canary", encoding="utf-8")
+              workspace = root / "work"
+              (workspace / "scripts").mkdir(parents=True, mode=0o700)
+              (workspace / "project").mkdir(mode=0o700)
+              shutil.copyfile("tools/ghidra_scripts/NegrescoFunctionInventory.java",
+                              workspace / "scripts/NegrescoFunctionInventory.java")
+              shutil.copyfile("tests/pe_sandbox_probe.py",
+                              workspace / "pe_sandbox_probe.py")
+              shutil.copyfile(fixture, workspace / "input.exe")
+              baseline = seccomp_filter_count()
+              argv = build_command(ghidra, workspace, 120)
+              fd = compile_seccomp_bpf_fd()
+              host_fd = os.open(canary, os.O_RDONLY)
+              try:
+                  os.set_inheritable(host_fd, True)
+                  identity = os.fstat(host_fd)
+                  argv = attach_seccomp_fd(argv, fd)
+                  boundary = argv.index("--")
+                  argv = argv[:boundary + 1] + [
+                      "/usr/bin/python3", "/work/pe_sandbox_probe.py",
+                      os.readlink("/proc/self/ns/net"), str(canary),
+                      str(identity.st_dev), str(identity.st_ino), str(baseline)]
+                  result = subprocess.run(
+                      argv, stdin=subprocess.DEVNULL, capture_output=True,
+                      text=True, timeout=35, check=False, close_fds=True,
+                      pass_fds=(fd,))
+              finally:
+                  os.close(host_fd)
+                  os.close(fd)
+              print((result.stdout + result.stderr)[:4000])
+              if result.returncode != 0:
+                  raise RuntimeError("REAL SECCOMP SANDBOX PROBE FAILED")
+              record = json.loads(result.stdout.strip())
+              assert record["isolation_probe"] == "passed"
+              assert record["inherited_host_fd_hidden"] is True
+              assert record["seccomp_enforced"] is True
+              print("SECCOMP_DENY_PTRACE_AND_NAMESPACE_PROBE: PASS")
+          PY
+      - name: Real in-scope seccomp bridge, with cgroup verifier explicitly mocked
+        run: |
+          set -euo pipefail
+          python3 tests/pe_scoped_seccomp_bridge_real_ci.py \
+            "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            > "$RUNNER_TEMP/bridge-real-mocked-cgroup.jsonl"
+          python3 - "$RUNNER_TEMP/bridge-real-mocked-cgroup.jsonl" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()
+                     if line.startswith("{")]
+          assert any(item.get("isolation_probe") == "passed"
+                     and item.get("seccomp_enforced") is True
+                     and item.get("inherited_host_fd_hidden") is True
+                     and item.get("network_namespace_separate") is True
+                     for item in records)
+          assert any(item.get("status") == "PASS_REAL_BRIDGE_WITH_MOCKED_CGROUP"
+                     and item.get("cgroup_enforcement_real") is False
+                     and item.get("seccomp_and_bubblewrap_real") is True
+                     for item in records)
+          print("REAL FILTER/FD BRIDGE: PASS; CGROUP QUOTAS: MOCKED (NOT HOMOLOGATED)")
+          PY
+      - name: Run real Ghidra in REQUIRED Bubblewrap profile
+        run: |
+          set -euo pipefail
+          python3 tools/pe_auto_ghidra.py "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --output "$RUNNER_TEMP/real-bwrap-ghidra.json" \
+            --deep-preview --timeout-seconds 420
+      - name: Real Ghidra 12.2 with experimental seccomp (synthetic PE only)
+        run: |
+          set -euo pipefail
+          python3 tools/pe_seccomp_ghidra_smoke.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --ghidra-archive "$RUNNER_TEMP/ghidra_12.2.zip" \
+            > "$RUNNER_TEMP/real-seccomp-ghidra-proof.json"
+          python3 - "$RUNNER_TEMP/real-seccomp-ghidra-proof.json" <<'PY'
+          import json, sys
+          proof = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert proof["status"] == "PASS_REAL_GHIDRA_SECCOMP_SMOKE"
+          assert proof["ghidra_12_2_pinned_install"] is True
+          assert proof["ghidra_functions_discovered"] > 0
+          assert proof["windows_binary_executed"] is False
+          print("REAL GHIDRA 12.2 WITH EXPERIMENTAL SECCOMP: PASS")
+          PY
+      - name: Real Negresco runner with explicit --require-seccomp (synthetic PE)
+        run: |
+          set -euo pipefail
+          python3 tools/pe_auto_ghidra.py "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            --output "$RUNNER_TEMP/real-bwrap-ghidra-seccomp.json" \
+            --require-seccomp --timeout-seconds 420
+          python3 - "$RUNNER_TEMP/real-bwrap-ghidra-seccomp.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          limitations = report["limitations"]
+          assert limitations["seccomp_policy"] == "bwrap_narrow_cBPF_requested"
+          assert limitations["os_sandbox"] == "bubblewrap_profile"
+          assert limitations["resource_scope"] == "not_enforced"
+          assert limitations["executable_launched"] is False
+          assert report["evidence"]["total_discovered"] > 0
+          print("PE RUNNER WITH EXPLICIT SECCOMP: PASS")
+          PY
+      - name: Real Ghidra decompilation through actual seccomp bridge (cgroup mocked)
+        run: |
+          set -euo pipefail
+          python3 tests/pe_scoped_ghidra_bridge_real_ci.py \
+            "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            "$RUNNER_TEMP/ghidra_12.2.zip" \
+            "$RUNNER_TEMP/pe_sandbox_fixture.exe" \
+            > "$RUNNER_TEMP/real-ghidra-scoped-bridge.json"
+          python3 - "$RUNNER_TEMP/real-ghidra-scoped-bridge.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          raw = Path(sys.argv[1]).read_text(encoding="utf-8")
+          lines = [line.strip() for line in raw.splitlines() if line.strip()]
+          assert 1 <= len(lines) <= 20000, "missing or excessive bridge output"
+          # Actual Ghidra logs on stdout precede the ONE final proof record.
+          # Never treat logs as a pass. Require the final line to be JSON.
+          proof = json.loads(lines[-1])
+          assert isinstance(proof, dict)
+          assert proof["status"] == "PASS_REAL_GHIDRA_BRIDGE_MOCKED_CGROUP_ONLY"
+          assert proof["ghidra_pinned_release_verified"] is True
+          assert proof["real_libseccomp_bpf"] is True
+          assert proof["real_bubblewrap"] is True
+          assert proof["real_ghidra_12_2"] is True
+          assert proof["filter_created_by_actual_scoped_launcher"] is True
+          runtime = proof["ghidra_jvm_seccomp_evidence"]
+          assert runtime["verified"] is True
+          assert runtime["measured_process"] == "ghidra_headless_jvm"
+          assert runtime["measurement_source"] == "/proc/self/status"
+          assert runtime["seccomp_mode"] == 2
+          assert runtime["filters_in_ghidra"] > runtime["filters_before_bwrap"]
+          assert runtime["additional_filters_observed"] >= 1
+          assert proof["inventory_total_discovered"] > 0
+          assert proof["decompiled_functions"] > 0
+          assert proof["cgroup_verification"] == "MOCK_ONLY_NOT_HOMOLOGATED"
+          assert proof["native_arch_vm_executed"] is False
+          assert proof["windows_binary_executed"] is False
+          print("REAL GHIDRA + REAL SECCOMP BRIDGE DECOMPILATION: PASS")
+          print("SYSTEMD CGROUP/ARCH KERNEL: MOCKED OR UNTESTED, NOT HOMOLOGATED")
+          PY
+      - name: Check actual sandboxed Ghidra evidence
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          sample = root / "pe_sandbox_fixture.exe"
+          report = json.loads((root / "real-bwrap-ghidra.json").read_text())
+          assert report["source_sha256"] == hashlib.sha256(sample.read_bytes()).hexdigest()
+          assert report["architecture"] == "x86_64"
+          assert report["limitations"]["os_sandbox"] == "bubblewrap_profile"
+          assert report["limitations"]["executable_launched"] is False
+          assert report["evidence"]["total_discovered"] >= 1
+          functions = report["deep_preview"]["functions"]
+          assert any(f["decompile_status"] == "ok" for f in functions)
+          assert any(s["text"] == "negresco_evidence_2026.txt"
+                     for f in functions if f["name"] == "inspect_path"
+                     for s in f["strings"])
+          assert any(f["name"] == "inspect_path" and f["computed_call_count"] >= 1
+                     for f in functions)
+          assert any(h["category"] == "filesystem_inspection"
+                     for f in report["behavior_preview"]["functions"]
+                     for h in f["hypotheses"])
+          print("Ghidra 12.2 inside Bubblewrap: PASS",
+                "functions=", report["evidence"]["total_discovered"],
+                "decompiled=", len(functions),
+                "network namespace / home / readonly JDK tested separately")
+          PY
+      - name: Retain sandbox profile and mocked Ghidra regression suites
+        run: |
+          python3 -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_cgroup_guard.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_resource_evidence.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_arch_descendant_smoke.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_seccomp_filter.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_seccomp_ghidra_smoke.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_scoped_seccomp_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_arch_scoped_seccomp_smoke.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_arch_scoped_ghidra_smoke.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_scoped_ghidra_bridge_real_ci.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_scope_cleanup_evidence.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_arch_vm_evidence.py' -v
+
+  arch-userspace-contract:
+    name: Arch Linux userspace | sandbox and cgroup contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Arch packages
+        run: |
+          set -euo pipefail
+          pacman -Syu --noconfirm --needed python bubblewrap util-linux libseccomp openssh
+          python --version
+          bwrap --version
+          # PE-S1.62 uses genuine temporary Ed25519 keys; never silently
+          # skip the suite because OpenSSH is missing from Arch userspace.
+          command -v ssh-keygen
+          cat /etc/os-release
+      - name: Run profile and resource policy contracts as unprivileged user
+        run: |
+          set -euo pipefail
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_cgroup_guard.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_evidence.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_descendant_smoke.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_validation.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_integrity.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_filter.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_ghidra_smoke.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scoped_seccomp_launcher.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_scoped_seccomp_smoke.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_scoped_ghidra_smoke.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scoped_ghidra_bridge_real_ci.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_seccomp_runtime_evidence.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_scope_cleanup_evidence.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_vm_evidence.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_checkout_pin.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_handoff_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_custody_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_witness_trust_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_dual_control_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_observation_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_end_to_end_review.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_58_preflight.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_59_readiness_gate.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_60_review_request.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_61_runtime_matrix.py' -v
+          runuser -u nobody -- sh -c 'command -v ssh-keygen >/dev/null'
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_62_signed_runtime_hold.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_63_external_observer.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_64_external_correlation_hold.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_65_observer_prepare.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_66_native_reviewer_launcher.py' -v
+          # Arch Linux userspace in a container is NOT an independently
+          # provisioned VM. Refusal must be a structured exit code 2.
+          private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
+          rc=0
+          runuser -u nobody -- python -B tools/pe_arch_vm_s1_58_preflight.py \
+            --source-root "$GITHUB_WORKSPACE" \
+            --ghidra-home /missing/ghidra_12.2_PUBLIC \
+            --ghidra-archive /missing/ghidra_12.2.zip \
+            --evidence-output "$private/acceptance.json" \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            > "$RUNNER_TEMP/arch-s1-58-stdout.json" \
+            2> "$RUNNER_TEMP/arch-s1-58-rejection.json" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/arch-s1-58-stdout.json"
+          test ! -e "$private/acceptance.json"
+          python - "$RUNNER_TEMP/arch-s1-58-rejection.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert record["status"] == "REJECTED_PE_S1_58_VM_PREFLIGHT_NOT_HOMOLOGATED"
+          assert record["independent_vm_attestation"] is False
+          assert record["unknown_windows_pe_execution_authorized"] is False
+          assert record["apk_or_ota_publication_authorized"] is False
+          print("PE-S1.58 real Arch container rejection: PASS, no receipt.")
+          PY
+          rm -rf -- "$private"
+          echo 'Arch userspace contract PASS. Not an Arch kernel or real cgroup enforcement test.'

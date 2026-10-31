@@ -26,6 +26,12 @@ import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
+from pe_resource_limits import (wrap_in_cgroup_scope, new_scope_unit,
+                                ResourceLimitsUnavailable)
+from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
+from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
+from pe_seccomp_filter import (compile_seccomp_bpf_fd, attach_seccomp_fd,
+                               SeccompUnavailable)
 from pe_auto_symbols import inspect_symbols
 from pe_auto_behavior import classify, API_TO_RULE
 
@@ -345,7 +351,9 @@ def _locate_ghidra(home: Path) -> Path:
 
 def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                       output: str | Path, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
-                      *, sandbox_mode: str = "bwrap", deep_preview: bool = False) -> dict:
+                      *, sandbox_mode: str = "bwrap", deep_preview: bool = False,
+                      require_cgroup_limits: bool = False,
+                      require_seccomp: bool = False) -> dict:
     """Run trusted Ghidra tooling and atomically write bounded JSON evidence."""
     if sys.platform != "linux":
         raise HeadlessError("PE-A2 suporta somente Linux; Windows será validado depois")
@@ -355,6 +363,18 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         raise HeadlessError("Configuração de pseudocódigo inválida")
     if sandbox_mode not in ("bwrap", "trusted-fixture"):
         raise HeadlessError("Modo de isolamento inválido")
+    if type(require_cgroup_limits) is not bool:
+        raise HeadlessError("Modo de limite de recursos inválido")
+    if require_cgroup_limits and sandbox_mode != "bwrap":
+        raise HeadlessError("Limites rígidos exigem Bubblewrap")
+    if type(require_seccomp) is not bool:
+        raise HeadlessError("Configuração de seccomp inválida")
+    if require_seccomp and sandbox_mode != "bwrap":
+        raise HeadlessError("Seccomp exige Bubblewrap")
+    if require_seccomp and require_cgroup_limits:
+        # systemd-run --scope forwarding of an explicit seccomp filter fd
+        # has not been independently demonstrated on a native Arch host.
+        raise HeadlessError("Seccomp com cgroup estrito ainda não homologado")
     target = Path(binary)
     destination = Path(output)
     if destination.exists() or destination.is_symlink():
@@ -365,8 +385,10 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         raise HeadlessError("Arquivo de entrada não pode ser link simbólico")
     launcher = _locate_ghidra(Path(ghidra_home))
 
-    with tempfile.TemporaryDirectory(prefix="negresco-pe-a2-") as private:
+    with (tempfile.TemporaryDirectory(prefix="negresco-pe-a2-") as private,
+          tempfile.TemporaryDirectory(prefix="negresco-pe-proof-") as proof_private):
         working = Path(private)
+        proof_path = Path(proof_private) / "limits.json"
         snapshot = working / "input.exe"
         sha256 = _binary_snapshot(target, snapshot)
         header = inspect_pe(snapshot)
@@ -384,6 +406,8 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         }
         if os.environ.get("JAVA_HOME"):
             env["JAVA_HOME"] = os.environ["JAVA_HOME"]
+        scope_unit = None
+        seccomp_fd = None
         if sandbox_mode == "bwrap":
             scripts = working / "scripts"
             scripts.mkdir(mode=0o700)
@@ -396,6 +420,14 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                                         deep_preview=deep_preview)
             except (SandboxUnavailable, OSError) as exc:
                 raise HeadlessError("Isolamento Bubblewrap indisponível; análise recusada") from exc
+            if require_cgroup_limits:
+                try:
+                    scope_unit = new_scope_unit()
+                    command = wrap_in_cgroup_scope(
+                        command, timeout_seconds=timeout_seconds,
+                        unit_name=scope_unit, proof_path=proof_path)
+                except (ResourceLimitsUnavailable, OSError) as exc:
+                    raise HeadlessError("Limites cgroup obrigatórios indisponíveis; análise recusada") from exc
         else:
             # Explicit test-only compatibility path for synthetic fixtures in
             # CI. Never choose this automatically when inspecting unknown files.
@@ -414,16 +446,30 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 command[insert_at:insert_at] = [
                     "-postScript", DEEP_SCRIPT_NAME, str(working / "ghidra-deep.json"),
                 ]
+        if require_seccomp:
+            try:
+                seccomp_fd = compile_seccomp_bpf_fd()
+                command = attach_seccomp_fd(command, seccomp_fd)
+            except (SeccompUnavailable, OSError) as exc:
+                if seccomp_fd is not None:
+                    os.close(seccomp_fd)
+                raise HeadlessError(
+                    "Filtro seccomp obrigatório indisponível; análise recusada") from exc
         # Pass a fixed argv array, without a shell. The inspected program is only
         # file passed to Ghidra: this process is trusted local Ghidra itself.
         try:
             process = subprocess.Popen(
                 command, cwd=working, env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                close_fds=True, start_new_session=True,
+                pass_fds=((seccomp_fd,) if seccomp_fd is not None else ()),
             )
         except OSError as exc:
             raise HeadlessError("Não foi possível iniciar o Ghidra instalado") from exc
+        finally:
+            if seccomp_fd is not None:
+                os.close(seccomp_fd)
         try:
             code = process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
@@ -431,10 +477,43 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.wait()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
             raise HeadlessError("Ghidra excedeu o tempo e foi interrompido") from exc
+        finally:
+            scope_cleanup = None
+            if scope_unit is not None:
+                try:
+                    # A transient systemd scope can be garbage-collected on
+                    # exit, while a successful stop request alone cannot prove
+                    # that descendants are gone. Check final state instead.
+                    scope_cleanup = stop_and_attest_scope(scope_unit)
+                except (ScopeCleanupUnavailable, OSError) as exc:
+                    raise HeadlessError(
+                        "Estado final do cgroup não comprovado; relatório recusado"
+                    ) from exc
+        if scope_unit is not None and (
+                not isinstance(scope_cleanup, dict)
+                or scope_cleanup.get("scope") != scope_unit
+                or scope_cleanup.get("verified") is not True
+                or scope_cleanup.get("scope_quiescent") is not True
+                or scope_cleanup.get("cgroup_unpopulated") is not True
+                or scope_cleanup.get("active_state") != "inactive"
+                or scope_cleanup.get("sub_state") != "dead"):
+            raise HeadlessError(
+                "Escopo systemd ainda ativo ou cgroup ocupado; relatório recusado")
         if code != 0:
             raise HeadlessError("O Ghidra não concluiu a análise; nenhum relatório foi aceito")
+        strict_resource_proof = None
+        if scope_unit is not None:
+            try:
+                strict_resource_proof = read_scope_proof(proof_path, scope_unit)
+            except (InvalidResourceEvidence, OSError) as exc:
+                raise HeadlessError(
+                    "Limites de cgroup não comprovados; relatório recusado") from exc
         evidence = _validated_function_evidence(raw_result)
         deep = (_validated_deep_evidence(working / "ghidra-deep.json")
                 if deep_preview else None)
@@ -472,6 +551,13 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                 "executable_launched": False,
                 "os_sandbox": ("bubblewrap_profile" if sandbox_mode == "bwrap"
                                else "not_implemented"),
+                "resource_scope": ("systemd_user_cgroup_v2_verified_at_start"
+                                   if strict_resource_proof is not None
+                                   else "not_enforced"),
+                "resource_limits": strict_resource_proof,
+                "resource_cleanup": scope_cleanup,
+                "seccomp_policy": ("bwrap_narrow_cBPF_requested"
+                                   if require_seccomp else "not_enforced"),
             },
         }
         encoded = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
@@ -506,6 +592,10 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout-seconds", default=DEFAULT_TIMEOUT_SECONDS, type=int)
     parser.add_argument("--deep-preview", action="store_true",
                         help="Recuperar amostra limitada de chamadas e pseudocódigo")
+    parser.add_argument("--require-seccomp", action="store_true",
+                        help="Exigir seccomp BPF dentro do Bubblewrap; incompatível por enquanto com cgroups estritos")
+    parser.add_argument("--require-cgroup-limits", action="store_true",
+                        help="Exigir escopo systemd user cgroup v2 com RAM/processos/CPU limitados, sem fallback")
     parser.add_argument("--allow-unisolated-synthetic-fixture", action="store_true",
                         help="Somente para CI com PE sintético confiável; desativa isolamento")
     args = parser.parse_args(argv)
@@ -513,6 +603,8 @@ def main(argv=None) -> int:
         report = inspect_functions(args.binary, args.ghidra_home, args.output,
                                    args.timeout_seconds,
                                    deep_preview=args.deep_preview,
+                                   require_cgroup_limits=args.require_cgroup_limits,
+                                   require_seccomp=args.require_seccomp,
                                    sandbox_mode=("trusted-fixture"
                                        if args.allow_unisolated_synthetic_fixture
                                        else "bwrap"))

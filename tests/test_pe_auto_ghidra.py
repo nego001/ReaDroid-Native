@@ -11,6 +11,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -137,6 +138,254 @@ if args.count("-postScript") == 2:
 """
         self.launcher.write_text(source.replace("@MODE@", repr(mode)), encoding="utf-8")
         self.launcher.chmod(self.launcher.stat().st_mode | stat.S_IXUSR)
+
+    def _mocked_bwrap_command(self, ghidra, working, timeout, deep_preview=False):
+        """Build a synthetic Ghidra launch, not a real Bubblewrap bypass."""
+        return [
+            str(self.launcher), str(working / "project"), "NegrescoAutomaticPE",
+            "-import", str(working / "input.exe"),
+            "-scriptPath", str(working / "scripts"),
+            "-postScript", "NegrescoFunctionInventory.java",
+            str(working / "ghidra-functions.json"),
+            "-analysisTimeoutPerFile", "1", "-max-cpu", "2",
+            "-readOnly", "-deleteProject", "-log", str(working / "ghidra.log"),
+        ]
+
+    def _mock_strict_guard_with_private_proof(self, command, **kwargs):
+        """Simulates guard output WITHOUT creating an actual Linux cgroup."""
+        proof_path = kwargs["proof_path"]
+        self.assertNotIn(str(proof_path.parent), command)
+        record = {
+            "schema": "negresco_cgroup_v2_proof_v1",
+            "scope": kwargs["unit_name"],
+            "verified": True,
+            "memory_max": 4 * 1024 ** 3,
+            "pids_max": 128,
+            "cpu_quota": 200000,
+            "cpu_period": 100000,
+        }
+        proof_path.write_text(json.dumps(record), encoding="utf-8")
+        proof_path.chmod(0o600)
+        return command
+
+    def test_launcher_never_inherits_host_stdin_or_extra_fds(self):
+        with mock.patch.object(runner.subprocess, "Popen",
+                               side_effect=OSError("synthetic rejection")) as launch:
+            with self.assertRaisesRegex(runner.HeadlessError, "iniciar"):
+                self.run_synthetic(self.input, self.home, self.output, 3)
+        options = launch.call_args.kwargs
+        self.assertEqual(options["stdin"], runner.subprocess.DEVNULL)
+        self.assertEqual(options["stdout"], runner.subprocess.DEVNULL)
+        self.assertEqual(options["stderr"], runner.subprocess.DEVNULL)
+        self.assertTrue(options["close_fds"])
+        self.assertTrue(options["start_new_session"])
+        self.assertFalse(self.output.exists())
+
+    def test_seccomp_opt_in_requires_bwrap_and_refuses_unvalidated_scope_chain(self):
+        with self.assertRaisesRegex(runner.HeadlessError, "Seccomp exige Bubblewrap"):
+            self.run_synthetic(self.input, self.home, self.output, 3,
+                               require_seccomp=True)
+        with self.assertRaisesRegex(runner.HeadlessError, "ainda não homologado"):
+            runner.inspect_functions(
+                self.input, self.home, self.output, 3, sandbox_mode="bwrap",
+                require_seccomp=True, require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
+    def test_opt_in_seccomp_passes_only_filter_fd_to_bwrap_and_closes_it(self):
+        fd = os.memfd_create("negresco-synthetic-policy", flags=os.MFD_CLOEXEC)
+        original = runner.subprocess.Popen
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "compile_seccomp_bpf_fd",
+                                   return_value=fd):
+                with mock.patch.object(runner, "attach_seccomp_fd",
+                                       side_effect=lambda command, fd: command) as attach:
+                    with mock.patch.object(runner.subprocess, "Popen",
+                                           wraps=original) as popen:
+                        report = runner.inspect_functions(
+                            self.input, self.home, self.output, 3,
+                            sandbox_mode="bwrap", require_seccomp=True)
+        self.assertTrue(self.output.exists())
+        self.assertEqual(report["limitations"]["seccomp_policy"],
+                         "bwrap_narrow_cBPF_requested")
+        self.assertEqual(popen.call_args.kwargs["pass_fds"], (fd,))
+        self.assertTrue(popen.call_args.kwargs["close_fds"])
+        attach.assert_called_once()
+        with self.assertRaises(OSError):
+            os.fstat(fd)
+
+    def test_seccomp_compile_failure_does_not_launch_or_publish(self):
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "compile_seccomp_bpf_fd",
+                                   side_effect=runner.SeccompUnavailable("no libseccomp")):
+                with mock.patch.object(runner.subprocess, "Popen") as launch:
+                    with self.assertRaisesRegex(runner.HeadlessError, "seccomp obrigatório"):
+                        runner.inspect_functions(
+                            self.input, self.home, self.output, 3,
+                            sandbox_mode="bwrap", require_seccomp=True)
+        launch.assert_not_called()
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_requests_limits_and_stops_scope_on_success(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=self._mock_strict_guard_with_private_proof) as wrap:
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                        "scope": unit,
+                        "verified": True,
+                        "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive",
+                        "sub_state": "dead",
+                        "load_state": "not-found",
+                        "scope_collected": True,
+                        "stop_request_accepted": False,
+                    }) as stop:
+                        report = runner.inspect_functions(
+                            self.input, self.home, self.output, 3,
+                            sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertEqual(report["limitations"]["resource_scope"],
+                         "systemd_user_cgroup_v2_verified_at_start")
+        self.assertEqual(report["limitations"]["resource_limits"]["tasks_max"], 128)
+        self.assertTrue(report["limitations"]["resource_cleanup"]["scope_collected"])
+        self.assertFalse(report["limitations"]["resource_cleanup"]["stop_request_accepted"])
+        self.assertEqual(wrap.call_args.kwargs["timeout_seconds"], 3)
+        self.assertEqual(wrap.call_args.kwargs["unit_name"], unit)
+        stop.assert_called_once_with(unit)
+        self.assertTrue(self.output.exists())
+
+    def test_strict_scope_refuses_missing_guard_proof(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                        "scope": unit,
+                        "verified": True,
+                        "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive",
+                        "sub_state": "dead",
+                        "load_state": "not-found",
+                        "scope_collected": True,
+                        "stop_request_accepted": False,
+                    }):
+                        with self.assertRaisesRegex(
+                                runner.HeadlessError, "não comprovados"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_never_publishes_when_cgroup_is_still_populated(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                                "scope": unit, "verified": True,
+                                "scope_quiescent": False,
+                                "cgroup_unpopulated": False,
+                                "active_state": "active", "sub_state": "running",
+                            }) as stop:
+                        with self.assertRaisesRegex(
+                                runner.HeadlessError, "cgroup ocupado"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        stop.assert_called_once_with(unit)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_refuses_missing_systemctl_cleanup(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        self._fake("exit")
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            side_effect=runner.ScopeCleanupUnavailable(
+                                "systemd state unavailable")):
+                        with self.assertRaisesRegex(runner.HeadlessError,
+                                                     "Estado final do cgroup"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_stops_on_timeout_without_publishing_report(self):
+        self._fake("sleep")
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(runner, "wrap_in_cgroup_scope",
+                                       side_effect=lambda command, **k: command):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                        "scope": unit,
+                        "verified": True,
+                        "scope_quiescent": True,
+                        "cgroup_unpopulated": True,
+                        "active_state": "inactive",
+                        "sub_state": "dead",
+                        "load_state": "not-found",
+                        "scope_collected": True,
+                        "stop_request_accepted": False,
+                    }) as stop:
+                        with self.assertRaisesRegex(runner.HeadlessError, "excedeu"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 1,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        stop.assert_called_once_with(unit)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_scope_rejects_cleanup_for_other_unit(self):
+        unit = "negresco-pe-0123456789abcdef01234567.scope"
+        wrong = "negresco-pe-ffffffffffffffffffffffff.scope"
+        with mock.patch.object(runner, "build_command",
+                               side_effect=self._mocked_bwrap_command):
+            with mock.patch.object(runner, "new_scope_unit", return_value=unit):
+                with mock.patch.object(
+                        runner, "wrap_in_cgroup_scope",
+                        side_effect=self._mock_strict_guard_with_private_proof):
+                    with mock.patch.object(
+                            runner, "stop_and_attest_scope",
+                            return_value={
+                                "scope": wrong, "verified": True,
+                                "scope_quiescent": True,
+                                "cgroup_unpopulated": True,
+                                "active_state": "inactive", "sub_state": "dead",
+                            }):
+                        with self.assertRaisesRegex(
+                                runner.HeadlessError, "cgroup ocupado"):
+                            runner.inspect_functions(
+                                self.input, self.home, self.output, 3,
+                                sandbox_mode="bwrap", require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
+
+    def test_strict_cgroup_never_uses_unisolated_fixture_mode(self):
+        with self.assertRaisesRegex(runner.HeadlessError, "exigem Bubblewrap"):
+            self.run_synthetic(self.input, self.home, self.output, 2,
+                               require_cgroup_limits=True)
+        self.assertFalse(self.output.exists())
 
     def test_full_offline_handoff_returns_bounded_function_evidence(self):
         report = self.run_synthetic(self.input, self.home, self.output, 3)
