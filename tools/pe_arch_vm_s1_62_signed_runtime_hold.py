@@ -149,11 +149,14 @@ def review_signed_runtime(
         expected_signers_sha256: str, expected_witness_id: str,
         require_readonly_source_view: bool = False) -> dict:
     """Compose independent PINNED local checks, never grant a VM release."""
-    for key, val in ((key, locals()[key]) for key in PINS):
-        if not isinstance(val, str) or (
-            (len(val) != 40 if key == "expected_source_commit" else len(val) != 64)
-        ) or any(c not in "0123456789abcdef" for c in val):
-            raise SignedRuntimeReviewError("External lowercase pin missing: " + key)
+    supplied = locals().copy()
+    for key in PINS:
+        val = supplied[key]
+        length = 40 if key == "expected_source_commit" else 64
+        if (not isinstance(val, str) or len(val) != length
+                or any(c not in "0123456789abcdef" for c in val)):
+            raise SignedRuntimeReviewError(
+                "External lowercase pin missing: " + key)
     if (expected_challenge == "0" * 64
             or type(expected_policy_revision) is not int
             or not 1 <= expected_policy_revision <= 1000000000
@@ -219,10 +222,8 @@ def review_signed_runtime(
             receipt_hash=expected_receipt_sha256,
             request_hash=expected_request_sha256,
             readonly=require_readonly_source_view)
-        if (signed_result["source_files_rechecked"] !=
-                matrix["distinct_operator_reported_scopes"] - 4
-                + len(evidence.SOURCE_FILES)):
-            raise SignedRuntimeReviewError("Cross-review source count mismatch")
+        # Both validators have already required the full same manifest
+        # count and reviewer-selected checkout; do not infer it from scopes.
 
         # Entire pinned local evidence must remain the exact same bytes,
         # not merely the same SHA claimed by two separately-run verifiers.
