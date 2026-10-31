@@ -1470,3 +1470,75 @@ de qualquer proposta de mudança no HOLD PE-S1.57/62.
 A CI executa **17 testes** com três chaves Ed25519 **descartáveis**
 e logs explicitamente sintéticos. **Não executa nem homologa uma VM
 Arch independente.**
+
+
+## PE-S1.64 | Correlação final de três assinaturas, sempre HOLD
+
+O novo verificador `tools/pe_arch_vm_s1_64_external_correlation_hold.py`
+compõe dois caminhos completos e **offline** sobre os **mesmos pins
+retidos fora do operador**:
+
+- **PE-S1.62:** pedido PE-S1.60, custódia PE-S1.48, recibo sintético,
+  logs PE-S1.53, runtime PE-S1.61 e as duas assinaturas de custódia.
+- **PE-S1.63:** quatro hashes de supostas observações do host,
+  manifesto assinado em namespace separado por **terceira chave**
+  Ed25519, diferente da chave do revisor e da testemunha.
+
+A correlação exige que ambos usem o mesmo **commit, desafio,
+identidade do revisor, identidade da testemunha, hash do pedido,
+hash do índice de custódia e hash do recibo**. Ela rejeita flags
+externas com alegações de kernel/hipervisor atestados, informações
+estranhas ao contrato e divergências de SHA. A pasta do operador é
+relida após as duas revisões para detectar modificações persistentes
+entre etapas; a requisição do revisor também é relida. Isso não é
+snapshot atômico de filesystem e não autentica o host.
+
+### Revisão combinada, com pinos retidos independentemente
+
+```bash
+python3 -B tools/pe_arch_vm_s1_64_external_correlation_hold.py \
+  --custody-dir "$CUSTODY_DIR" \
+  --observer-dir "$OBSERVER_DIR" \
+  --source-root "$SOURCE_CHECKOUT_READONLY" \
+  --reviewer-request "$REVIEWER_REQUEST" \
+  --expected-request-sha256 "$PIN_REQUEST" \
+  --expected-custody-sha256 "$PIN_CUSTODY" \
+  --expected-receipt-sha256 "$PIN_RECEIPT" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-policy-sha256 "$PIN_POLICY" \
+  --expected-policy-revision "$REVIEWER_POLICY_REVISION" \
+  --expected-reviewer-signers-sha256 "$PIN_REVIEWER_PUBLIC_KEY" \
+  --expected-reviewer-signature-sha256 "$PIN_REVIEWER_POLICY_SIGNATURE" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-statement-sha256 "$PIN_WITNESS_STATEMENT" \
+  --expected-signature-sha256 "$PIN_WITNESS_SIGNATURE" \
+  --expected-signers-sha256 "$PIN_WITNESS_PUBLIC_KEY" \
+  --expected-witness-id "$WITNESS_ID" \
+  --expected-observer-manifest-sha256 "$PIN_OBSERVER_MANIFEST" \
+  --expected-observer-signature-sha256 "$PIN_OBSERVER_SIGNATURE" \
+  --expected-observer-signers-sha256 "$PIN_OBSERVER_PUBLIC_KEY" \
+  --expected-observer-id "$OBSERVER_ID" \
+  --require-readonly-source-view
+```
+
+**Resultado válido:** imprime
+`HOLD_PE_S1_64_THREE_SIGNED_EVIDENCE_SETS_NOT_VM_ATTESTED` em
+stdout e devolve **exit 2**. **Pacote inválido:** imprime
+`REJECTED_PE_S1_64_SIGNED_EVIDENCE_CORRELATION` em stderr e
+também devolve **exit 2**. Nenhum resultado autoriza execução de PE
+desconhecido, merge ou APK/OTA.
+
+**Ponto crucial:** três assinaturas provam vínculo de documentos a
+chaves, *não* a veracidade das medições. Ainda não foram
+comprovados por meio independente o controle real do host, a origem
+dos sensores, a integridade do hipervisor, o kernel Arch, a sessão
+convidada, o relógio e a ausência de manipulação do operador.
+A liberação só poderá ser reconsiderada depois de uma revisão
+independente real desses fatores, fora deste pipeline. A PR segue
+Draft, e a PE-S1.57 permanece HOLD.
+
+A suíte PE-S1.64 traz **15 testes** de correlação e falsificação
+com assinaturas OpenSSH Ed25519 reais **apenas em fixtures
+sintéticas**. O job Arch da CI continua sendo contêiner
+userspace, **não VM Arch nativa**.
