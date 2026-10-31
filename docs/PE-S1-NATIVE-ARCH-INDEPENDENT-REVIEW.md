@@ -1216,3 +1216,56 @@ O Ubuntu executa adicionalmente uma **emissão real** de desafio
 criptograficamente aleatório, verificação real do arquivo 0600 e
 rejeição real de hash errado. A matriz Arch userspace também executa
 os testes de contrato. **Não há VM Arch independente positiva na CI.**
+
+
+## PE-S1.61 | Matriz offline de alegações de runtime, NÃO atestação
+
+O módulo `tools/pe_arch_vm_s1_61_runtime_matrix.py` reúne três
+verificações **locais e offline** sob os pins guardados pelo revisor:
+o pedido PE-S1.60, as observações de kernel/cgroups PE-S1.53 com
+custódia PE-S1.48 e o recibo PE-S1.20 com validação completa do
+relatório de aceitação.
+
+A matriz recusa relatórios incompletos, recibos alterados, flags
+de autenticação não comprovadas, modo seccomp diferente de **2**,
+escopos com limpeza não comprovada e **reutilização dos quatro
+identificadores de systemd scope** entre testes de cgroup,
+descendentes, filtro seccomp e Ghidra combinado. Assim, um único
+scope falso não pode ser apresentado como quatro execuções distintas.
+
+O comando exige hashes de pedido, custódia e recibo **pinados fora
+da pasta do operador**, o commit e challenge originalmente emitidos
+e o ID do revisor. Após os checks, relê o recibo e o pedido para
+detectar alterações persistentes.
+
+### Revisão manual, em máquina controlada pelo revisor
+
+```bash
+python3 -B tools/pe_arch_vm_s1_61_runtime_matrix.py \
+  --reviewer-request "$HOME/negresco-reviewer-private/review-request-001.json" \
+  --private-dir "$HOME/negresco-operator-evidence" \
+  --source-root "/mnt/reviewer-checkout-readonly" \
+  --expected-request-sha256 "$PIN_SHA256_PEDIDO" \
+  --expected-custody-sha256 "$PIN_SHA256_INDICE_CUSTODIA" \
+  --expected-receipt-sha256 "$PIN_SHA256_RECIBO" \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --expected-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --require-readonly-source-view
+```
+
+O status `LOCAL_ARCH_RUNTIME_CLAIMS_CORRELATED_NOT_INDEPENDENTLY_ATTESTED`
+significa apenas que **alegações do operador são internamente
+compatíveis** com o recibo e a custódia local. O programa não
+observou o kernel nativo diretamente, não autenticou o hipervisor,
+não verificou a identidade do revisor nem executou PE desconhecido.
+**SHA-256, logs do operador e quatro scopes distintos não são
+prova independente de que a VM existiu.** Não há autorização para
+liberar Windows PE ou APK/OTA.
+
+A CI roda **15 testes** locais/sintéticos, incluindo entradas
+inconsistentes, scope duplicado, falsa limpeza, falso seccomp,
+mudanças em logs, hashes incorretos e retorno de erro sem
+liberação, em Ubuntu e Arch userspace. Nenhum desses testes executa
+uma VM Arch Linux nativa de modo independente. O release guard
+PE-S1.57 permanece em **HOLD**.
