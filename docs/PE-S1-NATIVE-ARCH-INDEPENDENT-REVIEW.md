@@ -1269,3 +1269,66 @@ mudanças em logs, hashes incorretos e retorno de erro sem
 liberação, em Ubuntu e Arch userspace. Nenhum desses testes executa
 uma VM Arch Linux nativa de modo independente. O release guard
 PE-S1.57 permanece em **HOLD**.
+
+
+## PE-S1.62 | Revisão conjunta assinada + runtime com HOLD obrigatório
+
+O novo verificador `tools/pe_arch_vm_s1_62_signed_runtime_hold.py`
+reúne a validação PE-S1.54 (política do revisor e recibo de custódia
+assinados por **duas chaves OpenSSH Ed25519 distintas**) e a matriz
+PE-S1.61 (pedido do revisor, logs de kernel/cgroups, quatro scopes
+locais distintos, limpeza e seccomp da JVM).
+
+Ele exige que os dois resultados correspondam ao **mesmo commit,
+desafio, índice de custódia e identidade do revisor**, além dos hashes
+externos de pedido, recibo, política, assinaturas e chaves autorizadas.
+A validação reabre os arquivos privados antes e depois das duas
+verificações para identificar mudanças persistentes na pasta recebida.
+
+### Procedimento do revisor
+
+Realizar esta etapa em máquina **sob controle do revisor**, com checkout
+próprio e dados do operador copiados para diretório privado 0700. Os
+pinos abaixo precisam ter sido guardados por canal externo antes de
+receber os arquivos. Idealmente o checkout deve estar montado readonly.
+
+```bash
+python3 -B tools/pe_arch_vm_s1_62_signed_runtime_hold.py \
+  --private-dir "$HOME/negresco-operator-evidence" \
+  --source-root "/mnt/reviewer-checkout-readonly" \
+  --reviewer-request "$HOME/negresco-reviewer-private/review-request-001.json" \
+  --expected-request-sha256 "$PIN_SHA256_PEDIDO" \
+  --expected-custody-sha256 "$PIN_SHA256_INDICE_CUSTODIA" \
+  --expected-receipt-sha256 "$PIN_SHA256_RECIBO" \
+  --expected-source-commit "$COMMIT_FIXADO_PELO_REVISOR" \
+  --expected-challenge "$CHALLENGE_FIXADO_PELO_REVISOR" \
+  --expected-policy-sha256 "$PIN_SHA256_POLITICA" \
+  --expected-policy-revision "$REVISAO_POLITICA" \
+  --expected-reviewer-signers-sha256 "$PIN_SHA256_CHAVE_REVISOR" \
+  --expected-reviewer-signature-sha256 "$PIN_SHA256_ASSINATURA_REVISOR" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-statement-sha256 "$PIN_SHA256_DECLARACAO_TESTEMUNHA" \
+  --expected-signature-sha256 "$PIN_SHA256_ASSINATURA_TESTEMUNHA" \
+  --expected-signers-sha256 "$PIN_SHA256_CHAVE_TESTEMUNHA" \
+  --expected-witness-id "$WITNESS_ID" \
+  --require-readonly-source-view
+```
+
+**Sem sucesso autorizador:** um pacote local coerente imprime
+`HOLD_PE_S1_62_SIGNED_LOCAL_RUNTIME_NOT_EXTERNAL_VM_ATTESTATION`
+em stdout e retorna código **2**. Um pacote inválido imprime
+`REJECTED_PE_S1_62_UNTRUSTED_SIGNED_RUNTIME` em stderr e retorna
+igualmente código **2**. Nenhum caminho retorna 0, libera binários
+Windows desconhecidos, APK/OTA ou mescla a PR.
+
+A prova criptográfica valida a **assinatura sobre a política e
+a declaração de custódia**, não a procedência do kernel ou hipervisor.
+Relatórios de seccomp e systemd continuam assináveis como documentos
+sem se tornarem medições externas. Uma VM Arch nativa com observação
+independente e controles fora do alcance do operador ainda é necessária
+para sair do HOLD.
+
+A CI executa **12 novos testes** (incluindo duas assinaturas Ed25519
+reais com chaves descartáveis, assinatura adulterada, hash externo
+incorreto, alegações forjadas e HOLD obrigatório) em Ubuntu e Arch
+userspace. Isso **não** atesta uma VM Arch real.
