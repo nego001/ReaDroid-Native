@@ -1332,3 +1332,141 @@ A CI executa **12 novos testes** (incluindo duas assinaturas Ed25519
 reais com chaves descartáveis, assinatura adulterada, hash externo
 incorreto, alegações forjadas e HOLD obrigatório) em Ubuntu e Arch
 userspace. Isso **não** atesta uma VM Arch real.
+
+
+## PE-S1.63 | Arquivos de observação externos, terceira assinatura, SEM release
+
+O script `tools/pe_arch_vm_s1_63_external_observer.py` valida um
+**inventário de quatro observações obtidas do lado do revisor**,
+assinado por uma **terceira chave SSH Ed25519**. Essa chave precisa
+ser distinta das chaves do revisor de custódia e da testemunha
+PE-S1.54. Todos os SHA-256 e as chaves públicas precisam estar
+pinados em **canal externo controlado pelo revisor** antes de
+aceitar o pacote do operador.
+
+O script é **offline, somente leitura**. Não inicializa VM,
+hipervisor, kernel, Ghidra, PE, cgroups, escopos nem rede. Apenas
+usa `ssh-keygen -Y verify` local para conferir a assinatura em
+namespace dedicado `negresco-pe-s1-63-external-host-observations`.
+
+### Separação de quem coleta
+
+1. **Operador:** prepara uma VM Arch descartável, só executa a
+   fixture PE sintética sob o isolamento já implementado e entrega
+   os recibos de execução à pessoa revisora.
+2. **Revisor, fora da VM:** captura por ferramentas próprias do
+   **host/hypervisor** as evidências de criação da VM, identidade do
+   kernel convidado, observações externas de seccomp/cgroups e
+   limpeza de escopos/processos. A instrumentação e o host precisam
+   estar fora do alcance administrativo do operador.
+3. **Observador externo:** valida a procedência desses registros,
+   guarda a terceira chave **privada fora do operador, repositório e
+   CI**, e assina somente o inventário de hashes. A identidade real
+   do observador, o controle do host e o relógio ainda exigem
+   verificação fora deste programa.
+
+**Não aceitar:** capturas de tela ou logs do operador renomeados como
+observações externas, dados de runner hospedado pelo GitHub como prova
+de uma VM Arch externa, ou assinaturas geradas com chaves do operador.
+Não colocar credenciais, contas ou arquivos pessoais nos logs.
+Este protocolo **não** provisiona uma VM e **não** produz
+atestação TPM/hypervisor.
+
+### Layout necessário (todos os arquivos 0600, diretórios 0700)
+
+Pasta separada do observador:
+
+```text
+external-observer-allowed-signers
+external-observer-manifest.json
+external-observer-manifest.sig
+reviewer-host-vm-launch.txt
+reviewer-host-guest-kernel.txt
+reviewer-host-seccomp-cgroups.txt
+reviewer-host-scope-cleanup.txt
+```
+
+A pasta de custódia já revisada PE-S1.54 contém
+`reviewer-policy-allowed-signers` e
+`witness-allowed-signers`, ambos pinados externamente.
+
+O JSON `external-observer-manifest.json` deve conter exatamente:
+
+```json
+{
+  "schema": "negresco_pe_s1_63_external_observer_pack_v1",
+  "security_classification": "THIRD_PARTY_SIGNED_OBSERVATIONS_NOT_VM_ATTESTATION",
+  "observer_id": "observador@example.invalid",
+  "reviewer_id": "revisor@example.invalid",
+  "witness_id": "testemunha@example.invalid",
+  "source_commit": "<SHA Git lowercase 40-hex previamente pinado>",
+  "reviewer_challenge": "<desafio original lowercase 64-hex>",
+  "request_sha256": "<SHA256 do pedido PE-S1.60>",
+  "custody_index_sha256": "<SHA256 do índice PE-S1.48>",
+  "receipt_sha256": "<SHA256 do recibo original>",
+  "observer_local_time_utc_not_attested": "2026-10-30T22:00:00+00:00",
+  "independent_vm_attestation": false,
+  "release_authorized": false,
+  "observations": {
+    "host_vm_launch": {"filename": "reviewer-host-vm-launch.txt", "sha256": "<SHA256 real do arquivo>"},
+    "host_guest_kernel": {"filename": "reviewer-host-guest-kernel.txt", "sha256": "<SHA256 real do arquivo>"},
+    "host_seccomp_cgroups": {"filename": "reviewer-host-seccomp-cgroups.txt", "sha256": "<SHA256 real do arquivo>"},
+    "host_scope_cleanup": {"filename": "reviewer-host-scope-cleanup.txt", "sha256": "<SHA256 real do arquivo>"}
+  }
+}
+```
+
+**Os valores entre colchetes são placeholders, nunca dados de execução
+ou hash válidos.** Todos os logs têm limite de 64 KiB, o manifesto
+8 KiB. O arquivo allowed_signers do observador deve conter **uma**
+entrada `<observer_id> ssh-ed25519 <chave_publica_base64>`.
+Os arquivos e a chave privada do observador ficam na máquina do
+observador, não são anexados ao GitHub.
+
+Com a chave privada sob controle externo:
+
+```bash
+ssh-keygen -Y sign -f "$THIRD_OBSERVER_PRIVATE_KEY" \
+  -n negresco-pe-s1-63-external-host-observations \
+  "$OBSERVER_DIR/external-observer-manifest.json"
+```
+
+Esse comando gera `external-observer-manifest.json.sig`:
+renomeie para `external-observer-manifest.sig` e ajuste para 0600.
+Calcule SHA-256 de manifesto, assinatura, três arquivos de chaves
+públicas e quatro logs, retendo-os fora do pacote enviado pelo
+operador. Não há chaves de produção embutidas neste repositório.
+
+### Comando de validação sem executar nenhum guest
+
+```bash
+python3 -B tools/pe_arch_vm_s1_63_external_observer.py \
+  --observer-dir "$OBSERVER_DIR" \
+  --custody-dir "$CUSTODY_DIR" \
+  --expected-manifest-sha256 "$PIN_OBSERVER_MANIFEST" \
+  --expected-signature-sha256 "$PIN_OBSERVER_SIGNATURE" \
+  --expected-observer-signers-sha256 "$PIN_OBSERVER_PUBLIC_KEY" \
+  --expected-reviewer-signers-sha256 "$PIN_REVIEWER_PUBLIC_KEY" \
+  --expected-witness-signers-sha256 "$PIN_WITNESS_PUBLIC_KEY" \
+  --expected-observer-id "$OBSERVER_ID" \
+  --expected-reviewer-id "$REVIEWER_ID" \
+  --expected-witness-id "$WITNESS_ID" \
+  --expected-source-commit "$REVIEWER_COMMIT" \
+  --expected-challenge "$REVIEWER_CHALLENGE" \
+  --expected-request-sha256 "$PIN_REQUEST" \
+  --expected-custody-sha256 "$PIN_CUSTODY" \
+  --expected-receipt-sha256 "$PIN_RECEIPT"
+```
+
+Mesmo com assinatura verdadeira e logs intactos, o status
+`SIGNED_HOST_OBSERVATION_HASHES_VALID_NOT_VM_ATTESTATION` indica
+**apenas autenticação da assinatura e correlação de hashes**; o
+script retorna **2** e mantém autorização de PE e APK/OTA `false`.
+Pacote inválido retorna `REJECTED_PE_S1_63_UNTRUSTED_EXTERNAL_OBSERVATIONS`,
+também com código **2**. A origem dos sensores e o controle real do
+hipervisor precisam ser atestados **por canal independente** antes
+de qualquer proposta de mudança no HOLD PE-S1.57/62.
+
+A CI executa **17 testes** com três chaves Ed25519 **descartáveis**
+e logs explicitamente sintéticos. **Não executa nem homologa uma VM
+Arch independente.**
