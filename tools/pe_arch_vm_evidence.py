@@ -48,6 +48,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s1_61_runtime_matrix.py",
     "tools/pe_arch_vm_s1_62_signed_runtime_hold.py",
     "tools/pe_arch_vm_s1_63_external_observer.py",
+    "tools/pe_arch_vm_s1_64_external_correlation_hold.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
     "tools/pe_auto_ghidra.py",
