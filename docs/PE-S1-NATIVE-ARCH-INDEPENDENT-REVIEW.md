@@ -1632,3 +1632,97 @@ hipervisor ou publicação de APK/OTA.
 uma assinatura OpenSSH Ed25519 de fixture sintética e recusa
 de dados ausentes/alterados. **Nenhuma VM Arch nativa independente
 foi criada, observada ou homologada por esta mudança.**
+
+
+## PE-S1.66 | Iniciar a aceitação sintética em VM Arch nativa (modo manual)
+
+**Esta é a etapa operacional, não uma atestação automaticamente
+concedida.** O comando `tools/pe_arch_vm_s1_66_native_reviewer_launcher.py`
+reutiliza a verificação da VM real PE-S1.5, a pré-verificação
+**PE-S1.58** e a obrigatoriedade de `--reviewer-pinned-checkout`
+**PE-S1.59**, sem reimplementar o experimento de cgroups/descendentes
+nem executar programas Windows desconhecidos.
+
+A primeira execução é **somente planejamento**: não executa
+guest, Ghidra, cgroup ou subprocesso, e não cria recibo.
+
+### 1. Preparar externamente a VM descartável
+
+O revisor precisa preparar **fora do projeto** uma VM Arch Linux
+**com kernel próprio, systemd e cgroup v2**, usuário não-root com
+user bus, Bubblewrap, JDK 25, GCC MinGW e Ghidra 12.2 oficial
+previamente validado contra o SHA de release pinado. A máquina
+e o hipervisor devem pertencer ao revisor/entidade independente.
+Não usar notebook pessoal, contêiner Docker, runner Ubuntu
+do GitHub ou VM com dados privados.
+
+Fixar fora da VM: commit Git **completo**, desafio aleatório
+PE-S1.60 gerado pelo revisor, localização do ZIP oficial Ghidra
+e local de depósito do recibo. O checkout tem de ser exatamente
+o que contém `tools/pe_arch_vm_s1_66_native_reviewer_launcher.py`,
+estar limpo e não conter arquivos ignorados inesperados.
+A pasta de evidências deve pertencer ao usuário e ter permissões 0700;
+o recibo ainda **não** pode existir.
+
+### 2. Plano sem execução
+
+```bash
+python3 -B tools/pe_arch_vm_s1_66_native_reviewer_launcher.py \
+  --ghidra-home "$GHIDRA_HOME_ABSOLUTE" \
+  --ghidra-archive "$GHIDRA_ZIP_ABSOLUTE" \
+  --evidence-output "$REVIEWER_PRIVATE_DIR/acceptance.json" \
+  --expected-source-commit "$REVIEWER_PINNED_COMMIT" \
+  --reviewer-challenge "$REVIEWER_CHALLENGE"
+```
+
+Resultado: `PE_S1_66_NATIVE_ACCEPTANCE_NOT_STARTED`,
+`synthetic_acceptance_executed=false`. `exit 0` significa
+**só plano criado**, não aceitação, nem recibo, nem VM.
+
+### 3. Execução explícita, apenas no guest descartável confirmado
+
+Depois que o revisor tiver comprovado por sua infraestrutura
+que a VM está separada da máquina do operador e autorizado o
+teste, rodar o **mesmo comando**, adicionando:
+
+```bash
+  --execute-synthetic-native-acceptance
+```
+
+Esse parâmetro só pode ser anexado ao comando completo acima,
+antes da execução, no shell do **guest Arch independente**.
+O lançador:
+
+1. valida os pinos e a ausência do recibo, sem sobrescrever;
+2. chama o preflight PE-S1.58 (VM, user bus, checkout Git,
+   JDK/Ghidra íntegros e destino privado);
+3. chama uma única vez `pe_arch_vm_validation.py` com
+   `--reviewer-pinned-checkout`, desafio, commit e recibo;
+4. valida o resultado **local sintético**, lê o recibo 0600,
+   reconfere SHA-256, desafio original e ausência de execução PE;
+5. informa `LOCAL_PE_S1_66_SYNTHETIC_NATIVE_RECEIPT_NOT_VM_ATTESTATION`
+   apenas quando esses contratos locais são cumpridos.
+
+Se falhar qualquer pré-condição, subprocesso, prazo ou digest,
+retorna `REJECTED_PE_S1_66_NATIVE_ACCEPTANCE_NOT_HOMOLOGATED`
+(`exit 2`). Não cria recibo de sucesso artificial. O teste pode
+ter criado artefatos mesmo que o resultado final seja rejeitado:
+o revisor deve preservá-los e inspecioná-los, não fingir sucesso.
+
+**Atenção:** o status `LOCAL_PE_S1_66...` e seu `exit 0`
+**não são atestação independente de hipervisor/kernel**,
+não autorizam arquivos PE desconhecidos, merge ou APK/OTA.
+O revisor deve coletar evidências próprias de host/sensores fora do
+guest, preparar o manifesto com **PE-S1.65**, assinar por uma
+terceira chave Ed25519 e revisar via PE-S1.63/64. Mesmo
+nessa revisão, o estado de release permanece **HOLD** até
+prova independente suficiente.
+
+### Cobertura automatizada sem VM de produção
+
+A CI inclui **18 testes PE-S1.66** com mocks do único subprocesso:
+nenhum deles executa cgroups, Ghidra, VM, Windows PE ou instalação.
+Eles conferem no-exec padrão, autorização explícita, bloqueio da
+máquina inadequada, ambiente sanitizado, recibo íntegro e
+recusas por hash/challenge/assinaturas falsas. A CI GitHub
+**não** substitui um revisor com hipervisor independente.
