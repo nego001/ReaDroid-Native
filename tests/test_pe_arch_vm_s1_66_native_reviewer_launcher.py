@@ -88,9 +88,9 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                 side_effect=self._fake_run if fake is None else fake) as run,
             mock.patch.object(
                 launcher.binding, "verify_launcher_binding",
-                return_value={
+                side_effect=lambda *args, **kwargs: {
                     "status": "LOCAL_PE_S1_67_STRICT_RECEIPT_BINDING_NOT_VM_ATTESTATION",
-                    "receipt_sha256": "FAKE-DIGEST",
+                    "receipt_sha256": kwargs["expected_receipt_sha256"],
                     "source_commit": COMMIT,
                     "all_report_fields_matched": True,
                     "source_manifest_revalidated": True,
