@@ -34,6 +34,7 @@ import pe_arch_vm_s1_58_preflight as preflight
 from pe_arch_vm_gate import ArchVmUnavailable
 from pe_arch_vm_evidence import AcceptanceReceiptError
 from pe_arch_vm_receipt_verify import ReceiptReviewError
+import pe_arch_vm_s1_67_receipt_binding as binding
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = SOURCE_ROOT / "tools/pe_arch_vm_validation.py"
@@ -202,9 +203,30 @@ def review_native_acceptance(
                 or parsed.get("windows_executable_launched") is not False):
             raise ReviewerLaunchError(
                 "Native receipt not bound to original reviewer challenge")
+        # PE-S1.67: require the ENTIRE native report in stdout to be exactly
+        # the one revalidated inside the on-disk receipt, including all
+        # source files and the strict S1.20 kernel/scope/seccomp contracts.
+        verified = binding.verify_launcher_binding(
+            result, receipt, SOURCE_ROOT,
+            expected_challenge=reviewer_challenge,
+            expected_source_commit=expected_source_commit,
+            expected_receipt_sha256=actual)
+        if (not isinstance(verified, dict)
+                or verified.get("status") !=
+                    "LOCAL_PE_S1_67_STRICT_RECEIPT_BINDING_NOT_VM_ATTESTATION"
+                or verified.get("receipt_sha256") != actual
+                or verified.get("source_commit") != expected_source_commit
+                or verified.get("all_report_fields_matched") is not True
+                or verified.get("source_manifest_revalidated") is not True
+                or verified.get("independent_vm_attestation") is not False
+                or verified.get("release_authorized") is not False
+                or verified.get("unknown_windows_pe_execution_authorized") is not False
+                or verified.get("apk_or_ota_publication_authorized") is not False):
+            raise ReviewerLaunchError("Full receipt verifier contradicted HOLD")
     except (OSError, ValueError, TypeError, KeyError, UnicodeError,
             OverflowError, RecursionError, subprocess.TimeoutExpired,
-            preflight.NativePreflightError, ReceiptReviewError) as exc:
+            preflight.NativePreflightError, ReceiptReviewError,
+            binding.BindingError) as exc:
         raise ReviewerLaunchError(
             "Native synthetic acceptance refused; never interpret as VM attestation"
         ) from exc
