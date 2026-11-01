@@ -15,6 +15,11 @@ import pe_arch_vm_evidence as evidence
 import pe_arch_vm_receipt_verify as receipts
 from pe_arch_vm_checkout_pin import COMMIT_SHA
 
+NATIVE_REPORT_FIELDS = frozenset({
+    "status", "environment", "cgroup", "cgroup_lifecycle",
+    "descendants_terminated", "descendant_lifecycle", "ghidra",
+    "windows_binary_executed",
+})
 LOCAL_RECEIPT_FIELDS = frozenset({"path", "receipt_sha256", "record_type"})
 SOURCE_PIN_FIELDS = frozenset({
     "status", "expected_commit", "checked_manifest_entries",
@@ -58,7 +63,7 @@ def verify_launcher_binding(
         # Accept only the known native report keys and the two supported
         # stdout metadata wrappers. No extra approval fields can piggyback.
         if (not isinstance(stdout, dict) or set(stdout) != (
-                set(evidence.NATIVE_REPORT_FIELDS)
+                set(NATIVE_REPORT_FIELDS)
                 | {"local_receipt", "local_source_checkout_pin"})):
             raise BindingError("Unexpected native stdout fields")
         receipt_info = stdout["local_receipt"]
@@ -79,7 +84,7 @@ def verify_launcher_binding(
                 or source_info["git_authorship_or_signature_verified"] is not False
                 or source_info["native_vm_or_kernel_verified"] is not False):
             raise BindingError("Runner receipt or source pin wrapper contradicted")
-        report = {key: stdout[key] for key in evidence.NATIVE_REPORT_FIELDS}
+        report = {key: stdout[key] for key in NATIVE_REPORT_FIELDS}
         evidence.validate_native_acceptance_report(report)
         raw = receipts._read_private_receipt(receipt_file)
         if hashlib.sha256(raw).hexdigest() != expected_receipt_sha256:
