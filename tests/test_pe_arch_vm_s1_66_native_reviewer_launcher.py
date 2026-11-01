@@ -86,6 +86,19 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             mock.patch.object(
                 launcher.subprocess, "run",
                 side_effect=self._fake_run if fake is None else fake) as run,
+            mock.patch.object(
+                launcher.binding, "verify_launcher_binding",
+                return_value={
+                    "status": "LOCAL_PE_S1_67_STRICT_RECEIPT_BINDING_NOT_VM_ATTESTATION",
+                    "receipt_sha256": "FAKE-DIGEST",
+                    "source_commit": COMMIT,
+                    "all_report_fields_matched": True,
+                    "source_manifest_revalidated": True,
+                    "independent_vm_attestation": False,
+                    "release_authorized": False,
+                    "unknown_windows_pe_execution_authorized": False,
+                    "apk_or_ota_publication_authorized": False,
+                }) as strict,
         ):
             result = self.call(
                 execute_synthetic_native_acceptance=True, **overrides)
