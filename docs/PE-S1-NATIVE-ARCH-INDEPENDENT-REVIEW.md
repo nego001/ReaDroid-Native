@@ -1726,3 +1726,55 @@ Eles conferem no-exec padrão, autorização explícita, bloqueio da
 máquina inadequada, ambiente sanitizado, recibo íntegro e
 recusas por hash/challenge/assinaturas falsas. A CI GitHub
 **não** substitui um revisor com hipervisor independente.
+
+
+## PE-S1.67 | Corrigir falsa aceitação por divergência entre stdout e recibo
+
+Auditoria do lançador PE-S1.66 identificou que `PASS_PE_S1_5_ARCH_VM`,
+o SHA-256 do recibo e alguns campos de checkout poderiam estar
+internamente consistentes sem demonstrar que **o relatório completo
+impresso era idêntico ao relatório armazenado no recibo**. Isso
+não seria atestação externa, nem uma validação local suficiente.
+
+A PE-S1.67 introduz `tools/pe_arch_vm_s1_67_receipt_binding.py`
+como requisito **obrigatório** no caminho de sucesso do lançador:
+- stdout nativo contém **apenas** os oito campos exatos do relatório
+  e as duas estruturas de metadados conhecidas;
+- o relatório completo é validado pelo contrato rígido PE-S1.20
+  (escopos/cgroups, limpeza de processos, isolamento Bubblewrap,
+  Ghidra 12.2 e seccomp em JVM, sempre em PE sintético);
+- metadados da origem Git e do recibo são checados com tipos,
+  compromisso de commit, número de fontes, e ausência explícita
+  de alegação de autoria/VM;
+- todos os valores e tipos do relatório impresso precisam coincidir
+  **exatamente** com os bytes canônicos do relatório dentro do
+  recibo. Alterações legítimas em um lado, não refletidas no outro,
+  bloqueiam a conclusão;
+- o verificador de recibos original
+  `pe_arch_vm_receipt_verify.verify_local_receipt` é executado,
+  reconferindo **toda a lista de arquivos-fonte duas vezes**, os
+  hashes do pacote, o desafio de 256 bits e ausência de
+  alegações de VM/homologação. O recibo é relido depois para
+  rejeitar alterações persistentes durante a auditoria.
+
+O resultado de correlação estrita é
+`LOCAL_PE_S1_67_STRICT_RECEIPT_BINDING_NOT_VM_ATTESTATION`.
+Ele **não** permite release: todas as flags VM independente,
+Windows PE desconhecido e APK/OTA continuam `false`.
+Recibo adulterado, checksum repinado sem evidência válida ou
+diferença entre os relatórios impede que o lançador PE-S1.66
+declare o seu PASS local.
+
+A CI realiza **16 testes novos PE-S1.67** com relatórios e recibos
+nativos **completos, mas totalmente sintéticos**, incluindo
+comparação de dois relatórios individualmente válidos e distintos,
+alteração de kernel/escopos, rehash de dados adulterados, JSON
+duplicado, fonte ausente, symlink, mudança de fonte e troca do
+recibo durante a verificação. Não envolve execução de VM,
+cgroups ou Ghidra nessa suíte. Testes PE-S1.66 existentes também
+continuam com o subprocesso mocked.
+
+**Permanece o bloqueio:** não existe observação independente do
+hipervisor/kernel Arch real, nem controle de chaves externas
+comprovado. Mesmo um PASS local com PE-S1.67 não homologa a
+VM. Prorrogar `HOLD` PE-S1.57/62/64 e manter PR #47 em Draft.
