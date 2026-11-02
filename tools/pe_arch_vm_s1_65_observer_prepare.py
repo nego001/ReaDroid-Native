@@ -43,6 +43,10 @@ PINS = (
     "expected_reviewer_signers_sha256",
     "expected_witness_signers_sha256",
     "expected_observer_id", "expected_reviewer_id", "expected_witness_id",
+    # PE-S1.74: pins selected by the independent reviewer, not derived
+    # solely from the unsigned logs that will enter the manifest.
+    "expected_domain", "expected_domain_uuid",
+    "expected_host_sha256", "expected_guest_sha256",
 )
 
 
@@ -173,8 +177,10 @@ def prepare_observer_manifest(
         expected_witness_signers_sha256: str,
         expected_observer_id: str,
         expected_reviewer_id: str,
-        expected_witness_id: str) -> dict:
-    """Make a bounded unsigned manifest from four existing owner-only logs."""
+        expected_witness_id: str,
+        expected_domain: str, expected_domain_uuid: str,
+        expected_host_sha256: str, expected_guest_sha256: str) -> dict:
+    """Manifest from four logs only after mandatory two-log semantic HOLD gate."""
     for label, pin in (
         ("challenge", expected_challenge),
         ("request", expected_request_sha256),
@@ -226,6 +232,31 @@ def prepare_observer_manifest(
     if len(set(keys)) != 3:
         raise ObserverPreparationError(
             "Observer's signing key must differ from custody signers")
+    # PE-S1.74: do not sign just any four plaintext files. Earlier
+    # versions would hash and package completely generic strings as
+    # "observations". This mandatory offline review checks real S1.70/71
+    # *formats* and independent SHA pins before preparing a manifest.
+    # Late import is intentional: S1.73 uses this module's safe file reader.
+    import pe_arch_vm_s1_73_two_record_review as semantic
+    try:
+        checked = semantic.review_two_records(
+            owner, domain=expected_domain,
+            expected_domain_uuid=expected_domain_uuid,
+            expected_source_commit=expected_source_commit,
+            reviewer_challenge=expected_challenge,
+            expected_host_sha256=expected_host_sha256,
+            expected_guest_sha256=expected_guest_sha256)
+    except semantic.TwoRecordReviewError as exc:
+        raise ObserverPreparationError(
+            "Cannot prepare manifest: two externally pinned host logs "
+            "are not semantically coherent") from exc
+    if (checked["status"] != semantic.STATUS
+            or checked["semantic_records_checked"] != 2
+            or checked["libvirt_queried"] is not False
+            or checked["independent_vm_attestation"] is not False
+            or checked["release_authorized"] is not False):
+        raise ObserverPreparationError("PE-S1.73 reported unexpected gate state")
+
     readings = {}
     for label, filename in external.OBS_FILES.items():
         data = _read_file(owner, filename)
@@ -236,6 +267,12 @@ def prepare_observer_manifest(
             "filename": filename,
             "sha256": hashlib.sha256(data).hexdigest(),
         }
+    # Ensure the very bytes just checked remain the ones entering the
+    # unsigned manifest. PE-S1.63 separately rereads all four later.
+    if (readings["host_vm_launch"]["sha256"] != expected_host_sha256
+            or readings["host_guest_kernel"]["sha256"] != expected_guest_sha256):
+        raise ObserverPreparationError(
+            "PE-S1.74 host records changed after semantic review")
     manifest = {
         "schema": external.SCHEMA,
         "security_classification": external.CLASSIFICATION,
@@ -271,6 +308,8 @@ def prepare_observer_manifest(
             label: reading["sha256"] for label, reading in readings.items()
         },
         "observation_count": len(readings),
+        "two_host_records_semantically_checked": True,
+        "independently_pinned_host_record_hashes_matched": True,
         "observer_private_key_accessed": False,
         "signature_created": False,
         "external_host_provenance_authenticated": False,
