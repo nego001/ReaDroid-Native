@@ -91,7 +91,10 @@ class BoundedNativeChildContracts(unittest.TestCase):
         # has not reaped the child yet. Do not rely on kill(pid, 0) for zombies.
         try:
             raw = (Path("/proc") / str(pid) / "stat").read_text("ascii")
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # The task may exit between looking up /proc/<pid> and
+            # opening/reading stat. Some Linux procfs implementations
+            # report ESRCH rather than ENOENT for this benign race.
             return False
         return raw.rsplit(")", 1)[1].split()[0] not in ("Z", "X")
 
