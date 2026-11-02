@@ -93,9 +93,31 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         self.assertTrue(out["cgroup_unpopulated"])
 
     def test_disappeared_kernel_cgroup_is_valid_when_unit_inactive(self):
+        # A removed transient unit's leaf may be GC'd, but its parent
+        # cgroup hierarchy must still be independently traversable.
+        (self.cgroup / "user.slice").mkdir()
         out = self.run_mock(self.report(
             control="/user.slice/" + self.UNIT), stop=False)
         self.assertTrue(out["scope_quiescent"])
+
+    def test_missing_cgroup_ancestor_does_not_count_as_scope_cleanup(self):
+        # Before S1.80, ENOENT anywhere in the path was interpreted as
+        # evidence of an empty transient scope, including missing slices.
+        # That can hide forged/stale ControlGroup paths.
+        control = "/user.slice/user-1000.slice/" + self.UNIT
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(self.report(control=control), stop=True)
+        (self.cgroup / "user.slice").mkdir()
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(self.report(control=control), stop=True)
+
+    def test_missing_leaf_only_accepted_with_verified_parent_hierarchy(self):
+        parents = self.cgroup / "user.slice" / "user-1000.slice"
+        parents.mkdir(parents=True)
+        result = self.run_mock(self.report(
+            control="/user.slice/user-1000.slice/" + self.UNIT), stop=False)
+        self.assertTrue(result["scope_quiescent"])
+        self.assertTrue(result["cgroup_unpopulated"])
 
     def test_kernel_events_reject_forged_or_ambiguous_population(self):
         path = self.cgroup / "user.slice" / self.UNIT
