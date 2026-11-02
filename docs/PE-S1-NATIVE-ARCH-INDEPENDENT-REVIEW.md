@@ -2045,3 +2045,34 @@ Documentação de referência:
 **HOLD mantido:** a independência do host, kernel real e
 eficácia de isolamento permanecem sem prova externa concluída;
 sem merge da PR, execução de PE desconhecido ou APK/OTA.
+
+
+## PE-S1.72 | Integração de subprocessos real, libvirt propositalmente falso
+
+A PE-S1.70/71 já possui contratos unitários com respostas `virsh`
+simuladas. A PE-S1.72 adiciona
+`tests/test_pe_arch_vm_s1_72_actual_child_boundary.py`: um executável
+temporário inofensivo que simula **exclusivamente** a saída textual de
+`virsh` e rejeita quaisquer argumentos diferentes da interface
+`--readonly --connect qemu:///system --no-pkttyagent` esperada.
+**O executável simulado não se conecta ao libvirt, à VM nem ao guest agent.**
+
+Ao contrário dos mocks de subprocesso, o teste percorre o processo Linux
+real, as pipes stdout/stderr, `run_bounded_native`, o controle de tamanho
+da resposta, as dez invocações de leitura dos dois coletores, a publicação
+exclusiva 0600 e o encadeamento SHA-256 entre os dois registros.
+Verifica recusas por guest-agent inacessível na conexão read-only,
+guest declarado como outro SO, saída acima do limite, e pin externo
+incoerente **antes de iniciar outro processo**. O modo padrão não cria
+registro nem invoca o executável.
+
+Esse teste é executado nos jobs Ubuntu e Arch userspace da CI, mas
+**continua sendo uma integração com fixture, não uma captura genuína**.
+Não produz os dois registros restantes
+(`reviewer-host-seccomp-cgroups.txt` e
+`reviewer-host-scope-cleanup.txt`) e jamais transforma
+`guestinfo --os` em medição independente do kernel. Sem um host
+libvirt de revisor realmente controlado por terceiro e observação
+separada das proteções, a decisão permanece **HOLD**. Não alterar
+a PR Draft, não efetuar merge, release, APK/OTA ou execução de PE
+externo.
