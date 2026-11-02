@@ -157,6 +157,41 @@ class BoundedNativeChildContracts(unittest.TestCase):
         self.assertEqual(finished.stdout.strip(), b"EXPECTED_EOF")
         signal_group.assert_called_once()
 
+    def test_session_leader_is_unreaped_during_group_cleanup(self):
+        # A zombie leader holds its numeric PID/PGID until wait() reaps it.
+        # A former implementation reaped before invoking killpg, leaving
+        # a theoretically reusable PGID in the cleanup window.
+        real_killpg = os.killpg
+        observed = []
+
+        def inspect_before_killpg(pgid, sig):
+            raw = (Path("/proc") / str(pgid) / "stat").read_text("ascii")
+            observed.append(raw.rsplit(")", 1)[1].split()[0])
+            return real_killpg(pgid, sig)
+
+        with mock.patch.object(
+                bounded.os, "killpg", side_effect=inspect_before_killpg):
+            completed = self.call("import sys;sys.exit(0)", timeout=4)
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(observed, ["Z"])
+
+    def test_closed_pipes_do_not_preempt_still_running_parent(self):
+        # EOF does not mean the command's actual work has ended.
+        start = time.monotonic()
+        completed = self.call(
+            "import os,time,sys;"
+            "os.close(1);os.close(2);time.sleep(0.2);sys.exit(0)",
+            timeout=4)
+        self.assertEqual(completed.returncode, 0)
+        self.assertGreaterEqual(time.monotonic() - start, 0.16)
+
+    def test_signaled_parent_preserves_negative_return_code(self):
+        completed = self.call(
+            "import os,signal;"
+            "os.kill(os.getpid(),signal.SIGTERM)",
+            timeout=4)
+        self.assertEqual(completed.returncode, -signal.SIGTERM)
+
     def test_failed_child_return_code_is_preserved_not_success(self):
         result = self.call("import sys;sys.exit(13)")
         self.assertEqual(result.returncode, 13)
