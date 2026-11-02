@@ -2323,3 +2323,35 @@ Um executor compartilhado com reapers externos não é aceito como
 fonte de comprovação independente. Para a homologação completa,
 ainda se exige host independente e supervisão real de cgroups e
 escopos. **HOLD** e PR Draft permanecem obrigatórios.
+
+
+## PE-S1.80 | Recusar caminho de cgroup com ancestrais ausentes
+
+Uma auditoria de `pe_scope_cleanup_evidence._cgroup_unpopulated()`
+identificou uma falsa confirmação possível: o tratamento anterior
+de `ENOENT` aceitava **qualquer** diretório ausente no caminho
+retornado por `systemctl show ... ControlGroup`, mesmo quando um
+`user.slice` ou outro ancestral nem sequer podia ser aberto.
+Um caminho obsoleto, incorreto ou adulterado podia assim passar
+pela conferência de cgroup como se o próprio escopo tivesse sido
+coletado pelo systemd.
+
+A PE-S1.80 passa a aceitar `ENOENT` **somente no último componente**
+do caminho, que deve corresponder ao nome exato do escopo validado.
+Todos os diretórios ancestrais precisam existir e ser percorridos
+via descritores de diretório com `O_NOFOLLOW`; ausência de qualquer
+ancestral agora faz a revisão **falhar fechada**. Continua sendo
+permitida a remoção do diretório final de um escopo temporário
+somente depois de `systemctl` afirmar `inactive/dead`.
+Quando o diretório final ainda existe, `cgroup.events` permanece
+obrigatório e `populated=1` é rejeitado.
+
+Os testes de contrato com `systemctl` simulado e árvores de
+cgroup temporárias cobrem dois ancestrais ausentes e o caso
+válido em que somente o escopo final foi removido. Os testes
+não montam um cgroup real, não iniciam uma VM e não demonstram
+limpeza de um processo que tenha mudado de sessão. A prova
+nativa continua exigindo o host de um revisor independente
+e medições reais de cgroup/systemd antes de qualquer promoção.
+**HOLD / PR Draft**, sem execução de PE Windows desconhecido,
+merge, APK ou OTA.
