@@ -2292,3 +2292,34 @@ Nem o recebimento de SIGKILL nem a CI garantem limpeza integral
 de todos os escopos, nem comprovam uma VM Arch independente.
 Manter **HOLD / PR Draft**, sem liberação de Windows PE desconhecido,
 merge ou APK/OTA.
+
+
+## PE-S1.79 | SIGCHLD e WNOWAIT exigidos antes de executar filhos
+
+A PE-S1.78 depende de o líder da sessão continuar **sem ser
+recolhido (unreaped)** até `killpg()`. Um processo Python revisor
+que herde `SIGCHLD=SIG_IGN` pode fazer com que o kernel Linux
+recolha automaticamente o subprocesso, invalidando a reserva do
+PID/PGID antes da limpeza. Um handler de `SIGCHLD` customizado
+também pode chamar `waitpid()` antecipadamente.
+
+A PE-S1.79 adiciona um **preflight antes de `Popen`**:
+- exige Linux e a API `os.waitid` com `P_PID`, `WEXITED`,
+  `WNOHANG` e `WNOWAIT`, bem como `os.killpg`;
+- exige `signal.getsignal(SIGCHLD) == SIG_DFL`;
+- rejeita `SIGCHLD=SIG_IGN`, handlers personalizados, falta de
+  `WNOWAIT`, plataforma não Linux e erro na consulta da disposição,
+  sem criar subprocesso ou produzir evidência.
+
+São acrescentados quatro testes fail-closed, todos verificando
+`Popen` **não chamado** nessas pré-condições inválidas. A CI não
+passa a atestar kernel, processo externo ou escopo systemd.
+
+**Limite residual:** esse preflight identifica disposições Python
+observáveis, mas não prova ausência de um reaper concorrente em
+outra thread ou de `SA_NOCLDWAIT` configurado fora da API Python;
+também não controla um descendente que escape para outra sessão.
+Um executor compartilhado com reapers externos não é aceito como
+fonte de comprovação independente. Para a homologação completa,
+ainda se exige host independente e supervisão real de cgroups e
+escopos. **HOLD** e PR Draft permanecem obrigatórios.
