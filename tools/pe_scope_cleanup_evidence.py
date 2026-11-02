@@ -95,12 +95,16 @@ def _cgroup_unpopulated(relative: str, unit_name: str,
         root_fd = os.open(mount_root, dir_flags)
         stack.callback(os.close, root_fd)
         parent_fd = root_fd
-        for component in components:
+        for index, component in enumerate(components):
             try:
                 directory_fd = os.open(component, dir_flags, dir_fd=parent_fd)
             except OSError as exc:
-                if exc.errno == errno.ENOENT:
-                    # A GC'd transient scope may have vanished already.
+                if exc.errno == errno.ENOENT and index == len(components) - 1:
+                    # Only the final transient scope may disappear after
+                    # systemd reports inactive/dead. A missing ancestor
+                    # (user.slice / user@UID.service / app.slice) is NOT
+                    # evidence that the specified scope was cleaned up.
+                    # Never turn a forged or stale path into a PASS.
                     return True
                 raise
             stack.callback(os.close, directory_fd)
