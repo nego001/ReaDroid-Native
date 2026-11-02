@@ -1519,6 +1519,10 @@ python3 -B tools/pe_arch_vm_s1_64_external_correlation_hold.py \
   --expected-observer-signature-sha256 "$PIN_OBSERVER_SIGNATURE" \
   --expected-observer-signers-sha256 "$PIN_OBSERVER_PUBLIC_KEY" \
   --expected-observer-id "$OBSERVER_ID" \
+  --expected-domain "$REVIEWER_OWNED_DOMAIN_NAME" \
+  --expected-domain-uuid "$EXTERNALLY_PINNED_DOMAIN_UUID" \
+  --expected-host-sha256 "$PIN_PRIOR_HOST_RECORD" \
+  --expected-guest-sha256 "$PIN_GUEST_RECORD" \
   --require-readonly-source-view
 ```
 
@@ -2169,3 +2173,37 @@ PE-S1.65 ainda apenas prepara um manifesto **não assinado**, com
 Os testes usam registros estruturados **sintéticos**, não um host
 libvirt efetivamente observado. Não fazer merge nem liberar APK,
 OTA ou a execução de PE desconhecido com base nessa CI.
+
+
+## PE-S1.75 | Gate semântico obrigatório *depois* de verificar as três assinaturas
+
+A revisão PE-S1.64 agora exige a PE-S1.73 **depois** da verificação
+criptográfica PE-S1.63. Anteriormente, era possível passar à
+classificação `HOLD_PE_S1_64_...` usando um inventário assinado com
+registros sintéticos genéricos e hashes consistentes: a assinatura
+válida comprova autoria dos bytes, **não** o formato nem o conteúdo
+das autodeclarações do host e do guest.
+
+Essa brecha de integridade semântica está fechada no agregador:
+quatro argumentos adicionais são obrigatórios
+(`--expected-domain`, `--expected-domain-uuid`,
+`--expected-host-sha256`, `--expected-guest-sha256`),
+escolhidos e conservados externamente pelo revisor.
+O agregador só retorna HOLD quando a verificação de chave,
+assinatura e inventário da PE-S1.63 **e** a revisão semântica
+dos dois registros S1.70/S1.71 da PE-S1.73 concordam.
+Assinatura correta sobre `os.id: ubuntu`, falsa declaração de
+atestação, registros malformados e SHA-256 divergentes são recusados.
+O verificador PE-S1.63 continua deliberadamente apenas
+**criptográfico** e não afirma semântica ou proveniência física.
+
+Os testes de integração usam **três chaves Ed25519 temporárias**,
+host/guest estruturados **sintéticos** e dois logs restantes
+sintéticos, para demonstrar a diferença entre
+`S1.63 = SIGNATURE_VALID` e `S1.64 = REJECTED`.
+Não executam libvirt nem nenhuma VM Arch independente.
+
+O código não autentica os dois registros de seccomp/cgroups e
+limpeza de escopos, não mede um kernel de VM, e jamais libera
+execução de Windows PE desconhecido, merge, APK ou OTA. Mesmo o
+resultado semanticamente coerente continua **HOLD / exit 2**.
