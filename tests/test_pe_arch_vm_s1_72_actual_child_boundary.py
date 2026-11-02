@@ -33,31 +33,31 @@ log = Path(__LOG__)
 mode = __MODE__
 args = sys.argv[1:]
 with log.open("a", encoding="utf-8") as f:
-    f.write(json.dumps(args) + "\\n")
+    f.write(json.dumps(args) + "\n")
 if args[:4] != ["--readonly", "--connect", "qemu:///system", "--no-pkttyagent"]:
-    sys.stderr.write("not read-only\\n")
+    sys.stderr.write("not read-only\n")
     raise SystemExit(3)
 cmd = args[4]
 if cmd == "domuuid" and args[5:] == [__DOMAIN__]:
-    sys.stdout.write(__UUID__ + "\\n")
+    sys.stdout.write(__UUID__ + "\n")
 elif cmd == "domstate" and args[5:] == [__DOMAIN__]:
-    sys.stdout.write("running\\n")
+    sys.stdout.write("running\n")
 elif cmd == "dominfo" and args[5:] == [__DOMAIN__]:
-    sys.stdout.write("Name: " + __DOMAIN__ + "\\nUUID: " + __UUID__
-                     + "\\nState: running\\n")
+    sys.stdout.write("Name: " + __DOMAIN__ + "\nUUID: " + __UUID__
+                     + "\nState: running\n")
 elif cmd == "guestinfo" and args[5:] == [__DOMAIN__, "--os"]:
     if mode == "deny_guestinfo":
-        sys.stderr.write("read-only guest agent unsupported\\n")
+        sys.stderr.write("read-only guest agent unsupported\n")
         raise SystemExit(1)
     if mode == "oversized_guestinfo":
         sys.stdout.write("A" * 9000)
         raise SystemExit(0)
     ident = "ubuntu" if mode == "wrong_guest_os" else "arch"
-    sys.stdout.write("os.id : " + ident + "\\nos.name : Arch Linux\\n"
-                     "os.kernel-release : 6.17.5-arch1-1\\n"
-                     "os.machine : x86_64\\n")
+    sys.stdout.write("os.id : " + ident + "\nos.name : Arch Linux\n"
+                     "os.kernel-release : 6.17.5-arch1-1\n"
+                     "os.machine : x86_64\n")
 else:
-    sys.stderr.write("forbidden command\\n")
+    sys.stderr.write("forbidden command\n")
     raise SystemExit(4)
 '''
 
