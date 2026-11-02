@@ -95,12 +95,17 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
             # returncode=0 and nonzero CompletedProcess results. A process
             # which created a *different* session/scope remains outside
             # this boundary and still requires independent cleanup review.
+            cleanup_error = None
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # ESRCH means this dedicated process group no longer exists.
                 pass
-            except OSError:
-                pass
+            except OSError as exc:
+                # S1.77: EPERM or any other failure is NOT equivalent to
+                # a cleaned-up process group, even if the direct child
+                # returned 0 and both captured pipes already reached EOF.
+                cleanup_error = exc
             for pipe in (process.stdout, process.stderr):
                 if pipe is not None:
                     pipe.close()
@@ -112,3 +117,7 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
                 except ProcessLookupError:
                     pass
                 process.wait(timeout=3)
+            if cleanup_error is not None:
+                raise BoundedNativeChildError(
+                    "Native child process group cleanup could not be confirmed"
+                ) from cleanup_error
