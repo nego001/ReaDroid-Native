@@ -192,6 +192,50 @@ class BoundedNativeChildContracts(unittest.TestCase):
             timeout=4)
         self.assertEqual(completed.returncode, -signal.SIGTERM)
 
+    def test_ignored_or_custom_sigchld_blocks_launch_before_popen(self):
+        # SIG_IGN can auto-reap a child and free its PGID before killpg.
+        # A custom SIGCHLD callback may reap via waitpid(-1) as well.
+        for disposition in (signal.SIG_IGN, lambda *_: None):
+            with self.subTest(disposition=repr(disposition)):
+                with (mock.patch.object(
+                        bounded.signal, "getsignal", return_value=disposition),
+                      mock.patch.object(bounded.subprocess, "Popen") as start):
+                    with self.assertRaisesRegex(
+                            bounded.BoundedNativeChildError,
+                            "default SIGCHLD"):
+                        self.call("print('NEVER_LAUNCHED')", timeout=4)
+                start.assert_not_called()
+
+    def test_missing_wnowait_capability_blocks_launch_before_popen(self):
+        # Without WNOWAIT the implementation must NOT silently fall back
+        # to Popen.wait() before the killpg boundary.
+        with (mock.patch.object(bounded.os, "WNOWAIT", None),
+              mock.patch.object(bounded.subprocess, "Popen") as start):
+            with self.assertRaisesRegex(
+                    bounded.BoundedNativeChildError,
+                    "Linux non-reaping wait"):
+                self.call("print('NEVER_LAUNCHED')", timeout=4)
+        start.assert_not_called()
+
+    def test_unreadable_sigchld_disposition_blocks_before_popen(self):
+        with (mock.patch.object(
+                bounded.signal, "getsignal", side_effect=OSError("unavailable")),
+              mock.patch.object(bounded.subprocess, "Popen") as start):
+            with self.assertRaisesRegex(
+                    bounded.BoundedNativeChildError,
+                    "SIGCHLD disposition cannot be verified"):
+                self.call("print('NEVER_LAUNCHED')", timeout=4)
+        start.assert_not_called()
+
+    def test_non_linux_environment_blocks_before_popen(self):
+        with (mock.patch.object(bounded.sys, "platform", "darwin"),
+              mock.patch.object(bounded.subprocess, "Popen") as start):
+            with self.assertRaisesRegex(
+                    bounded.BoundedNativeChildError,
+                    "Linux non-reaping wait"):
+                self.call("print('NEVER_LAUNCHED')", timeout=4)
+        start.assert_not_called()
+
     def test_failed_child_return_code_is_preserved_not_success(self):
         result = self.call("import sys;sys.exit(13)")
         self.assertEqual(result.returncode, 13)
