@@ -81,7 +81,10 @@ def _checked_text(data: bytes, label: str) -> str:
         raise HostCaptureError("Invalid UTF-8 from libvirt: " + label) from exc
     if any(ord(c) < 32 and c not in "\n\r\t" for c in result):
         raise HostCaptureError("Control character in libvirt result: " + label)
-    return result.strip()
+    stripped = result.strip()
+    if not stripped:
+        raise HostCaptureError("Empty libvirt query response: " + label)
+    return stripped
 
 
 def _virsh_read(executable: str, verb: str, domain: str) -> str:
@@ -151,11 +154,20 @@ def capture_host_domain(
     info = _virsh_read(executable, "dominfo", domain)
     final_state = _virsh_read(executable, "domstate", domain)
     final_uuid = _virsh_read(executable, "domuuid", domain)
+    # Cross-check dominfo fields against separate libvirt queries. This
+    # prevents a mid-capture name rebind being quietly accepted.
+    info_uuid = re.findall(r"^UUID:\s*(\S+)\s*$", info, flags=re.MULTILINE)
+    info_name = re.findall(r"^Name:\s*(\S+)\s*$", info, flags=re.MULTILINE)
+    info_state = re.findall(r"^State:\s*(\S+)\s*$", info, flags=re.MULTILINE)
     if (initial_uuid != expected_domain_uuid
             or final_uuid != expected_domain_uuid
             or first_state.casefold() != "running"
-            or final_state.casefold() != "running"):
-        raise HostCaptureError("Host domain identity/state changed or was not running")
+            or final_state.casefold() != "running"
+            or info_uuid != [expected_domain_uuid]
+            or info_name != [domain]
+            or [state.casefold() for state in info_state] != ["running"]):
+        raise HostCaptureError(
+            "Host domain identity/state changed or dominfo is inconsistent")
     # This file records the actual virsh stdout, never a PASS boolean or
     # a fictional proof of guest kernel, cgroups or scope cleanup.
     raw = (
