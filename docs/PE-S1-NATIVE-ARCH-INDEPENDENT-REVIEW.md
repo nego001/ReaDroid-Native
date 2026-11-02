@@ -2258,3 +2258,37 @@ não é prova real de que o kernel do host negou sinais durante uma
 execução, e `SIGKILL` aceito também não comprova limpeza em outro
 `systemd scope` ou sessão separada. Um testemunho externo da limpeza
 integral continua obrigatório; estado de release **HOLD**.
+
+
+## PE-S1.78 | Evitar reutilização de PID/PGID durante limpeza
+
+A revisão detectou uma corrida residual no executor PE-S1.69/76/77:
+o código chamava `Popen.wait()` **antes** de `killpg()`. O primeiro
+`wait()` recolhia (reap) o líder da sessão, potencialmente liberando
+seu PID/PGID numérico para reutilização. Uma chamada posterior de
+`killpg(pid, SIGKILL)` podia atingir um grupo que não era mais o grupo
+original do subprocesso. Essa possibilidade é rara, mas deve ser
+evitada num executor cujo objetivo é isolamento.
+
+No Linux, a PE-S1.78 usa `os.waitid(P_PID, pid, WEXITED | WNOHANG |
+WNOWAIT)` com deadline monotônico para **observar a saída do filho
+sem recolher seu PID**. O bloco `finally` envia `SIGKILL` para
+o grupo da sessão dedicada **antes** de `Popen.wait()` recolher
+o líder. O tratamento fail-closed de erros diferentes de `ESRCH`
+da PE-S1.77 permanece em vigor.
+
+Testes adicionais com processos Python isolados e inofensivos
+verificam (1) que o líder ainda está no estado zombie `Z` durante
+`killpg`, portanto com PID reservado; (2) que fechar ambos os
+pipes não causa encerramento prematuro de um pai ainda ativo; e
+(3) que saída por sinal mantém o código negativo esperado.
+Os testes existentes continuam cobrindo timeout, saída excessiva,
+`EPERM`, `ESRCH` e descendentes na mesma sessão.
+
+**Limites:** `WNOWAIT` requer Linux; o contrato do projeto é Linux
+nativo. Um processo pode sair deliberadamente para outra sessão
+ou unidade `systemd`, e isso continua fora de `killpg`.
+Nem o recebimento de SIGKILL nem a CI garantem limpeza integral
+de todos os escopos, nem comprovam uma VM Arch independente.
+Manter **HOLD / PR Draft**, sem liberação de Windows PE desconhecido,
+merge ou APK/OTA.
