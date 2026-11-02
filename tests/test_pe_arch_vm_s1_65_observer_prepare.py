@@ -15,6 +15,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_65_observer_prepare as prep
 import pe_arch_vm_s1_63_external_observer as external
+import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
 from test_pe_arch_vm_s1_63_external_observer import (
     ExternalObserverSigningTests,
 )
@@ -33,9 +34,33 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
         self.signature = self.fixture.signature_path
         self.pin = {
             key: self.fixture.pins[key] for key in prep.PINS
+            if key in self.fixture.pins
         }
         self.manifest.unlink()
         self.signature.unlink()
+        # Replace the old generic S1.63 placeholder strings with *synthetic*
+        # but correctly structured S1.70/71 records. These are test-only;
+        # no libvirt or kernel attestation is implied.
+        raw_host = semantic_fixtures.first_record().replace(
+            semantic_fixtures.CHALLENGE.encode(),
+            self.pin["expected_challenge"].encode())
+        host_pin = hashlib.sha256(raw_host).hexdigest()
+        raw_guest = semantic_fixtures.second_record(host_pin).replace(
+            semantic_fixtures.CHALLENGE.encode(),
+            self.pin["expected_challenge"].encode())
+        for label, raw in (
+            ("host_vm_launch", raw_host),
+            ("host_guest_kernel", raw_guest),
+        ):
+            target = self.owner / external.OBS_FILES[label]
+            target.write_bytes(raw)
+            target.chmod(0o600)
+        self.pin.update({
+            "expected_domain": semantic_fixtures.DOMAIN,
+            "expected_domain_uuid": semantic_fixtures.UUID,
+            "expected_host_sha256": host_pin,
+            "expected_guest_sha256": hashlib.sha256(raw_guest).hexdigest(),
+        })
 
     def prepare(self, **overrides):
         return prep.prepare_observer_manifest(
@@ -45,6 +70,8 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
         result = self.prepare()
         self.assertEqual(result["status"], prep.STATUS)
         self.assertEqual(result["observation_count"], 4)
+        self.assertTrue(result["two_host_records_semantically_checked"])
+        self.assertTrue(result["independently_pinned_host_record_hashes_matched"])
         self.assertFalse(result["signature_created"])
         self.assertFalse(result["observer_private_key_accessed"])
         self.assertFalse(result["independent_vm_attestation"])
@@ -68,13 +95,63 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
         reviewed = external.verify_external_observer(
             self.owner, self.operator,
             **{
-                **self.pin,
+                **{key: value for key, value in self.pin.items()
+                   if key not in ("expected_domain", "expected_domain_uuid",
+                                  "expected_host_sha256", "expected_guest_sha256")},
                 "expected_manifest_sha256": result["manifest_sha256"],
                 "expected_signature_sha256": hashlib.sha256(
                     self.signature.read_bytes()).hexdigest(),
             })
         self.assertEqual(reviewed["status"], external.STATUS)
         self.assertFalse(reviewed["independent_vm_attestation"])
+
+    def test_old_generic_text_logs_rejected_even_with_new_hash_pins(self):
+        # The previous S1.65 accepted generic one-line 'observations'.
+        # Signing those strings must no longer pass the stricter gate.
+        first = self.owner / external.OBS_FILES["host_vm_launch"]
+        first.write_bytes(b"SYNTHETIC HOST host_vm_launch: NO VM WAS EXECUTED\\n")
+        first.chmod(0o600)
+        with self.assertRaises(prep.ObserverPreparationError):
+            self.prepare(expected_host_sha256=hashlib.sha256(
+                first.read_bytes()).hexdigest())
+        self.assertFalse(self.manifest.exists())
+
+    def test_wrong_pinned_domain_and_uuid_block_manifest(self):
+        for key, value in (
+            ("expected_domain", "other-reviewer-vm"),
+            ("expected_domain_uuid", "11111111-1111-4111-8111-111111111111"),
+        ):
+            with self.subTest(key=key), self.assertRaises(
+                    prep.ObserverPreparationError):
+                self.prepare(**{key: value})
+            self.assertFalse(self.manifest.exists())
+
+    def test_wrong_guest_sha_blocks_manifest_before_signature(self):
+        with self.assertRaises(prep.ObserverPreparationError):
+            self.prepare(expected_guest_sha256="f" * 64)
+        self.assertFalse(self.manifest.exists())
+        self.assertFalse(self.signature.exists())
+
+    def test_forged_guest_claim_rejected_even_after_hash_update(self):
+        second = self.owner / external.OBS_FILES["host_guest_kernel"]
+        changed = second.read_bytes().replace(
+            b"independent_vm_attestation=false",
+            b"independent_vm_attestation=true")
+        second.write_bytes(changed)
+        second.chmod(0o600)
+        with self.assertRaises(prep.ObserverPreparationError):
+            self.prepare(expected_guest_sha256=hashlib.sha256(changed).hexdigest())
+        self.assertFalse(self.manifest.exists())
+
+    def test_rehashed_parsed_guest_mismatch_cannot_enter_manifest(self):
+        second = self.owner / external.OBS_FILES["host_guest_kernel"]
+        changed = second.read_bytes().replace(
+            b"parsed_guest_machine=x86_64", b"parsed_guest_machine=aarch64")
+        second.write_bytes(changed)
+        second.chmod(0o600)
+        with self.assertRaises(prep.ObserverPreparationError):
+            self.prepare(expected_guest_sha256=hashlib.sha256(changed).hexdigest())
+        self.assertFalse(self.manifest.exists())
 
     def test_existing_manifest_remains_unchanged_and_refused(self):
         first = self.prepare()
