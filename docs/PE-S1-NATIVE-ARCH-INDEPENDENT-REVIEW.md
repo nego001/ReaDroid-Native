@@ -2207,3 +2207,30 @@ O código não autentica os dois registros de seccomp/cgroups e
 limpeza de escopos, não mede um kernel de VM, e jamais libera
 execução de Windows PE desconhecido, merge, APK ou OTA. Mesmo o
 resultado semanticamente coerente continua **HOLD / exit 2**.
+
+
+## PE-S1.76 | Limpeza da sessão nativa mesmo após saída normal
+
+Uma revisão do executor limitado PE-S1.69 revelou um caminho concreto de
+vazamento de processo: antes, `run_bounded_native()` encerrava o grupo de
+processos em erro, timeout ou excesso de saída, mas **não** após a saída
+normal do comando principal. Se um filho criasse um descendente que fechasse
+`stdout` e `stderr`, o comando principal podia encerrar com código
+zero enquanto o descendente continuava vivo na mesma sessão.
+
+A PE-S1.76 passa a enviar `SIGKILL` ao **grupo de processos exclusivo**
+criado por `start_new_session=True` no bloco `finally`, tanto para
+`returncode=0` quanto para retorno não zero ou exceção. Os limites de
+saída, tempo, variáveis de ambiente e execução sem shell continuam iguais.
+Dois testes com **subprocessos Linux reais e inofensivos** criam um
+descendente que apenas dorme, fecha ambos os pipes e verificam sua
+terminação mesmo quando o pai sai normalmente. Nenhum arquivo PE ou VM
+é executado nesses testes.
+
+**Limitação essencial:** um descendente que deliberadamente crie outra
+sessão (`setsid`) ou que seja transferido para um `systemd scope` fora
+desse grupo não pode ser coberto por `killpg`. Portanto, a mudança
+**não** constitui observação independente de limpeza, nem de cgroup,
+seccomp ou kernel. A auditoria real dos escopos e descendentes no host
+do revisor continua obrigatória. A PR segue Draft; nenhuma liberação
+de execução, APK, OTA ou merge é autorizada por esta mudança.
