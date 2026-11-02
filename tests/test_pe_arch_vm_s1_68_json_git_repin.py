@@ -68,7 +68,7 @@ class ParentGitAndJsonStrictnessTests(unittest.TestCase):
                 side_effect=git_results if git_results is not None
                     else [self.git.copy(), self.git.copy()]) as parent,
             mock.patch.object(
-                launcher.subprocess, "run", side_effect=child) as process,
+                launcher.bounded, "run_bounded_native", side_effect=child) as process,
             mock.patch.object(
                 launcher.binding, "verify_launcher_binding",
                 side_effect=strict_verify) as strict,
@@ -170,7 +170,7 @@ class ParentGitAndJsonStrictnessTests(unittest.TestCase):
 
     def test_default_no_execute_does_not_consult_parent_git(self):
         with (mock.patch.object(launcher, "verify_source_checkout_pin") as pin,
-              mock.patch.object(launcher.subprocess, "run") as process):
+              mock.patch.object(launcher.bounded, "run_bounded_native") as process):
             result = self.fixture.call()
         self.assertEqual(result["status"], launcher.PLAN)
         pin.assert_not_called()
@@ -193,7 +193,7 @@ class ParentGitAndJsonStrictnessTests(unittest.TestCase):
             mock.patch.object(
                 launcher, "verify_source_checkout_pin",
                 side_effect=CheckoutPinError("mismatch")),
-            mock.patch.object(launcher.subprocess, "run") as process,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as process,
             redirect_stdout(stdout), redirect_stderr(stderr),
         ):
             status = launcher.main(args)
