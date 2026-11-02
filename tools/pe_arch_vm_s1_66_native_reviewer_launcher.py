@@ -26,9 +26,11 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from pe_arch_vm_checkout_pin import COMMIT_SHA
+from pe_arch_vm_checkout_pin import (
+    COMMIT_SHA, verify_source_checkout_pin, CheckoutPinError,
+)
 from pe_arch_vm_evidence import SOURCE_FILES, require_reviewer_challenge
-from pe_arch_vm_receipt_verify import _read_private_receipt
+from pe_arch_vm_receipt_verify import _read_private_receipt, _no_duplicate_keys
 from pe_nofollow_paths import open_absolute_directory_nofollow
 import pe_arch_vm_s1_58_preflight as preflight
 from pe_arch_vm_gate import ArchVmUnavailable
@@ -43,6 +45,25 @@ LOCAL_DONE = "LOCAL_PE_S1_66_SYNTHETIC_NATIVE_RECEIPT_NOT_VM_ATTESTATION"
 REJECTED = "REJECTED_PE_S1_66_NATIVE_ACCEPTANCE_NOT_HOMOLOGATED"
 MAX_STDOUT = 1024 * 1024
 MAX_STDERR = 8192
+
+
+# PE-S1.68: recheck the actual local Git worktree from the reviewer launcher,
+# independently of the native child\'s self-reported checkout summary.
+def _parent_checkout_pin(expected_source_commit: str) -> dict:
+    observed = verify_source_checkout_pin(
+        SOURCE_ROOT, expected_source_commit, SOURCE_FILES)
+    expected = {
+        "status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
+        "expected_commit": expected_source_commit,
+        "checked_manifest_entries": len(SOURCE_FILES),
+        "worktree_status_clean": True,
+        "git_authorship_or_signature_verified": False,
+        "native_vm_or_kernel_verified": False,
+    }
+    if observed != expected:
+        raise ReviewerLaunchError(
+            "Parent-side source Git verification contradicted the checkout pin")
+    return observed
 
 
 class ReviewerLaunchError(RuntimeError):
@@ -141,6 +162,10 @@ def review_native_acceptance(
                 or readiness.get("apk_or_ota_publication_authorized") is not False):
             raise ReviewerLaunchError("Native preflight output contradicted security contract")
 
+        # Independent of the child process, pin the local checkout before
+        # native execution and compare it again after receipt verification.
+        checkout_before = _parent_checkout_pin(expected_source_commit)
+
         argv = [
             sys.executable, "-B", str(ACCEPTANCE),
             "--ghidra-home", str(home),
@@ -168,7 +193,12 @@ def review_native_acceptance(
                 len(run.stderr) > MAX_STDERR):
             raise ReviewerLaunchError(
                 "Native acceptance refused or output exceeded strict bounds")
-        result = json.loads(run.stdout.decode("utf-8"))
+        # Duplicate JSON keys and nonfinite literals can make one successful
+        # response mean different things to different downstream parsers.
+        result = json.loads(
+            run.stdout.decode("utf-8"), object_pairs_hook=_no_duplicate_keys,
+            parse_constant=lambda _: (_ for _ in ()).throw(
+                ReviewerLaunchError("Nonfinite native acceptance stdout")))
         if (not isinstance(result, dict)
                 or result.get("status") != "PASS_PE_S1_5_ARCH_VM"
                 or result.get("windows_binary_executed") is not False
@@ -197,7 +227,10 @@ def review_native_acceptance(
         if actual != result["local_receipt"]["receipt_sha256"]:
             raise ReviewerLaunchError("Local receipt hash differs from runner record")
         # Check exact hash binding/challenge, not only supplied stdout.
-        parsed = json.loads(raw.decode("utf-8"))
+        parsed = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_no_duplicate_keys,
+            parse_constant=lambda _: (_ for _ in ()).throw(
+                ReviewerLaunchError("Nonfinite native receipt")))
         if (not isinstance(parsed, dict)
                 or parsed.get("reviewer_challenge") != reviewer_challenge
                 or parsed.get("windows_executable_launched") is not False):
@@ -223,9 +256,15 @@ def review_native_acceptance(
                 or verified.get("unknown_windows_pe_execution_authorized") is not False
                 or verified.get("apk_or_ota_publication_authorized") is not False):
             raise ReviewerLaunchError("Full receipt verifier contradicted HOLD")
+        checkout_after = _parent_checkout_pin(expected_source_commit)
+        if (checkout_after != checkout_before
+                or result["local_source_checkout_pin"] != checkout_after):
+            raise ReviewerLaunchError(
+                "Child Git report diverged from independently checked parent worktree")
     except (OSError, ValueError, TypeError, KeyError, UnicodeError,
             OverflowError, RecursionError, subprocess.TimeoutExpired,
             preflight.NativePreflightError, ReceiptReviewError,
+            CheckoutPinError,
             binding.BindingError) as exc:
         raise ReviewerLaunchError(
             "Native synthetic acceptance refused; never interpret as VM attestation"
