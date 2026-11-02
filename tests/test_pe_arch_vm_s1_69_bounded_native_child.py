@@ -6,12 +6,14 @@ All child code uses Python -I -B with fixed test-only statements.
 from __future__ import annotations
 
 import os
+import errno
 import signal
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
+from unittest import mock
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -128,6 +130,29 @@ class BoundedNativeChildContracts(unittest.TestCase):
 
     def test_nonzero_parent_exit_kills_background_session_descendant(self):
         self._assert_session_descendant_does_not_survive(parent_exit=13)
+
+    def test_killpg_permission_error_must_block_success(self):
+        # Zero exit is not proof of cleanup if SIGKILL was denied.
+        with mock.patch.object(
+                bounded.os, "killpg",
+                side_effect=PermissionError(errno.EPERM, "not permitted")
+        ) as signal_group:
+            with self.assertRaisesRegex(
+                    bounded.BoundedNativeChildError,
+                    "process group cleanup could not be confirmed"):
+                self.call("print('SUCCESS_FROM_CHILD')", timeout=4)
+        signal_group.assert_called_once()
+
+    def test_absent_group_esrch_does_not_falsely_fail(self):
+        # ESRCH means the isolated group already vanished.
+        with mock.patch.object(
+                bounded.os, "killpg",
+                side_effect=ProcessLookupError(errno.ESRCH, "no such process group")
+        ) as signal_group:
+            finished = self.call("print('EXPECTED_EOF')", timeout=4)
+        self.assertEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout.strip(), b"EXPECTED_EOF")
+        signal_group.assert_called_once()
 
     def test_failed_child_return_code_is_preserved_not_success(self):
         result = self.call("import sys;sys.exit(13)")
