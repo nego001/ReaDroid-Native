@@ -1593,7 +1593,11 @@ python3 -B tools/pe_arch_vm_s1_65_observer_prepare.py \
   --expected-witness-signers-sha256 "$PIN_WITNESS_PUBLIC_KEY" \
   --expected-observer-id "$OBSERVER_ID" \
   --expected-reviewer-id "$REVIEWER_ID" \
-  --expected-witness-id "$WITNESS_ID"
+  --expected-witness-id "$WITNESS_ID" \
+  --expected-domain "$REVIEWER_OWNED_DOMAIN_NAME" \
+  --expected-domain-uuid "$EXTERNALLY_PINNED_DOMAIN_UUID" \
+  --expected-host-sha256 "$PIN_PRIOR_HOST_RECORD" \
+  --expected-guest-sha256 "$PIN_GUEST_RECORD"
 ```
 
 O resultado de preparação é
@@ -2130,3 +2134,38 @@ da PE-S1.65/63 não devem ser substituídos por este relatório parcial.
 **CI:** 16 cenários sintéticos em Ubuntu e Arch userspace. Nenhuma
 VM Arch independente é inicializada, e nenhum libvirt é consultado
 por esta revisão. A PR permanece Draft e o gate de produção em HOLD.
+
+
+## PE-S1.74 | Manifesto externo exige a revisão semântica PE-S1.73
+
+A auditoria encontrou uma falha de fluxo concreta: a implementação
+original da PE-S1.65 gerava um manifesto assinável para quatro arquivos
+de texto privados **mesmo quando o conteúdo dos dois primeiros não
+respeitava o formato esperado de S1.70/S1.71**. A PE-S1.73 fazia a
+conferência offline, mas esse passo era independente e podia ser
+omitido. Uma assinatura Ed25519 sobre um hash não torna conteúdo
+semântico ou dados fabricados verdadeiros.
+
+**Correção obrigatória:** `prepare_observer_manifest()` e a CLI
+PE-S1.65 agora exigem quatro pins adicionais, obtidos de forma
+independente pelo revisor: `expected_domain`,
+`expected_domain_uuid`, `expected_host_sha256` e
+`expected_guest_sha256`. Antes de preparar o manifesto, a ferramenta
+chama `review_two_records()` da PE-S1.73. Exige as duas provas privadas
+com metadados coerentes, hash original do host vinculado ao registro
+do guest, challenge e commit esperados, marcações explícitas de
+não-homologação, e a conferência de que os arquivos incluídos no
+manifesto mantêm os hashes externos. Qualquer erro resulta em
+`REJECTED_PE_S1_65_UNSAFE_OBSERVER_HANDOFF`, sem criar manifesto nem
+assinatura. Essa alteração é uma **mudança de contrato intencional**;
+invocações antigas sem os quatro parâmetros devem ser atualizadas,
+não devem receber fallback.
+
+Isso **não** garante que o host seja independente, não transforma o
+QEMU Guest Agent em medição de kernel e não autentica os dois registros
+ainda pendentes de seccomp/cgroups e encerramento dos escopos. A
+PE-S1.65 ainda apenas prepara um manifesto **não assinado**, com
+`independent_vm_attestation=false` e release bloqueada.
+Os testes usam registros estruturados **sintéticos**, não um host
+libvirt efetivamente observado. Não fazer merge nem liberar APK,
+OTA ou a execução de PE desconhecido com base nessa CI.
