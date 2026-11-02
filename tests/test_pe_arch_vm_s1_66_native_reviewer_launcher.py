@@ -70,8 +70,11 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             "windows_binary_executed": False,
             "local_receipt": local,
             "local_source_checkout_pin": {
+                "status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
                 "expected_commit": COMMIT,
+                "checked_manifest_entries": len(launcher.SOURCE_FILES),
                 "worktree_status_clean": True,
+                "git_authorship_or_signature_verified": False,
                 "native_vm_or_kernel_verified": False,
             },
         }
@@ -86,6 +89,16 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             mock.patch.object(
                 launcher.subprocess, "run",
                 side_effect=self._fake_run if fake is None else fake) as run,
+            mock.patch.object(
+                launcher, "verify_source_checkout_pin",
+                return_value={
+                    "status": "LOCAL_GIT_CHECKOUT_PIN_MATCHED",
+                    "expected_commit": COMMIT,
+                    "checked_manifest_entries": len(launcher.SOURCE_FILES),
+                    "worktree_status_clean": True,
+                    "git_authorship_or_signature_verified": False,
+                    "native_vm_or_kernel_verified": False,
+                }) as parent_git,
             mock.patch.object(
                 launcher.binding, "verify_launcher_binding",
                 side_effect=lambda *args, **kwargs: {
