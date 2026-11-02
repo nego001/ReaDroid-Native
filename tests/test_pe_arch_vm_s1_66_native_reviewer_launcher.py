@@ -87,7 +87,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                 launcher.preflight, "native_readiness",
                 return_value=self.ready if ready is None else ready) as pre,
             mock.patch.object(
-                launcher.subprocess, "run",
+                launcher.bounded, "run_bounded_native",
                 side_effect=self._fake_run if fake is None else fake) as run,
             mock.patch.object(
                 launcher, "verify_source_checkout_pin",
@@ -120,7 +120,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
     def test_default_plan_does_not_probe_vm_or_launch_subprocess(self):
         with (
             mock.patch.object(launcher.preflight, "native_readiness") as pre,
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
         ):
             result = self.call()
         pre.assert_not_called()
@@ -144,14 +144,15 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             expected_source_commit=COMMIT, reviewer_challenge=CHALLENGE)
         self.assertEqual(run.call_count, 1)
         args = run.call_args.args[0]
-        self.assertEqual(args[:3], [
-            sys.executable, "-B", str(launcher.ACCEPTANCE)])
+        self.assertEqual(args[:4], [
+            sys.executable, "-I", "-B", str(launcher.ACCEPTANCE)])
         self.assertIn("--reviewer-pinned-checkout", args)
         self.assertEqual(args[args.index("--expected-source-commit")+1], COMMIT)
         self.assertEqual(args[args.index("--reviewer-challenge")+1], CHALLENGE)
         self.assertEqual(args[args.index("--evidence-output")+1], str(self.receipt))
-        self.assertTrue(run.call_args.kwargs["close_fds"])
-        self.assertIs(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        # PE-S1.69 helper itself owns pipes, DEVNULL and process session.
+        self.assertEqual(run.call_args.kwargs["max_stdout"], launcher.MAX_STDOUT)
+        self.assertEqual(run.call_args.kwargs["max_stderr"], launcher.MAX_STDERR)
         self.assertLessEqual(run.call_args.kwargs["timeout"], 1800)
 
     def test_environment_disables_module_or_git_redirection(self):
@@ -174,7 +175,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             mock.patch.object(launcher.preflight, "native_readiness",
                               side_effect=launcher.preflight.NativePreflightError(
                                   "not a VM")) as pre,
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
         ):
             with self.assertRaises(launcher.ReviewerLaunchError):
                 self.call(execute_synthetic_native_acceptance=True)
@@ -188,7 +189,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                               return_value={
                                   **self.ready, "independent_vm_attestation": True,
                               }),
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
         ):
             with self.assertRaises(launcher.ReviewerLaunchError):
                 self.call(execute_synthetic_native_acceptance=True)
@@ -201,7 +202,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                                   **self.ready,
                                   "source_files_rechecked": 1,
                               }),
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
         ):
             with self.assertRaises(launcher.ReviewerLaunchError):
                 self.call(execute_synthetic_native_acceptance=True)
@@ -218,7 +219,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             with (
                 self.subTest(bad=bad),
                 mock.patch.object(launcher.preflight, "native_readiness") as pre,
-                mock.patch.object(launcher.subprocess, "run") as run,
+                mock.patch.object(launcher.bounded, "run_bounded_native") as run,
             ):
                 with self.assertRaises(launcher.ReviewerLaunchError):
                     self.call(**bad)
@@ -229,7 +230,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
         self.receipt.write_text("existing\n", encoding="ascii")
         with (
             mock.patch.object(launcher.preflight, "native_readiness") as pre,
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
         ):
             with self.assertRaises(launcher.ReviewerLaunchError):
                 self.call(execute_synthetic_native_acceptance=True)
@@ -322,7 +323,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
         out, err = StringIO(), StringIO()
         with (
             redirect_stdout(out), redirect_stderr(err),
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
             mock.patch.object(launcher.preflight, "native_readiness") as pre,
         ):
             code = launcher.main(argv)
@@ -347,7 +348,7 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             mock.patch.object(
                 launcher.preflight, "native_readiness",
                 side_effect=launcher.preflight.NativePreflightError("NOT VM")),
-            mock.patch.object(launcher.subprocess, "run") as run,
+            mock.patch.object(launcher.bounded, "run_bounded_native") as run,
         ):
             code = launcher.main(argv)
         self.assertEqual(code, 2)
