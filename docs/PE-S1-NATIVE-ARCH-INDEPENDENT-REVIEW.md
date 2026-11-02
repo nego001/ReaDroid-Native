@@ -1869,3 +1869,85 @@ analisa PE externo, executa Ghidra ou altera cgroups.
 A existência de isolamento e limites locais ainda **não equivale
 à atestação de uma VM independente**. A PE-S1.57/64 mantém
 a liberação em HOLD; PR #47 permanece Draft, sem merge/APK/OTA.
+
+
+## PE-S1.70 | Captura de uma observação real no host libvirt do revisor
+
+**Problema operacional:** PE-S1.63/65 exigiam quatro logs colhidos pelo
+observador externo, mas não existia ferramenta no projeto capaz de
+consultar sequer a identidade/estado da VM no host independente.
+PE-S1.70 entrega essa primeira captura concreta, **não** outra
+correlação circular de hashes.
+
+`tools/pe_arch_vm_s1_70_readonly_libvirt_host_capture.py` é para ser
+executada **no computador Linux host que o revisor controla e administra**,
+fora da VM de um operador. Precisa de libvirt QEMU acessível por
+`qemu:///system`, virsh instalado, e uma VM **previamente iniciada por
+ação do próprio revisor**. Nunca executa `virsh start`, `shutdown`,
+`destroy`, comandos de monitor QEMU, guest agent ou Windows PE.
+
+A captura exige nome do domínio e **UUID previamente fixado em canal
+independente**. Usa apenas cinco chamadas `virsh --readonly --connect
+qemu:///system --no-pkttyagent`: `domuuid`, `domstate`, `dominfo`,
+`domstate`, `domuuid`. Confere UUID, nome e estado `running`
+de modo consistente, limita saída em tempo de leitura (8 KiB por
+consulta) e limita duração de cada comando a 15 segundos. O arquivo
+resultante, `reviewer-host-vm-launch.txt`, é publicado **uma única
+vez**, em pasta 0700, arquivo 0600, sem sobrescrita ou assinatura.
+O SHA-256 é apresentado ao observador para pin externo.
+
+### Primeiro, plano que NÃO consulta host
+
+```bash
+python3 -B tools/pe_arch_vm_s1_70_readonly_libvirt_host_capture.py \
+  --observer-dir "$EXTERNAL_OBSERVER_PRIVATE_DIR" \
+  --domain "$REVIEWER_OWNED_DOMAIN_NAME" \
+  --expected-domain-uuid "$EXTERNALLY_PINNED_DOMAIN_UUID" \
+  --expected-source-commit "$REVIEWER_PINNED_COMMIT" \
+  --reviewer-challenge "$REVIEWER_CHALLENGE"
+```
+
+O modo padrão retorna `PE_S1_70_HOST_CAPTURE_NOT_STARTED`.
+Para fazer as cinco **consultas de leitura**, acrescente no mesmo
+comando `--capture-from-independent-host`. A pasta privada
+`$EXTERNAL_OBSERVER_PRIVATE_DIR` deve existir antes. Se a
+VM estiver parada, os dados discordarem, o virsh não existir
+ou houver um arquivo anterior, o programa recusa sem criar
+um registro de sucesso. O `exit 0` de captura comprova
+**somente** que foram lidos dados localmente do libvirt; não
+prova que o computador seja administrado por um terceiro confiável.
+Consulte a documentação de `virsh --readonly`:
+https://www.libvirt.org/manpages/virsh.html
+
+### O que a PE-S1.70 NÃO captura
+
+Ela coleta **somente o primeiro dos quatro arquivos** exigidos
+pelo manifesto PE-S1.65 e pela assinatura PE-S1.63:
+
+- `reviewer-host-vm-launch.txt`: leitura local do libvirt,
+  com UUID e estado da VM, não uma prova de como a VM foi iniciada.
+- `reviewer-host-guest-kernel.txt`: **NÃO criado**.
+  O revisor ainda precisa de observação externa verificável
+  do kernel, não apenas uma declaração do guest.
+- `reviewer-host-seccomp-cgroups.txt`: **NÃO criado**.
+  Precisam existir observações independentes das proteções reais.
+- `reviewer-host-scope-cleanup.txt`: **NÃO criado**.
+  A limpeza de systemd scopes/descendentes requer monitoramento
+  independente antes e depois do teste.
+
+O nome histórico `host_vm_launch` do primeiro arquivo é
+mantido para compatibilidade com S1.63, **sem** alegar que
+a captura documenta um evento de boot ou atesta origem da VM.
+
+Somente após o revisor obter de verdade as **outras três evidências**,
+avaliá-las, fixá-las por canal próprio, gerar manifesto PE-S1.65
+e assinar via PE-S1.63, pode executar a correlação PE-S1.64.
+Mesmo esta última permanece `HOLD`: aprovação de release, merge,
+APK/OTA e execução de PE desconhecido **não são autorizados**.
+
+**CI:** 21 testes com respostas de virsh *inteiramente simuladas*.
+Verificam modo padrão sem ações, apenas as cinco consultas permitidas
+com flag read-only, cross-check do UUID/nome/estado, comportamento
+sem virsh, entrada injetada, timeouts, bytes de controle, saída grande,
+publicação sem sobrescrita e recusa em caso de evidências assinadas.
+A CI Ubuntu/Arch **não se conecta a um host libvirt real**.
