@@ -1820,3 +1820,52 @@ externa do host/kernel/hipervisor, observador ou procedência das
 medições. Todas as flags de liberação permanecem `false`, a
 PR #47 permanece Draft e a revisão real em VM Arch nativa
 independente segue como condição pendente.
+
+
+## PE-S1.69 | Python isolado e captura limitada durante a aceitação
+
+A revisão do lançador PE-S1.66 encontrou uma falha de recursos:
+`subprocess.run(capture_output=True)` lê toda a saída stdout/stderr
+antes de validar o tamanho máximo. Um processo travado ou com
+saída excessiva poderia causar consumo de memória antes da recusa.
+
+**Correções implementadas:**
+
+- O lançador usa **`python -I -B`** para executar somente
+  `tools/pe_arch_vm_validation.py`, protegendo contra
+  `PYTHONPATH`, Python user site e opções de ambiente ignoradas
+  pelo Python isolado. Como `-I` também remove a pasta do script
+  de `sys.path`, a própria entrada do validador restaura **apenas**
+  o diretório local `tools/`, sob o checkout verificado pela PE-S1.68.
+- O módulo `tools/pe_arch_vm_s1_69_bounded_native_child.py`
+  troca a coleta ilimitada por leitura **não bloqueante e simultânea**
+  dos dois pipes, com limites rígidos de **1 MiB em stdout**
+  e **8 KiB em stderr**. Ao atingir o limite mais um byte, recusa
+  imediatamente, sem carregar um fluxo arbitrariamente grande
+  na memória.
+- Cada subprocesso inicia numa **sessão própria**, com stdin
+  em `DEVNULL`. Em estouro, timeout ou falha, a rotina tenta
+  interromper o grupo dessa sessão e aguarda o processo principal,
+  sem matar o Python do revisor. Isso **não prova** limpeza
+  de escopos systemd fora dessa sessão; o mecanismo PE-S1.5
+  continua responsável por verificação de cgroups e descendentes.
+- O limite total é de **1800 segundos** e a execução continua
+  exclusivamente manual, no guest nativo descartável aprovado
+  pelo revisor. A CLI padrão permanece **sem execução**.
+- Os status de resultado local NÃO mudam: `LOCAL_*`,
+  `independent_vm_attestation=false`,
+  `unknown_windows_pe_execution_authorized=false`,
+  `apk_or_ota_publication_authorized=false`.
+
+**14 testes PE-S1.69:** executam somente subprocessos Python
+de teste, com código fixo e inofensivo, para verificar pipe
+stdout/stderr, limites exatos, respostas grandes, timeout, pipe
+herdado por descendentes, erro de processo, isolamento de sessão,
+stdin e rejeição de parâmetros; um teste executa somente
+`pe_arch_vm_validation.py --help` em Python isolado e recusa
+qualquer quebra dos imports. Nenhum destes testes inicia VM Arch,
+analisa PE externo, executa Ghidra ou altera cgroups.
+
+A existência de isolamento e limites locais ainda **não equivale
+à atestação de uma VM independente**. A PE-S1.57/64 mantém
+a liberação em HOLD; PR #47 permanece Draft, sem merge/APK/OTA.
