@@ -20,6 +20,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_64_external_correlation_hold as final
 import pe_arch_vm_s1_63_external_observer as external
+import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
 import pe_arch_vm_handoff_review as handoff
 from test_pe_arch_vm_s1_62_signed_runtime_hold import (
     SignedRuntimeCombinedReviewTests,
@@ -75,6 +76,30 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
             self.manifest["observations"][label] = {
                 "filename": name, "sha256": hashlib.sha256(content).hexdigest(),
             }
+        # PE-S1.75: the first two records must be STRUCTURED, even when
+        # test keys sign the inventory. The remaining two logs are explicit
+        # synthetic placeholders and do not authenticate seccomp/cleanup.
+        first = (semantic_fixtures.first_record()
+                 .replace(semantic_fixtures.COMMIT.encode(),
+                          self.case.commit.encode())
+                 .replace(semantic_fixtures.CHALLENGE.encode(),
+                          self.case.challenge.encode()))
+        host_sha = hashlib.sha256(first).hexdigest()
+        second = (semantic_fixtures.second_record(host_sha)
+                  .replace(semantic_fixtures.COMMIT.encode(),
+                           self.case.commit.encode())
+                  .replace(semantic_fixtures.CHALLENGE.encode(),
+                           self.case.challenge.encode()))
+        for label, raw in (("host_vm_launch", first),
+                           ("host_guest_kernel", second)):
+            file = self.observer_dir / external.OBS_FILES[label]
+            file.write_bytes(raw)
+            file.chmod(0o600)
+            self.manifest["observations"][label]["sha256"] = (
+                hashlib.sha256(raw).hexdigest())
+        self.external_host_pin = host_sha
+        self.external_guest_pin = hashlib.sha256(second).hexdigest()
+
         self.manifest_file = self.observer_dir / external.MANIFEST_FILE
         self.signature_file = self.observer_dir / external.SIGNATURE_FILE
         self.resign()
@@ -87,6 +112,10 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
             "expected_observer_signers_sha256":
                 hashlib.sha256(allowed.read_bytes()).hexdigest(),
             "expected_observer_id": OBSERVER_ID,
+            "expected_domain": semantic_fixtures.DOMAIN,
+            "expected_domain_uuid": semantic_fixtures.UUID,
+            "expected_host_sha256": self.external_host_pin,
+            "expected_guest_sha256": self.external_guest_pin,
         }
 
     def resign(self):
@@ -121,12 +150,88 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
         self.assertTrue(result["three_distinct_signing_keys_locally_verified"])
         self.assertTrue(result["signed_local_custody_and_runtime_correlated"])
         self.assertTrue(result["external_host_log_hashes_and_signature_correlated"])
+        self.assertTrue(result["post_signature_host_record_semantics_checked"])
+        self.assertTrue(result["host_guest_sha256_externally_correlated"])
         self.assertFalse(result["observer_capture_independently_authenticated"])
         self.assertFalse(result["hypervisor_provenance_independently_verified"])
         self.assertFalse(result["native_kernel_execution_independently_verified"])
         self.assertFalse(result["independent_vm_attestation"])
         self.assertFalse(result["release_authorized"])
         self.assertFalse(result["apk_or_ota_publication_authorized"])
+
+    def reseal_guest(self, raw: bytes):
+        """Re-sign new guest log with the real disposable test key."""
+        file = self.observer_dir / external.OBS_FILES["host_guest_kernel"]
+        file.write_bytes(raw)
+        file.chmod(0o600)
+        self.manifest["observations"]["host_guest_kernel"]["sha256"] = (
+            hashlib.sha256(raw).hexdigest())
+        self.resign()
+        self.pins["expected_observer_manifest_sha256"] = hashlib.sha256(
+            self.manifest_file.read_bytes()).hexdigest()
+        self.pins["expected_observer_signature_sha256"] = hashlib.sha256(
+            self.signature_file.read_bytes()).hexdigest()
+        self.pins["expected_guest_sha256"] = hashlib.sha256(raw).hexdigest()
+
+    def verify_external_signature_only(self):
+        """Deliberately show that S1.63 does not claim semantic validity."""
+        return final.external.verify_external_observer(
+            self.observer_dir, self.owner,
+            expected_manifest_sha256=self.pins["expected_observer_manifest_sha256"],
+            expected_signature_sha256=self.pins["expected_observer_signature_sha256"],
+            expected_observer_signers_sha256=self.pins["expected_observer_signers_sha256"],
+            expected_reviewer_signers_sha256=self.pins["expected_reviewer_signers_sha256"],
+            expected_witness_signers_sha256=self.pins["expected_signers_sha256"],
+            expected_observer_id=self.pins["expected_observer_id"],
+            expected_reviewer_id=self.pins["expected_reviewer_id"],
+            expected_witness_id=self.pins["expected_witness_id"],
+            expected_source_commit=self.case.commit,
+            expected_challenge=self.case.challenge,
+            expected_request_sha256=self.pins["expected_request_sha256"],
+            expected_custody_sha256=self.pins["expected_custody_sha256"],
+            expected_receipt_sha256=self.pins["expected_receipt_sha256"])
+
+    def test_resigned_generic_guest_text_is_crypto_valid_but_not_three_way(self):
+        self.reseal_guest(b"TEST ONLY | host_guest_kernel | NO VM OBSERVED\\n")
+        self.assertEqual(self.verify_external_signature_only()["status"],
+                         external.STATUS)
+        with self.assertRaises(final.ThreeWayReviewError):
+            self.run_review()
+
+    def test_resigned_nonarch_os_is_crypto_valid_but_aggregate_rejected(self):
+        path = self.observer_dir / external.OBS_FILES["host_guest_kernel"]
+        raw = (path.read_bytes()
+               .replace(b"os.id : arch", b"os.id : ubuntu")
+               .replace(b"parsed_guest_os_id=arch",
+                        b"parsed_guest_os_id=ubuntu"))
+        self.reseal_guest(raw)
+        self.assertEqual(self.verify_external_signature_only()["status"],
+                         external.STATUS)
+        with self.assertRaises(final.ThreeWayReviewError):
+            self.run_review()
+
+    def test_resigned_guest_attestation_claim_rejected_after_crypto(self):
+        path = self.observer_dir / external.OBS_FILES["host_guest_kernel"]
+        self.reseal_guest(path.read_bytes().replace(
+            b"independent_vm_attestation=false",
+            b"independent_vm_attestation=true"))
+        self.assertEqual(self.verify_external_signature_only()["status"],
+                         external.STATUS)
+        with self.assertRaises(final.ThreeWayReviewError):
+            self.run_review()
+
+    def test_new_guest_sha_pin_mismatch_rejected_after_valid_signature(self):
+        with self.assertRaises(final.ThreeWayReviewError):
+            self.run_review(expected_guest_sha256="f" * 64)
+
+    def test_bad_signature_never_reaches_semantic_gate(self):
+        self.signature_file.write_bytes(
+            self.signature_file.read_bytes().replace(b"BEGIN", b"BADDD", 1))
+        bad_sig_hash = hashlib.sha256(self.signature_file.read_bytes()).hexdigest()
+        with mock.patch.object(final.semantic, "review_two_records") as gate:
+            with self.assertRaises(final.ThreeWayReviewError):
+                self.run_review(expected_observer_signature_sha256=bad_sig_hash)
+        gate.assert_not_called()
 
     def test_external_manifest_pin_mismatch_rejected(self):
         with self.assertRaises(final.ThreeWayReviewError):
