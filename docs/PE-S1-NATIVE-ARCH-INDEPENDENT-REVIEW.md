@@ -2076,3 +2076,57 @@ libvirt de revisor realmente controlado por terceiro e observação
 separada das proteções, a decisão permanece **HOLD**. Não alterar
 a PR Draft, não efetuar merge, release, APK/OTA ou execução de PE
 externo.
+
+
+## PE-S1.73 | Revisão offline dos dois primeiros registros sem promover autodeclarações
+
+Antes de preparar o manifesto externo PE-S1.65, o revisor pode conferir
+`reviewer-host-vm-launch.txt` (PE-S1.70) e
+`reviewer-host-guest-kernel.txt` (PE-S1.71). A PE-S1.73 não faz coleta:
+**não chama virsh, libvirt, QEMU nem processos do guest**. Faz somente leitura
+dos dois arquivos privados já existentes, exige hashes SHA-256 previamente
+fixados pelo revisor, e recusa arquivos substituídos, permissões públicas,
+symlinks, metadados trocados, formatos inesperados ou alterações persistentes.
+
+O verificador compara a identidade do domínio, UUID, commit completo,
+desafio do revisor, URI e modo readonly, estados `running`, hash
+`prior_host_record_sha256` da PE-S1.71 contra os bytes da PE-S1.70
+e os campos extraídos `os.id`, `os.kernel-release`, `os.machine`
+com a resposta original do QEMU Guest Agent. Confere ainda os marcadores
+explícitos `independent_vm_attestation=false` e
+`release_authorized=false`, recusando tentativa de reclassificação.
+O horário declarado nos arquivos continua **não atestado**.
+
+Exemplo (executar no host ou computador controlado pelo revisor, com
+os dois arquivos já genuinamente coletados, **não** com provas fabricadas):
+
+```bash
+python3 -B tools/pe_arch_vm_s1_73_two_record_review.py \
+  --observer-dir "$EXTERNAL_OBSERVER_PRIVATE_DIR" \
+  --domain "$REVIEWER_OWNED_DOMAIN_NAME" \
+  --expected-domain-uuid "$EXTERNALLY_PINNED_DOMAIN_UUID" \
+  --expected-source-commit "$REVIEWER_PINNED_COMMIT" \
+  --reviewer-challenge "$REVIEWER_CHALLENGE" \
+  --expected-host-sha256 "$PIN_PRIOR_HOST_RECORD" \
+  --expected-guest-sha256 "$PIN_GUEST_RECORD"
+```
+
+**O comando sempre termina com exit code 2**, seja `HOLD_PE_S1_73_...`
+com pares semanticamente coerentes, seja `REJECTED_PE_S1_73_...`
+com inconsistências. Um HOLD não é uma execução aprovada nem falha
+de parsing. A saída de sucesso significa apenas que os bytes
+correspondem aos hashes esperados e têm metadados coerentes.
+O código não publica nem reescreve nenhum arquivo, cria nenhuma
+assinatura, nem libera merge, APK/OTA ou Windows PE desconhecido.
+
+A PE-S1.73 **não verifica** a independência do administrador do host,
+não mede o kernel do guest e não valida `seccomp`/`cgroups` do guest
+ou o término de escopos. Os registros
+`reviewer-host-seccomp-cgroups.txt` e
+`reviewer-host-scope-cleanup.txt` seguem sem verificação externa
+por esta etapa. O manifesto de quatro observações e as assinaturas
+da PE-S1.65/63 não devem ser substituídos por este relatório parcial.
+
+**CI:** 16 cenários sintéticos em Ubuntu e Arch userspace. Nenhuma
+VM Arch independente é inicializada, e nenhum libvirt é consultado
+por esta revisão. A PR permanece Draft e o gate de produção em HOLD.
