@@ -785,12 +785,15 @@ jobs:
       - name: Install official Arch packages
         run: |
           set -euo pipefail
-          pacman -Syu --noconfirm --needed python bubblewrap util-linux libseccomp openssh
+          pacman -Syu --noconfirm --needed python bubblewrap util-linux libseccomp openssh git
           python --version
           bwrap --version
           # PE-S1.62 uses genuine temporary Ed25519 keys; never silently
           # skip the suite because OpenSSH is missing from Arch userspace.
           command -v ssh-keygen
+          # PE-S1.68 must run REAL local Git integration tests, not skip.
+          command -v git
+          git --version
           cat /etc/os-release
       - name: Run profile and resource policy contracts as unprivileged user
         run: |
