@@ -55,7 +55,7 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         }[command]
         return subprocess.CompletedProcess(argv, 0, stdout=data, stderr=b"")
 
-    def run(self, *, fake=None, found="/usr/bin/virsh", **changes):
+    def capture(self, *, fake=None, found="/usr/bin/virsh", **changes):
         with (
             mock.patch.object(
                 capture.shutil, "which", return_value=found) as which,
@@ -84,7 +84,7 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         child.assert_not_called()
 
     def test_real_bounded_virsh_readonly_five_calls_publish_one_log(self):
-        result, which, child = self.run()
+        result, which, child = self.capture()
         self.assertEqual(result["status"], capture.CAPTURED)
         self.assertEqual(child.call_count, 5)
         self.assertEqual(len(self.calls), 5)
@@ -115,11 +115,11 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         self.assertEqual(set(os.listdir(self.owner)), {self.target.name})
 
     def test_second_capture_refuses_no_overwrite_and_no_new_commands(self):
-        self.run()
+        self.capture()
         first = self.target.read_bytes()
         self.calls.clear()
         with self.assertRaises(capture.HostCaptureError):
-            self.run()
+            self.capture()
         self.assertEqual(self.calls, [])
         self.assertEqual(self.target.read_bytes(), first)
 
@@ -133,7 +133,7 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                     stderr=b"")
             return result
         with self.assertRaises(capture.HostCaptureError):
-            self.run(fake=counterfeit)
+            self.capture(fake=counterfeit)
         self.assertFalse(self.target.exists())
 
     def test_guest_uuid_changes_after_commands_rejected(self):
@@ -148,7 +148,7 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                     stderr=b"")
             return self.fake(argv, **kw)
         with self.assertRaises(capture.HostCaptureError):
-            self.run(fake=switch)
+            self.capture(fake=switch)
         self.assertFalse(self.target.exists())
 
     def test_nonrunning_domain_rejected(self):
@@ -158,7 +158,7 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, b"paused\n", b"")
             return result
         with self.assertRaises(capture.HostCaptureError):
-            self.run(fake=paused)
+            self.capture(fake=paused)
         self.assertFalse(self.target.exists())
 
     def test_domain_stops_after_initial_query_rejected(self):
@@ -170,11 +170,11 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, b"shut off\n", b"")
             return self.fake(argv, **kw)
         with self.assertRaises(capture.HostCaptureError):
-            self.run(fake=stop)
+            self.capture(fake=stop)
 
     def test_virsh_missing_fails_without_files(self):
         with self.assertRaises(capture.HostCaptureError):
-            self.run(found=None)
+            self.capture(found=None)
         self.assertFalse(self.target.exists())
 
     def test_virsh_nonzero_or_stderr_fails_closed(self):
@@ -184,12 +184,12 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                     return subprocess.CompletedProcess(
                         argv, code, b"running\n", stderr)
                 with self.assertRaises(capture.HostCaptureError):
-                    self.run(fake=fail)
+                    self.capture(fake=fail)
                 self.assertFalse(self.target.exists())
 
     def test_virsh_timeout_or_output_limit_refuses(self):
         with self.assertRaises(capture.HostCaptureError):
-            self.run(fake=mock.Mock(
+            self.capture(fake=mock.Mock(
                 side_effect=bounded.BoundedNativeChildError("timeout")))
         self.assertFalse(self.target.exists())
 
@@ -199,14 +199,14 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                 def malformed(argv, **kw):
                     return subprocess.CompletedProcess(argv, 0, raw, b"")
                 with self.assertRaises(capture.HostCaptureError):
-                    self.run(fake=malformed)
+                    self.capture(fake=malformed)
                 self.assertFalse(self.target.exists())
 
     def test_domain_argument_injection_refused_before_host_query(self):
         for name in ("--help", "x;rm -rf /", "x y", "", "../bad", "x\nfoo", "a" * 90):
             with self.subTest(name=name):
                 with self.assertRaises(capture.HostCaptureError):
-                    self.run(domain=name)
+                    self.capture(domain=name)
                 self.assertFalse(self.target.exists())
 
     def test_invalid_pins_refused_before_host_query(self):
@@ -221,31 +221,31 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         ):
             with self.subTest(opts=opts):
                 with self.assertRaises(capture.HostCaptureError):
-                    self.run(**opts)
+                    self.capture(**opts)
                 self.assertFalse(self.target.exists())
 
     def test_folder_not_private_refuses_before_virsh(self):
         self.owner.chmod(0o755)
         with self.assertRaises(capture.HostCaptureError):
-            self.run()
+            self.capture()
         self.assertFalse(self.target.exists())
 
     def test_existing_manifest_prevents_new_host_log(self):
         (self.owner / external.MANIFEST_FILE).write_text("existing",encoding="ascii")
         with self.assertRaises(capture.HostCaptureError):
-            self.run()
+            self.capture()
         self.assertFalse(self.target.exists())
 
     def test_existing_signature_prevents_new_host_log(self):
         (self.owner / external.SIGNATURE_FILE).write_text("existing",encoding="ascii")
         with self.assertRaises(capture.HostCaptureError):
-            self.run()
+            self.capture()
         self.assertFalse(self.target.exists())
 
     def test_existing_dangling_symlink_log_refused(self):
         self.target.symlink_to(self.owner / "missing")
         with self.assertRaises(capture.HostCaptureError):
-            self.run()
+            self.capture()
         self.assertTrue(self.target.is_symlink())
 
     def test_dominfo_inconsistent_identity_rejected(self):
@@ -263,14 +263,14 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                             argv, 0, res.stdout.replace(before, after), b"")
                     return res
                 with self.assertRaises(capture.HostCaptureError):
-                    self.run(fake=inconsistent)
+                    self.capture(fake=inconsistent)
                 self.assertFalse(self.target.exists())
 
     def test_empty_but_nonzero_length_virsh_output_rejected(self):
         def empty(argv, **kw):
             return subprocess.CompletedProcess(argv, 0, b"\n  \r", b"")
         with self.assertRaises(capture.HostCaptureError):
-            self.run(fake=empty)
+            self.capture(fake=empty)
         self.assertFalse(self.target.exists())
 
     def test_cli_no_capture_default_and_explicit_flag(self):
