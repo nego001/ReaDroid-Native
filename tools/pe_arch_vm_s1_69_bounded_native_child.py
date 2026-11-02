@@ -20,11 +20,31 @@ class BoundedNativeChildError(RuntimeError):
     """Native process output, runtime or launch could not be accepted."""
 
 
+def _wait_exited_without_reaping(pid: int, deadline: float) -> None:
+    """Linux: observe direct-child exit while keeping its PID/PGID reserved.
+
+    Calling Popen.wait() before killpg() reaps the session leader and can
+    make its numeric PID/PGID available for reuse by an unrelated process.
+    WNOWAIT observes exit status without reaping; the finally block sends
+    SIGKILL to the dedicated group BEFORE Popen.wait() reaps the leader.
+    This still does not cover descendants which escaped to another session.
+    """
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise BoundedNativeChildError("Native acceptance exceeded deadline")
+        result = os.waitid(
+            os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        if result is not None:
+            return
+        time.sleep(min(0.02, remaining))
+
+
 def run_bounded_native(argv: list[str], *, env: dict[str, str],
                        timeout: float = 1800,
                        max_stdout: int = 1024 * 1024,
                        max_stderr: int = 8192) -> subprocess.CompletedProcess:
-    """Capture bounded bytes from both pipes; terminate session on failure.
+    """Capture bounded bytes; keep leader unreaped until group termination.
 
     Child executable security is NOT established by this function. The argv
     must already be pinned by the caller. The child has its own session so
@@ -80,19 +100,21 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise BoundedNativeChildError("Native acceptance exceeded deadline")
-        exitcode = process.wait(timeout=remaining)
-        return subprocess.CompletedProcess(
-            argv, exitcode, bytes(outputs["stdout"]), bytes(outputs["stderr"]))
+        # Do NOT reap the session leader here. Its PID must stay reserved
+        # until killpg() has completed in finally, preventing PGID reuse.
+        _wait_exited_without_reaping(process.pid, deadline)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         raise BoundedNativeChildError(
             "Native child unavailable or exceeded bounded execution") from exc
     finally:
         if process is not None:
+            # The unreaped direct child keeps its PID/PGID reserved.
             # A child can exit successfully after spawning descendants
             # which close/inherit neither pipe. EOF + parent exit alone
             # DOES NOT prove its session has no surviving subprocesses.
-            # Always retire this dedicated process group, including on
-            # returncode=0 and nonzero CompletedProcess results. A process
+            # Always retire this dedicated process group BEFORE reaping,
+            # including on returncode=0 and nonzero CompletedProcess results.
+            # A process
             # which created a *different* session/scope remains outside
             # this boundary and still requires independent cleanup review.
             cleanup_error = None
@@ -121,3 +143,9 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
                 raise BoundedNativeChildError(
                     "Native child process group cleanup could not be confirmed"
                 ) from cleanup_error
+    # Popen.wait() in finally records the actual exit status after killpg.
+    # Reaching here implies that the non-reaping wait observed process exit
+    # and no cleanup error overrode the return.
+    return subprocess.CompletedProcess(
+        argv, process.returncode,
+        bytes(outputs["stdout"]), bytes(outputs["stderr"]))
