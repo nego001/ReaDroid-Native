@@ -19,6 +19,11 @@ import sys
 # Do not create __pycache__ in the pinned source checkout before Git status.
 # Existing cache/untracked files are still refused; this is not an ignore rule.
 sys.dont_write_bytecode = True
+# PE-S1.69: -I removes user site/PYTHONPATH AND the script's own directory.
+# Restore only this source-pinned local tools directory, not the working
+# directory or untrusted Python environment, before importing sibling modules.
+if sys.flags.isolated:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
