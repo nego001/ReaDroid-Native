@@ -13,11 +13,39 @@ import os
 import selectors
 import signal
 import subprocess
+import sys
 import time
 
 
 class BoundedNativeChildError(RuntimeError):
     """Native process output, runtime or launch could not be accepted."""
+
+
+def _require_nonreaping_linux_parent() -> None:
+    """Refuse execution if the process may auto-reap children before killpg.
+
+    The S1.78 lifetime guarantee depends on an unreaped session leader
+    keeping its PID/PGID reserved. With SIGCHLD ignored, the Linux kernel
+    may discard the leader without an explicit wait. A custom handler
+    could also reap it; conservative policy requires default SIGCHLD.
+    This preflight happens BEFORE Popen, never after starting a child.
+    """
+    if (sys.platform != "linux"
+            or not callable(getattr(os, "waitid", None))
+            or any(type(getattr(os, name, None)) is not int
+                   or getattr(os, name) <= 0
+                   for name in ("P_PID", "WEXITED", "WNOHANG", "WNOWAIT"))
+            or not callable(getattr(os, "killpg", None))):
+        raise BoundedNativeChildError(
+            "Native child requires Linux non-reaping wait and group cleanup")
+    try:
+        disposition = signal.getsignal(signal.SIGCHLD)
+    except (OSError, ValueError, AttributeError) as exc:
+        raise BoundedNativeChildError(
+            "Native child SIGCHLD disposition cannot be verified") from exc
+    if disposition != signal.SIG_DFL:
+        raise BoundedNativeChildError(
+            "Native child requires default SIGCHLD (no auto-reap handler)")
 
 
 def _wait_exited_without_reaping(pid: int, deadline: float) -> None:
@@ -61,6 +89,9 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
             or type(max_stdout) is not int or not 0 < max_stdout <= 1024 * 1024
             or type(max_stderr) is not int or not 0 < max_stderr <= 8192):
         raise BoundedNativeChildError("Invalid bounded child controls")
+    # Fail BEFORE launching: SIG_IGN/handlers may reap the session leader
+    # automatically, making later killpg(PID) unsafe due to PGID reuse.
+    _require_nonreaping_linux_parent()
     process = None
     try:
         process = subprocess.Popen(
