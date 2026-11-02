@@ -1951,3 +1951,97 @@ com flag read-only, cross-check do UUID/nome/estado, comportamento
 sem virsh, entrada injetada, timeouts, bytes de controle, saída grande,
 publicação sem sobrescrita e recusa em caso de evidências assinadas.
 A CI Ubuntu/Arch **não se conecta a um host libvirt real**.
+
+
+## PE-S1.71 | Captura restrita da autodeclaração de kernel via QEMU Guest Agent
+
+A PE-S1.70 produz o **primeiro** registro externo do libvirt,
+`reviewer-host-vm-launch.txt`. A PE-S1.71 fornece a coleta
+do **segundo** registro, `reviewer-host-guest-kernel.txt`,
+**sem jamais chamar `guest-exec` ou `qemu-agent-command`**.
+O revisor administra um host Linux independente, com um domínio
+Arch já inicializado e `qemu-guest-agent` ativo no guest.
+
+**Limite de confiança essencial:** o comando `virsh guestinfo --os`
+interroga o QEMU Guest Agent que roda **dentro da VM**. Os campos
+`os.id`, `os.kernel-release` e `os.machine` são
+**autodeclarações do guest**, não medições independentes do
+kernel; o host libvirt apenas transporta a resposta. O programa
+não atesta hardware, processo de boot, host administrador, nem
+a aplicação efetiva de seccomp/cgroups.
+
+### 1. Pré-requisito e modo planejamento
+
+A pasta do observador deve já conter o registro PE-S1.70 no modo
+0600, de diretório 0700. O revisor deve ter retido, **fora do
+guest e fora de registros enviados pelo operador**, o SHA-256
+original da PE-S1.70 (variável `$PIN_PRIOR_HOST_RECORD`).
+Os demais parâmetros são exatamente os mesmos da PE-S1.70:
+
+```bash
+python3 -B tools/pe_arch_vm_s1_71_guestinfo_os_capture.py \
+  --observer-dir "$EXTERNAL_OBSERVER_PRIVATE_DIR" \
+  --domain "$REVIEWER_OWNED_DOMAIN_NAME" \
+  --expected-domain-uuid "$EXTERNALLY_PINNED_DOMAIN_UUID" \
+  --expected-source-commit "$REVIEWER_PINNED_COMMIT" \
+  --reviewer-challenge "$REVIEWER_CHALLENGE" \
+  --expected-prior-host-sha256 "$PIN_PRIOR_HOST_RECORD"
+```
+
+Esse modo devolve `PE_S1_71_GUEST_KERNEL_HOST_QUERY_NOT_STARTED`
+e **não** consulta o host, nem cria arquivos.
+
+### 2. Capturar o registro real (somente no host do revisor)
+
+Acrescentar ao **mesmo** comando:
+
+```bash
+  --capture-from-independent-host
+```
+
+O programa confere o hash exato do registro PE-S1.70 e seu
+UUID/commit/desafio/estado. Depois realiza estritamente
+cinco chamadas via `virsh --readonly --connect qemu:///system
+--no-pkttyagent`: `domuuid`, `domstate`,
+`guestinfo DOMÍNIO --os`, `domstate`, `domuuid`.
+Cada processo tem **15 segundos**, saída limitada e rejeição
+de falha/erro. Não promove a conexão para modo de escrita se
+o driver recusar o `guestinfo --os`: essa incompatibilidade
+deve ser registrada como **HOLD**.
+
+A resposta deve declarar `os.id: arch`, um
+`os.kernel-release` compatível com a sintaxe de versão
+Linux e `os.machine` como `x86_64` ou `aarch64`;
+esses valores continuam sendo autodeclarados pelo guest.
+
+Somente depois da consistência do UUID/estado e da segunda
+leitura inalterada da PE-S1.70, publica-se exclusivamente o
+`reviewer-host-guest-kernel.txt` novo e privado, com SHA-256
+para retenção em canal independente. Uma execução bem-sucedida
+retorna `LOCAL_PE_S1_71_GUEST_AGENT_KERNEL_SELF_REPORT_NOT_VM_ATTESTATION`,
+com `guest_kernel_independently_verified=false`,
+`independent_vm_attestation=false`, `release_authorized=false`.
+A publicação recusa qualquer registro pré-existente, manifesto
+ou assinatura do observador.
+
+### Próximas evidências
+
+Ainda **faltam** `reviewer-host-seccomp-cgroups.txt` e
+`reviewer-host-scope-cleanup.txt`, que precisam de
+observação independente e correlacionada com o teste nativo.
+A PE-S1.65/63 não deve criar ou assinar manifesto parcial.
+
+**CI PE-S1.71:** 23 contratos com `virsh` inteiramente
+simulado. Testam ausência de host, erro/timeout, modo read-only,
+identidade e estado após a consulta, parsing de kernel, OS
+diferente, hashes do registro anterior, symlink/hardlink,
+imutabilidade de arquivos e recusa a logs já assinados. Não
+há VM nem QEMU Guest Agent realmente executado na CI.
+
+Documentação de referência:
+- https://www.libvirt.org/manpages/virsh.html
+- https://wiki.libvirt.org/Qemu_guest_agent.html
+
+**HOLD mantido:** a independência do host, kernel real e
+eficácia de isolamento permanecem sem prova externa concluída;
+sem merge da PR, execução de PE desconhecido ou APK/OTA.
