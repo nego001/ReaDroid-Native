@@ -29,8 +29,9 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
     Child executable security is NOT established by this function. The argv
     must already be pinned by the caller. The child has its own session so
     timeout/overflow cleanup does not kill the reviewer's Python process.
-    A user systemd scope launched outside that session still requires the
-    existing native scope cleanup and independent review.
+    Session descendants are killed even after a normal parent exit, but a
+    child can escape into another session/systemd scope, which still requires
+    the existing native scope cleanup and independent review.
     """
     if (not isinstance(argv, list) or not argv
             or any(not isinstance(a, str) or not a or "\0" in a for a in argv)
@@ -89,15 +90,19 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
             "Native child unavailable or exceeded bounded execution") from exc
     finally:
         if process is not None:
-            if not completed:
-                # A child may exit yet leave pipe FDs open in descendants.
-                # Terminate the separate process session in either case.
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                except OSError:
-                    pass
+            # A child can exit successfully after spawning descendants
+            # which close/inherit neither pipe. EOF + parent exit alone
+            # DOES NOT prove its session has no surviving subprocesses.
+            # Always retire this dedicated process group, including on
+            # returncode=0 and nonzero CompletedProcess results. A process
+            # which created a *different* session/scope remains outside
+            # this boundary and still requires independent cleanup review.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                pass
             for pipe in (process.stdout, process.stderr):
                 if pipe is not None:
                     pipe.close()
