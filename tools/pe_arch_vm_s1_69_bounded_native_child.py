@@ -42,7 +42,6 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
             or type(max_stderr) is not int or not 0 < max_stderr <= 8192):
         raise BoundedNativeChildError("Invalid bounded child controls")
     process = None
-    completed = False
     try:
         process = subprocess.Popen(
             argv, stdin=subprocess.DEVNULL,
@@ -82,7 +81,6 @@ def run_bounded_native(argv: list[str], *, env: dict[str, str],
         if remaining <= 0:
             raise BoundedNativeChildError("Native acceptance exceeded deadline")
         exitcode = process.wait(timeout=remaining)
-        completed = True
         return subprocess.CompletedProcess(
             argv, exitcode, bytes(outputs["stdout"]), bytes(outputs["stderr"]))
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
