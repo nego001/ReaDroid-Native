@@ -98,13 +98,13 @@ class BoundedNativeChildContracts(unittest.TestCase):
         # Under the former implementation EOF + parent exit was success,
         # and the sleeper survived because completed=True skipped killpg.
         code = (
-            "import os,subprocess,sys\\n"
+            "import os,subprocess,sys\n"
             "child=subprocess.Popen([sys.executable,'-I','-B','-c',"
             "'import time;time.sleep(30)'],"
             "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
-            "stderr=subprocess.DEVNULL,close_fds=True)\\n"
-            "os.write(1,str(child.pid).encode('ascii'))\\n"
-            f"sys.exit({parent_exit})\\n"
+            "stderr=subprocess.DEVNULL,close_fds=True)\n"
+            "os.write(1,str(child.pid).encode('ascii'))\n"
+            f"sys.exit({parent_exit})\n"
         )
         result = self.call(code, timeout=4, max_stdout=64)
         self.assertEqual(result.returncode, parent_exit)
