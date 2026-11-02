@@ -2234,3 +2234,27 @@ desse grupo não pode ser coberto por `killpg`. Portanto, a mudança
 seccomp ou kernel. A auditoria real dos escopos e descendentes no host
 do revisor continua obrigatória. A PR segue Draft; nenhuma liberação
 de execução, APK, OTA ou merge é autorizada por esta mudança.
+
+
+## PE-S1.77 | Erro de encerramento do grupo impede um falso sucesso
+
+Auditoria do executor PE-S1.69 após PE-S1.76: mesmo sempre enviando
+`SIGKILL` ao grupo da sessão criada pelo próprio launcher, o código
+anterior **ignorava qualquer `OSError`** de `os.killpg()`.
+Se o kernel devolvesse `EPERM` ou outro erro, a chamada poderia
+retornar `CompletedProcess(returncode=0)` sem que a limpeza do grupo
+tivesse sido confirmada.
+
+Agora o executor distingue `ESRCH` (grupo de processos já não existe)
+de outros erros. Qualquer outro `OSError` é guardado enquanto os pipes
+são fechados e o processo principal é reaped; depois, a operação
+**falha fechada** com `BoundedNativeChildError`, mesmo que o comando
+tenha retornado zero. O lançamento e os limites de tempo e saída não
+foram afrouxados.
+
+Dois testes usam filhos Python inofensivos e simulam respostas
+`EPERM` e `ESRCH` **somente da chamada de sinal**. Isso
+não é prova real de que o kernel do host negou sinais durante uma
+execução, e `SIGKILL` aceito também não comprova limpeza em outro
+`systemd scope` ou sessão separada. Um testemunho externo da limpeza
+integral continua obrigatório; estado de release **HOLD**.
