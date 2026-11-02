@@ -52,6 +52,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s1_65_observer_prepare.py",
     "tools/pe_arch_vm_s1_66_native_reviewer_launcher.py",
     "tools/pe_arch_vm_s1_67_receipt_binding.py",
+    "tools/pe_arch_vm_s1_69_bounded_native_child.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
     "tools/pe_auto_ghidra.py",
