@@ -19,6 +19,7 @@ sys.dont_write_bytecode = True
 
 import pe_arch_vm_s1_62_signed_runtime_hold as local
 import pe_arch_vm_s1_63_external_observer as external
+import pe_arch_vm_s1_73_two_record_review as semantic
 import pe_arch_vm_receipt_verify as receipts
 import pe_arch_vm_s1_57_release_guard as release
 
@@ -88,6 +89,9 @@ EXTERNAL_PIN_KEYS = (
     "expected_observer_manifest_sha256",
     "expected_observer_signature_sha256",
     "expected_observer_signers_sha256", "expected_observer_id",
+    # S1.75: mandatory out-of-band pins for post-signature semantics.
+    "expected_domain", "expected_domain_uuid",
+    "expected_host_sha256", "expected_guest_sha256",
 )
 
 
@@ -144,8 +148,10 @@ def review_three_signed_packages(
         expected_observer_manifest_sha256: str,
         expected_observer_signature_sha256: str,
         expected_observer_signers_sha256: str, expected_observer_id: str,
+        expected_domain: str, expected_domain_uuid: str,
+        expected_host_sha256: str, expected_guest_sha256: str,
         require_readonly_source_view: bool = False) -> dict:
-    """Require S1.62 and S1.63 with matching out-of-band pin sets.
+    """Require S1.62, S1.63 and mandatory post-signature S1.73 review.
 
     Local upstream checks do not attest a native kernel or a human witness.
     Only a separately audited mechanism could ever change this HOLD.
@@ -202,6 +208,25 @@ def review_three_signed_packages(
             expected_observer_id=expected_observer_id,
             expected_observer_manifest_sha256=expected_observer_manifest_sha256)
 
+        # S1.75: a valid Ed25519 signature can cover syntactically valid but
+        # fabricated/meaningless host logs. After checking the detached
+        # signature, require S1.73 semantic checks with pins the reviewer
+        # selected outside the package. Never promote this to attestation.
+        semantic_result = semantic.review_two_records(
+            observed, domain=expected_domain,
+            expected_domain_uuid=expected_domain_uuid,
+            expected_source_commit=expected_source_commit,
+            reviewer_challenge=expected_challenge,
+            expected_host_sha256=expected_host_sha256,
+            expected_guest_sha256=expected_guest_sha256)
+        if (semantic_result["status"] != semantic.STATUS
+                or semantic_result["semantic_records_checked"] != 2
+                or semantic_result["guest_record_bound_to_host_sha256"] is not True
+                or semantic_result["libvirt_queried"] is not False
+                or semantic_result["independent_vm_attestation"] is not False
+                or semantic_result["release_authorized"] is not False):
+            raise ThreeWayReviewError("Post-signature semantic HOLD gate invalid")
+
         for name, original in before.items():
             if receipts._read_private_receipt(private / name) != original:
                 raise ThreeWayReviewError(
@@ -212,7 +237,8 @@ def review_three_signed_packages(
     except (OSError, ValueError, UnicodeError, TypeError, KeyError,
             OverflowError, RecursionError, receipts.ReceiptReviewError,
             local.SignedRuntimeReviewError,
-            external.ExternalObserverError) as exc:
+            external.ExternalObserverError,
+            semantic.TwoRecordReviewError) as exc:
         raise ThreeWayReviewError(
             "Three-way signed evidence package unavailable, altered or unsafe") from exc
 
@@ -226,6 +252,8 @@ def review_three_signed_packages(
         "three_distinct_signing_keys_locally_verified": True,
         "signed_local_custody_and_runtime_correlated": True,
         "external_host_log_hashes_and_signature_correlated": True,
+        "post_signature_host_record_semantics_checked": True,
+        "host_guest_sha256_externally_correlated": True,
         "observer_capture_independently_authenticated": False,
         "hypervisor_provenance_independently_verified": False,
         "native_kernel_execution_independently_verified": False,
