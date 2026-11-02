@@ -248,6 +248,31 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
             self.run()
         self.assertTrue(self.target.is_symlink())
 
+    def test_dominfo_inconsistent_identity_rejected(self):
+        for field, before, after in (
+            ("uuid", b"UUID: 12345678-abcd-4ef0-8123-123456789abc",
+             b"UUID: 11111111-1111-4111-8111-111111111111"),
+            ("name", b"Name: reviewer-native-arch-01", b"Name: other"),
+            ("state", b"State: running", b"State: paused"),
+        ):
+            with self.subTest(field=field):
+                def inconsistent(argv, **kw):
+                    res = self.fake(argv, **kw)
+                    if argv[-2] == "dominfo":
+                        return subprocess.CompletedProcess(
+                            argv, 0, res.stdout.replace(before, after), b"")
+                    return res
+                with self.assertRaises(capture.HostCaptureError):
+                    self.run(fake=inconsistent)
+                self.assertFalse(self.target.exists())
+
+    def test_empty_but_nonzero_length_virsh_output_rejected(self):
+        def empty(argv, **kw):
+            return subprocess.CompletedProcess(argv, 0, b"\n  \r", b"")
+        with self.assertRaises(capture.HostCaptureError):
+            self.run(fake=empty)
+        self.assertFalse(self.target.exists())
+
     def test_cli_no_capture_default_and_explicit_flag(self):
         args = [
             "--observer-dir", str(self.owner),
