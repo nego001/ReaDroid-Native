@@ -6,6 +6,7 @@ All child code uses Python -I -B with fixed test-only statements.
 from __future__ import annotations
 
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -81,6 +82,52 @@ class BoundedNativeChildContracts(unittest.TestCase):
                 "os.write(1,b'CHILD_SPAWNED')\n",
                 timeout=0.3)
         self.assertLess(time.monotonic() - start, 4)
+
+    @staticmethod
+    def _proc_running(pid: int) -> bool:
+        # Linux /proc states: Z/X already exited, even if the init process
+        # has not reaped the child yet. Do not rely on kill(pid, 0) for zombies.
+        try:
+            raw = (Path("/proc") / str(pid) / "stat").read_text("ascii")
+        except FileNotFoundError:
+            return False
+        return raw.rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+
+    def _assert_session_descendant_does_not_survive(self, parent_exit: int):
+        # Harmless real Linux grandchild that sleeps with both pipes closed.
+        # Under the former implementation EOF + parent exit was success,
+        # and the sleeper survived because completed=True skipped killpg.
+        code = (
+            "import os,subprocess,sys\\n"
+            "child=subprocess.Popen([sys.executable,'-I','-B','-c',"
+            "'import time;time.sleep(30)'],"
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL,close_fds=True)\\n"
+            "os.write(1,str(child.pid).encode('ascii'))\\n"
+            f"sys.exit({parent_exit})\\n"
+        )
+        result = self.call(code, timeout=4, max_stdout=64)
+        self.assertEqual(result.returncode, parent_exit)
+        pid = int(result.stdout.decode("ascii"))
+        try:
+            for _ in range(40):
+                if not self._proc_running(pid):
+                    break
+                time.sleep(0.025)
+            self.assertFalse(
+                self._proc_running(pid),
+                "Child process group leaked a background descendant")
+        finally:
+            # Guarantee that a regression failure never leaves a test-only
+            # sleeper running on the CI worker.
+            if self._proc_running(pid):
+                os.kill(pid, signal.SIGKILL)
+
+    def test_successful_parent_exit_kills_background_session_descendant(self):
+        self._assert_session_descendant_does_not_survive(parent_exit=0)
+
+    def test_nonzero_parent_exit_kills_background_session_descendant(self):
+        self._assert_session_descendant_does_not_survive(parent_exit=13)
 
     def test_failed_child_return_code_is_preserved_not_success(self):
         result = self.call("import sys;sys.exit(13)")
