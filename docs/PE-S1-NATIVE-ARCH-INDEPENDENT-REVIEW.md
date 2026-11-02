@@ -1778,3 +1778,45 @@ continuam com o subprocesso mocked.
 hipervisor/kernel Arch real, nem controle de chaves externas
 comprovado. Mesmo um PASS local com PE-S1.67 não homologa a
 VM. Prorrogar `HOLD` PE-S1.57/62/64 e manter PR #47 em Draft.
+
+
+## PE-S1.68 | Parsing JSON estrito e verificação Git própria do lançador
+
+A auditoria de PE-S1.66/67 constatou mais duas falhas corrigidas
+diretamente no lançador `tools/pe_arch_vm_s1_66_native_reviewer_launcher.py`:
+
+1. O `json.loads` do stdout da aceitação nativa usava o
+   comportamento permissivo padrão, aceitando **chaves duplicadas**
+   e constantes não finitas (`NaN`/`Infinity`). A PE-S1.68
+   rejeita esses valores e documentos múltiplos ou malformados.
+   A leitura inicial do recibo também passa a rejeitar chaves
+   repetidas e literais não finitos. O verificador rigoroso PE-S1.67
+   continua obrigatório e impede falsificação de campos de
+   release, hash ou escopos.
+2. A resposta `local_source_checkout_pin` vinha do próprio
+   processo filho. Agora, mesmo após o PE-S1.58 fazer sua checagem,
+   o **lançador-pai** chama
+   `verify_source_checkout_pin(SOURCE_ROOT, reviewer_commit,
+   SOURCE_FILES)` antes e depois do subprocesso, exige schema e
+   flags de HOLD exatas e recusa divergência com a afirmação do
+   filho. Isso detecta mudanças persistentes no repositório
+   durante o teste. É uma checagem **local**, não autenticação do
+   computador ou do hipervisor.
+
+O caminho sem `--execute-synthetic-native-acceptance`
+**não faz sequer a nova verificação Git**, permanecendo no-exec.
+Se os controles Git/JSON/recibo falharem, a CLI devolve status
+`REJECTED_PE_S1_66_NATIVE_ACCEPTANCE_NOT_HOMOLOGATED`, exit 2,
+sem liberação de PE desconhecido ou APK/OTA.
+
+**15 testes PE-S1.68**, com subprocesso simulado (nenhuma VM ou
+Ghidra real acionado nessa suíte), cobrem erros de parsing, falha
+na checagem Git anterior/posterior, falsa identidade do commit,
+negação do preflight e ausência de execução por padrão.
+
+**Limite decisivo:** commit Git e hashes de recibos verificam
+consistência local; nenhum dos novos passos fornece atestação
+externa do host/kernel/hipervisor, observador ou procedência das
+medições. Todas as flags de liberação permanecem `false`, a
+PR #47 permanece Draft e a revisão real em VM Arch nativa
+independente segue como condição pendente.
