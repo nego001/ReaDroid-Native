@@ -82,6 +82,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_70_readonly_libvirt_host_capture.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_71_guestinfo_os_capture.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_72_actual_child_boundary.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_73_two_record_review.py' -v
           # PE-S1.60: real os.urandom-backed challenge and private request
           # on the Ubuntu host; this does NOT demonstrate external reviewer
           # control or native Arch VM provenance.
@@ -844,6 +845,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_70_readonly_libvirt_host_capture.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_71_guestinfo_os_capture.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_72_actual_child_boundary.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_73_two_record_review.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
           private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
