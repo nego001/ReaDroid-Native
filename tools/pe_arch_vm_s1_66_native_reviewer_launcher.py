@@ -37,6 +37,7 @@ from pe_arch_vm_gate import ArchVmUnavailable
 from pe_arch_vm_evidence import AcceptanceReceiptError
 from pe_arch_vm_receipt_verify import ReceiptReviewError
 import pe_arch_vm_s1_67_receipt_binding as binding
+import pe_arch_vm_s1_69_bounded_native_child as bounded
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = SOURCE_ROOT / "tools/pe_arch_vm_validation.py"
@@ -167,7 +168,7 @@ def review_native_acceptance(
         checkout_before = _parent_checkout_pin(expected_source_commit)
 
         argv = [
-            sys.executable, "-B", str(ACCEPTANCE),
+            sys.executable, "-I", "-B", str(ACCEPTANCE),
             "--ghidra-home", str(home),
             "--ghidra-archive", str(archive),
             "--evidence-output", str(receipt),
@@ -184,10 +185,12 @@ def review_native_acceptance(
                    "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS",
                }}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-        run = subprocess.run(
-            argv, stdin=subprocess.DEVNULL,
-            capture_output=True, timeout=1800, check=False,
-            close_fds=True, env=env)
+        # PE-S1.69: -I ignores Python environment and user site packages.
+        # Read both pipes incrementally; never buffer arbitrary-length
+        # stdout/stderr before deciding whether to reject the child.
+        run = bounded.run_bounded_native(
+            argv, env=env, timeout=1800,
+            max_stdout=MAX_STDOUT, max_stderr=MAX_STDERR)
         if (run.returncode != 0 or
                 not 0 < len(run.stdout) <= MAX_STDOUT or
                 len(run.stderr) > MAX_STDERR):
@@ -265,7 +268,7 @@ def review_native_acceptance(
             OverflowError, RecursionError, subprocess.TimeoutExpired,
             preflight.NativePreflightError, ReceiptReviewError,
             CheckoutPinError,
-            binding.BindingError) as exc:
+            binding.BindingError, bounded.BoundedNativeChildError) as exc:
         raise ReviewerLaunchError(
             "Native synthetic acceptance refused; never interpret as VM attestation"
         ) from exc
