@@ -15,8 +15,8 @@ import os
 from pathlib import Path
 import shutil
 import stat
-import subprocess
 
+import pe_arch_vm_s1_69_bounded_native_child as bounded
 from pe_resource_limits import _validate_scope_name, stop_scope
 
 MAX_SHOW_BYTES = 4096
@@ -161,12 +161,23 @@ def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
     ]
 
     def read_state() -> dict[str, str]:
-        result = subprocess.run(
-            argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            check=False, timeout=10)
-        if result.returncode != 0:
+        # subprocess.run(capture_output=True) buffers unbounded stdout/stderr
+        # BEFORE _parse_show can reject an oversized reply. Reuse the Linux
+        # bounded, no-shell, dedicated-session collector instead.
+        try:
+            result = bounded.run_bounded_native(
+                argv, env=dict(os.environ), timeout=10,
+                max_stdout=MAX_SHOW_BYTES, max_stderr=1024)
+        except bounded.BoundedNativeChildError as exc:
+            raise ScopeCleanupUnavailable(
+                "Bounded systemd status query unavailable") from exc
+        if result.returncode != 0 or result.stderr:
             raise ScopeCleanupUnavailable("systemd could not confirm scope state")
-        return _parse_show(result.stdout)
+        try:
+            raw = result.stdout.decode("utf-8")
+        except UnicodeError as exc:
+            raise ScopeCleanupUnavailable("Invalid systemd status text") from exc
+        return _parse_show(raw)
 
     try:
         state = read_state()
@@ -176,7 +187,7 @@ def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
         if final_state != state:
             raise ScopeCleanupUnavailable(
                 "Scope state or cgroup path changed during cleanup verification")
-    except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as exc:
+    except (OSError, UnicodeError, ValueError) as exc:
         raise ScopeCleanupUnavailable("Scope final state unavailable") from exc
     return {
         "scope": unit_name,
