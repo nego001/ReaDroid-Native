@@ -33,24 +33,37 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         return (f"LoadState={load}\nActiveState={active}\n"
                 f"SubState={sub}\nControlGroup={control}\n")
 
-    def run_mock(self, report: str, *, stop=False, returncode=0):
+    def run_mock(self, report: str, *, stop=False, returncode=0,
+                 second_report=None, second_returncode=None):
+        # A successful verification must bracket its kernel cgroup check
+        # with two independent systemd state queries.
+        replies = [
+            mock.Mock(returncode=returncode, stdout=report),
+            mock.Mock(
+                returncode=(returncode if second_returncode is None
+                            else second_returncode),
+                stdout=(report if second_report is None else second_report)),
+        ]
         with mock.patch.object(scope, "stop_scope", return_value=stop) as stopper:
             with mock.patch.object(scope.subprocess, "run",
-                                   return_value=mock.Mock(
-                                       returncode=returncode,
-                                       stdout=report)) as show:
+                                   side_effect=replies) as show:
                 result = scope.stop_and_attest_scope(
                     self.UNIT, systemctl_path=str(self.systemctl),
                     mount_root=self.cgroup)
         stopper.assert_called_once_with(self.UNIT,
                                         systemctl_path=str(self.systemctl))
-        argv = show.call_args.args[0]
-        self.assertIn("--user", argv)
-        self.assertIn("--no-pager", argv)
-        self.assertIn("--all", argv)  # Empty ControlGroup must not be omitted.
-        self.assertIn("show", argv)
-        self.assertFalse(show.call_args.kwargs.get("shell", False))
-        self.assertEqual(show.call_args.kwargs["timeout"], 10)
+        self.assertEqual(show.call_count, 2)
+        for observed in show.call_args_list:
+            argv = observed.args[0]
+            self.assertIn("--user", argv)
+            self.assertIn("--no-pager", argv)
+            self.assertIn("--all", argv)  # Never omit ControlGroup.
+            self.assertIn("show", argv)
+            self.assertFalse(observed.kwargs.get("shell", False))
+            self.assertEqual(observed.kwargs["timeout"], 10)
+        self.assertEqual(
+            show.call_args_list[0].args[0],
+            show.call_args_list[1].args[0])
         return result
 
     def test_collected_scope_may_have_failed_stop_request(self):
@@ -201,6 +214,49 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
             with self.subTest(report=report[:100]):
                 with self.assertRaises(scope.ScopeCleanupUnavailable):
                     self.run_mock(report)
+
+    def test_scope_reactivation_between_kernel_and_systemd_reads_rejected(self):
+        # First report says inactive/dead and cgroup.events says empty.
+        # A later active/running report invalidates that result.
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        (path / "cgroup.events").write_text("populated 0\\n", encoding="ascii")
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT),
+                second_report=self.report(active="active", sub="running",
+                                          control="/user.slice/" + self.UNIT),
+                stop=True)
+
+    def test_scope_cgroup_path_change_after_kernel_probe_rejected(self):
+        # A second *inactive* report can still refer to another cgroup.
+        first = self.cgroup / "user.slice" / self.UNIT
+        first.mkdir(parents=True)
+        (first / "cgroup.events").write_text("populated 0\\n", encoding="ascii")
+        with self.assertRaisesRegex(
+                scope.ScopeCleanupUnavailable, "changed during"):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT),
+                second_report=self.report(
+                    control="/user.slice/user-1000.slice/" + self.UNIT),
+                stop=True)
+
+    def test_scope_gc_between_two_systemd_reads_is_refused(self):
+        # Conservative false negative is preferable to an unbound PASS.
+        (self.cgroup / "user.slice").mkdir()
+        with self.assertRaisesRegex(
+                scope.ScopeCleanupUnavailable, "changed during"):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT),
+                second_report=self.report(load="not-found"),
+                stop=False)
+
+    def test_second_systemd_query_failure_never_produces_pass(self):
+        with self.assertRaisesRegex(
+                scope.ScopeCleanupUnavailable, "systemd could not confirm"):
+            self.run_mock(
+                self.report(load="not-found"),
+                second_returncode=1, stop=False)
 
     def test_systemd_query_failure_not_interpreted_as_gc(self):
         with self.assertRaises(scope.ScopeCleanupUnavailable):
