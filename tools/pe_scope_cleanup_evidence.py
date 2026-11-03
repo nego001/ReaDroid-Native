@@ -21,6 +21,7 @@ from pe_resource_limits import _validate_scope_name, stop_scope
 
 MAX_SHOW_BYTES = 4096
 MAX_CGROUP_EVENTS_BYTES = 4096
+MAX_CGROUP_STAT_BYTES = 4096
 
 
 class ScopeCleanupUnavailable(RuntimeError):
@@ -75,6 +76,38 @@ def _parse_show(output: str) -> dict[str, str]:
     return values
 
 
+def _read_cgroup_numeric_file(directory_fd: int, name: str,
+                              byte_limit: int) -> dict[str, str]:
+    """Read a pinned kernel record with strict numeric, bounded semantics.
+
+    O_NONBLOCK avoids hanging on a substituted FIFO before fstat identifies
+    the wrong file type. Kernel cgroup.events/stat are virtual regular
+    files; their st_size may be zero even when readable.
+    """
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    fd = os.open(name, flags, dir_fd=directory_fd)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ScopeCleanupUnavailable("Non-regular kernel cgroup record")
+        raw = os.read(fd, byte_limit + 1)
+    finally:
+        os.close(fd)
+    if not 1 <= len(raw) <= byte_limit:
+        raise ScopeCleanupUnavailable("Kernel cgroup record missing or oversized")
+    data = raw.decode("ascii")
+    if not data.endswith("\n"):
+        raise ScopeCleanupUnavailable("Incomplete kernel cgroup record")
+    result = {}
+    for line in data.splitlines():
+        parts = line.split()
+        if (len(parts) != 2 or parts[0] in result
+                or not parts[0].replace("_", "").isalnum()
+                or not parts[1].isascii() or not parts[1].isdecimal()):
+            raise ScopeCleanupUnavailable("Malformed kernel cgroup record")
+        result[parts[0]] = parts[1]
+    return result
+
+
 def _cgroup_unpopulated(relative: str, unit_name: str,
                         mount_root: Path) -> bool:
     """Read kernel cgroup.events from pinned, no-follow directory FDs.
@@ -82,7 +115,9 @@ def _cgroup_unpopulated(relative: str, unit_name: str,
     A removed transient scope is acceptable only after systemd independently
     attested inactivity. All other uncertainty fails closed. cgroup.events is
     a virtual kernel file with st_size often equal to zero, so bound its READ
-    length instead of relying on stat().st_size.
+    length instead of relying on stat().st_size. Also require cgroup.stat to
+    report zero live and dying descendant cgroups; this is stricter than
+    proving only the absence of live processes.
     """
     if not isinstance(relative, str):
         return False
@@ -116,28 +151,19 @@ def _cgroup_unpopulated(relative: str, unit_name: str,
                 raise
             stack.callback(os.close, directory_fd)
             parent_fd = directory_fd
-        event_fd = os.open("cgroup.events", flags, dir_fd=parent_fd)
-        stack.callback(os.close, event_fd)
-        if not stat.S_ISREG(os.fstat(event_fd).st_mode):
+        events = _read_cgroup_numeric_file(
+            parent_fd, "cgroup.events", MAX_CGROUP_EVENTS_BYTES)
+        if events.get("populated") != "0":
             return False
-        raw = os.read(event_fd, MAX_CGROUP_EVENTS_BYTES + 1)
-        if not 1 <= len(raw) <= MAX_CGROUP_EVENTS_BYTES:
-            return False
-        events = raw.decode("ascii")
-        # Reject truncated and malformed kernel status rather than inferring
-        # populated=0 from a partial or ambiguous record.
-        if not events.endswith("\n"):
-            return False
-        seen = set()
-        for line in events.splitlines():
-            parts = line.split()
-            if (len(parts) != 2 or parts[0] in seen
-                    or not parts[1].isdecimal()):
-                return False
-            seen.add(parts[0])
-            if parts[0] == "populated" and parts[1] != "0":
-                return False
-        return "populated" in seen
+        # cgroup.events shows the absence of live processes only.
+        # cgroup.stat is a separate kernel record of descendant cgroups,
+        # including deleted-but-not-yet-destroyed dying cgroups. Refuse
+        # early cleanup claims while any remain. No fallback on missing
+        # or malformed stat: uncertainty blocks native acceptance.
+        counts = _read_cgroup_numeric_file(
+            parent_fd, "cgroup.stat", MAX_CGROUP_STAT_BYTES)
+        return (counts.get("nr_descendants") == "0"
+                and counts.get("nr_dying_descendants") == "0")
 
 
 def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
