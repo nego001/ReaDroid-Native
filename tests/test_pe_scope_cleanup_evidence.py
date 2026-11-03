@@ -35,18 +35,21 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
 
     def run_mock(self, report: str, *, stop=False, returncode=0,
                  second_report=None, second_returncode=None):
-        # A successful verification must bracket its kernel cgroup check
-        # with two independent systemd state queries.
+        # Successful verification brackets the kernel probe with two
+        # independently bounded systemd queries, never capture_output.
         replies = [
-            mock.Mock(returncode=returncode, stdout=report),
+            mock.Mock(returncode=returncode, stdout=report.encode("utf-8"),
+                      stderr=b""),
             mock.Mock(
                 returncode=(returncode if second_returncode is None
                             else second_returncode),
-                stdout=(report if second_report is None else second_report)),
+                stdout=(report if second_report is None
+                        else second_report).encode("utf-8"), stderr=b""),
         ]
         with mock.patch.object(scope, "stop_scope", return_value=stop) as stopper:
-            with mock.patch.object(scope.subprocess, "run",
-                                   side_effect=replies) as show:
+            with mock.patch.object(
+                    scope.bounded, "run_bounded_native",
+                    side_effect=replies) as show:
                 result = scope.stop_and_attest_scope(
                     self.UNIT, systemctl_path=str(self.systemctl),
                     mount_root=self.cgroup)
@@ -57,10 +60,12 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
             argv = observed.args[0]
             self.assertIn("--user", argv)
             self.assertIn("--no-pager", argv)
-            self.assertIn("--all", argv)  # Never omit ControlGroup.
-            self.assertIn("show", argv)
-            self.assertFalse(observed.kwargs.get("shell", False))
+            self.assertIn("--all", argv)
             self.assertEqual(observed.kwargs["timeout"], 10)
+            self.assertEqual(observed.kwargs["max_stdout"],
+                             scope.MAX_SHOW_BYTES)
+            self.assertEqual(observed.kwargs["max_stderr"], 1024)
+            self.assertIsInstance(observed.kwargs["env"], dict)
         self.assertEqual(
             show.call_args_list[0].args[0],
             show.call_args_list[1].args[0])
@@ -262,10 +267,60 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         with self.assertRaises(scope.ScopeCleanupUnavailable):
             self.run_mock(self.report(load="not-found"), returncode=1)
 
+    def test_real_oversized_systemctl_stdout_fails_before_buffering(self):
+        # Real harmless Linux Python subprocess: a 64 KiB response must
+        # be cut off at 4 KiB + 1, rather than fully captured in memory.
+        self.systemctl.write_text(
+            "#!" + sys.executable + "\n"
+            "import os\n"
+            "os.write(1,b'X'*65536)\n", encoding="ascii")
+        self.systemctl.chmod(0o700)
+        with mock.patch.object(scope, "stop_scope", return_value=True):
+            with self.assertRaisesRegex(
+                    scope.ScopeCleanupUnavailable,
+                    "Bounded systemd status query unavailable"):
+                scope.stop_and_attest_scope(
+                    self.UNIT, systemctl_path=str(self.systemctl),
+                    mount_root=self.cgroup)
+
+    def test_real_systemctl_stub_two_bounded_queries_succeed(self):
+        # Execute a benign Python-only fixture twice, not a fake
+        # CompletedProcess, to exercise the actual bounded pipe reader.
+        counter = self.root / "query-count"
+        report = self.report(load="not-found")
+        self.systemctl.write_text(
+            "#!" + sys.executable + "\n"
+            "from pathlib import Path\n"
+            "import sys\n"
+            f"with Path({str(counter)!r}).open('a') as f: f.write('1')\n"
+            f"sys.stdout.write({report!r})\n", encoding="ascii")
+        self.systemctl.chmod(0o700)
+        with mock.patch.object(scope, "stop_scope", return_value=False):
+            outcome = scope.stop_and_attest_scope(
+                self.UNIT, systemctl_path=str(self.systemctl),
+                mount_root=self.cgroup)
+        self.assertTrue(outcome["scope_quiescent"])
+        self.assertTrue(outcome["scope_collected"])
+        self.assertEqual(counter.read_text("ascii"), "11")
+
+    def test_bounded_systemctl_stderr_is_not_accepted(self):
+        report = self.report(load="not-found")
+        with (mock.patch.object(scope, "stop_scope", return_value=False),
+              mock.patch.object(scope.bounded, "run_bounded_native",
+                                return_value=mock.Mock(
+                                    returncode=0, stdout=report.encode("ascii"),
+                                    stderr=b"untrusted warning"))):
+            with self.assertRaisesRegex(
+                    scope.ScopeCleanupUnavailable,
+                    "systemd could not confirm"):
+                scope.stop_and_attest_scope(
+                    self.UNIT, systemctl_path=str(self.systemctl),
+                    mount_root=self.cgroup)
+
     def test_path_injected_user_owned_systemctl_is_never_trusted(self):
         with mock.patch.object(scope.shutil, "which",
                                return_value=str(self.systemctl)):
-            with mock.patch.object(scope.subprocess, "run") as show:
+            with mock.patch.object(scope.bounded, "run_bounded_native") as show:
                 with self.assertRaisesRegex(
                         scope.ScopeCleanupUnavailable, "Cannot verify scope cleanup"):
                     scope.stop_and_attest_scope(
@@ -275,7 +330,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
     def test_symlinked_systemctl_refused_without_calling_systemd(self):
         alias = self.root / "alias"
         alias.symlink_to(self.systemctl)
-        with mock.patch.object(scope.subprocess, "run") as show:
+        with mock.patch.object(scope.bounded, "run_bounded_native") as show:
             with self.assertRaises(scope.ScopeCleanupUnavailable):
                 scope.stop_and_attest_scope(self.UNIT,
                                             systemctl_path=str(alias),
