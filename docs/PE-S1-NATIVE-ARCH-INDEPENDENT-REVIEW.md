@@ -2455,3 +2455,44 @@ systemd não impedem todas as corridas de reativação, nem
 comprovam isolamento de descendentes ou um host de revisão
 independente. Estado **HOLD / PR Draft**, sem merge, execução
 de Windows PE desconhecido ou publicação APK/OTA.
+
+
+## PE-S1.84 | Distinguir processos vivos de cgroups descendentes em destruição
+
+Segundo a [documentação oficial do kernel Linux](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html),
+`cgroup.events` contém `populated` (presença de processos vivos no
+grupo ou seus descendentes), enquanto `cgroup.stat` contém
+`nr_descendants` e `nr_dying_descendants`, os números de
+cgroups descendentes visíveis e ainda em destruição. Esses campos
+**não são intercambiáveis**. O verificador anterior aceitava
+`populated=0` mesmo que descendentes ainda não estivessem
+completamente destruídos.
+
+A PE-S1.84 exige, para um escopo cujo caminho de cgroup ainda
+existe, **ambas as evidências do kernel**, consultadas por descritores
+do mesmo diretório: `cgroup.events: populated=0` e
+`cgroup.stat: nr_descendants=0, nr_dying_descendants=0`.
+Registros ausentes, truncados, com valores não numéricos, campos
+duplicados, valores acima do limite ou links simbólicos são
+recusados. Acesso a arquivos de registro usa também `O_NONBLOCK`,
+impedindo que um FIFO inesperado bloqueie a chamada `open()`
+antes da checagem `fstat()`; tipos não regulares são rejeitados.
+O tamanho máximo é 4096 bytes por registro. A leitura permanece
+limitada e `O_NOFOLLOW`.
+
+Testes descartáveis com `systemctl` simulado cobrem cgroups
+descendentes ativos ou em destruição, `cgroup.stat` inválido,
+ausente, truncado, superdimensionado ou por symlink, e FIFOs
+substituindo ambos os registros. O caso válido de zero
+descendentes também permanece coberto. Se o diretório final do
+escopo já foi coletado, a aceitação continua condicionada ao
+estado `inactive/dead`, hierarquia ancestral verificável e
+comprovação anterior de existência/cotas.
+
+**Limites:** `nr_dying_descendants>0` não implica necessariamente
+processos vivos, e a rejeição é deliberadamente conservadora para
+uma afirmação de limpeza *completa*. Mesmo os dois registros
+juntos não impedem mudanças posteriores nem comprovam a
+proveniência independente da VM. A CI continua usando arquivos
+cgroup simulados; a prova em VM Arch nativa de revisor independente
+segue **ausente**, com release **HOLD** e PR **Draft**.
