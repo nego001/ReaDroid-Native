@@ -33,6 +33,12 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         return (f"LoadState={load}\nActiveState={active}\n"
                 f"SubState={sub}\nControlGroup={control}\n")
 
+    @staticmethod
+    def write_cgroup_stat(directory: Path, *, descendants=0, dying=0):
+        (directory / "cgroup.stat").write_text(
+            f"nr_descendants {descendants}\n"
+            f"nr_dying_descendants {dying}\n", encoding="ascii")
+
     def run_mock(self, report: str, *, stop=False, returncode=0,
                  second_report=None, second_returncode=None):
         # Successful verification brackets the kernel probe with two
@@ -133,6 +139,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         path.mkdir(parents=True)
         (path / "cgroup.events").write_text(
             "populated 0\nfrozen 0\n", encoding="ascii")
+        self.write_cgroup_stat(path)
         out = self.run_mock(self.report(
             control="/user.slice/" + self.UNIT), stop=True)
         self.assertTrue(out["verified"])
@@ -189,11 +196,77 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         path = self.cgroup / "user.slice" / self.UNIT
         path.mkdir(parents=True)
         (path / "cgroup.events").write_text(
-            "populated 0\nfrozen 0\nnr_dying_descendants 0\n",
-            encoding="ascii")
+            "populated 0\nfrozen 0\n", encoding="ascii")
+        self.write_cgroup_stat(path)
         result = self.run_mock(
             self.report(control="/user.slice/" + self.UNIT), stop=True)
         self.assertTrue(result["cgroup_unpopulated"])
+
+    def test_cgroup_stat_rejects_remaining_descendant_cgroups(self):
+        # populated=0 only means no LIVE tasks; cgroup.stat separately
+        # counts visible and dying descendant cgroups.
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        (path / "cgroup.events").write_text(
+            "populated 0\nfrozen 0\n", encoding="ascii")
+        for descendants, dying in ((1, 0), (0, 1), (3, 7)):
+            with self.subTest(descendants=descendants, dying=dying):
+                self.write_cgroup_stat(
+                    path, descendants=descendants, dying=dying)
+                with self.assertRaisesRegex(
+                        scope.ScopeCleanupUnavailable, "contains processes"):
+                    self.run_mock(
+                        self.report(control="/user.slice/" + self.UNIT),
+                        stop=True)
+
+    def test_missing_or_malformed_cgroup_stat_never_claims_cleanup(self):
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        (path / "cgroup.events").write_text(
+            "populated 0\n", encoding="ascii")
+        stat_file = path / "cgroup.stat"
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
+        for raw in (
+                "", "nr_descendants 0\n",
+                "nr_dying_descendants 0\n",
+                "nr_descendants 0\nnr_descendants 0\n"
+                "nr_dying_descendants 0\n",
+                "nr_descendants 0\nnr_dying_descendants -1\n",
+                "nr_descendants 0\nnr_dying_descendants 0",
+                "nr_descendants 0\nnr_dying_descendants 0\n"
+                + "x" * 4096 + "\n",
+        ):
+            with self.subTest(raw=raw[:70]):
+                stat_file.write_text(raw, encoding="ascii")
+                with self.assertRaises(scope.ScopeCleanupUnavailable):
+                    self.run_mock(
+                        self.report(control="/user.slice/" + self.UNIT),
+                        stop=True)
+
+    def test_cgroup_stat_symlink_is_rejected(self):
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        (path / "cgroup.events").write_text(
+            "populated 0\n", encoding="ascii")
+        forged = self.root / "fake-stat"
+        self.write_cgroup_stat(self.root)
+        (path / "cgroup.stat").symlink_to(
+            self.root / "cgroup.stat")
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
+
+    def test_fifo_kernel_record_is_refused_without_blocking(self):
+        # The parent directory is a synthetic test fixture; cgroupfs
+        # itself is kernel-owned. A substituted FIFO must not hang open().
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        os.mkfifo(path / "cgroup.events")
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
 
     def test_cgroup_directory_symlink_cannot_impersonate_empty_scope(self):
         parent = self.cgroup / "user.slice"
@@ -256,6 +329,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         path = self.cgroup / "user.slice" / self.UNIT
         path.mkdir(parents=True)
         (path / "cgroup.events").write_text("populated 0\n", encoding="ascii")
+        self.write_cgroup_stat(path)
         with self.assertRaises(scope.ScopeCleanupUnavailable):
             self.run_mock(
                 self.report(control="/user.slice/" + self.UNIT),
@@ -268,6 +342,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         first = self.cgroup / "user.slice" / self.UNIT
         first.mkdir(parents=True)
         (first / "cgroup.events").write_text("populated 0\n", encoding="ascii")
+        self.write_cgroup_stat(first)
         with self.assertRaisesRegex(
                 scope.ScopeCleanupUnavailable, "changed during"):
             self.run_mock(
