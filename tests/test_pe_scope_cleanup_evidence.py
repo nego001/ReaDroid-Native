@@ -89,6 +89,35 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
                 with self.assertRaises(scope.ScopeCleanupUnavailable):
                     self.run_mock(self.report(active=active, sub=sub), stop=True)
 
+    def test_loaded_scope_without_cgroup_path_never_claims_kernel_cleanup(self):
+        # Before S1.83, a loaded/inactive/dead unit with ControlGroup=''
+        # bypassed cgroup.events: _cgroup_unpopulated('') returned True.
+        # The same two systemd replies do not supply kernel evidence.
+        with (mock.patch.object(scope, "stop_scope", return_value=True),
+              mock.patch.object(
+                  scope.bounded, "run_bounded_native",
+                  return_value=mock.Mock(
+                      returncode=0, stdout=self.report().encode("ascii"),
+                      stderr=b"")) as show,
+              mock.patch.object(scope, "_cgroup_unpopulated") as kernel_probe):
+            with self.assertRaisesRegex(
+                    scope.ScopeCleanupUnavailable,
+                    "Loaded scope has no cgroup path"):
+                scope.stop_and_attest_scope(
+                    self.UNIT, systemctl_path=str(self.systemctl),
+                    mount_root=self.cgroup)
+        show.assert_called_once()
+        kernel_probe.assert_not_called()
+
+    def test_collected_unit_with_empty_cgroup_remains_allowed(self):
+        # A not-found/dead unit with an empty path is a legitimate
+        # systemd-GC outcome; independent prior scope/quota proof is
+        # required by its caller before accepting the overall review.
+        accepted = self.run_mock(
+            self.report(load="not-found", control=""), stop=False)
+        self.assertTrue(accepted["scope_collected"])
+        self.assertTrue(accepted["scope_quiescent"])
+
     def test_live_cgroup_processes_are_refused(self):
         path = self.cgroup / "user.slice" / self.UNIT
         path.mkdir(parents=True)
@@ -209,6 +238,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
     def test_malformed_or_ambiguous_systemd_state_rejected(self):
         for report in (
             "", self.report(load="masked"),
+            self.report(load="loaded", control=""),
             self.report(load="not-found",
                         control="/user.slice/" + self.UNIT),
             self.report() + "ActiveState=inactive\n",
