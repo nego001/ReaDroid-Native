@@ -2387,3 +2387,37 @@ corridas após a última leitura. A CI não inicia uma VM Arch
 independente e não cria um cgroup real para essa suíte. A liberação
 continua em **HOLD**, com PR Draft, sem merge ou execução de
 binários Windows desconhecidos e sem publicação de APK/OTA.
+
+
+## PE-S1.82 | Limitar a saída do systemctl antes de alocar memória
+
+Auditoria do `stop_and_attest_scope()`: a PE-S1.81 tornou duas
+consultas a `systemctl show` obrigatórias, mas ainda utilizava
+`subprocess.run(capture_output=True)`. Isso carrega toda a saída
+dos pipes antes de `_parse_show()` aplicar o limite de 4096
+caracteres. Um comando defeituoso ou uma resposta anormal podia
+consumir memória desnecessária antes da rejeição.
+
+A PE-S1.82 usa o coletor Linux já auditado
+`pe_arch_vm_s1_69_bounded_native_child.run_bounded_native()`
+para **cada** consulta. Limites: 10 s, stdout no máximo
+4096 bytes, stderr no máximo 1024 bytes; sem shell, stdin
+descartado, sessão separada, encerramento do grupo e limpeza
+fail-closed. Qualquer erro de coleta, código de saída não zero,
+stderr não vazio, texto UTF-8 inválido, ou estado incompatível
+impede um resultado positivo.
+
+Os contratos com estado systemd simulado foram atualizados para
+verificar que **ambas** as consultas usam o leitor limitado. Há
+também testes com subprocessos Python inofensivos realmente
+executados: saída deliberadamente excessiva rejeitada e duas
+leituras pequenas aceitas; nenhum systemd real ou PE Windows é
+executado nos testes. As restrições de conteúdo do `cgroup.events`
+e a segunda leitura da PE-S1.81 permanecem.
+
+**Limitações:** a proteção de memória de resposta não fornece
+prova independente de estado ou limpeza do kernel. O coletor
+depende das pré-condições Linux/`SIGCHLD` da PE-S1.79. Os testes
+CI operam em Ubuntu e Arch userspace, não em VM Arch nativa
+independentemente administrada. **HOLD / Draft**, sem merge,
+PE Windows desconhecido ou APK/OTA.
