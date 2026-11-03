@@ -250,7 +250,6 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         path.mkdir(parents=True)
         (path / "cgroup.events").write_text(
             "populated 0\n", encoding="ascii")
-        forged = self.root / "fake-stat"
         self.write_cgroup_stat(self.root)
         (path / "cgroup.stat").symlink_to(
             self.root / "cgroup.stat")
@@ -264,6 +263,16 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         path = self.cgroup / "user.slice" / self.UNIT
         path.mkdir(parents=True)
         os.mkfifo(path / "cgroup.events")
+        with self.assertRaises(scope.ScopeCleanupUnavailable):
+            self.run_mock(
+                self.report(control="/user.slice/" + self.UNIT), stop=True)
+
+    def test_fifo_cgroup_stat_is_refused_without_blocking(self):
+        path = self.cgroup / "user.slice" / self.UNIT
+        path.mkdir(parents=True)
+        (path / "cgroup.events").write_text(
+            "populated 0\n", encoding="ascii")
+        os.mkfifo(path / "cgroup.stat")
         with self.assertRaises(scope.ScopeCleanupUnavailable):
             self.run_mock(
                 self.report(control="/user.slice/" + self.UNIT), stop=True)
