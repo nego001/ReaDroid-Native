@@ -63,8 +63,15 @@ def _parse_show(output: str) -> dict[str, str]:
             or values["ActiveState"] != "inactive"
             or values["SubState"] != "dead"):
         raise ScopeCleanupUnavailable("Scope still active or failed")
-    if values["LoadState"] == "not-found" and values["ControlGroup"]:
-        raise ScopeCleanupUnavailable("Collected scope has unexpected cgroup")
+    if values["LoadState"] == "not-found":
+        if values["ControlGroup"]:
+            raise ScopeCleanupUnavailable("Collected scope has unexpected cgroup")
+    elif not values["ControlGroup"]:
+        # A still-loaded scope with no ControlGroup path gives us no kernel
+        # cgroup.events to inspect. Empty is only acceptable for a unit
+        # systemd says it has already garbage-collected (not-found).
+        raise ScopeCleanupUnavailable(
+            "Loaded scope has no cgroup path for kernel verification")
     return values
 
 
