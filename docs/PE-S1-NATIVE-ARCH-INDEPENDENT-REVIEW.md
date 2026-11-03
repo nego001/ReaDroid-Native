@@ -2355,3 +2355,35 @@ nativa continua exigindo o host de um revisor independente
 e medições reais de cgroup/systemd antes de qualquer promoção.
 **HOLD / PR Draft**, sem execução de PE Windows desconhecido,
 merge, APK ou OTA.
+
+
+## PE-S1.81 | Revalidar o estado systemd após a observação do cgroup
+
+A consulta de limpeza `stop_and_attest_scope()` anteriormente lia o
+estado da unidade uma única vez, examinava `cgroup.events` e devolvia
+uma conclusão baseada na observação inicial. Uma unidade reativada,
+recriada ou redirecionada para outro `ControlGroup` durante essa janela
+podia deixar a evidência desatualizada.
+
+A PE-S1.81 lê as propriedades `LoadState`, `ActiveState`,
+`SubState` e `ControlGroup` **antes e depois** da leitura do
+cgroup, exigindo que ambas as respostas estejam válidas e sejam
+**exatamente iguais**. A segunda consulta recusada ou qualquer
+mudança de estado/caminho faz a verificação falhar fechada. Isso
+inclui uma coleta legítima da unidade pelo systemd durante a
+janela: nesse caso é preferível repetir a auditoria a associar
+uma observação do kernel a um estado diferente da unidade.
+
+Testes com systemd simulado e arquivos descartáveis incluem:
+reativação `inactive/dead -> active/running`, troca de caminho
+de cgroup com a unidade ainda inativa, coleta intermediária
+`loaded -> not-found` e falha na segunda consulta. Os testes
+anteriormente existentes também exigem duas leituras de estado
+para concluir um caso estável.
+
+**Limitação:** as duas leituras do mesmo serviço systemd não
+constituem uma testemunha independente, nem eliminam todas as
+corridas após a última leitura. A CI não inicia uma VM Arch
+independente e não cria um cgroup real para essa suíte. A liberação
+continua em **HOLD**, com PR Draft, sem merge ou execução de
+binários Windows desconhecidos e sem publicação de APK/OTA.
