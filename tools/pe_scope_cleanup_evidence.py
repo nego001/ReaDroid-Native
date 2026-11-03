@@ -148,18 +148,34 @@ def stop_and_attest_scope(unit_name: str, *, systemctl_path: str | None = None,
         raise ScopeCleanupUnavailable("Cannot verify scope cleanup") from exc
 
     accepted = stop_scope(unit_name, systemctl_path=executable)
-    try:
-        result = subprocess.run([
-            executable, "--user", "--no-ask-password", "--no-pager", "--all",
-            "show", unit_name,
-            "--property=LoadState,ActiveState,SubState,ControlGroup",
-        ], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+    # The status read and cgroup.events probe are separate syscalls.
+    # Re-read systemd after the kernel observation so a transient unit
+    # reactivation, reuse or ControlGroup path change does not get silently
+    # promoted to a cleanup PASS. The two observations must be identical;
+    # if normal systemd GC happens during this window, refuse this attempt
+    # rather than inferring the identity of a now-disappeared scope.
+    argv = [
+        executable, "--user", "--no-ask-password", "--no-pager", "--all",
+        "show", unit_name,
+        "--property=LoadState,ActiveState,SubState,ControlGroup",
+    ]
+
+    def read_state() -> dict[str, str]:
+        result = subprocess.run(
+            argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
             check=False, timeout=10)
         if result.returncode != 0:
             raise ScopeCleanupUnavailable("systemd could not confirm scope state")
-        state = _parse_show(result.stdout)
+        return _parse_show(result.stdout)
+
+    try:
+        state = read_state()
         if not _cgroup_unpopulated(state["ControlGroup"], unit_name, mount_root):
             raise ScopeCleanupUnavailable("Scope cgroup still contains processes")
+        final_state = read_state()
+        if final_state != state:
+            raise ScopeCleanupUnavailable(
+                "Scope state or cgroup path changed during cleanup verification")
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as exc:
         raise ScopeCleanupUnavailable("Scope final state unavailable") from exc
     return {
