@@ -2421,3 +2421,37 @@ depende das pré-condições Linux/`SIGCHLD` da PE-S1.79. Os testes
 CI operam em Ubuntu e Arch userspace, não em VM Arch nativa
 independentemente administrada. **HOLD / Draft**, sem merge,
 PE Windows desconhecido ou APK/OTA.
+
+
+## PE-S1.83 | Recusar escopo carregado sem caminho de cgroup
+
+A auditoria identificou uma falsa aprovação possível no
+`pe_scope_cleanup_evidence.py`: `LoadState=loaded`,
+`ActiveState=inactive`, `SubState=dead` com `ControlGroup=`
+passava no parser e chegava a `_cgroup_unpopulated("")`, que
+retornava `True` **sem consultar o kernel**. Duas leituras
+idênticas do systemd não substituem a inspeção de `cgroup.events`
+quando a unidade ainda consta como carregada.
+
+A PE-S1.83 exige `ControlGroup` não vazio para
+`LoadState=loaded`; a verificação existente percorre então o
+caminho por descritores sem seguir symlinks, exige ancestrais
+existentes e verifica `cgroup.events` caso o escopo final
+permaneça no host. `LoadState=not-found` com
+`ControlGroup=` continua aceito como unidade transitória
+coletada pelo systemd, condicionado à comprovação anterior
+de existência do escopo e aplicação das cotas. A regra de
+recusar um `ControlGroup` não vazio no estado `not-found`
+permanece.
+
+Os novos testes verificam que a unidade carregada sem
+cgroup falha **antes de qualquer suposta consulta ao kernel**
+e que a unidade `not-found` com caminho vazio continua
+sendo tratada como caso válido de coleta. Eles usam respostas
+systemd simuladas e não são prova de observação independente.
+
+**Limite:** um caminho cgroup verificável e duas leituras do
+systemd não impedem todas as corridas de reativação, nem
+comprovam isolamento de descendentes ou um host de revisão
+independente. Estado **HOLD / PR Draft**, sem merge, execução
+de Windows PE desconhecido ou publicação APK/OTA.
