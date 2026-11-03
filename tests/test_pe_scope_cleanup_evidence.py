@@ -220,7 +220,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         # A later active/running report invalidates that result.
         path = self.cgroup / "user.slice" / self.UNIT
         path.mkdir(parents=True)
-        (path / "cgroup.events").write_text("populated 0\\n", encoding="ascii")
+        (path / "cgroup.events").write_text("populated 0\n", encoding="ascii")
         with self.assertRaises(scope.ScopeCleanupUnavailable):
             self.run_mock(
                 self.report(control="/user.slice/" + self.UNIT),
@@ -232,7 +232,7 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
         # A second *inactive* report can still refer to another cgroup.
         first = self.cgroup / "user.slice" / self.UNIT
         first.mkdir(parents=True)
-        (first / "cgroup.events").write_text("populated 0\\n", encoding="ascii")
+        (first / "cgroup.events").write_text("populated 0\n", encoding="ascii")
         with self.assertRaisesRegex(
                 scope.ScopeCleanupUnavailable, "changed during"):
             self.run_mock(
