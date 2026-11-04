@@ -2595,6 +2595,11 @@ Regressões simuladas verificam o bloqueio antes de criar escopos
 sem suporte pidfd, rejeição e fechamento de descritores quando o
 PID ou o pertencimento ao cgroup mudam durante a abertura e uso de
 pidfd em vez de sinalização numérica mesmo no encerramento de erro.
-A CI NÃO inicia escopos systemd reais nem comprova o ambiente da VM
-Arch nativa. Permanecem **HOLD / Draft**, sem merge, execução de PE
-Windows desconhecido ou publicação de APK/OTA.
+Há também um teste Linux que abre um pidfd real para um
+subprocesso Python inofensivo criado pelo próprio teste, usa a chamada
+real `pidfd_send_signal` e confirma `ESRCH` ao reutilizar o
+descritor depois do encerramento. Esse teste **não** usa systemd,
+cgroup real, Ghidra, Windows PE ou VM. A CI NÃO inicia escopos systemd
+reais nem comprova o ambiente da VM Arch nativa. Permanecem
+**HOLD / Draft**, sem merge, execução de PE Windows desconhecido ou
+publicação de APK/OTA.
