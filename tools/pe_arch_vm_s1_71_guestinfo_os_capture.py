@@ -54,14 +54,14 @@ def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
     or contradictory snapshots BEFORE issuing any virsh/guestinfo call.
     """
     if (not isinstance(raw, bytes) or not 0 < len(raw) <= external.MAX_LOG_BYTES
-            or not raw.endswith(b"\\n") or b"\\r" in raw or b"\\0" in raw):
+            or not raw.endswith(b"\n") or b"\r" in raw or b"\0" in raw):
         raise GuestKernelObservationError(
             "Prior host snapshot missing or noncanonical")
     try:
         text = raw.decode("utf-8")
     except UnicodeError as exc:
         raise GuestKernelObservationError("Prior host record is not UTF-8") from exc
-    lines = text[:-1].split("\\n")
+    lines = text[:-1].split("\n")
     if (len(lines) < 23
             or any(not line or any(ord(c) < 32 or ord(c) == 127
                                     for c in line) for line in lines)):
