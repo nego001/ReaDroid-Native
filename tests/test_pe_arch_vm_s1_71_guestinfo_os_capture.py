@@ -45,11 +45,18 @@ class GuestKernelCaptureContracts(unittest.TestCase):
             "classification=HOST_QUERY_OUTPUT_NOT_VM_ATTESTATION\n"
             "source_commit=" + COMMIT + "\n"
             "reviewer_challenge=" + CHALLENGE + "\n"
+            "observed_utc_untrusted=2026-11-03T01:23:45+00:00\n"
+            "uri=qemu:///system\n"
             "connection=readonly\n"
             "domain_name=" + DOMAIN + "\n"
             "expected_domain_uuid=" + UUID + "\n"
             "initial_domuuid:\n" + UUID + "\n"
             "initial_domstate:\nrunning\n"
+            "dominfo:\n"
+            "Id: 5\n"
+            "Name: " + DOMAIN + "\n"
+            "UUID: " + UUID + "\n"
+            "State: running\n"
             "final_domstate:\nrunning\n"
             "final_domuuid:\n" + UUID + "\n"
             "independent_vm_attestation=false\n"
@@ -161,6 +168,50 @@ class GuestKernelCaptureContracts(unittest.TestCase):
             self.capture(expected_prior_host_sha256=hashlib.sha256(
                 self.prior.read_bytes()).hexdigest())
         self.assertFalse(self.calls)
+
+    def test_rehashed_conflicting_dominfo_refused_before_guest_agent(self):
+        # S1.84 accepted a pinned host record even if its dominfo UUID,
+        # name or State contradicted the separately pinned identity.
+        for previous, forged in (
+            (b"UUID: " + UUID.encode(),
+             b"UUID: 11111111-1111-4111-8111-111111111111"),
+            (b"Name: " + DOMAIN.encode(), b"Name: other-domain"),
+            (b"State: running", b"State: shut off"),
+        ):
+            with self.subTest(forged=forged):
+                bad = self.record.replace(previous, forged)
+                self.prior.write_bytes(bad)
+                self.prior.chmod(0o600)
+                digest = hashlib.sha256(bad).hexdigest()
+                self.calls.clear()
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    self.capture(expected_prior_host_sha256=digest)
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.target.exists())
+        self.prior.write_bytes(self.record)
+
+    def test_rehashed_missing_or_reordered_host_sections_rejected(self):
+        for bad in (
+            self.record.replace(b"dominfo:\n", b"dominfo-missing:\n"),
+            self.record.replace(b"uri=qemu:///system\n", b""),
+            self.record.replace(b"initial_domuuid:\n", b"initial_domuuid=fake\n"),
+            self.record.replace(b"observed_utc_untrusted=2026-11-03T01:23:45+00:00",
+                                b"observed_utc_untrusted=not-a-time"),
+            self.record.replace(b"release_authorized=false\n",
+                                b"release_authorized=false\nUNEXPECTED\n"),
+            self.record.replace(b"State: running\n",
+                                b"State: running\nrelease_authorized=true\n"),
+        ):
+            with self.subTest(bad=bad[:60]):
+                self.prior.write_bytes(bad)
+                self.prior.chmod(0o600)
+                self.calls.clear()
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    self.capture(
+                        expected_prior_host_sha256=hashlib.sha256(bad).hexdigest())
+                self.assertFalse(self.calls)
+                self.assertFalse(self.target.exists())
+        self.prior.write_bytes(self.record)
 
     def test_prior_host_snapshot_symlink_rejected(self):
         other = self.owner / "copy"
