@@ -95,10 +95,14 @@ class NativeDescendantTests(unittest.TestCase):
                 kwargs["stderr"].flush()
             return fake_process
 
-        with mock.patch.object(smoke, "verify_arch_vm",
-                               return_value={"status": "ARCH_VM_PREFLIGHT_PASSED",
-                                             "vm_confirmed": True,
-                                             "container": False}):
+        with (mock.patch.object(smoke, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED",
+                                              "vm_confirmed": True,
+                                              "container": False}),
+              mock.patch.object(
+                  smoke, "_native_prlimit_prefix",
+                  return_value=["/usr/bin/prlimit",
+                                "--fsize=32768:32768", "--"]) as limiter):
             with mock.patch.object(smoke, "new_scope_unit", return_value=self.unit):
                 with (
                     mock.patch.object(smoke, "wrap_in_cgroup_scope",
@@ -168,6 +172,11 @@ class NativeDescendantTests(unittest.TestCase):
             quota_read.assert_called_once_with(mock.ANY, self.unit)
         else:
             quota_read.assert_not_called()
+        limiter.assert_called_once_with()
+        self.assertEqual(
+            popen.call_args.args[0][:3],
+            ["/usr/bin/prlimit", "--fsize=32768:32768", "--"])
+        self.assertEqual(popen.call_args.args[0][3], sys.executable)
         self.assertTrue(popen.call_args.kwargs["close_fds"])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
         self.assertGreaterEqual(stop.call_count, 1)
@@ -237,6 +246,72 @@ class NativeDescendantTests(unittest.TestCase):
             self._synthetic_result(oversized_output=True)
             self._synthetic_result(unexpected_stderr=True)
         numeric_kill.assert_not_called()
+
+    def test_missing_prlimit_refused_before_scope_creation(self):
+        vm = {"status": "ARCH_VM_PREFLIGHT_PASSED",
+              "vm_confirmed": True, "container": False}
+        with (mock.patch.object(smoke, "verify_arch_vm", return_value=vm),
+              mock.patch.object(smoke.shutil, "which", return_value=None),
+              mock.patch.object(smoke, "new_scope_unit") as scope,
+              mock.patch.object(smoke.subprocess, "Popen") as spawn):
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError,
+                    "Trusted prlimit is required"):
+                smoke.run_native_descendant_smoke()
+        scope.assert_not_called()
+        spawn.assert_not_called()
+
+    def test_untrusted_prlimit_refused_before_scope_creation(self):
+        vm = {"status": "ARCH_VM_PREFLIGHT_PASSED",
+              "vm_confirmed": True, "container": False}
+        with tempfile.TemporaryDirectory(prefix="pe-s1-89-prlimit-") as root:
+            folder = Path(root)
+            fake = folder / "prlimit"
+            fake.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
+            fake.chmod(0o777)
+            alias = folder / "alias"
+            alias.symlink_to(fake)
+            for path in (fake, alias):
+                with self.subTest(path=path):
+                    with (
+                        mock.patch.object(smoke, "verify_arch_vm",
+                                          return_value=vm),
+                        mock.patch.object(smoke.shutil, "which",
+                                          return_value=str(path)),
+                        mock.patch.object(smoke, "new_scope_unit") as scope,
+                        mock.patch.object(smoke.subprocess, "Popen") as spawn,
+                    ):
+                        with self.assertRaisesRegex(
+                                smoke.DescendantProbeError,
+                                "Untrusted prlimit"):
+                            smoke.run_native_descendant_smoke()
+                    scope.assert_not_called()
+                    spawn.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux-only file limit")
+    def test_real_prlimit_enforces_hard_fsize_on_owned_python(self):
+        # Harmless local Python fixture, no scope/systemd/PE/VM.
+        try:
+            prefix = smoke._native_prlimit_prefix()
+        except smoke.DescendantProbeError as exc:
+            self.skipTest(str(exc))
+        with tempfile.TemporaryDirectory(prefix="pe-s1-89-real-fsize-") as root:
+            output = Path(root) / "oversized"
+            # RLIMIT_FSIZE is inherited and enforced by the kernel even
+            # if child Python attempts to write beyond it.
+            child = subprocess.run(
+                [*prefix, sys.executable, "-I", "-c",
+                 "import pathlib,resource,sys; "
+                 "assert resource.getrlimit(resource.RLIMIT_FSIZE)"
+                 " == (32768,32768); "
+                 "pathlib.Path(sys.argv[1]).write_bytes(b'X' * 65536)",
+                 str(output)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=5, check=False)
+            self.assertNotEqual(child.returncode, 0)
+            self.assertTrue(output.is_file())
+            self.assertLessEqual(
+                output.stat().st_size, smoke.MAX_NATIVE_WRITE_FILE_BYTES)
 
     def test_refuses_platform_without_pidfd_before_spawning(self):
         vm = {"status": "ARCH_VM_PREFLIGHT_PASSED",
