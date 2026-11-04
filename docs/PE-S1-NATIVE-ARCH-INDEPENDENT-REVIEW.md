@@ -2496,3 +2496,36 @@ juntos não impedem mudanças posteriores nem comprovam a
 proveniência independente da VM. A CI continua usando arquivos
 cgroup simulados; a prova em VM Arch nativa de revisor independente
 segue **ausente**, com release **HOLD** e PR **Draft**.
+
+
+## PE-S1.85 | Vincular semanticamente o snapshot S1.70 antes de consultar guestinfo
+
+A S1.71 anteriormente fazia checagens de presença de strings do snapshot
+S1.70 (linhas obrigatórias, `initial_domuuid`, `final_domstate` etc.),
+mas não conferia seu **formato integral** nem a identidade dentro do
+`dominfo`. Uma cópia adulterada e **novamente fixada por SHA-256**
+podia conter os marcadores esperados e simultaneamente registrar
+`Name`, `UUID` ou `State` contraditórios. O digest confirma
+igualdade de bytes, não a consistência semântica da informação.
+
+A PE-S1.85 aplica validação fail-closed **antes de qualquer comando
+`virsh` ou consulta ao guest agent**. Exige: framing completo S1.70
+em ordem (campos de fonte, challenge, hora observada, URI somente
+leitura, domínio/UUID inicial e final, `dominfo` e marcadores HOLD);
+hora UTC bem formada, com indicação explícita de que não é atestada;
+linhas canônicas e sem controles; e exatamente um
+`Name`, `UUID` e `State` consistentes no bloco `dominfo`.
+Marcadores de segurança injetados no `dominfo` são recusados.
+
+Os testes S1.71 foram atualizados com uma estrutura realista S1.70,
+incluindo cenários re-hasheados com `dominfo` contraditório,
+cabeçalho ausente/alterado, marcador injetado e timestamp inválido.
+Cada caso deve falhar **sem executar qualquer nova consulta**
+ou publicar a segunda observação. A suíte de fronteira S1.72
+continua exercitando subprocessos Python de teste, sem libvirt real.
+
+Esse reforço ocorre **antes** da revisão offline S1.73 e não
+comprova, por si, procedência do host, kernel do convidado ou
+independência do revisor. Sem alteração da autorização: release
+**HOLD**, PR **Draft**, nenhum merge, execução de PE desconhecido
+ou publicação de APK/OTA.
