@@ -187,6 +187,49 @@ class TwoRecordReviewContracts(unittest.TestCase):
         with self.assertRaises(review.TwoRecordReviewError):
             self.verify(expected_host_sha256=changed)
 
+    def test_rehashed_both_records_reject_forbidden_host_dominfo_markers(self):
+        # In S1.85, the S1.71 capture gate refused these injected claims.
+        # S1.73 used to accept them when BOTH records were rehashed and
+        # the guest's prior-host hash was adjusted to match the forgery.
+        # The offline HOLD report must never claim identity correlation
+        # for a snapshot that the earlier gate considers inconsistent.
+        original = first_record()
+        for forged in (
+            b"domain_name=second-domain",
+            b"expected_domain_uuid=11111111-1111-4111-8111-111111111111",
+            b"uri=qemu:///session",
+            b"initial_domstate:\\nshut off",
+            b"observation_type=independent_vm_attestation",
+        ):
+            with self.subTest(forged=forged):
+                new_host = original.replace(
+                    b"State: running\\n", b"State: running\\n" + forged + b"\\n")
+                self.first.write_bytes(new_host)
+                host_sha = hashlib.sha256(new_host).hexdigest()
+                new_guest = second_record(host_sha)
+                self.second.write_bytes(new_guest)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "strict pre-guestinfo policy"):
+                    self.verify(
+                        expected_host_sha256=host_sha,
+                        expected_guest_sha256=hashlib.sha256(
+                            new_guest).hexdigest())
+
+    def test_review_uses_shared_s1_71_snapshot_validator(self):
+        # Guard against a later drift that silently drops the earlier
+        # check while keeping a superficially equivalent local parser.
+        with mock.patch.object(
+                review.guest, "_check_snapshot",
+                side_effect=guest.GuestKernelObservationError(
+                    "intentional strict policy failure")) as check:
+            with self.assertRaisesRegex(
+                    review.TwoRecordReviewError, "strict pre-guestinfo"):
+                self.verify()
+        check.assert_called_once_with(
+            first_record(), commit=COMMIT, challenge=CHALLENGE,
+            domain=DOMAIN, uuid=UUID)
+
     def test_missing_log_refused(self):
         self.second.unlink()
         with self.assertRaises(review.TwoRecordReviewError):
