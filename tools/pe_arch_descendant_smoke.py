@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,43 @@ from pe_resource_limits import (new_scope_unit, stop_scope,
 
 class DescendantProbeError(RuntimeError):
     pass
+
+
+MAX_GUARD_STDOUT_BYTES = 32 * 1024
+MAX_GUARD_STDERR_BYTES = 8 * 1024
+
+
+def _read_bounded_scope_log(path: Path, limit: int) -> bytes:
+    """Read only a bounded, regular, owner-controlled smoke output file.
+
+    A regular-file read_bytes() allocates the entire file before the
+    caller can reject an oversized guard log. Use O_NOFOLLOW and cap the
+    *actual* read; a synthetic worker could also replace a path with a
+    symlink or FIFO while the launcher is running.
+    """
+    if (type(limit) is not int
+            or not 0 < limit <= MAX_GUARD_STDOUT_BYTES
+            or not hasattr(os, "O_NOFOLLOW")):
+        raise DescendantProbeError("Bounded scope log reader unavailable")
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(path, flags)
+        try:
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_uid != os.geteuid()
+                    or metadata.st_nlink != 1):
+                raise DescendantProbeError("Scope log is not a private regular file")
+            if metadata.st_size > limit:
+                raise DescendantProbeError("Scope log exceeded read budget")
+            data = os.read(fd, limit + 1)
+            if len(data) > limit or os.fstat(fd).st_size > limit:
+                raise DescendantProbeError("Scope log exceeded read budget")
+            return data
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise DescendantProbeError("Scope log unavailable or unsafe") from exc
 
 
 def proc_identity(pid: int) -> tuple[str, str] | None:
@@ -200,9 +238,15 @@ def run_native_descendant_smoke() -> dict:
                     time.sleep(0.15)
                 else:
                     raise DescendantProbeError("child startup marker not produced")
-                output = out_path.read_bytes()
-                if len(output) > 32 * 1024:
-                    raise DescendantProbeError("Cgroup guard stdout is unbounded")
+                # Both captured files must be safe before interpreting a
+                # PASS receipt. Limit the bytes during read, not after.
+                output = _read_bounded_scope_log(
+                    out_path, MAX_GUARD_STDOUT_BYTES)
+                diagnostic = _read_bounded_scope_log(
+                    err_path, MAX_GUARD_STDERR_BYTES)
+                if diagnostic:
+                    raise DescendantProbeError(
+                        "Cgroup guard emitted unexpected stderr")
                 try:
                     receipts = [json.loads(line) for line in output.decode(
                         "utf-8").splitlines() if line.lstrip().startswith("{")]
