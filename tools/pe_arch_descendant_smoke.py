@@ -58,6 +58,40 @@ def belongs_to_scope(pid: int, unit: str) -> bool:
         return False
 
 
+def _require_pidfd_cleanup() -> None:
+    """Do not spawn a detached descendant without race-free Linux cleanup."""
+    if (sys.platform != "linux"
+            or not callable(getattr(os, "pidfd_open", None))
+            or not callable(getattr(signal, "pidfd_send_signal", None))):
+        raise DescendantProbeError(
+            "Native descendant test requires Linux pidfd cleanup support")
+
+
+def _pin_descendant_pidfd(pid: int, starttime: str, unit: str) -> int:
+    """Pin the specific live scope descendant before attempting scope stop.
+
+    A /proc identity read followed by a numeric os.kill has a PID-reuse
+    race. Open a pidfd, then recheck starttime AND cgroup membership
+    while the pidfd holds that task's kernel identity. Only the pinned
+    descriptor may be used for emergency SIGKILL.
+    """
+    _require_pidfd_cleanup()
+    if not active_identity(pid, starttime) or not belongs_to_scope(pid, unit):
+        raise DescendantProbeError("Descendant identity changed before pidfd pin")
+    try:
+        fd = os.pidfd_open(pid, 0)
+    except (OSError, ValueError) as exc:
+        raise DescendantProbeError("Cannot pin descendant kernel PID identity") from exc
+    try:
+        if not active_identity(pid, starttime) or not belongs_to_scope(pid, unit):
+            raise DescendantProbeError(
+                "Descendant identity or scope changed during pidfd pin")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 def wait_until_dead(pid: int, starttime: str, seconds: float) -> bool:
     end = time.monotonic() + seconds
     while time.monotonic() < end:
@@ -112,8 +146,12 @@ def run_native_descendant_smoke() -> dict:
             or environment.get("vm_confirmed") is not True
             or environment.get("container") is not False):
         raise DescendantProbeError("Disposable native Arch VM not verified")
+    # Require a safe kill primitive before ANY detached process is spawned.
+    # An unsupported kernel/Python must fail without creating a scope.
+    _require_pidfd_cleanup()
     unit = new_scope_unit()
     child_pid = None
+    child_pidfd = None
     child_starttime = None
     launcher = None
     stopped = False
@@ -151,6 +189,11 @@ def run_native_descendant_smoke() -> dict:
                                 or not belongs_to_scope(child_pid, unit)):
                             raise DescendantProbeError(
                                 "live detached child not confirmed inside scope")
+                        # Pin the exact live task before stopping the
+                        # scope. The pidfd prevents a later numeric PID
+                        # reuse from redirecting emergency cleanup.
+                        child_pidfd = _pin_descendant_pidfd(
+                            child_pid, child_starttime, unit)
                         break
                     if launcher.poll() is not None:
                         raise DescendantProbeError("systemd scope terminated early")
@@ -200,20 +243,31 @@ def run_native_descendant_smoke() -> dict:
                     raise DescendantProbeError(
                         "Descendant cgroup remained populated or unverified")
         finally:
-            stop_scope(unit)
-            if launcher is not None:
-                try:
-                    launcher.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    launcher.kill()
-                    launcher.wait(timeout=3)
             # Cleanup fallback is NOT evidence of correct scope termination.
-            if (child_pid is not None and child_starttime is not None
-                    and active_identity(child_pid, child_starttime)):
+            # Pinning a pidfd before stop prevents SIGKILL from reaching an
+            # unrelated task if the old numeric PID was recycled.
+            try:
+                stop_scope(unit)
+            finally:
                 try:
-                    os.kill(child_pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                    if child_pidfd is not None:
+                        try:
+                            signal.pidfd_send_signal(
+                                child_pidfd, signal.SIGKILL, None, 0)
+                        except ProcessLookupError:
+                            # The kernel-pinned original process is gone.
+                            pass
+                finally:
+                    try:
+                        if child_pidfd is not None:
+                            os.close(child_pidfd)
+                    finally:
+                        if launcher is not None:
+                            try:
+                                launcher.wait(timeout=3)
+                            except subprocess.TimeoutExpired:
+                                launcher.kill()
+                                launcher.wait(timeout=3)
         return {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": unit, "quota_verified": proof,
                 "systemd_stop_succeeded": stopped,
