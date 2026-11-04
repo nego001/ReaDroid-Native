@@ -5,6 +5,8 @@ Arch host's cgroup or real systemd session.
 """
 from pathlib import Path
 import json
+import os
+import signal
 import sys
 import unittest
 from unittest import mock
@@ -105,11 +107,19 @@ class NativeDescendantTests(unittest.TestCase):
                         with mock.patch.object(smoke, "belongs_to_scope",
                                                return_value=True):
                             with mock.patch.object(smoke, "active_identity",
-                                                   side_effect=[True, False]):
+                                                   side_effect=[True, True, True]):
                                 with mock.patch.object(smoke, "wait_until_dead",
                                                        return_value=child_gone):
-                                    with mock.patch.object(smoke, "stop_scope",
-                                                           return_value=True) as stop:
+                                    with (mock.patch.object(
+                                              smoke, "stop_scope",
+                                              return_value=True) as stop,
+                                          mock.patch.object(
+                                              smoke.os, "pidfd_open",
+                                              side_effect=lambda pid, flags=0:
+                                              os.open(os.devnull, os.O_RDONLY)) as pin,
+                                          mock.patch.object(
+                                              smoke.signal,
+                                              "pidfd_send_signal") as send):
                                         with mock.patch.object(
                                                 smoke, "stop_and_attest_scope",
                                                 return_value={
@@ -146,6 +156,9 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(popen.call_args.kwargs["close_fds"])
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
         self.assertGreaterEqual(stop.call_count, 1)
+        pin.assert_called_once_with(24680, 0)
+        send.assert_called_once()
+        self.assertEqual(send.call_args.args[1:], (signal.SIGKILL, None, 0))
         return result
 
     def test_accepts_only_scope_killing_live_detached_child(self):
@@ -157,6 +170,60 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(result["detached_sigterm_ignoring_child_terminated"])
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
+
+    def test_refuses_platform_without_pidfd_before_spawning(self):
+        vm = {"status": "ARCH_VM_PREFLIGHT_PASSED",
+              "vm_confirmed": True, "container": False}
+        for module, attribute in ((smoke.os, "pidfd_open"),
+                                  (smoke.signal, "pidfd_send_signal")):
+            with self.subTest(attribute=attribute):
+                with (mock.patch.object(smoke, "verify_arch_vm",
+                                        return_value=vm),
+                      mock.patch.object(module, attribute, None),
+                      mock.patch.object(smoke, "new_scope_unit") as scope,
+                      mock.patch.object(smoke.subprocess, "Popen") as launch):
+                    with self.assertRaisesRegex(
+                            smoke.DescendantProbeError, "pidfd cleanup support"):
+                        smoke.run_native_descendant_smoke()
+                    scope.assert_not_called()
+                    launch.assert_not_called()
+
+    def test_pidfd_pin_detects_pid_reuse_after_open_and_closes_fd(self):
+        fd = os.open(os.devnull, os.O_RDONLY)
+        with (mock.patch.object(smoke, "active_identity",
+                                side_effect=[True, False]),
+              mock.patch.object(smoke, "belongs_to_scope",
+                                return_value=True),
+              mock.patch.object(smoke.os, "pidfd_open",
+                                return_value=fd) as opened,
+              mock.patch.object(smoke.os, "kill") as numeric_kill):
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "changed during pidfd pin"):
+                smoke._pin_descendant_pidfd(24680, "3333", self.unit)
+        opened.assert_called_once_with(24680, 0)
+        numeric_kill.assert_not_called()
+        with self.assertRaises(OSError):
+            os.fstat(fd)
+
+    def test_pidfd_pin_rejects_wrong_cgroup_after_open(self):
+        fd = os.open(os.devnull, os.O_RDONLY)
+        with (mock.patch.object(smoke, "active_identity",
+                                return_value=True),
+              mock.patch.object(smoke, "belongs_to_scope",
+                                side_effect=[True, False]),
+              mock.patch.object(smoke.os, "pidfd_open",
+                                return_value=fd)):
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "scope changed"):
+                smoke._pin_descendant_pidfd(24680, "3333", self.unit)
+        with self.assertRaises(OSError):
+            os.fstat(fd)
+
+    def test_pidfd_fallback_does_not_use_numeric_kill(self):
+        with mock.patch.object(smoke.os, "kill") as numeric_kill:
+            self._synthetic_result(child_gone=False)
+            self._synthetic_result()
+        numeric_kill.assert_not_called()
 
     def test_direct_descendant_probe_refuses_non_vm_before_spawning(self):
         with mock.patch.object(smoke, "verify_arch_vm",
