@@ -9,6 +9,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -68,7 +69,8 @@ class NativeDescendantTests(unittest.TestCase):
             self.assertFalse(smoke.active_identity(2345, "123"))
 
     def _synthetic_result(self, *, child_gone=True, proof=True,
-                          cleanup_quiescent=True, cleanup_other_scope=False):
+                          cleanup_quiescent=True, cleanup_other_scope=False,
+                          oversized_output=False, unexpected_stderr=False):
         proof_line = (
             '{"cgroup_verification": "passed", "verified": true,'
             '"memory_max": 4294967296, "pids_max": 128,'
@@ -84,7 +86,13 @@ class NativeDescendantTests(unittest.TestCase):
                 "pid": 24680, "starttime": "3333", "unit": self.unit
             }), encoding="utf-8")
             kwargs["stdout"].write(proof_line.encode("utf-8"))
+            if oversized_output:
+                kwargs["stdout"].write(
+                    b"X" * (smoke.MAX_GUARD_STDOUT_BYTES + 1))
             kwargs["stdout"].flush()
+            if unexpected_stderr:
+                kwargs["stderr"].write(b"unexpected guard failure\n")
+                kwargs["stderr"].flush()
             return fake_process
 
         with mock.patch.object(smoke, "verify_arch_vm",
@@ -134,13 +142,17 @@ class NativeDescendantTests(unittest.TestCase):
                                                     "sub_state": "dead",
                                                 }) as cleanup:
                                             if (proof and child_gone and cleanup_quiescent
-                                                    and not cleanup_other_scope):
+                                                    and not cleanup_other_scope
+                                                    and not oversized_output
+                                                    and not unexpected_stderr):
                                                 result = smoke.run_native_descendant_smoke()
                                                 cleanup.assert_called_once_with(self.unit)
                                             else:
                                                 with self.assertRaises(smoke.DescendantProbeError):
                                                     smoke.run_native_descendant_smoke()
-                                                if proof and child_gone:
+                                                if (proof and child_gone
+                                                        and not oversized_output
+                                                        and not unexpected_stderr):
                                                     cleanup.assert_called_once_with(self.unit)
                                                 else:
                                                     cleanup.assert_not_called()
@@ -171,6 +183,58 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(result["detached_sigterm_ignoring_child_terminated"])
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
+
+    def test_bounded_scope_logs_reject_oversize_without_loading_all(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-88-log-") as root:
+            path = Path(root) / "guard.stdout"
+            path.write_bytes(b"A" * smoke.MAX_GUARD_STDOUT_BYTES)
+            self.assertEqual(
+                len(smoke._read_bounded_scope_log(
+                    path, smoke.MAX_GUARD_STDOUT_BYTES)),
+                smoke.MAX_GUARD_STDOUT_BYTES)
+            path.write_bytes(b"B" * (smoke.MAX_GUARD_STDOUT_BYTES + 1))
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "read budget"):
+                smoke._read_bounded_scope_log(
+                    path, smoke.MAX_GUARD_STDOUT_BYTES)
+
+    def test_bounded_scope_logs_refuse_symlink_hardlink_and_fifo(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-88-log-") as root:
+            folder = Path(root)
+            genuine = folder / "ordinary"
+            genuine.write_bytes(b"")
+            dangling = folder / "link"
+            dangling.symlink_to(genuine)
+            with self.assertRaises(smoke.DescendantProbeError):
+                smoke._read_bounded_scope_log(dangling, 128)
+            fifo = folder / "fifo"
+            os.mkfifo(fifo)
+            # Opening an untrusted FIFO without O_NONBLOCK would hang.
+            with self.assertRaises(smoke.DescendantProbeError):
+                smoke._read_bounded_scope_log(fifo, 128)
+            alias = folder / "hardlink"
+            os.link(genuine, alias)
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "regular file"):
+                smoke._read_bounded_scope_log(genuine, 128)
+
+    def test_bounded_scope_logs_refuse_invalid_limits(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-88-log-") as root:
+            path = Path(root) / "ordinary"
+            path.write_bytes(b"receipt")
+            for limit in (0, -1, 2.5, True,
+                          smoke.MAX_GUARD_STDOUT_BYTES + 1):
+                with self.subTest(limit=limit):
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        smoke._read_bounded_scope_log(path, limit)
+
+    def test_oversized_or_stderr_guard_logs_fail_and_trigger_pidfd_cleanup(self):
+        # These errors occur *after* the descendant is pinned: the
+        # finally path must still stop the scope and use pidfd, not kill(pid).
+        with mock.patch.object(smoke.os, "kill") as numeric_kill:
+            self._synthetic_result(oversized_output=True)
+            self._synthetic_result(unexpected_stderr=True)
+        numeric_kill.assert_not_called()
 
     def test_refuses_platform_without_pidfd_before_spawning(self):
         vm = {"status": "ARCH_VM_PREFLIGHT_PASSED",
