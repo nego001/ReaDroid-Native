@@ -2645,19 +2645,22 @@ até então não havia limite equivalente aplicado pelo kernel durante
 a escrita desses arquivos. O processo poderia consumir espaço no
 sistema de arquivos antes que o leitor encontrasse o excesso.
 
-A S1.89 exige `prlimit` (util-linux) confiável **antes** de criar
-qualquer escopo. A busca por `prlimit` deve encontrar um executável
-regular, pertencente a root e não gravável por grupo/outros, sob uma
-cadeia de diretórios também pertencentes a root e não graváveis por
-grupo/outros (sem symlinks). Ausência ou resultado não confiável
-bloqueia a execução. O launcher recebe, sem shell:
+A S1.89 exige o caminho canônico do pacote util-linux no Arch,
+**`/usr/bin/prlimit`**, antes de criar qualquer escopo. Não consulta
+`PATH` nem aceita substituições em locais graváveis por usuário
+(como `/tmp`). O executável deve ser regular, pertencer a root e
+não ser gravável por grupo/outros, sob diretórios também pertencentes
+a root e não graváveis por grupo/outros, sem symlinks na cadeia.
+Ausência ou caminho não confiável bloqueia a execução. O launcher
+recebe, sem shell:
 
 ```text
 /usr/bin/prlimit --fsize=32768:32768 -- systemd-run --user --scope ...
 ```
 
-O caminho de `prlimit` é a referência segura realmente encontrada,
-não necessariamente `/usr/bin/prlimit` em todos os hosts. O limite
+O caminho de `prlimit` é explicitamente fixado na instalação
+oficial do Arch, evitando um falso bloqueio causado por `PATH`
+apontando para o alias `/bin`. O limite
 soft **e hard** `RLIMIT_FSIZE=32768` bytes é aplicado antes de
 `systemd-run` e normalmente herdado pelo processo de teste e seus
 descendentes via fork/exec. Assim cada arquivo escrito pelo processo
@@ -2669,8 +2672,12 @@ Novos testes exigem que `prlimit` ausente, gravável por usuários ou
 symlink falhe **antes de criar escopo ou lançar processo**. Um teste
 Linux executa um subprocesso Python inofensivo com o `prlimit` real,
 confirma que herdou o limite soft/hard e verifica que a tentativa de
-escrever 64 KiB num só arquivo é impedida pelo kernel. Os testes
-positivos de `systemd-run` continuam simulados na CI.
+escrever 64 KiB num só arquivo é impedida pelo kernel. O teste
+**não pode ser ignorado na CI Linux**: na primeira rodada de S1.89,
+a busca por `PATH` devolveu um caminho não canônico no Arch e o
+teste real ficou `skipped` mesmo com o job verde. O caminho fixo
+corrige esse falso resultado. Os testes positivos de
+`systemd-run` continuam simulados na CI.
 
 **Limites explícitos:** `RLIMIT_FSIZE` é **por arquivo**, não limita
 a soma dos arquivos, o número de arquivos criados, o uso do journal,
