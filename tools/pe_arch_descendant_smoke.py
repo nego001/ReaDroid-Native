@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 import signal
 import stat
@@ -32,6 +33,39 @@ class DescendantProbeError(RuntimeError):
 
 MAX_GUARD_STDOUT_BYTES = 32 * 1024
 MAX_GUARD_STDERR_BYTES = 8 * 1024
+# Linux RLIMIT_FSIZE is per-file, not a whole-disk quota. Set the HARD
+# limit too: unprivileged children cannot raise it. Each inherited output
+# file is capped at 32 KiB at write-time, including stderr (whose stricter
+# *acceptance* limit remains 8 KiB). A native host still needs disk quotas.
+MAX_NATIVE_WRITE_FILE_BYTES = MAX_GUARD_STDOUT_BYTES
+
+
+def _file_size_limited_argv(argv: list[str]) -> list[str]:
+    """Wrap systemd-run with trusted util-linux prlimit, no shell.
+
+    Running prlimit *before* systemd-run --scope ensures the launcher and
+    ordinary fork/exec descendants inherit a hard RLIMIT_FSIZE. Refuse
+    rather than falling back to unbounded native disk writes.
+    """
+    if (sys.platform != "linux" or not isinstance(argv, list) or not argv
+            or any(not isinstance(arg, str) or not arg or "\0" in arg
+                   for arg in argv)):
+        raise DescendantProbeError("Native file-size cap unavailable")
+    executable = shutil.which("prlimit")
+    if not executable:
+        raise DescendantProbeError("Trusted prlimit is required for native test")
+    path = Path(executable)
+    try:
+        metadata = path.lstat()
+        if (not path.is_absolute() or not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != 0
+                or metadata.st_mode & 0o022
+                or not os.access(path, os.X_OK)):
+            raise DescendantProbeError("Untrusted prlimit executable")
+    except OSError as exc:
+        raise DescendantProbeError("Cannot verify prlimit executable") from exc
+    bound = str(MAX_NATIVE_WRITE_FILE_BYTES)
+    return [str(path), "--fsize=" + bound + ":" + bound, "--", *argv]
 
 
 def _read_bounded_scope_log(path: Path, limit: int) -> bytes:
@@ -187,6 +221,10 @@ def run_native_descendant_smoke() -> dict:
     # Require a safe kill primitive before ANY detached process is spawned.
     # An unsupported kernel/Python must fail without creating a scope.
     _require_pidfd_cleanup()
+    # Preflight before creating a scope or starting a detached process.
+    # The returned prefix is applied to the actual systemd-run invocation.
+    limiter_preflight = _file_size_limited_argv(
+        [sys.executable, "-I", "-c", "pass"])
     unit = new_scope_unit()
     child_pid = None
     child_pidfd = None
@@ -209,6 +247,9 @@ def run_native_descendant_smoke() -> dict:
             "--worker", str(marker), unit]
         argv = wrap_in_cgroup_scope(command, timeout_seconds=30,
                                     unit_name=unit, proof_path=proof_path)
+        # Reuse the trusted executable and exact hard/soft limits checked
+        # before starting the scope. Do not resolve a different PATH entry.
+        argv = [*limiter_preflight[:3], *argv]
         try:
             with out_path.open("wb") as stdout, err_path.open("wb") as stderr:
                 launcher = subprocess.Popen(
