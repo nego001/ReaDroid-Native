@@ -46,31 +46,73 @@ class GuestKernelObservationError(RuntimeError):
 
 def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
                     domain: str, uuid: str) -> None:
-    """Cross-reference independently retained S1.70 record fields."""
+    """Require the exact S1.70 structure, not matching substrings.
+
+    A changed file can be freshly re-hashed and passed in as a new
+    external pin. The pin proves byte identity, not that its dominfo
+    and host identity claims are mutually consistent. Reject malformed
+    or contradictory snapshots BEFORE issuing any virsh/guestinfo call.
+    """
+    if (not isinstance(raw, bytes) or not 0 < len(raw) <= external.MAX_LOG_BYTES
+            or not raw.endswith(b"\\n") or b"\\r" in raw or b"\\0" in raw):
+        raise GuestKernelObservationError(
+            "Prior host snapshot missing or noncanonical")
     try:
         text = raw.decode("utf-8")
     except UnicodeError as exc:
         raise GuestKernelObservationError("Prior host record is not UTF-8") from exc
-    required = (
+    lines = text[:-1].split("\\n")
+    if (len(lines) < 23
+            or any(not line or any(ord(c) < 32 or ord(c) == 127
+                                    for c in line) for line in lines)):
+        raise GuestKernelObservationError("Malformed host snapshot lines")
+    prefix = [
         "observation_type=libvirt_readonly_domain_snapshot",
         "classification=HOST_QUERY_OUTPUT_NOT_VM_ATTESTATION",
         "source_commit=" + commit,
         "reviewer_challenge=" + challenge,
-        "domain_name=" + domain,
-        "expected_domain_uuid=" + uuid,
-        "connection=readonly",
-        "independent_vm_attestation=false",
-        "release_authorized=false",
+    ]
+    header = [
+        "uri=qemu:///system", "connection=readonly",
+        "domain_name=" + domain, "expected_domain_uuid=" + uuid,
+        "initial_domuuid:", uuid, "initial_domstate:", "running", "dominfo:",
+    ]
+    footer = [
+        "final_domstate:", "running", "final_domuuid:", uuid,
+        "independent_vm_attestation=false", "release_authorized=false",
+    ]
+    if (lines[:4] != prefix or lines[5:14] != header
+            or lines[-6:] != footer):
+        raise GuestKernelObservationError("Prior host header/footer mismatch")
+    stamp = lines[4]
+    if not stamp.startswith("observed_utc_untrusted=") or len(stamp) > 100:
+        raise GuestKernelObservationError("Prior host time field missing")
+    try:
+        observed = datetime.fromisoformat(stamp.split("=", 1)[1])
+        if observed.tzinfo is None or observed.utcoffset() != timezone.utc.utcoffset(None):
+            raise ValueError("not UTC")
+    except (ValueError, TypeError) as exc:
+        raise GuestKernelObservationError("Prior host time is not UTC") from exc
+
+    info = lines[14:-6]
+    reserved = (
+        "source_commit=", "reviewer_challenge=", "domain_name=",
+        "expected_domain_uuid=", "initial_domuuid:", "initial_domstate:",
+        "final_domstate:", "final_domuuid:", "independent_vm_attestation=",
+        "release_authorized=", "observation_type=", "classification=",
+        "uri=", "connection=", "dominfo:",
     )
-    lines = text.splitlines()
-    if (len(raw) > external.MAX_LOG_BYTES
-            or any(lines.count(field) != 1 for field in required)
-            or "initial_domuuid:\n" + uuid + "\n" not in text
-            or "final_domuuid:\n" + uuid + "\n" not in text
-            or "initial_domstate:\nrunning\n" not in text
-            or "final_domstate:\nrunning\n" not in text):
-        raise GuestKernelObservationError(
-            "Prior reviewer host snapshot does not match current external pins")
+    if not info or any(line.startswith(reserved) for line in info):
+        raise GuestKernelObservationError("Prior dominfo contains forged markers")
+    for field, expected in (
+        ("Name:", domain), ("UUID:", uuid), ("State:", "running")
+    ):
+        observations = [
+            line[len(field):].strip() for line in info if line.startswith(field)
+        ]
+        if observations != [expected]:
+            raise GuestKernelObservationError(
+                "Prior dominfo contradicts pinned domain identity/state")
 
 
 def _read_guestinfo(executable: str, domain: str) -> str:
