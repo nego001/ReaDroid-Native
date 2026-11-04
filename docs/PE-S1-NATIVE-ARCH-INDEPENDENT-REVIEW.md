@@ -2561,3 +2561,40 @@ Permanece **HOLD / PR Draft**, sem merge, publicação APK/OTA nem
 execução de Windows PE desconhecido. O resultado ainda não constitui
 prova independente de host, VM Arch, kernel, quotas ou encerramento
 real de descendentes.
+
+
+## PE-S1.87 | Limpeza emergencial por pidfd do descendente sintético
+
+A auditoria de `tools/pe_arch_descendant_smoke.py` identificou uma
+condição de corrida no encerramento emergencial. O bloco `finally`
+verificava `/proc/<pid>/stat` para confirmar o `starttime` do
+descendente e, depois, chamava `os.kill(pid, SIGKILL)`. O processo
+original podia terminar entre essas operações, permitindo que o PID
+numérico fosse reutilizado por um processo não relacionado. A checagem
+anterior não protegia a chamada posterior.
+
+A PE-S1.87 exige Linux com `os.pidfd_open` e
+`signal.pidfd_send_signal` **antes de iniciar qualquer escopo de
+teste**. Depois de observar o marcador do processo sintético e validar
+seu PID, `starttime` e pertencimento ao escopo, o executor abre um
+pidfd para esse processo e valida novamente identidade e cgroup com
+o descritor aberto. A identidade do kernel fica fixada enquanto o
+pidfd estiver aberto. O `finally` envia `SIGKILL` exclusivamente
+via `signal.pidfd_send_signal`; `ESRCH` indica que o processo
+original já desapareceu. O pidfd é fechado depois do fallback.
+
+Não existe fallback por `os.kill(pid, ...)`. Ausência de suporte
+a pidfd, erro de abertura ou mudança de identidade faz o teste falhar
+fechado, sem produzir `PASS_NATIVE_ARCH_DESCENDANTS`. O fallback
+continua **não sendo evidência** de que o systemd encerrou o cgroup;
+a aprovação nativa segue condicionada à verificação anterior de
+`stop_scope`, desaparecimento da identidade original, estado
+systemd e `cgroup.events`/`cgroup.stat`.
+
+Regressões simuladas verificam o bloqueio antes de criar escopos
+sem suporte pidfd, rejeição e fechamento de descritores quando o
+PID ou o pertencimento ao cgroup mudam durante a abertura e uso de
+pidfd em vez de sinalização numérica mesmo no encerramento de erro.
+A CI NÃO inicia escopos systemd reais nem comprova o ambiente da VM
+Arch nativa. Permanecem **HOLD / Draft**, sem merge, execução de PE
+Windows desconhecido ou publicação de APK/OTA.
