@@ -6,6 +6,7 @@ Arch host's cgroup or real systemd session.
 from pathlib import Path
 import json
 import os
+import resource
 import signal
 import subprocess
 import sys
@@ -57,6 +58,46 @@ class NativeDescendantTests(unittest.TestCase):
             with mock.patch.object(smoke.signal, "signal") as handler:
                 with self.assertRaisesRegex(smoke.DescendantProbeError, "outside"):
                     smoke._grandchild(self.unit, Path("/tmp/no-file-created"))
+        handler.assert_not_called()
+
+    def test_scoped_worker_refuses_incorrect_effective_file_limit(self):
+        # In a real native VM, prlimit can only be claimed if the worker
+        # and detached grandchild actually inherit its hard kernel limit.
+        for value in ((-1, -1), (32768, -1), (65536, 65536),
+                      (8192, 32768)):
+            with self.subTest(value=value):
+                with mock.patch.object(
+                        resource, "getrlimit", return_value=value):
+                    with self.assertRaisesRegex(
+                            smoke.DescendantProbeError,
+                            "did not inherit hard file-size limit"):
+                        smoke._require_inherited_file_limit()
+        with mock.patch.object(
+                resource, "getrlimit", return_value=(32768, 32768)):
+            smoke._require_inherited_file_limit()
+
+    def test_bad_worker_file_limit_prevents_descendant_spawn(self):
+        with (mock.patch.object(smoke, "belongs_to_scope",
+                                return_value=True),
+              mock.patch.object(resource, "getrlimit",
+                                return_value=(-1, -1)),
+              mock.patch.object(smoke.subprocess, "Popen") as spawn):
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError,
+                    "did not inherit hard file-size limit"):
+                smoke._worker(Path("/tmp/never-created"), self.unit)
+        spawn.assert_not_called()
+
+    def test_bad_grandchild_file_limit_does_not_ignore_sigterm(self):
+        with (mock.patch.object(smoke, "belongs_to_scope",
+                                return_value=True),
+              mock.patch.object(resource, "getrlimit",
+                                return_value=(-1, -1)),
+              mock.patch.object(smoke.signal, "signal") as handler):
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError,
+                    "did not inherit hard file-size limit"):
+                smoke._grandchild(self.unit, Path("/tmp/never-created"))
         handler.assert_not_called()
 
     def test_active_identity_fails_for_zombies_and_recycled_pid(self):
