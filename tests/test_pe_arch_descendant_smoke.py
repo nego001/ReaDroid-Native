@@ -162,7 +162,9 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertEqual(wrap.call_args.kwargs["proof_path"].name, "quota.json")
         # Private quotas are checked BEFORE attempting to stop the child,
         # including the negative test where that child deliberately survives.
-        if proof:
+        # Oversized stdout or nonempty stderr is refused before the
+        # quota-proof parser. No downstream attestation may run in that case.
+        if proof and not oversized_output and not unexpected_stderr:
             quota_read.assert_called_once_with(mock.ANY, self.unit)
         else:
             quota_read.assert_not_called()
