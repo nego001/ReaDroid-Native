@@ -2529,3 +2529,35 @@ comprova, por si, procedência do host, kernel do convidado ou
 independência do revisor. Sem alteração da autorização: release
 **HOLD**, PR **Draft**, nenhum merge, execução de PE desconhecido
 ou publicação de APK/OTA.
+
+
+## PE-S1.86 | Aplicar o mesmo contrato S1.70 na captura e na revisão offline
+
+A auditoria encontrou divergência entre etapas: a captura de guestinfo
+S1.71 passou a recusar marcadores de identidade/autoridade injetados
+dentro do bloco `dominfo` (PE-S1.85), mas a revisão offline S1.73
+continuava usando uma lista menor de marcadores reservados. Um registro
+de host adulterado podia ser novamente identificado por SHA-256 e
+incluído com hash correlacionado no segundo registro, produzindo na
+revisão S1.73 um relatório HOLD com alegações indevidas de correlação
+semântica, embora a etapa S1.71 o recusasse.
+
+A PE-S1.86 chama **a mesma função estrita**
+`pe_arch_vm_s1_71_guestinfo_os_capture._check_snapshot()` ao validar
+o primeiro registro na S1.73, antes de emitir qualquer campo de
+correlação. O parser local S1.73 permanece como verificação adicional,
+mas nunca pode enfraquecer o contrato da S1.71. Erros da validação
+compartilhada viram `TwoRecordReviewError`, sem liberar a revisão.
+
+Novos testes criam um registro S1.70 com marcadores injetados em
+`dominfo`, recalculam **os dois hashes SHA-256** e atualizam
+`prior_host_record_sha256` no segundo registro para evitar rejeições
+triviais por hash incorreto. Mesmo nesse caso, a revisão deve rejeitar
+o registro. Um teste adicional garante a invocação obrigatória do
+validador compartilhado. Arquivos e respostas são sintéticos: nenhuma
+VM, serviço libvirt ou Windows PE é executado.
+
+Permanece **HOLD / PR Draft**, sem merge, publicação APK/OTA nem
+execução de Windows PE desconhecido. O resultado ainda não constitui
+prova independente de host, VM Arch, kernel, quotas ou encerramento
+real de descendentes.
