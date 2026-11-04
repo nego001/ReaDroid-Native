@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 from pathlib import Path
 import signal
 import stat
@@ -38,6 +37,9 @@ MAX_GUARD_STDERR_BYTES = 8 * 1024
 # file is capped at 32 KiB at write-time, including stderr (whose stricter
 # *acceptance* limit remains 8 KiB). A native host still needs disk quotas.
 MAX_NATIVE_WRITE_FILE_BYTES = MAX_GUARD_STDOUT_BYTES
+# Arch's official util-linux installs prlimit here. Never resolve an
+# attacker-controlled PATH or a /bin symlink from a minimal container.
+PRLIMIT_EXECUTABLE = Path("/usr/bin/prlimit")
 
 
 def _native_prlimit_prefix() -> list[str]:
@@ -49,10 +51,7 @@ def _native_prlimit_prefix() -> list[str]:
     """
     if sys.platform != "linux":
         raise DescendantProbeError("Native file-size cap requires Linux")
-    executable = shutil.which("prlimit")
-    if not executable:
-        raise DescendantProbeError("Trusted prlimit is required for native test")
-    path = Path(executable)
+    path = PRLIMIT_EXECUTABLE
     try:
         metadata = path.lstat()
         if (not path.is_absolute() or not stat.S_ISREG(metadata.st_mode)
@@ -66,6 +65,9 @@ def _native_prlimit_prefix() -> list[str]:
             if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != 0
                     or meta.st_mode & 0o022):
                 raise DescendantProbeError("Untrusted prlimit directory")
+    except FileNotFoundError as exc:
+        raise DescendantProbeError(
+            "Trusted /usr/bin/prlimit is required for native test") from exc
     except OSError as exc:
         raise DescendantProbeError("Cannot verify prlimit executable") from exc
     bound = str(MAX_NATIVE_WRITE_FILE_BYTES)
