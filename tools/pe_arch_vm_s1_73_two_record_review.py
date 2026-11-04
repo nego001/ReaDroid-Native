@@ -167,6 +167,19 @@ def review_two_records(observer_dir: Path, *, domain: str,
     if (hashlib.sha256(first).hexdigest() != expected_host_sha256
             or hashlib.sha256(second).hexdigest() != expected_guest_sha256):
         raise TwoRecordReviewError("Reviewer record differs from independent pin")
+    # S1.86: The S1.71 pre-guestinfo gate already checks the complete
+    # S1.70 layout, including all reserved identity/authority markers in
+    # dominfo. Reuse that exact policy here, otherwise the offline review
+    # can claim correlated identity for a re-pinned host record that the
+    # earlier capture step would have rejected.
+    try:
+        guest._check_snapshot(
+            first, commit=expected_source_commit,
+            challenge=reviewer_challenge, domain=domain,
+            uuid=expected_domain_uuid)
+    except guest.GuestKernelObservationError as exc:
+        raise TwoRecordReviewError(
+            "S1.70 snapshot contradicts strict pre-guestinfo policy") from exc
     _review_host(
         _lines(first, "S1.70"), commit=expected_source_commit,
         challenge=reviewer_challenge, domain=domain,
