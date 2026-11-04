@@ -251,7 +251,9 @@ class NativeDescendantTests(unittest.TestCase):
         vm = {"status": "ARCH_VM_PREFLIGHT_PASSED",
               "vm_confirmed": True, "container": False}
         with (mock.patch.object(smoke, "verify_arch_vm", return_value=vm),
-              mock.patch.object(smoke.shutil, "which", return_value=None),
+              mock.patch.object(
+                  smoke, "PRLIMIT_EXECUTABLE",
+                  Path("/definitely-not-installed/pe-s1-89-prlimit")),
               mock.patch.object(smoke, "new_scope_unit") as scope,
               mock.patch.object(smoke.subprocess, "Popen") as spawn):
             with self.assertRaisesRegex(
@@ -276,8 +278,8 @@ class NativeDescendantTests(unittest.TestCase):
                     with (
                         mock.patch.object(smoke, "verify_arch_vm",
                                           return_value=vm),
-                        mock.patch.object(smoke.shutil, "which",
-                                          return_value=str(path)),
+                        mock.patch.object(smoke, "PRLIMIT_EXECUTABLE",
+                                          path),
                         mock.patch.object(smoke, "new_scope_unit") as scope,
                         mock.patch.object(smoke.subprocess, "Popen") as spawn,
                     ):
@@ -288,13 +290,20 @@ class NativeDescendantTests(unittest.TestCase):
                     scope.assert_not_called()
                     spawn.assert_not_called()
 
+    def test_native_prlimit_is_pinned_not_searched_on_path(self):
+        with mock.patch.object(smoke, "PRLIMIT_EXECUTABLE",
+                               Path("/usr/bin/prlimit")):
+            with mock.patch.object(smoke, "shutil", create=True) as fake:
+                # The implementation must not consult PATH or invoke
+                # a user-writable prlimit lookalike.
+                prefix = smoke._native_prlimit_prefix()
+        self.assertEqual(prefix[0], "/usr/bin/prlimit")
+        fake.which.assert_not_called()
+
     @unittest.skipUnless(sys.platform == "linux", "Linux-only file limit")
     def test_real_prlimit_enforces_hard_fsize_on_owned_python(self):
         # Harmless local Python fixture, no scope/systemd/PE/VM.
-        try:
-            prefix = smoke._native_prlimit_prefix()
-        except smoke.DescendantProbeError as exc:
-            self.skipTest(str(exc))
+        prefix = smoke._native_prlimit_prefix()
         with tempfile.TemporaryDirectory(prefix="pe-s1-89-real-fsize-") as root:
             output = Path(root) / "oversized"
             # RLIMIT_FSIZE is inherited and enforced by the kernel even
