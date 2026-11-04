@@ -2679,6 +2679,17 @@ teste real ficou `skipped` mesmo com o job verde. O caminho fixo
 corrige esse falso resultado. Os testes positivos de
 `systemd-run` continuam simulados na CI.
 
+**Verificação efetiva no escopo:** antes de criar o processo
+descendente, o worker lê `resource.getrlimit(RLIMIT_FSIZE)` e
+exige os limites soft/hard **(32768, 32768)**. O neto repetirá a
+checagem antes de ignorar `SIGTERM` e anunciar prontidão. Uma
+herança ausente, parcial ou diferente produz recusa, sem marcador
+positivo. Isso cobre o caso em que o `systemd-run` ou o gerenciador
+de usuário reinicializa limites que o `prlimit` havia fixado.
+Testes de contrato rejeitam limites negativos, unlimited ou
+parciais antes de iniciar o descendente. A execução desse caminho
+com systemd real continua pendente da VM Arch independente.
+
 **Limites explícitos:** `RLIMIT_FSIZE` é **por arquivo**, não limita
 a soma dos arquivos, o número de arquivos criados, o uso do journal,
 nem o consumo de todo o sistema de arquivos. A herança efetiva no
