@@ -2603,3 +2603,36 @@ cgroup real, Ghidra, Windows PE ou VM. A CI NÃO inicia escopos systemd
 reais nem comprova o ambiente da VM Arch nativa. Permanecem
 **HOLD / Draft**, sem merge, execução de PE Windows desconhecido ou
 publicação de APK/OTA.
+
+
+## PE-S1.88 | Limitar a leitura de logs do teste de descendentes
+
+Auditoria de `tools/pe_arch_descendant_smoke.py`: o teste lia
+`scope.stdout` por `Path.read_bytes()` e só depois checava se a
+saída ultrapassava 32 KiB. Portanto, uma saída anormal podia ocupar
+memória antes da rejeição. O `scope.stderr` também era capturado em
+arquivo, mas não era limitado nem inspecionado antes de aceitar o recibo
+do guardião.
+
+A PE-S1.88 utiliza `_read_bounded_scope_log()` em **ambos** os
+arquivos antes de interpretar qualquer recibo. A leitura de stdout
+é limitada a 32 KiB e a de stderr a 8 KiB, com `O_NOFOLLOW`,
+`O_NONBLOCK` e `O_CLOEXEC`, `fstat()` antes/depois da leitura,
+verificação de arquivo regular, proprietário esperado e um único
+hard link. Os limites são aplicados **antes da alocação**. Ausência,
+symlink, FIFO, tamanho excessivo ou qualquer stderr não vazio impedem
+`PASS_NATIVE_ARCH_DESCENDANTS`; o bloco `finally` continua
+chamando a parada do escopo e a limpeza com pidfd da PE-S1.87.
+
+Testes descartáveis verificam arquivos no limite, arquivos acima do
+limite, symlink, hard link, FIFO sem bloqueio, limites inválidos e
+erros após a captura do pidfd que exigem a limpeza emergencial.
+A CI **não** cria escopos systemd reais neste teste. O teto de
+**leitura** também não limita a quantidade de bytes que um
+processo externo pode escrever no disco antes da checagem: o
+tempo de escopo e o monitoramento independente do host continuam
+importantes e a evidência não autoriza homologação.
+
+**HOLD / PR Draft** mantidos: sem merge, execução de Windows PE
+desconhecido ou APK/OTA. Somente uma VM Arch nativa independente
+poderá fornecer evidência real de cotas, seccomp e descendentes.
