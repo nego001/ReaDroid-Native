@@ -74,6 +74,24 @@ def _native_prlimit_prefix() -> list[str]:
     return [str(path), "--fsize=" + bound + ":" + bound, "--"]
 
 
+def _require_inherited_file_limit() -> None:
+    """Verify the actual kernel limit in the scoped worker/grandchild.
+
+    A prlimit wrapper is only a request: if systemd launches the worker
+    from a process that resets limits, no live scope is accepted.
+    """
+    try:
+        import resource
+        actual = resource.getrlimit(resource.RLIMIT_FSIZE)
+    except (ImportError, AttributeError, OSError, ValueError) as exc:
+        raise DescendantProbeError(
+            "Cannot inspect scoped RLIMIT_FSIZE") from exc
+    expected = (MAX_NATIVE_WRITE_FILE_BYTES, MAX_NATIVE_WRITE_FILE_BYTES)
+    if actual != expected:
+        raise DescendantProbeError(
+            "Scoped worker did not inherit hard file-size limit")
+
+
 def _read_bounded_scope_log(path: Path, limit: int) -> bytes:
     """Read only a bounded, regular, owner-controlled smoke output file.
 
@@ -182,6 +200,7 @@ def wait_until_dead(pid: int, starttime: str, seconds: float) -> bool:
 def _grandchild(unit: str, ready: Path) -> int:
     if not belongs_to_scope(os.getpid(), unit):
         raise DescendantProbeError("grandchild is outside assigned scope")
+    _require_inherited_file_limit()
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     ready.write_text("sigterm_ignored", encoding="ascii")
     while True:
@@ -191,6 +210,7 @@ def _grandchild(unit: str, ready: Path) -> int:
 def _worker(marker: Path, unit: str) -> int:
     if not belongs_to_scope(os.getpid(), unit):
         raise DescendantProbeError("worker is outside assigned scope")
+    _require_inherited_file_limit()
     ready = marker.with_suffix(".ready")
     child = subprocess.Popen(
         [sys.executable, "-I", str(Path(__file__).resolve()),
