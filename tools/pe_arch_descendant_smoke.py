@@ -40,17 +40,15 @@ MAX_GUARD_STDERR_BYTES = 8 * 1024
 MAX_NATIVE_WRITE_FILE_BYTES = MAX_GUARD_STDOUT_BYTES
 
 
-def _file_size_limited_argv(argv: list[str]) -> list[str]:
-    """Wrap systemd-run with trusted util-linux prlimit, no shell.
+def _native_prlimit_prefix() -> list[str]:
+    """Pin a trusted util-linux prlimit before spawning any scope.
 
-    Running prlimit *before* systemd-run --scope ensures the launcher and
-    ordinary fork/exec descendants inherit a hard RLIMIT_FSIZE. Refuse
-    rather than falling back to unbounded native disk writes.
+    A hard per-file RLIMIT_FSIZE is inherited along the ordinary
+    systemd-run --scope fork/exec path. No shell; missing or untrusted
+    prlimit must refuse native testing instead of silently falling back.
     """
-    if (sys.platform != "linux" or not isinstance(argv, list) or not argv
-            or any(not isinstance(arg, str) or not arg or "\0" in arg
-                   for arg in argv)):
-        raise DescendantProbeError("Native file-size cap unavailable")
+    if sys.platform != "linux":
+        raise DescendantProbeError("Native file-size cap requires Linux")
     executable = shutil.which("prlimit")
     if not executable:
         raise DescendantProbeError("Trusted prlimit is required for native test")
@@ -58,14 +56,20 @@ def _file_size_limited_argv(argv: list[str]) -> list[str]:
     try:
         metadata = path.lstat()
         if (not path.is_absolute() or not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_uid != 0
-                or metadata.st_mode & 0o022
+                or metadata.st_uid != 0 or metadata.st_mode & 0o022
                 or not os.access(path, os.X_OK)):
             raise DescendantProbeError("Untrusted prlimit executable")
+        # Root ownership of the file alone is insufficient when a
+        # non-root user can replace an entry in a writable directory.
+        for parent in path.parents:
+            meta = parent.lstat()
+            if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != 0
+                    or meta.st_mode & 0o022):
+                raise DescendantProbeError("Untrusted prlimit directory")
     except OSError as exc:
         raise DescendantProbeError("Cannot verify prlimit executable") from exc
     bound = str(MAX_NATIVE_WRITE_FILE_BYTES)
-    return [str(path), "--fsize=" + bound + ":" + bound, "--", *argv]
+    return [str(path), "--fsize=" + bound + ":" + bound, "--"]
 
 
 def _read_bounded_scope_log(path: Path, limit: int) -> bytes:
@@ -223,8 +227,7 @@ def run_native_descendant_smoke() -> dict:
     _require_pidfd_cleanup()
     # Preflight before creating a scope or starting a detached process.
     # The returned prefix is applied to the actual systemd-run invocation.
-    limiter_preflight = _file_size_limited_argv(
-        [sys.executable, "-I", "-c", "pass"])
+    limiter_prefix = _native_prlimit_prefix()
     unit = new_scope_unit()
     child_pid = None
     child_pidfd = None
@@ -249,7 +252,7 @@ def run_native_descendant_smoke() -> dict:
                                     unit_name=unit, proof_path=proof_path)
         # Reuse the trusted executable and exact hard/soft limits checked
         # before starting the scope. Do not resolve a different PATH entry.
-        argv = [*limiter_preflight[:3], *argv]
+        argv = [*limiter_prefix, *argv]
         try:
             with out_path.open("wb") as stdout, err_path.open("wb") as stderr:
                 launcher = subprocess.Popen(
