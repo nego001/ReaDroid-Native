@@ -258,7 +258,7 @@ class NativeDescendantTests(unittest.TestCase):
               mock.patch.object(smoke.subprocess, "Popen") as spawn):
             with self.assertRaisesRegex(
                     smoke.DescendantProbeError,
-                    "Trusted prlimit is required"):
+                    "Trusted /usr/bin/prlimit is required"):
                 smoke.run_native_descendant_smoke()
         scope.assert_not_called()
         spawn.assert_not_called()
