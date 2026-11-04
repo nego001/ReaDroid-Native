@@ -7,6 +7,7 @@ from pathlib import Path
 import json
 import os
 import signal
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -218,6 +219,38 @@ class NativeDescendantTests(unittest.TestCase):
                 smoke._pin_descendant_pidfd(24680, "3333", self.unit)
         with self.assertRaises(OSError):
             os.fstat(fd)
+
+    @unittest.skipUnless(
+        sys.platform == "linux"
+        and callable(getattr(os, "pidfd_open", None))
+        and callable(getattr(signal, "pidfd_send_signal", None)),
+        "real Linux pidfd syscalls not available")
+    def test_real_pidfd_signal_pins_harmless_python_child(self):
+        # Exercise the REAL kernel pidfd API, but only on a harmless
+        # Python sleeper created and reaped by this test itself.
+        # No cgroup/systemd, unknown PE, guest VM or network is involved.
+        child = subprocess.Popen(
+            [sys.executable, "-I", "-c",
+             "import time; time.sleep(30)"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+            close_fds=True)
+        fd = None
+        try:
+            fd = os.pidfd_open(child.pid, 0)
+            signal.pidfd_send_signal(fd, signal.SIGKILL, None, 0)
+            self.assertEqual(child.wait(timeout=5), -signal.SIGKILL)
+            # The same pinned descriptor can no longer signal another
+            # process after the original child has been reaped.
+            with self.assertRaises(ProcessLookupError):
+                signal.pidfd_send_signal(fd, signal.SIGKILL, None, 0)
+        finally:
+            if child.poll() is None:
+                # Direct, still-unreaped Popen child, not a marker PID.
+                child.kill()
+                child.wait(timeout=5)
+            if fd is not None:
+                os.close(fd)
 
     def test_pidfd_fallback_does_not_use_numeric_kill(self):
         with mock.patch.object(smoke.os, "kill") as numeric_kill:
