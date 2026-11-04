@@ -198,12 +198,12 @@ class TwoRecordReviewContracts(unittest.TestCase):
             b"domain_name=second-domain",
             b"expected_domain_uuid=11111111-1111-4111-8111-111111111111",
             b"uri=qemu:///session",
-            b"initial_domstate:\\nshut off",
+            b"initial_domstate:\nshut off",
             b"observation_type=independent_vm_attestation",
         ):
             with self.subTest(forged=forged):
                 new_host = original.replace(
-                    b"State: running\\n", b"State: running\\n" + forged + b"\\n")
+                    b"State: running\n", b"State: running\n" + forged + b"\n")
                 self.first.write_bytes(new_host)
                 host_sha = hashlib.sha256(new_host).hexdigest()
                 new_guest = second_record(host_sha)
