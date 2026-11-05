@@ -469,13 +469,32 @@ def _worker(marker: Path, unit: str) -> int:
     _require_pidfd_cleanup()
     _require_unoccupied_worker_markers(marker)
     ready = marker.with_suffix(".ready")
-    child = subprocess.Popen(
-        [sys.executable, "-I", str(Path(__file__).resolve()),
-         "--grandchild", unit, str(ready)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+    child = None
     child_pidfd = None
+    cancel_requested = False
+
+    def defer_sigterm(_signum: int, _frame: object) -> None:
+        # Only set a Python flag. Raising here could interrupt Popen before
+        # its child handle has been assigned, leaving an unreapable orphan.
+        nonlocal cancel_requested
+        cancel_requested = True
+
+    def check_cancel() -> None:
+        if cancel_requested:
+            raise DescendantProbeError("Scoped worker cancelled by SIGTERM")
+
+    # Register BEFORE fork. If SIGTERM arrives while Popen creates the
+    # descendant, defer cancellation until the direct-child handle exists.
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, defer_sigterm)
     try:
+        check_cancel()
+        child = subprocess.Popen(
+            [sys.executable, "-I", str(Path(__file__).resolve()),
+             "--grandchild", unit, str(ready)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+        check_cancel()
         try:
             child_pidfd = os.pidfd_open(child.pid, 0)
         except (OSError, ValueError) as exc:
@@ -483,13 +502,16 @@ def _worker(marker: Path, unit: str) -> int:
                 "Cannot pin worker-owned grandchild after spawn") from exc
         deadline = time.monotonic() + 5
         while not ready.is_file() and time.monotonic() < deadline:
+            check_cancel()
             if child.poll() is not None:
                 raise DescendantProbeError("detached grandchild exited before ready")
             time.sleep(0.05)
+        check_cancel()
         if (not ready.is_file()
                 or _read_bounded_scope_log(ready, MAX_READY_MARKER_BYTES)
                    != b"sigterm_ignored"):
             raise DescendantProbeError("SIGTERM-resistant child was not ready")
+        check_cancel()
         identity = proc_identity(child.pid)
         if not identity or not belongs_to_scope(child.pid, unit):
             raise DescendantProbeError("grandchild did not enter assigned scope")
@@ -498,17 +520,23 @@ def _worker(marker: Path, unit: str) -> int:
         _write_new_private_marker(
             tmp, json.dumps(record, separators=(",", ":")).encode("ascii"),
             MAX_CHILD_MARKER_BYTES)
+        check_cancel()
         os.replace(tmp, marker)
         while True:
+            check_cancel()
             time.sleep(0.25)
     except BaseException:
-        # The supervisor also stops the scope, but an early worker failure
-        # must not leave cleanup entirely to that separate actor.
-        _cleanup_failed_worker_child(child, child_pidfd)
+        # In particular, SIGTERM is deferred into a normal failure path
+        # instead of letting the worker vanish while its child survives.
+        if child is not None:
+            _cleanup_failed_worker_child(child, child_pidfd)
         raise
     finally:
-        if child_pidfd is not None:
-            os.close(child_pidfd)
+        try:
+            if child_pidfd is not None:
+                os.close(child_pidfd)
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 
