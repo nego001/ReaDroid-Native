@@ -22,7 +22,7 @@ from pe_arch_vm_gate import verify_arch_vm
 from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
 from pe_resource_evidence import (read_scope_proof, corroborate_guard_receipt,
                                   InvalidResourceEvidence)
-from pe_resource_limits import (new_scope_unit, stop_scope,
+from pe_resource_limits import (SCOPE_PATTERN, new_scope_unit, stop_scope,
                                 wrap_in_cgroup_scope)
 
 
@@ -38,6 +38,9 @@ MAX_CHILD_MARKER_BYTES = 512
 MAX_READY_MARKER_BYTES = 64
 # Kernel pseudo-file, not an ordinary disk log. Cap reads and reject truncation.
 MAX_PROC_LIMITS_BYTES = 8 * 1024
+# S1.95: procfs pseudo-files may report st_size=0. Bound actual reads.
+MAX_PROC_STAT_BYTES = 8 * 1024
+MAX_PROC_CGROUP_BYTES = 16 * 1024
 # Linux RLIMIT_FSIZE is per-file, not a whole-disk quota. Set the HARD
 # limit too: unprivileged children cannot raise it. Each inherited output
 # file is capped at 32 KiB at write-time, including stderr (whose stricter
@@ -227,17 +230,58 @@ def _read_child_marker(path: Path) -> dict:
     return marker
 
 
+def _read_bounded_proc_record(
+        pid: int, leaf: str, limit: int, *,
+        proc_root: Path = Path("/proc")) -> str:
+    """Read procfs identity/membership with no-follow and a hard byte cap.
+
+    Kernel pseudo-files can report st_size=0. fstat alone cannot bound a
+    read; read limit+1 bytes and reject excess. proc_root is a test seam
+    only: production callers always use the real /proc.
+    """
+    if (type(pid) is not int or pid < 2
+            or leaf not in ("stat", "cgroup")
+            or type(limit) is not int or not 0 < limit <= MAX_PROC_CGROUP_BYTES
+            or not hasattr(os, "O_NOFOLLOW")):
+        raise DescendantProbeError("Unsafe procfs record request")
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(proc_root / str(pid) / leaf, flags)
+        try:
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_uid != os.geteuid()
+                    or metadata.st_nlink != 1
+                    or metadata.st_size > limit):
+                raise DescendantProbeError("Unexpected procfs record inode")
+            data = os.read(fd, limit + 1)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise DescendantProbeError("Procfs record inaccessible or unsafe") from exc
+    if not data or len(data) > limit or b"\x00" in data:
+        raise DescendantProbeError("Procfs record missing or too large")
+    try:
+        return data.decode("utf-8")
+    except UnicodeError as exc:
+        raise DescendantProbeError("Procfs record is not valid UTF-8") from exc
+
+
 def proc_identity(pid: int) -> tuple[str, str] | None:
-    """Return state + procfs starttime, guarding against recycled PIDs."""
+    """Read state and starttime with a bounded, PID-checked stat record."""
     if type(pid) is not int or pid < 2:
         return None
     try:
-        stat = Path("/proc") / str(pid) / "stat"
-        fields = stat.read_text(encoding="ascii").rsplit(") ", 1)[1].split()
-        if len(fields) < 20 or not fields[19].isdecimal():
+        raw = _read_bounded_proc_record(pid, "stat", MAX_PROC_STAT_BYTES)
+        head, sep, tail = raw.rpartition(") ")
+        if not sep or not head.startswith(str(pid) + " ("):
+            return None
+        fields = tail.split()
+        if (len(fields) < 20
+                or not fields[19].isascii() or not fields[19].isdecimal()):
             return None
         return fields[0], fields[19]
-    except (OSError, UnicodeError, IndexError):
+    except DescendantProbeError:
         return None
 
 
@@ -248,11 +292,15 @@ def active_identity(pid: int, starttime: str) -> bool:
 
 
 def belongs_to_scope(pid: int, unit: str) -> bool:
+    if not isinstance(unit, str) or not SCOPE_PATTERN.fullmatch(unit):
+        return False
     try:
-        lines = (Path("/proc") / str(pid) / "cgroup").read_text().splitlines()
+        raw = _read_bounded_proc_record(pid, "cgroup", MAX_PROC_CGROUP_BYTES)
+        lines = raw.splitlines()
         groups = [line[3:] for line in lines if line.startswith("0::")]
-        return len(groups) == 1 and groups[0].endswith("/" + unit)
-    except (OSError, UnicodeError):
+        return (len(groups) == 1 and groups[0].startswith("/")
+                and groups[0].endswith("/" + unit))
+    except DescendantProbeError:
         return False
 
 
