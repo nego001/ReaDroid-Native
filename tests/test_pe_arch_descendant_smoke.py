@@ -101,6 +101,108 @@ class NativeDescendantTests(unittest.TestCase):
                 smoke._grandchild(self.unit, Path("/tmp/never-created"))
         handler.assert_not_called()
 
+    def test_bounded_proc_record_rejects_oversize_symlink_hardlink_fifo_and_binary(self):
+        pid = 24680
+        with tempfile.TemporaryDirectory(prefix="pe-s1-95-proc-") as root:
+            proc = Path(root)
+            (proc / str(pid)).mkdir()
+            record = proc / str(pid) / "stat"
+            record.write_bytes(b"safe-record")
+            read = lambda: smoke._read_bounded_proc_record(
+                pid, "stat", 128, proc_root=proc)
+            self.assertEqual(read(), "safe-record")
+            for bad in (b"", b"\x00record", b"\xff", b"X" * 129):
+                with self.subTest(bad=bad[:15]):
+                    record.write_bytes(bad)
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        read()
+            record.write_bytes(b"safe-record")
+            hardlink = proc / str(pid) / "copy"
+            os.link(record, hardlink)
+            with self.assertRaises(smoke.DescendantProbeError):
+                read()
+            hardlink.unlink()
+            record.unlink()
+            canary = proc / str(pid) / "canary"
+            canary.write_bytes(b"do-not-follow")
+            record.symlink_to(canary)
+            with self.assertRaises(smoke.DescendantProbeError):
+                read()
+            self.assertEqual(canary.read_bytes(), b"do-not-follow")
+            record.unlink()
+            os.mkfifo(record)
+            with self.assertRaises(smoke.DescendantProbeError):
+                read()
+            for bad_pid, bad_leaf, bad_limit in (
+                    (True, "stat", 128),
+                    (1, "stat", 128),
+                    (pid, "../cgroup", 128),
+                    (pid, "stat", True),
+                    (pid, "stat", smoke.MAX_PROC_CGROUP_BYTES + 1)):
+                with self.subTest(args=(bad_pid, bad_leaf, bad_limit)):
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        smoke._read_bounded_proc_record(
+                            bad_pid, bad_leaf, bad_limit, proc_root=proc)
+
+    def test_proc_identity_requires_own_pid_and_valid_starttime(self):
+        pid = 24680
+        fields = " ".join(["S"] + ["0"] * 18 + ["3333"])
+        examples = [
+            (f"{pid} (harmless) {fields}\n", ("S", "3333")),
+            (f"24681 (harmless) {fields}\n", None),
+            (f"{pid} (harmless) {fields.replace('3333', '-1')}\n", None),
+            (f"{pid} (harmless) S 1 2\n", None),
+            ("garbage\n", None),
+        ]
+        for raw, expected in examples:
+            with self.subTest(raw=raw[:25]):
+                with mock.patch.object(
+                        smoke, "_read_bounded_proc_record", return_value=raw):
+                    self.assertEqual(smoke.proc_identity(pid), expected)
+        with mock.patch.object(
+                smoke, "_read_bounded_proc_record",
+                side_effect=smoke.DescendantProbeError("oversized")):
+            self.assertIsNone(smoke.proc_identity(pid))
+
+    def test_scope_membership_requires_one_canonical_kernel_v2_record(self):
+        raw = f"0::/user.slice/user-1000.slice/{self.unit}\n"
+        examples = [
+            (raw, True),
+            (raw + raw, False),
+            ("1:name=systemd:/other.slice\n", False),
+            ("0::relative/" + self.unit + "\n", False),
+            ("0::/user.slice/another.scope\n", False),
+            ("0::/user.slice/" + self.unit + "/nested\n", False),
+        ]
+        for record, expected in examples:
+            with self.subTest(record=record[:60]):
+                with mock.patch.object(
+                        smoke, "_read_bounded_proc_record",
+                        return_value=record):
+                    self.assertIs(smoke.belongs_to_scope(24680, self.unit),
+                                  expected)
+        for invalid_unit in ("../../foo.scope", "nonsense.scope",
+                             self.unit.upper(), self.unit + "/x", None):
+            with self.subTest(unit=invalid_unit):
+                with mock.patch.object(
+                        smoke, "_read_bounded_proc_record") as read:
+                    self.assertFalse(
+                        smoke.belongs_to_scope(24680, invalid_unit))
+                    read.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux procfs only")
+    def test_real_bounded_procfs_reads_current_owned_kernel_process(self):
+        pid = os.getpid()
+        record = smoke._read_bounded_proc_record(
+            pid, "stat", smoke.MAX_PROC_STAT_BYTES)
+        self.assertTrue(record.startswith(str(pid) + " ("))
+        identity = smoke.proc_identity(pid)
+        self.assertIsNotNone(identity)
+        self.assertTrue(smoke.active_identity(pid, identity[1]))
+        cgroup = smoke._read_bounded_proc_record(
+            pid, "cgroup", smoke.MAX_PROC_CGROUP_BYTES)
+        self.assertIn("0::", cgroup)
+
     def test_active_identity_fails_for_zombies_and_recycled_pid(self):
         with mock.patch.object(smoke, "proc_identity", return_value=("S", "123")):
             self.assertTrue(smoke.active_identity(2345, "123"))
