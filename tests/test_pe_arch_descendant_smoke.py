@@ -619,6 +619,109 @@ class NativeDescendantTests(unittest.TestCase):
             self.assertEqual(canary.read_bytes(), b"unchanged")
             self.assertFalse(marker.exists())
 
+    def test_sigterm_during_spawn_defers_cleanup_until_child_is_owned(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-97-midspawn-") as root:
+            marker = Path(root) / "child.json"
+            child = mock.Mock()
+            child.pid = 24680
+            child.poll.return_value = None
+            handlers = {}
+
+            def register(sig, handler):
+                if sig == signal.SIGTERM and callable(handler):
+                    handlers["cancel"] = handler
+
+            def spawn(*args, **kwargs):
+                self.assertIn("cancel", handlers)
+                handlers["cancel"](signal.SIGTERM, None)
+                return child
+
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke.signal, "getsignal",
+                                    return_value=signal.SIG_DFL),
+                  mock.patch.object(smoke.signal, "signal",
+                                    side_effect=register) as install,
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    side_effect=spawn) as launcher,
+                  mock.patch.object(smoke.os, "pidfd_open") as pidfd,
+                  mock.patch.object(smoke.os, "kill") as numeric_kill):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError, "cancelled by SIGTERM"):
+                    smoke._worker(marker, self.unit)
+            launcher.assert_called_once()
+            pidfd.assert_not_called()
+            child.kill.assert_called_once()
+            child.wait.assert_called_once_with(timeout=3)
+            install.assert_any_call(signal.SIGTERM, signal.SIG_DFL)
+            self.assertIs(install.call_args.args[1], signal.SIG_DFL)
+            numeric_kill.assert_not_called()
+            self.assertFalse(marker.exists())
+
+    def test_sigterm_while_waiting_for_ready_uses_pidfd_and_restores_handler(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-97-wait-") as root:
+            marker = Path(root) / "child.json"
+            child = mock.Mock()
+            child.pid = 24680
+            handlers = {}
+            def register(sig, handler):
+                if sig == signal.SIGTERM and callable(handler):
+                    handlers["cancel"] = handler
+            def poll():
+                handlers["cancel"](signal.SIGTERM, None)
+                return None
+            child.poll.side_effect = poll
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke.signal, "getsignal",
+                                    return_value=signal.SIG_DFL),
+                  mock.patch.object(smoke.signal, "signal",
+                                    side_effect=register) as install,
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    return_value=child),
+                  mock.patch.object(smoke.os, "pidfd_open",
+                                    side_effect=lambda pid, flags=0:
+                                    os.open(os.devnull, os.O_RDONLY)) as pin,
+                  mock.patch.object(smoke.signal, "pidfd_send_signal") as sig,
+                  mock.patch.object(smoke.time, "sleep", return_value=None),
+                  mock.patch.object(smoke.os, "kill") as numeric_kill):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError, "cancelled by SIGTERM"):
+                    smoke._worker(marker, self.unit)
+            pin.assert_called_once_with(24680, 0)
+            sig.assert_called_once()
+            self.assertEqual(sig.call_args.args[1:],
+                             (signal.SIGKILL, None, 0))
+            child.kill.assert_not_called()
+            child.wait.assert_called_once_with(timeout=3)
+            self.assertIs(install.call_args.args[1], signal.SIG_DFL)
+            numeric_kill.assert_not_called()
+            self.assertFalse(marker.exists())
+
+    def test_sigterm_handler_is_restored_when_worker_spawn_fails(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-97-spawnfail-") as root:
+            marker = Path(root) / "child.json"
+            previous = signal.SIG_IGN
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke.signal, "getsignal",
+                                    return_value=previous),
+                  mock.patch.object(smoke.signal, "signal") as install,
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    side_effect=OSError("safe synthetic spawn failure"))):
+                with self.assertRaisesRegex(OSError, "spawn failure"):
+                    smoke._worker(marker, self.unit)
+            self.assertGreaterEqual(install.call_count, 2)
+            self.assertTrue(callable(install.call_args_list[0].args[1]))
+            self.assertEqual(install.call_args.args,
+                             (signal.SIGTERM, previous))
+
     def test_worker_fails_before_spawn_when_stale_marker_paths_exist(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-96-preflight-") as root:
             folder = Path(root)
