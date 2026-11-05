@@ -19,6 +19,7 @@ import time
 
 from pe_arch_cgroup_smoke import preflight
 from pe_arch_vm_gate import verify_arch_vm
+from pe_arch_vm_evidence import _verified_scope_cleanup
 from pe_scope_cleanup_evidence import stop_and_attest_scope, ScopeCleanupUnavailable
 from pe_resource_evidence import (read_scope_proof, corroborate_guard_receipt,
                                   InvalidResourceEvidence)
@@ -693,12 +694,15 @@ def run_native_descendant_smoke() -> dict:
                 # Demand the final systemd state and kernel cgroup.events.
                 cleanup_evidence = stop_and_attest_scope(unit)
                 check_supervisor_cancel()
-                if (cleanup_evidence.get("scope") != unit
-                        or cleanup_evidence.get("verified") is not True
-                        or cleanup_evidence.get("scope_quiescent") is not True
-                        or cleanup_evidence.get("cgroup_unpopulated") is not True):
+                # Check the *same complete* state contract used by the
+                # independent acceptance receipt validator. Four affirmative
+                # flags alone cannot establish that systemd reported
+                # inactive/dead or that a transient scope was collected.
+                # Reject unknown/missing fields, contradictory loaded/GC
+                # states and ill-typed stop acknowledgements before PASS.
+                if not _verified_scope_cleanup(unit, cleanup_evidence):
                     raise DescendantProbeError(
-                        "Descendant cgroup remained populated or unverified")
+                        "Descendant cleanup evidence failed full scope contract")
         finally:
             # Cleanup fallback is NOT evidence of correct scope termination.
             # Pinning a pidfd before stop prevents SIGKILL from reaching an
