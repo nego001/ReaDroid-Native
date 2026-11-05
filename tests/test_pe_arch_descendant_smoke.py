@@ -577,19 +577,23 @@ class NativeDescendantTests(unittest.TestCase):
             folder = Path(root)
             ready = folder / "child.ready"
             pending = folder / "child.ready.pending"
-            real_replace = os.replace
+            real_link = os.link
             observations = []
 
-            def publish(source, destination):
+            def publish(source, destination, *, follow_symlinks=True):
                 self.assertEqual(Path(source), pending)
                 self.assertEqual(Path(destination), ready)
                 self.assertFalse(ready.exists())
                 self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
                 self.assertEqual(pending.stat().st_mode & 0o777, 0o600)
+                self.assertIs(follow_symlinks, False)
                 observations.append(True)
-                real_replace(source, destination)
+                real_link(source, destination, follow_symlinks=follow_symlinks)
+                # Final path appears atomically with complete contents.
+                self.assertEqual(ready.read_bytes(), b"sigterm_ignored")
+                self.assertEqual(ready.stat().st_nlink, 2)
 
-            with mock.patch.object(smoke.os, "replace", side_effect=publish):
+            with mock.patch.object(smoke.os, "link", side_effect=publish):
                 smoke._publish_ready_marker(ready)
             self.assertEqual(observations, [True])
             self.assertFalse(pending.exists())
@@ -626,7 +630,7 @@ class NativeDescendantTests(unittest.TestCase):
                     self.assertTrue(ready.is_symlink()
                                     or ready.exists())
 
-    def test_ready_marker_rejects_pending_link_and_failed_rename(self):
+    def test_ready_marker_rejects_pending_link_and_failed_atomic_publication(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-92-rename-") as root:
             folder = Path(root)
             ready = folder / "child.ready"
@@ -641,14 +645,85 @@ class NativeDescendantTests(unittest.TestCase):
             self.assertEqual(canary.read_bytes(), b"unchanged")
             pending.unlink()
             with mock.patch.object(
-                    smoke.os, "replace",
-                    side_effect=OSError("filesystem rejected rename")):
+                    smoke.os, "link",
+                    side_effect=OSError("filesystem rejected hard link")):
                 with self.assertRaisesRegex(
                         smoke.DescendantProbeError,
                         "Cannot atomically publish readiness"):
                     smoke._publish_ready_marker(ready)
             self.assertFalse(ready.exists())
             self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
+
+    def test_ready_publish_refuses_destination_created_after_precheck(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s2-00-ready-race-") as root:
+            folder = Path(root)
+            ready = folder / "child.ready"
+            pending = folder / "child.ready.pending"
+            real_link = os.link
+            canary = b"already-published"
+            def racing_link(source, destination, *, follow_symlinks=True):
+                # The destination was absent during lstat, but appears
+                # before the attempted atomic creation. It must NOT be replaced.
+                ready.write_bytes(canary)
+                return real_link(source, destination,
+                                 follow_symlinks=follow_symlinks)
+            with mock.patch.object(smoke.os, "link",
+                                   side_effect=racing_link) as link:
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError,
+                        "Readiness marker already exists"):
+                    smoke._publish_ready_marker(ready)
+            link.assert_called_once()
+            self.assertEqual(ready.read_bytes(), canary)
+            self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
+
+    def test_child_identity_marker_publish_refuses_race_without_clobber(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s2-00-worker-race-") as root:
+            folder = Path(root)
+            marker = folder / "child.json"
+            ready = marker.with_suffix(".ready")
+            child = mock.Mock()
+            child.pid = 24680
+            child.poll.return_value = None
+            real_link = os.link
+            canary = b'{"do_not_overwrite":true}'
+
+            def launch(*args, **kwargs):
+                ready.write_bytes(b"sigterm_ignored")
+                return child
+
+            def racing_link(source, destination, *, follow_symlinks=True):
+                self.assertEqual(Path(destination), marker)
+                self.assertEqual(Path(source), marker.with_suffix(".pending"))
+                marker.write_bytes(canary)
+                return real_link(source, destination,
+                                 follow_symlinks=follow_symlinks)
+
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke, "proc_identity",
+                                    return_value=("S", "3333")),
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    side_effect=launch),
+                  mock.patch.object(smoke.os, "pidfd_open",
+                                    side_effect=lambda pid, flags=0:
+                                    os.open(os.devnull, os.O_RDONLY)),
+                  mock.patch.object(smoke.os, "link",
+                                    side_effect=racing_link) as link,
+                  mock.patch.object(smoke.signal, "pidfd_send_signal") as sent,
+                  mock.patch.object(smoke.os, "replace") as overwrite):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError,
+                        "Child marker already exists"):
+                    smoke._worker(marker, self.unit)
+            link.assert_called_once()
+            overwrite.assert_not_called()
+            self.assertEqual(marker.read_bytes(), canary)
+            sent.assert_called_once()
+            child.wait.assert_called_once_with(timeout=3)
+            self.assertEqual(marker.with_suffix(".pending").stat().st_nlink, 1)
 
     def test_proc_limit_parser_requires_exact_single_hard_soft_kernel_record(self):
         good = (b"Limit Soft Limit Hard Limit Units\n"
