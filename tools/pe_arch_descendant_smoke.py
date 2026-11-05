@@ -164,33 +164,56 @@ def _write_new_private_marker(path: Path, payload: bytes, limit: int) -> None:
             "Cannot exclusively create private marker") from exc
 
 
-def _publish_ready_marker(ready: Path) -> None:
-    """Publish complete readiness as one directory-entry change.
+def _publish_private_marker_no_clobber(
+        pending: Path, destination: Path, *, kind: str) -> None:
+    """Expose fully written marker contents without replacing an existing path.
 
-    A grandchild must never expose the final 'ready' pathname while its
-    contents are being written. The worker may observe the final marker at
-    any instant; only a complete, fsynced one should be visible. This is
-    NOT protection against another hostile process with the same UID.
+    Linux hard-link creation is a single, no-replace directory-entry operation.
+    Unlike lstat()+os.replace(), an intervening destination creation cannot be
+    overwritten. Both names briefly share one inode, so the bounded reader's
+    nlink==1 guard may reject a *too early* observation, never accept partial
+    content. The worker/grandchild use a private owned directory, not a
+    hostile same-UID multiwriter threat model. A failed unlink rejects PASS.
     """
+    if (kind not in ("Readiness", "Child")
+            or pending.parent != destination.parent or pending == destination):
+        raise DescendantProbeError("Unsafe private marker publication")
+    try:
+        meta = pending.lstat()
+        if (not stat.S_ISREG(meta.st_mode)
+                or meta.st_uid != os.geteuid()
+                or stat.S_IMODE(meta.st_mode) != 0o600
+                or meta.st_nlink != 1):
+            raise DescendantProbeError("Untrusted pending marker inode")
+        try:
+            destination.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise DescendantProbeError(kind + " marker already exists")
+        # The kernel creates the destination only if it is still absent.
+        # Preserve follow_symlinks=False even though pending is ours.
+        os.link(pending, destination, follow_symlinks=False)
+    except FileExistsError as exc:
+        raise DescendantProbeError(kind + " marker already exists") from exc
+    except OSError as exc:
+        raise DescendantProbeError(
+            "Cannot atomically publish " + kind.lower() + " marker") from exc
+    try:
+        os.unlink(pending)
+    except OSError as exc:
+        # The destination may temporarily have nlink=2, which the reader
+        # rejects. This is a hard failure, NOT a successful publication.
+        raise DescendantProbeError(
+            "Cannot finalize " + kind.lower() + " marker publication") from exc
+
+
+def _publish_ready_marker(ready: Path) -> None:
+    """Publish complete, fsynced readiness without clobbering another entry."""
     pending = ready.with_name(ready.name + ".pending")
     _write_new_private_marker(
         pending, b"sigterm_ignored", MAX_READY_MARKER_BYTES)
-    # Refuse pre-planted destinations, including dangling symlinks. The
-    # directory belongs to our own temporary VM experiment; do not pretend
-    # this precheck makes os.replace race-free against a hostile same-UID
-    # process. Replacement is atomic and never follows the destination link.
-    try:
-        ready.lstat()
-    except FileNotFoundError:
-        pass
-    except OSError as exc:
-        raise DescendantProbeError("Cannot inspect readiness destination") from exc
-    else:
-        raise DescendantProbeError("Readiness marker already exists")
-    try:
-        os.replace(pending, ready)
-    except OSError as exc:
-        raise DescendantProbeError("Cannot atomically publish readiness") from exc
+    _publish_private_marker_no_clobber(pending, ready, kind="Readiness")
 
 
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
@@ -522,7 +545,7 @@ def _worker(marker: Path, unit: str) -> int:
             tmp, json.dumps(record, separators=(",", ":")).encode("ascii"),
             MAX_CHILD_MARKER_BYTES)
         check_cancel()
-        os.replace(tmp, marker)
+        _publish_private_marker_no_clobber(tmp, marker, kind="Child")
         while True:
             check_cancel()
             time.sleep(0.25)
