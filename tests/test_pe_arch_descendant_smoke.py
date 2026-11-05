@@ -342,6 +342,137 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertEqual(send.call_args.args[1:], (signal.SIGKILL, None, 0))
         return result
 
+    def test_supervisor_sigterm_at_all_lifecycle_boundaries_refuses_pass(self):
+        # Entire native scope is MOCKED. The signal handler is invoked as a
+        # Python callback: no actual systemd/VM, detached child or PE is run.
+        for phase in ("pre_spawn", "spawn", "waiting", "stop", "attest"):
+            with self.subTest(phase=phase):
+                handlers = {}
+                cancel_once = {"called": False}
+                process = mock.Mock()
+                process.wait.return_value = 0
+
+                def inject_cancel():
+                    if not cancel_once["called"]:
+                        cancel_once["called"] = True
+                        handlers["current"](signal.SIGTERM, None)
+
+                def install(sig, disposition):
+                    self.assertEqual(sig, signal.SIGTERM)
+                    if callable(disposition):
+                        handlers["current"] = disposition
+                        if phase == "pre_spawn":
+                            inject_cancel()
+
+                def poll():
+                    if phase == "waiting":
+                        inject_cancel()
+                    return None
+                process.poll.side_effect = poll
+
+                def launch(argv, **kwargs):
+                    if phase in ("stop", "attest"):
+                        marker = Path(argv[argv.index("--worker") + 1])
+                        marker.write_text(json.dumps({
+                            "pid": 24680, "starttime": "3333", "unit": self.unit
+                        }), encoding="utf-8")
+                        kwargs["stdout"].write(json.dumps({
+                            "cgroup_verification": "passed", "verified": True,
+                            "memory_max": 4294967296, "pids_max": 128,
+                            "cpu_quota": 200000, "cpu_period": 100000
+                        }).encode("ascii") + b"\n")
+                        kwargs["stdout"].flush()
+                    if phase == "spawn":
+                        inject_cancel()
+                    return process
+
+                def stop(unit):
+                    self.assertEqual(unit, self.unit)
+                    if phase == "stop":
+                        inject_cancel()
+                    return True
+
+                def attest(unit):
+                    self.assertEqual(unit, self.unit)
+                    if phase == "attest":
+                        inject_cancel()
+                    return {
+                        "scope": self.unit, "verified": True,
+                        "scope_quiescent": True, "cgroup_unpopulated": True,
+                        "active_state": "inactive", "sub_state": "dead",
+                    }
+
+                with (mock.patch.object(smoke, "verify_arch_vm",
+                                        return_value={
+                                            "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                            "vm_confirmed": True, "container": False}),
+                      mock.patch.object(smoke, "_native_prlimit_prefix",
+                                        return_value=[
+                                            "/usr/bin/prlimit",
+                                            "--fsize=32768:32768", "--"]),
+                      mock.patch.object(smoke, "new_scope_unit",
+                                        return_value=self.unit),
+                      mock.patch.object(smoke, "wrap_in_cgroup_scope",
+                                        side_effect=lambda cmd, **opts: cmd),
+                      mock.patch.object(smoke.subprocess, "Popen",
+                                        side_effect=launch) as launcher,
+                      mock.patch.object(smoke, "active_identity",
+                                        return_value=True),
+                      mock.patch.object(smoke, "belongs_to_scope",
+                                        return_value=True),
+                      mock.patch.object(smoke, "_require_pinned_descendant_file_limit"),
+                      mock.patch.object(smoke, "read_scope_proof",
+                                        return_value={
+                                            "verification": "guard_verified_before_bwrap",
+                                            "memory_max_bytes": 4294967296,
+                                            "tasks_max": 128,
+                                            "cpu_quota": 200000,
+                                            "cpu_period": 100000,
+                                        }),
+                      mock.patch.object(smoke, "wait_until_dead",
+                                        return_value=True),
+                      mock.patch.object(smoke, "stop_scope",
+                                        side_effect=stop) as stop_call,
+                      mock.patch.object(smoke, "stop_and_attest_scope",
+                                        side_effect=attest) as attest_call,
+                      mock.patch.object(smoke.os, "pidfd_open",
+                                        side_effect=lambda pid, flags=0:
+                                        os.open(os.devnull, os.O_RDONLY)) as pin,
+                      mock.patch.object(smoke.signal, "pidfd_send_signal") as sent,
+                      mock.patch.object(smoke.signal, "getsignal",
+                                        return_value=signal.SIG_DFL),
+                      mock.patch.object(smoke.signal, "signal",
+                                        side_effect=install) as installed,
+                      mock.patch.object(smoke.time, "sleep",
+                                        return_value=None),
+                      mock.patch.object(smoke.os, "kill") as numeric_kill):
+                    with self.assertRaisesRegex(
+                            smoke.DescendantProbeError,
+                            "supervisor cancelled by SIGTERM"):
+                        smoke.run_native_descendant_smoke()
+                self.assertTrue(cancel_once["called"])
+                installed.assert_any_call(signal.SIGTERM, signal.SIG_DFL)
+                self.assertEqual(installed.call_args.args,
+                                 (signal.SIGTERM, signal.SIG_DFL))
+                self.assertGreaterEqual(stop_call.call_count, 1)
+                numeric_kill.assert_not_called()
+                if phase == "pre_spawn":
+                    launcher.assert_not_called()
+                    process.wait.assert_not_called()
+                else:
+                    launcher.assert_called_once()
+                    process.wait.assert_called_once_with(timeout=3)
+                if phase in ("stop", "attest"):
+                    pin.assert_called_once_with(24680, 0)
+                    sent.assert_called_once()
+                    self.assertEqual(sent.call_args.args[1:],
+                                     (signal.SIGKILL, None, 0))
+                else:
+                    pin.assert_not_called()
+                    sent.assert_not_called()
+                if phase != "attest":
+                    attest_call.assert_not_called()
+
     def test_accepts_only_scope_killing_live_detached_child(self):
         result = self._synthetic_result()
         self.assertEqual(result["status"], "PASS_NATIVE_ARCH_DESCENDANTS")
