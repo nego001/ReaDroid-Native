@@ -236,6 +236,77 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
 
+    def test_child_marker_requires_exact_bounded_nonduplicate_json(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-90-marker-") as root:
+            marker = Path(root) / "child.json"
+            valid = {"pid": 24680, "starttime": "3333", "unit": self.unit}
+            marker.write_text(json.dumps(valid), encoding="utf-8")
+            self.assertEqual(smoke._read_child_marker(marker), valid)
+            malformed = [
+                b'{"pid":24680,"pid":24680,"starttime":"3333","unit":"x"}',
+                b'{"pid":24680,"starttime":"3333","unit":"x","verified":true}',
+                b'{"pid":true,"starttime":"3333","unit":"x"}',
+                b'{"pid":24680,"starttime":"-3","unit":"x"}',
+                b'{"pid":24680,"starttime":"3333","unit":null}',
+                b'{"pid":24680,"starttime":"3333"}',
+                b'{"pid":NaN,"starttime":"3333","unit":"x"}',
+                b'\xff' + b'X' * 8,
+                b'X' * (smoke.MAX_CHILD_MARKER_BYTES + 1),
+            ]
+            for payload in malformed:
+                with self.subTest(payload=payload[:55]):
+                    marker.write_bytes(payload)
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        smoke._read_child_marker(marker)
+
+    def test_child_marker_rejects_symlink_hardlink_and_fifo(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-90-marker-") as root:
+            folder = Path(root)
+            real = folder / "genuine"
+            real.write_text(json.dumps({
+                "pid": 24680, "starttime": "3333", "unit": self.unit
+            }), encoding="utf-8")
+            alias = folder / "symlink"
+            alias.symlink_to(real)
+            hardlink = folder / "hardlink"
+            os.link(real, hardlink)
+            fifo = folder / "fifo"
+            os.mkfifo(fifo)
+            for path in (alias, hardlink, fifo, real):
+                with self.subTest(path=path.name):
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        smoke._read_child_marker(path)
+
+    def test_worker_refuses_oversized_or_spoofed_ready_before_pid_marker(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-90-ready-") as root:
+            folder = Path(root)
+            marker = folder / "child.json"
+            ready = marker.with_suffix(".ready")
+            canary = folder / "canary"
+            canary.write_bytes(b"sigterm_ignored")
+            for mode in ("oversized", "symlink", "bad"):
+                with self.subTest(mode=mode):
+                    if ready.is_symlink() or ready.exists():
+                        ready.unlink()
+                    if mode == "oversized":
+                        ready.write_bytes(b"X" * (smoke.MAX_READY_MARKER_BYTES + 1))
+                    elif mode == "symlink":
+                        ready.symlink_to(canary)
+                    else:
+                        ready.write_bytes(b"unexpected")
+                    child = mock.Mock()
+                    child.poll.return_value = None
+                    with (mock.patch.object(smoke, "belongs_to_scope",
+                                            return_value=True),
+                          mock.patch.object(resource, "getrlimit",
+                                            return_value=(32768, 32768)),
+                          mock.patch.object(smoke.subprocess, "Popen",
+                                            return_value=child) as spawn):
+                        with self.assertRaises(smoke.DescendantProbeError):
+                            smoke._worker(marker, self.unit)
+                    spawn.assert_called_once()
+                    self.assertFalse(marker.exists())
+
     def test_bounded_scope_logs_reject_oversize_without_loading_all(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-88-log-") as root:
             path = Path(root) / "guard.stdout"
