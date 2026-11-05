@@ -600,13 +600,31 @@ def run_native_descendant_smoke() -> dict:
         # Reuse the trusted executable and exact hard/soft limits checked
         # before starting the scope. Do not resolve a different PATH entry.
         argv = [*limiter_prefix, *argv]
+        cancel_requested = False
+
+        def defer_supervisor_sigterm(_signum: int, _frame: object) -> None:
+            # Never raise from a signal handler during Popen: it may have
+            # created a scope without yet returning a launcher handle.
+            nonlocal cancel_requested
+            cancel_requested = True
+
+        def check_supervisor_cancel() -> None:
+            if cancel_requested:
+                raise DescendantProbeError("Native scope supervisor cancelled by SIGTERM")
+
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+        # Register before the launcher, restore even if cleanup fails.
+        signal.signal(signal.SIGTERM, defer_supervisor_sigterm)
         try:
             with out_path.open("wb") as stdout, err_path.open("wb") as stderr:
+                check_supervisor_cancel()
                 launcher = subprocess.Popen(
                     argv, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
                     close_fds=True, start_new_session=True)
+                check_supervisor_cancel()
                 deadline = time.monotonic() + 12
                 while time.monotonic() < deadline:
+                    check_supervisor_cancel()
                     if marker.is_file():
                         record = _read_child_marker(marker)
                         child_pid = record["pid"]
@@ -627,6 +645,7 @@ def run_native_descendant_smoke() -> dict:
                         # do not accept readiness alone as proof of RLIMIT_FSIZE.
                         _require_pinned_descendant_file_limit(
                             child_pid, child_starttime, unit)
+                        check_supervisor_cancel()
                         break
                     if launcher.poll() is not None:
                         raise DescendantProbeError("systemd scope terminated early")
@@ -663,6 +682,7 @@ def run_native_descendant_smoke() -> dict:
                 if quota_corroboration.get("corroborated") is not True:
                     raise DescendantProbeError("Kernel quota corroboration not proven")
                 proof = True
+                check_supervisor_cancel()
                 stopped = stop_scope(unit)
                 if not stopped:
                     raise DescendantProbeError("systemctl could not stop scope")
@@ -697,12 +717,15 @@ def run_native_descendant_smoke() -> dict:
                         if child_pidfd is not None:
                             os.close(child_pidfd)
                     finally:
-                        if launcher is not None:
-                            try:
-                                launcher.wait(timeout=3)
-                            except subprocess.TimeoutExpired:
-                                launcher.kill()
-                                launcher.wait(timeout=3)
+                        try:
+                            if launcher is not None:
+                                try:
+                                    launcher.wait(timeout=3)
+                                except subprocess.TimeoutExpired:
+                                    launcher.kill()
+                                    launcher.wait(timeout=3)
+                        finally:
+                            signal.signal(signal.SIGTERM, previous_sigterm)
         return {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": unit, "quota_verified": proof,
                 "systemd_stop_succeeded": stopped,
