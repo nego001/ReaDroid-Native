@@ -129,6 +129,35 @@ def _read_bounded_scope_log(path: Path, limit: int) -> bytes:
         raise DescendantProbeError("Scope log unavailable or unsafe") from exc
 
 
+def _write_new_private_marker(path: Path, payload: bytes, limit: int) -> None:
+    """Create a bounded, private one-shot marker without following links.
+
+    The worker and grandchild share an owner-only temporary directory. Never
+    truncate an existing target: O_EXCL stops pre-planted regular files and
+    symlinks before the first byte is written. A separate pending marker is
+    published using rename, which does not follow the destination symlink.
+    """
+    if (type(payload) is not bytes or type(limit) is not int
+            or not 0 < len(payload) <= limit <= MAX_CHILD_MARKER_BYTES
+            or not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_CLOEXEC")):
+        raise DescendantProbeError("Private marker write budget unavailable")
+    try:
+        directory = path.parent.lstat()
+        if (not stat.S_ISDIR(directory.st_mode)
+                or directory.st_uid != os.geteuid()
+                or directory.st_mode & 0o077):
+            raise DescendantProbeError("Untrusted private marker directory")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                     | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        with os.fdopen(fd, "wb") as target:
+            target.write(payload)
+            target.flush()
+            os.fsync(target.fileno())
+    except OSError as exc:
+        raise DescendantProbeError(
+            "Cannot exclusively create private marker") from exc
+
+
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
     """Reject duplicate JSON keys, including nested keys, before trusting a marker."""
     result = {}
@@ -244,7 +273,7 @@ def _grandchild(unit: str, ready: Path) -> int:
         raise DescendantProbeError("grandchild is outside assigned scope")
     _require_inherited_file_limit()
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    ready.write_text("sigterm_ignored", encoding="ascii")
+    _write_new_private_marker(ready, b"sigterm_ignored", MAX_READY_MARKER_BYTES)
     while True:
         time.sleep(0.25)
 
@@ -273,8 +302,9 @@ def _worker(marker: Path, unit: str) -> int:
         raise DescendantProbeError("grandchild did not enter assigned scope")
     record = {"pid": child.pid, "starttime": identity[1], "unit": unit}
     tmp = marker.with_suffix(".pending")
-    tmp.write_text(json.dumps(record), encoding="utf-8")
-    os.chmod(tmp, 0o600)
+    _write_new_private_marker(
+        tmp, json.dumps(record, separators=(",", ":")).encode("ascii"),
+        MAX_CHILD_MARKER_BYTES)
     os.replace(tmp, marker)
     while True:
         time.sleep(0.25)
