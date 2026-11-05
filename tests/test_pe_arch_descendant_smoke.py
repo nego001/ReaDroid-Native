@@ -215,12 +215,30 @@ class NativeDescendantTests(unittest.TestCase):
     def _synthetic_result(self, *, child_gone=True, proof=True,
                           cleanup_quiescent=True, cleanup_other_scope=False,
                           oversized_output=False, unexpected_stderr=False,
-                          kernel_witness=True, guard_line=None):
+                          kernel_witness=True, guard_line=None,
+                           cleanup_changes=None, cleanup_remove=()):
         proof_line = (
             '{"cgroup_verification": "passed", "verified": true,'
             '"memory_max": 4294967296, "pids_max": 128,'
             '"cpu_quota": 200000, "cpu_period": 100000}\n'
             if proof else '{"cgroup_verification": "rejected"}\n')
+        cleanup_evidence = {
+            "scope": ("negresco-pe-ffffffffffffffffffffffff.scope"
+                      if cleanup_other_scope else self.unit),
+            "verified": True,
+            "scope_quiescent": cleanup_quiescent,
+            "stop_request_accepted": True,
+            "load_state": "loaded",
+            "active_state": "inactive",
+            "sub_state": "dead",
+            "scope_collected": False,
+            "cgroup_unpopulated": cleanup_quiescent,
+        }
+        if cleanup_changes is not None:
+            cleanup_evidence.update(cleanup_changes)
+        for field in cleanup_remove:
+            cleanup_evidence.pop(field, None)
+
         fake_process = mock.Mock()
         fake_process.poll.return_value = None
         fake_process.wait.return_value = 0
@@ -287,22 +305,15 @@ class NativeDescendantTests(unittest.TestCase):
                                               "pidfd_send_signal") as send):
                                         with mock.patch.object(
                                                 smoke, "stop_and_attest_scope",
-                                                return_value={
-                                                    "scope": (
-                                                        "negresco-pe-ffffffffffffffffffffffff.scope"
-                                                        if cleanup_other_scope else self.unit),
-                                                    "verified": True,
-                                                    "scope_quiescent": cleanup_quiescent,
-                                                    "cgroup_unpopulated": cleanup_quiescent,
-                                                    "active_state": "inactive",
-                                                    "sub_state": "dead",
-                                                }) as cleanup:
+                                                return_value=cleanup_evidence) as cleanup:
                                             if (proof and child_gone and cleanup_quiescent
                                                     and kernel_witness
                                                     and guard_line is None
                                                     and not cleanup_other_scope
                                                     and not oversized_output
-                                                    and not unexpected_stderr):
+                                                    and not unexpected_stderr
+                                                    and smoke._verified_scope_cleanup(
+                                                        self.unit, cleanup_evidence)):
                                                 result = smoke.run_native_descendant_smoke()
                                                 cleanup.assert_called_once_with(self.unit)
                                             else:
@@ -406,7 +417,10 @@ class NativeDescendantTests(unittest.TestCase):
                     return {
                         "scope": self.unit, "verified": True,
                         "scope_quiescent": True, "cgroup_unpopulated": True,
+                        "stop_request_accepted": True,
+                        "load_state": "loaded",
                         "active_state": "inactive", "sub_state": "dead",
+                        "scope_collected": False,
                     }
 
                 with (mock.patch.object(smoke, "verify_arch_vm",
@@ -479,6 +493,36 @@ class NativeDescendantTests(unittest.TestCase):
                     sent.assert_not_called()
                 if phase not in ("attest", "final_cleanup"):
                     attest_call.assert_not_called()
+
+    def test_full_cleanup_contract_rejects_incomplete_or_inconsistent_proof(self):
+        # Scope operations and cleanup evidence are mocked. The production
+        # parser validates the same strict contract as the final reviewer.
+        bad_changes = (
+            {"active_state": "active"},
+            {"sub_state": "running"},
+            {"load_state": "not-found"},  # conflicts with scope_collected=False
+            {"scope_collected": True},   # conflicts with load_state=loaded
+            {"stop_request_accepted": 1},
+            {"stop_request_accepted": "yes"},
+            {"verified": 1},
+            {"unexpected_release_authorized": True},
+        )
+        for changes in bad_changes:
+            with self.subTest(changes=changes):
+                with mock.patch.object(smoke.os, "kill") as numeric_kill:
+                    self._synthetic_result(cleanup_changes=changes)
+                numeric_kill.assert_not_called()
+        for missing in ("active_state", "load_state", "sub_state",
+                        "scope_collected", "stop_request_accepted"):
+            with self.subTest(missing=missing):
+                self._synthetic_result(cleanup_remove=(missing,))
+        # A legitimate, already-garbage-collected scope may be accepted,
+        # but only when the systemd load state and GC flag agree.
+        valid_gc = {"load_state": "not-found", "scope_collected": True,
+                    "stop_request_accepted": False}
+        result = self._synthetic_result(cleanup_changes=valid_gc)
+        self.assertEqual(result["status"], "PASS_NATIVE_ARCH_DESCENDANTS")
+        self.assertTrue(result["descendant_cleanup_evidence"]["scope_collected"])
 
     def test_accepts_only_scope_killing_live_detached_child(self):
         result = self._synthetic_result()
