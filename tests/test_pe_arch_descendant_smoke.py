@@ -714,9 +714,11 @@ class NativeDescendantTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="pe-s1-96-real-child-") as root:
             marker = Path(root) / "child.json"
             process = None
+            real_popen = subprocess.Popen
+
             def spawn(*args, **kwargs):
                 nonlocal process
-                process = subprocess.Popen(
+                process = real_popen(
                     [sys.executable, "-I", "-c",
                      "import time; time.sleep(15)"],
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
