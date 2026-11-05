@@ -611,11 +611,132 @@ class NativeDescendantTests(unittest.TestCase):
                   mock.patch.object(smoke, "proc_identity",
                                     return_value=("S", "3333")),
                   mock.patch.object(smoke.subprocess, "Popen",
-                                    return_value=child)):
+                                    return_value=child) as spawn):
                 with self.assertRaisesRegex(
-                        smoke.DescendantProbeError, "exclusively"):
+                        smoke.DescendantProbeError, "already occupied"):
                     smoke._worker(marker, self.unit)
+                spawn.assert_not_called()
             self.assertEqual(canary.read_bytes(), b"unchanged")
+            self.assertFalse(marker.exists())
+
+    def test_worker_fails_before_spawn_when_stale_marker_paths_exist(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-96-preflight-") as root:
+            folder = Path(root)
+            marker = folder / "child.json"
+            ready = marker.with_suffix(".ready")
+            paths = (marker, marker.with_suffix(".pending"),
+                     ready, ready.with_name(ready.name + ".pending"))
+            for path in paths:
+                with self.subTest(path=path.name):
+                    path.write_bytes(b"preplanted")
+                    with (mock.patch.object(smoke, "belongs_to_scope",
+                                            return_value=True),
+                          mock.patch.object(resource, "getrlimit",
+                                            return_value=(32768, 32768)),
+                          mock.patch.object(smoke.subprocess, "Popen") as spawn):
+                        with self.assertRaisesRegex(
+                                smoke.DescendantProbeError, "already occupied"):
+                            smoke._worker(marker, self.unit)
+                        spawn.assert_not_called()
+                    self.assertEqual(path.read_bytes(), b"preplanted")
+                    path.unlink()
+
+    def test_failed_worker_ready_check_kills_pinned_child_and_reaps(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-96-pidfd-") as root:
+            marker = Path(root) / "child.json"
+            ready = marker.with_suffix(".ready")
+            child = mock.Mock()
+            child.pid = 24680
+            child.poll.return_value = None
+
+            def spawn(*args, **kwargs):
+                # The marker appears only after the pre-spawn freshness gate.
+                ready.write_bytes(b"not-the-expected-ready-marker")
+                return child
+
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    side_effect=spawn) as launcher,
+                  mock.patch.object(smoke.os, "pidfd_open",
+                                    side_effect=lambda pid, flags=0:
+                                    os.open(os.devnull, os.O_RDONLY)) as pin,
+                  mock.patch.object(smoke.signal,
+                                    "pidfd_send_signal") as sig,
+                  mock.patch.object(smoke.os, "kill") as numeric_kill):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError,
+                        "SIGTERM-resistant child was not ready"):
+                    smoke._worker(marker, self.unit)
+            launcher.assert_called_once()
+            pin.assert_called_once_with(24680, 0)
+            sig.assert_called_once()
+            self.assertEqual(sig.call_args.args[1:],
+                             (signal.SIGKILL, None, 0))
+            numeric_kill.assert_not_called()
+            child.kill.assert_not_called()
+            child.wait.assert_called_once_with(timeout=3)
+            self.assertFalse(marker.exists())
+
+    def test_worker_pidfd_pin_failure_terminates_unreaped_direct_child(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-96-no-pidfd-") as root:
+            marker = Path(root) / "child.json"
+            child = mock.Mock()
+            child.pid = 24680
+            child.poll.return_value = None
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    return_value=child) as launcher,
+                  mock.patch.object(smoke.os, "pidfd_open",
+                                    side_effect=OSError("pidfd unavailable")),
+                  mock.patch.object(smoke.signal,
+                                    "pidfd_send_signal") as sig):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError,
+                        "Cannot pin worker-owned grandchild"):
+                    smoke._worker(marker, self.unit)
+            launcher.assert_called_once()
+            sig.assert_not_called()
+            child.kill.assert_called_once()
+            child.wait.assert_called_once_with(timeout=3)
+            self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(sys.platform == "linux",
+                         "Linux direct child cleanup only")
+    def test_real_unreaped_direct_python_child_is_killed_on_setup_error(self):
+        # Harmless Python subprocess, never a systemd scope or Windows PE.
+        # Its PID is owned by Popen and cannot be reused until reaped.
+        with tempfile.TemporaryDirectory(prefix="pe-s1-96-real-child-") as root:
+            marker = Path(root) / "child.json"
+            process = None
+            def spawn(*args, **kwargs):
+                nonlocal process
+                process = subprocess.Popen(
+                    [sys.executable, "-I", "-c",
+                     "import time; time.sleep(15)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL)
+                return process
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    side_effect=spawn),
+                  mock.patch.object(smoke.os, "pidfd_open",
+                                    side_effect=OSError("intentional pin failure"))):
+                # Use the original Popen in spawn to avoid patched recursion.
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError,
+                        "Cannot pin worker-owned grandchild"):
+                    smoke._worker(marker, self.unit)
+            self.assertIsNotNone(process)
+            self.assertIsNotNone(process.returncode)
             self.assertFalse(marker.exists())
 
     def test_child_marker_requires_exact_bounded_nonduplicate_json(self):
@@ -686,7 +807,7 @@ class NativeDescendantTests(unittest.TestCase):
                                             return_value=child) as spawn):
                         with self.assertRaises(smoke.DescendantProbeError):
                             smoke._worker(marker, self.unit)
-                    spawn.assert_called_once()
+                    spawn.assert_not_called()
                     self.assertFalse(marker.exists())
 
     def test_bounded_scope_logs_reject_oversize_without_loading_all(self):
