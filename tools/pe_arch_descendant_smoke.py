@@ -36,6 +36,8 @@ MAX_GUARD_STDERR_BYTES = 8 * 1024
 # Python objects. Reject oversized files before decoding/JSON allocation.
 MAX_CHILD_MARKER_BYTES = 512
 MAX_READY_MARKER_BYTES = 64
+# Kernel pseudo-file, not an ordinary disk log. Cap reads and reject truncation.
+MAX_PROC_LIMITS_BYTES = 8 * 1024
 # Linux RLIMIT_FSIZE is per-file, not a whole-disk quota. Set the HARD
 # limit too: unprivileged children cannot raise it. Each inherited output
 # file is capped at 32 KiB at write-time, including stderr (whose stricter
@@ -288,6 +290,60 @@ def _pin_descendant_pidfd(pid: int, starttime: str, unit: str) -> int:
     return fd
 
 
+def _require_proc_fsize_record(raw: bytes) -> None:
+    """Require one exact kernel /proc/PID/limits Max file size record.
+
+    This checks the actual kernel view, not the worker's self-reported
+    marker. The test's 32 KiB per-file policy is not a total disk quota.
+    """
+    if (type(raw) is not bytes or not 0 < len(raw) <= MAX_PROC_LIMITS_BYTES
+            or b"\\x00" in raw):
+        raise DescendantProbeError("Invalid bounded kernel process limits")
+    try:
+        rows = [line.split() for line in raw.decode("ascii").splitlines()]
+    except UnicodeError as exc:
+        raise DescendantProbeError("Non-ASCII kernel process limits") from exc
+    file_rows = [parts for parts in rows
+                 if len(parts) >= 3 and parts[:3] == ["Max", "file", "size"]]
+    target = str(MAX_NATIVE_WRITE_FILE_BYTES)
+    if (len(file_rows) != 1 or file_rows[0] !=
+            ["Max", "file", "size", target, target, "bytes"]):
+        raise DescendantProbeError(
+            "Pinned descendant effective file-size limit not verified")
+
+
+def _require_pinned_descendant_file_limit(
+        pid: int, starttime: str, unit: str) -> None:
+    """Externally corroborate a PIDFD-pinned descendant's RLIMIT_FSIZE.
+
+    Call only AFTER _pin_descendant_pidfd succeeds and BEFORE stopping the
+    scope. Recheck process identity and membership on both sides of the
+    kernel read. A local test with mocked membership is not a native
+    systemd scope acceptance.
+    """
+    if not active_identity(pid, starttime) or not belongs_to_scope(pid, unit):
+        raise DescendantProbeError(
+            "Pinned descendant identity changed before kernel limit read")
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOFOLLOW
+    try:
+        fd = os.open(Path("/proc") / str(pid) / "limits", flags)
+        try:
+            meta = os.fstat(fd)
+            if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid():
+                raise DescendantProbeError(
+                    "Pinned descendant process limits are not owner-controlled")
+            raw = os.read(fd, MAX_PROC_LIMITS_BYTES + 1)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise DescendantProbeError(
+            "Cannot inspect pinned descendant kernel process limits") from exc
+    if not active_identity(pid, starttime) or not belongs_to_scope(pid, unit):
+        raise DescendantProbeError(
+            "Pinned descendant identity changed during kernel limit read")
+    _require_proc_fsize_record(raw)
+
+
 def wait_until_dead(pid: int, starttime: str, seconds: float) -> bool:
     end = time.monotonic() + seconds
     while time.monotonic() < end:
@@ -400,6 +456,10 @@ def run_native_descendant_smoke() -> dict:
                         # scope. The pidfd prevents a later numeric PID
                         # reuse from redirecting emergency cleanup.
                         child_pidfd = _pin_descendant_pidfd(
+                            child_pid, child_starttime, unit)
+                        # Independent kernel witness after pidfd pinning:
+                        # do not accept readiness alone as proof of RLIMIT_FSIZE.
+                        _require_pinned_descendant_file_limit(
                             child_pid, child_starttime, unit)
                         break
                     if launcher.poll() is not None:
