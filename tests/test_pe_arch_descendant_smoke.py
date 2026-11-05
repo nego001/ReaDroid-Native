@@ -325,20 +325,19 @@ class NativeDescendantTests(unittest.TestCase):
             self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
 
     def test_proc_limit_parser_requires_exact_single_hard_soft_kernel_record(self):
-        good = (b"Limit Soft Limit Hard Limit Units\\n"
-                b"Max file size   32768 32768 bytes\\n"
-                b"Max stack size  8388608 unlimited bytes\\n")
+        good = (b"Limit Soft Limit Hard Limit Units\n"
+                b"Max file size   32768 32768 bytes\n"
+                b"Max stack size  8388608 unlimited bytes\n")
         smoke._require_proc_fsize_record(good)
         bad = [
             good.replace(b"32768 32768", b"32768 unlimited"),
             good.replace(b"32768 32768", b"8192 32768"),
             good.replace(b"32768 32768", b"32768 8192"),
-            good.replace(b"32768 32768", b"32768 32768").replace(
-                b"32768 bytes", b"32768 kilobytes"),
-            good + b"Max file size 32768 32768 bytes\\n",
-            b"Max cpu time unlimited unlimited seconds\\n",
-            good + b"\\x00",
-            b"\\xff" + good,
+            good.replace(b"32768 bytes", b"32768 kilobytes"),
+            good + b"Max file size 32768 32768 bytes\n",
+            b"Max cpu time unlimited unlimited seconds\n",
+            good + b"\x00",
+            b"\xff" + good,
             b"X" * (smoke.MAX_PROC_LIMITS_BYTES + 1),
             b"",
         ]
@@ -352,7 +351,7 @@ class NativeDescendantTests(unittest.TestCase):
         and callable(getattr(os, "pidfd_open", None))
         and callable(getattr(signal, "pidfd_send_signal", None)),
         "Linux pidfd kernel test")
-    def test_real_proc_limits_corrobates_harmless_pinned_python(self):
+    def test_real_proc_limits_corroborates_harmless_pinned_python(self):
         # The process and RLIMIT_FSIZE are real; mocked membership explicitly
         # does NOT prove a user-systemd scope or native independent Arch VM.
         prefix = smoke._native_prlimit_prefix()
