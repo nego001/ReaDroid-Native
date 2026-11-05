@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -111,7 +112,8 @@ class NativeDescendantTests(unittest.TestCase):
 
     def _synthetic_result(self, *, child_gone=True, proof=True,
                           cleanup_quiescent=True, cleanup_other_scope=False,
-                          oversized_output=False, unexpected_stderr=False):
+                          oversized_output=False, unexpected_stderr=False,
+                          kernel_witness=True):
         proof_line = (
             '{"cgroup_verification": "passed", "verified": true,'
             '"memory_max": 4294967296, "pids_max": 128,'
@@ -168,6 +170,12 @@ class NativeDescendantTests(unittest.TestCase):
                                               smoke, "stop_scope",
                                               return_value=True) as stop,
                                           mock.patch.object(
+                                              smoke, "_require_pinned_descendant_file_limit",
+                                              side_effect=(None if kernel_witness else
+                                                           smoke.DescendantProbeError(
+                                                               "Kernel limit mismatch"))
+                                              ) as external_limit,
+                                          mock.patch.object(
                                               smoke.os, "pidfd_open",
                                               side_effect=lambda pid, flags=0:
                                               os.open(os.devnull, os.O_RDONLY)) as pin,
@@ -187,6 +195,7 @@ class NativeDescendantTests(unittest.TestCase):
                                                     "sub_state": "dead",
                                                 }) as cleanup:
                                             if (proof and child_gone and cleanup_quiescent
+                                                    and kernel_witness
                                                     and not cleanup_other_scope
                                                     and not oversized_output
                                                     and not unexpected_stderr):
@@ -195,7 +204,7 @@ class NativeDescendantTests(unittest.TestCase):
                                             else:
                                                 with self.assertRaises(smoke.DescendantProbeError):
                                                     smoke.run_native_descendant_smoke()
-                                                if (proof and child_gone
+                                                if (proof and child_gone and kernel_witness
                                                         and not oversized_output
                                                         and not unexpected_stderr):
                                                     cleanup.assert_called_once_with(self.unit)
@@ -209,7 +218,7 @@ class NativeDescendantTests(unittest.TestCase):
         # including the negative test where that child deliberately survives.
         # Oversized stdout or nonempty stderr is refused before the
         # quota-proof parser. No downstream attestation may run in that case.
-        if proof and not oversized_output and not unexpected_stderr:
+        if proof and kernel_witness and not oversized_output and not unexpected_stderr:
             quota_read.assert_called_once_with(mock.ANY, self.unit)
         else:
             quota_read.assert_not_called()
@@ -222,6 +231,7 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(popen.call_args.kwargs["start_new_session"])
         self.assertGreaterEqual(stop.call_count, 1)
         pin.assert_called_once_with(24680, 0)
+        external_limit.assert_called_once_with(24680, "3333", self.unit)
         send.assert_called_once()
         self.assertEqual(send.call_args.args[1:], (signal.SIGKILL, None, 0))
         return result
@@ -313,6 +323,78 @@ class NativeDescendantTests(unittest.TestCase):
                     smoke._publish_ready_marker(ready)
             self.assertFalse(ready.exists())
             self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
+
+    def test_proc_limit_parser_requires_exact_single_hard_soft_kernel_record(self):
+        good = (b"Limit Soft Limit Hard Limit Units\\n"
+                b"Max file size   32768 32768 bytes\\n"
+                b"Max stack size  8388608 unlimited bytes\\n")
+        smoke._require_proc_fsize_record(good)
+        bad = [
+            good.replace(b"32768 32768", b"32768 unlimited"),
+            good.replace(b"32768 32768", b"8192 32768"),
+            good.replace(b"32768 32768", b"32768 8192"),
+            good.replace(b"32768 32768", b"32768 32768").replace(
+                b"32768 bytes", b"32768 kilobytes"),
+            good + b"Max file size 32768 32768 bytes\\n",
+            b"Max cpu time unlimited unlimited seconds\\n",
+            good + b"\\x00",
+            b"\\xff" + good,
+            b"X" * (smoke.MAX_PROC_LIMITS_BYTES + 1),
+            b"",
+        ]
+        for raw in bad:
+            with self.subTest(raw=raw[:64]):
+                with self.assertRaises(smoke.DescendantProbeError):
+                    smoke._require_proc_fsize_record(raw)
+
+    @unittest.skipUnless(
+        sys.platform == "linux"
+        and callable(getattr(os, "pidfd_open", None))
+        and callable(getattr(signal, "pidfd_send_signal", None)),
+        "Linux pidfd kernel test")
+    def test_real_proc_limits_corrobates_harmless_pinned_python(self):
+        # The process and RLIMIT_FSIZE are real; mocked membership explicitly
+        # does NOT prove a user-systemd scope or native independent Arch VM.
+        prefix = smoke._native_prlimit_prefix()
+        with tempfile.TemporaryDirectory(prefix="pe-s1-93-proc-limits-") as root:
+            ready = Path(root) / "ready"
+            child = subprocess.Popen(
+                [*prefix, sys.executable, "-I", "-c",
+                 "import pathlib,sys,time;"
+                 "pathlib.Path(sys.argv[1]).write_bytes(b'ready');"
+                 "time.sleep(15)", str(ready)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True)
+            fd = None
+            try:
+                deadline = time.monotonic() + 4
+                while not ready.exists() and time.monotonic() < deadline:
+                    self.assertIsNone(child.poll())
+                    time.sleep(0.02)
+                self.assertEqual(ready.read_bytes(), b"ready")
+                identity = smoke.proc_identity(child.pid)
+                self.assertIsNotNone(identity)
+                with mock.patch.object(smoke, "belongs_to_scope",
+                                       return_value=True):
+                    fd = smoke._pin_descendant_pidfd(
+                        child.pid, identity[1], self.unit)
+                    smoke._require_pinned_descendant_file_limit(
+                        child.pid, identity[1], self.unit)
+            finally:
+                if fd is not None:
+                    try:
+                        signal.pidfd_send_signal(fd, signal.SIGKILL, None, 0)
+                    except ProcessLookupError:
+                        pass
+                    os.close(fd)
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+
+    def test_invalid_external_kernel_witness_fails_and_uses_pidfd_cleanup(self):
+        with mock.patch.object(smoke.os, "kill") as numeric_kill:
+            self._synthetic_result(kernel_witness=False)
+        numeric_kill.assert_not_called()
 
     def test_private_marker_is_exclusive_owner_only_and_bounded(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-91-exclusive-") as root:
