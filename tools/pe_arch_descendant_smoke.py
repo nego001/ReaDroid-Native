@@ -728,6 +728,9 @@ def run_native_descendant_smoke() -> dict:
                                     launcher.wait(timeout=3)
                         finally:
                             signal.signal(signal.SIGTERM, previous_sigterm)
+        # SIGTERM may arrive while the final stop/reap is in progress.
+        # Never report PASS for a run whose supervisor was cancelled.
+        check_supervisor_cancel()
         return {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
                 "scope": unit, "quota_verified": proof,
                 "systemd_stop_succeeded": stopped,
