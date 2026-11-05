@@ -158,6 +158,35 @@ def _write_new_private_marker(path: Path, payload: bytes, limit: int) -> None:
             "Cannot exclusively create private marker") from exc
 
 
+def _publish_ready_marker(ready: Path) -> None:
+    """Publish complete readiness as one directory-entry change.
+
+    A grandchild must never expose the final 'ready' pathname while its
+    contents are being written. The worker may observe the final marker at
+    any instant; only a complete, fsynced one should be visible. This is
+    NOT protection against another hostile process with the same UID.
+    """
+    pending = ready.with_name(ready.name + ".pending")
+    _write_new_private_marker(
+        pending, b"sigterm_ignored", MAX_READY_MARKER_BYTES)
+    # Refuse pre-planted destinations, including dangling symlinks. The
+    # directory belongs to our own temporary VM experiment; do not pretend
+    # this precheck makes os.replace race-free against a hostile same-UID
+    # process. Replacement is atomic and never follows the destination link.
+    try:
+        ready.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise DescendantProbeError("Cannot inspect readiness destination") from exc
+    else:
+        raise DescendantProbeError("Readiness marker already exists")
+    try:
+        os.replace(pending, ready)
+    except OSError as exc:
+        raise DescendantProbeError("Cannot atomically publish readiness") from exc
+
+
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
     """Reject duplicate JSON keys, including nested keys, before trusting a marker."""
     result = {}
@@ -273,7 +302,7 @@ def _grandchild(unit: str, ready: Path) -> int:
         raise DescendantProbeError("grandchild is outside assigned scope")
     _require_inherited_file_limit()
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    _write_new_private_marker(ready, b"sigterm_ignored", MAX_READY_MARKER_BYTES)
+    _publish_ready_marker(ready)
     while True:
         time.sleep(0.25)
 
