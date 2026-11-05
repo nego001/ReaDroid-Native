@@ -345,12 +345,12 @@ class NativeDescendantTests(unittest.TestCase):
     def test_supervisor_sigterm_at_all_lifecycle_boundaries_refuses_pass(self):
         # Entire native scope is MOCKED. The signal handler is invoked as a
         # Python callback: no actual systemd/VM, detached child or PE is run.
-        for phase in ("pre_spawn", "spawn", "waiting", "stop", "attest"):
+        for phase in ("pre_spawn", "spawn", "waiting", "stop", "attest",
+                      "final_cleanup"):
             with self.subTest(phase=phase):
                 handlers = {}
                 cancel_once = {"called": False}
                 process = mock.Mock()
-                process.wait.return_value = 0
 
                 def inject_cancel():
                     if not cancel_once["called"]:
@@ -368,10 +368,17 @@ class NativeDescendantTests(unittest.TestCase):
                     if phase == "waiting":
                         inject_cancel()
                     return None
+
+                def wait(*, timeout):
+                    if phase == "final_cleanup":
+                        inject_cancel()
+                    return 0
+
                 process.poll.side_effect = poll
+                process.wait.side_effect = wait
 
                 def launch(argv, **kwargs):
-                    if phase in ("stop", "attest"):
+                    if phase in ("stop", "attest", "final_cleanup"):
                         marker = Path(argv[argv.index("--worker") + 1])
                         marker.write_text(json.dumps({
                             "pid": 24680, "starttime": "3333", "unit": self.unit
@@ -462,7 +469,7 @@ class NativeDescendantTests(unittest.TestCase):
                 else:
                     launcher.assert_called_once()
                     process.wait.assert_called_once_with(timeout=3)
-                if phase in ("stop", "attest"):
+                if phase in ("stop", "attest", "final_cleanup"):
                     pin.assert_called_once_with(24680, 0)
                     sent.assert_called_once()
                     self.assertEqual(sent.call_args.args[1:],
@@ -470,7 +477,7 @@ class NativeDescendantTests(unittest.TestCase):
                 else:
                     pin.assert_not_called()
                     sent.assert_not_called()
-                if phase != "attest":
+                if phase not in ("attest", "final_cleanup"):
                     attest_call.assert_not_called()
 
     def test_accepts_only_scope_killing_live_detached_child(self):
