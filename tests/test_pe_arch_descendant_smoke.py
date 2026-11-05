@@ -236,6 +236,84 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
 
+    def test_ready_marker_appears_only_after_complete_atomic_publication(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-92-atomic-") as root:
+            folder = Path(root)
+            ready = folder / "child.ready"
+            pending = folder / "child.ready.pending"
+            real_replace = os.replace
+            observations = []
+
+            def publish(source, destination):
+                self.assertEqual(Path(source), pending)
+                self.assertEqual(Path(destination), ready)
+                self.assertFalse(ready.exists())
+                self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
+                self.assertEqual(pending.stat().st_mode & 0o777, 0o600)
+                observations.append(True)
+                real_replace(source, destination)
+
+            with mock.patch.object(smoke.os, "replace", side_effect=publish):
+                smoke._publish_ready_marker(ready)
+            self.assertEqual(observations, [True])
+            self.assertFalse(pending.exists())
+            self.assertEqual(ready.read_bytes(), b"sigterm_ignored")
+            self.assertEqual(
+                smoke._read_bounded_scope_log(
+                    ready, smoke.MAX_READY_MARKER_BYTES),
+                b"sigterm_ignored")
+
+    def test_ready_marker_rejects_preexisting_destinations_without_clobbering(self):
+        for kind in ("regular", "symlink", "dangling_symlink", "fifo"):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory(
+                        prefix="pe-s1-92-ready-reject-") as root:
+                    folder = Path(root)
+                    ready = folder / "child.ready"
+                    canary = folder / "canary"
+                    canary.write_bytes(b"original")
+                    if kind == "regular":
+                        ready.write_bytes(b"already-here")
+                    elif kind == "symlink":
+                        ready.symlink_to(canary)
+                    elif kind == "dangling_symlink":
+                        ready.symlink_to(folder / "nonexistent")
+                    else:
+                        os.mkfifo(ready)
+                    with self.assertRaisesRegex(
+                            smoke.DescendantProbeError,
+                            "Readiness marker already exists"):
+                        smoke._publish_ready_marker(ready)
+                    self.assertEqual(canary.read_bytes(), b"original")
+                    if kind == "regular":
+                        self.assertEqual(ready.read_bytes(), b"already-here")
+                    self.assertTrue(ready.is_symlink()
+                                    or ready.exists())
+
+    def test_ready_marker_rejects_pending_link_and_failed_rename(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-92-rename-") as root:
+            folder = Path(root)
+            ready = folder / "child.ready"
+            pending = folder / "child.ready.pending"
+            canary = folder / "canary"
+            canary.write_bytes(b"unchanged")
+            pending.symlink_to(canary)
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "exclusively"):
+                smoke._publish_ready_marker(ready)
+            self.assertFalse(ready.exists())
+            self.assertEqual(canary.read_bytes(), b"unchanged")
+            pending.unlink()
+            with mock.patch.object(
+                    smoke.os, "replace",
+                    side_effect=OSError("filesystem rejected rename")):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError,
+                        "Cannot atomically publish readiness"):
+                    smoke._publish_ready_marker(ready)
+            self.assertFalse(ready.exists())
+            self.assertEqual(pending.read_bytes(), b"sigterm_ignored")
+
     def test_private_marker_is_exclusive_owner_only_and_bounded(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-91-exclusive-") as root:
             folder = Path(root)
