@@ -32,6 +32,10 @@ class DescendantProbeError(RuntimeError):
 
 MAX_GUARD_STDOUT_BYTES = 32 * 1024
 MAX_GUARD_STDERR_BYTES = 8 * 1024
+# PE-S1.90: markers are data supplied by another process, not trusted
+# Python objects. Reject oversized files before decoding/JSON allocation.
+MAX_CHILD_MARKER_BYTES = 512
+MAX_READY_MARKER_BYTES = 64
 # Linux RLIMIT_FSIZE is per-file, not a whole-disk quota. Set the HARD
 # limit too: unprivileged children cannot raise it. Each inherited output
 # file is capped at 32 KiB at write-time, including stderr (whose stricter
@@ -123,6 +127,44 @@ def _read_bounded_scope_log(path: Path, limit: int) -> bytes:
             os.close(fd)
     except OSError as exc:
         raise DescendantProbeError("Scope log unavailable or unsafe") from exc
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Reject duplicate JSON keys, including nested keys, before trusting a marker."""
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise DescendantProbeError("Duplicate child marker JSON key")
+        result[name] = value
+    return result
+
+
+def _read_child_marker(path: Path) -> dict:
+    """Read and validate the exact worker-to-supervisor marker schema.
+
+    Treat this as untrusted interprocess evidence even though both ends are
+    in an owner-only disposable VM temporary directory.
+    """
+    raw = _read_bounded_scope_log(path, MAX_CHILD_MARKER_BYTES)
+    try:
+        marker = json.loads(raw.decode("utf-8"),
+                            object_pairs_hook=_unique_json_object,
+                            parse_constant=lambda _: (_ for _ in ()).throw(
+                                ValueError("Non-finite marker number")))
+    except (UnicodeError, ValueError, TypeError) as exc:
+        raise DescendantProbeError("Invalid child marker JSON") from exc
+    if (not isinstance(marker, dict)
+            or set(marker) != {"pid", "starttime", "unit"}
+            or type(marker["pid"]) is not int or marker["pid"] < 2
+            or not isinstance(marker["starttime"], str)
+            or not 1 <= len(marker["starttime"]) <= 32
+            or not marker["starttime"].isascii()
+            or not marker["starttime"].isdecimal()
+            or not isinstance(marker["unit"], str)
+            or not 1 <= len(marker["unit"]) <= 128
+            or not marker["unit"].isascii()):
+        raise DescendantProbeError("Invalid child marker schema")
+    return marker
 
 
 def proc_identity(pid: int) -> tuple[str, str] | None:
@@ -222,7 +264,9 @@ def _worker(marker: Path, unit: str) -> int:
         if child.poll() is not None:
             raise DescendantProbeError("detached grandchild exited before ready")
         time.sleep(0.05)
-    if not ready.is_file() or ready.read_text(encoding="ascii") != "sigterm_ignored":
+    if (not ready.is_file()
+            or _read_bounded_scope_log(ready, MAX_READY_MARKER_BYTES)
+               != b"sigterm_ignored"):
         raise DescendantProbeError("SIGTERM-resistant child was not ready")
     identity = proc_identity(child.pid)
     if not identity or not belongs_to_scope(child.pid, unit):
@@ -283,7 +327,7 @@ def run_native_descendant_smoke() -> dict:
                 deadline = time.monotonic() + 12
                 while time.monotonic() < deadline:
                     if marker.is_file():
-                        record = json.loads(marker.read_text(encoding="utf-8"))
+                        record = _read_child_marker(marker)
                         child_pid = record["pid"]
                         child_starttime = record["starttime"]
                         if (type(child_pid) is not int or child_pid < 2
