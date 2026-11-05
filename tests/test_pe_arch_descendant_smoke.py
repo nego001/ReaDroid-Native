@@ -113,7 +113,7 @@ class NativeDescendantTests(unittest.TestCase):
     def _synthetic_result(self, *, child_gone=True, proof=True,
                           cleanup_quiescent=True, cleanup_other_scope=False,
                           oversized_output=False, unexpected_stderr=False,
-                          kernel_witness=True):
+                          kernel_witness=True, guard_line=None):
         proof_line = (
             '{"cgroup_verification": "passed", "verified": true,'
             '"memory_max": 4294967296, "pids_max": 128,'
@@ -128,7 +128,8 @@ class NativeDescendantTests(unittest.TestCase):
             marker.write_text(json.dumps({
                 "pid": 24680, "starttime": "3333", "unit": self.unit
             }), encoding="utf-8")
-            kwargs["stdout"].write(proof_line.encode("utf-8"))
+            kwargs["stdout"].write((guard_line if guard_line is not None
+                                    else proof_line).encode("utf-8"))
             if oversized_output:
                 kwargs["stdout"].write(
                     b"X" * (smoke.MAX_GUARD_STDOUT_BYTES + 1))
@@ -196,6 +197,7 @@ class NativeDescendantTests(unittest.TestCase):
                                                 }) as cleanup:
                                             if (proof and child_gone and cleanup_quiescent
                                                     and kernel_witness
+                                                    and guard_line is None
                                                     and not cleanup_other_scope
                                                     and not oversized_output
                                                     and not unexpected_stderr):
@@ -205,6 +207,7 @@ class NativeDescendantTests(unittest.TestCase):
                                                 with self.assertRaises(smoke.DescendantProbeError):
                                                     smoke.run_native_descendant_smoke()
                                                 if (proof and child_gone and kernel_witness
+                                                        and guard_line is None
                                                         and not oversized_output
                                                         and not unexpected_stderr):
                                                     cleanup.assert_called_once_with(self.unit)
@@ -218,7 +221,8 @@ class NativeDescendantTests(unittest.TestCase):
         # including the negative test where that child deliberately survives.
         # Oversized stdout or nonempty stderr is refused before the
         # quota-proof parser. No downstream attestation may run in that case.
-        if proof and kernel_witness and not oversized_output and not unexpected_stderr:
+        if (proof and kernel_witness and guard_line is None
+                and not oversized_output and not unexpected_stderr):
             quota_read.assert_called_once_with(mock.ANY, self.unit)
         else:
             quota_read.assert_not_called()
@@ -245,6 +249,44 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(result["detached_sigterm_ignoring_child_terminated"])
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
+
+    def test_guard_stdout_rejects_duplicate_keys_nested_values_and_nonfinite(self):
+        valid = (b'{"cgroup_verification":"passed","verified":true,'
+                 b'"memory_max":4294967296,"pids_max":128,'
+                 b'"cpu_quota":200000,"cpu_period":100000}\n')
+        self.assertEqual(
+            smoke._parse_scope_guard_stdout(b"systemd-run started\n" + valid)[0]
+            ["cgroup_verification"], "passed")
+        bad = [
+            valid.replace(b'"verified":true,',
+                          b'"verified":false,"verified":true,'),
+            valid.replace(b'"pids_max":128,',
+                          b'"pids_max":1,"pids_max":128,'),
+            valid.replace(b'"pids_max":128,',
+                          b'"pids_max":NaN,'),
+            b'{"noise":{"x":1,"x":2}}\n' + valid,
+            b'{"cgroup_verification":"passed"',
+            b'\xff' + valid,
+            valid + b"X" * smoke.MAX_GUARD_STDOUT_BYTES,
+        ]
+        for raw in bad:
+            with self.subTest(raw=raw[:65]):
+                with self.assertRaises(smoke.DescendantProbeError):
+                    smoke._parse_scope_guard_stdout(raw)
+
+    def test_ambiguous_guard_stdout_rejects_after_pidfd_pin_and_stops_scope(self):
+        for line in (
+            '{"cgroup_verification":"passed","verified":false,'
+            '"verified":true,"memory_max":4294967296,"pids_max":128,'
+            '"cpu_quota":200000,"cpu_period":100000}\n',
+            '{"cgroup_verification":"passed","verified":true,'
+            '"memory_max":4294967296,"pids_max":NaN,'
+            '"cpu_quota":200000,"cpu_period":100000}\n',
+        ):
+            with self.subTest(line=line):
+                with mock.patch.object(smoke.os, "kill") as numeric_kill:
+                    self._synthetic_result(guard_line=line)
+                numeric_kill.assert_not_called()
 
     def test_ready_marker_appears_only_after_complete_atomic_publication(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-92-atomic-") as root:
