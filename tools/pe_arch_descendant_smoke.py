@@ -194,7 +194,7 @@ def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for name, value in pairs:
         if name in result:
-            raise DescendantProbeError("Duplicate child marker JSON key")
+            raise DescendantProbeError("Duplicate JSON key in scope evidence")
         result[name] = value
     return result
 
@@ -395,6 +395,28 @@ def _worker(marker: Path, unit: str) -> int:
         time.sleep(0.25)
 
 
+
+def _parse_scope_guard_stdout(output: bytes) -> list[object]:
+    """Reject ambiguous guard JSON before comparing it to private cgroup proof.
+
+    systemd-run may write non-JSON diagnostics; parse every JSON-looking
+    line strictly, including nested objects. The parent never trusts
+    stdout alone: corroborate_guard_receipt checks the private kernel proof.
+    """
+    if (type(output) is not bytes or len(output) > MAX_GUARD_STDOUT_BYTES):
+        raise DescendantProbeError("Scope guard stdout exceeds parsing budget")
+    try:
+        lines = output.decode("utf-8").splitlines()
+        return [
+            json.loads(line, object_pairs_hook=_unique_json_object,
+                       parse_constant=lambda _value: (_ for _ in ()).throw(
+                           ValueError("Non-finite scope guard JSON value")))
+            for line in lines if line.lstrip().startswith("{")
+        ]
+    except (UnicodeError, ValueError, TypeError) as exc:
+        raise DescendantProbeError("Malformed or ambiguous cgroup guard receipt") from exc
+
+
 def run_native_descendant_smoke() -> dict:
     # This test spawns a detached, SIGTERM-resistant grandchild. It must
     # NEVER be directly callable on a personal Arch workstation.
@@ -476,11 +498,7 @@ def run_native_descendant_smoke() -> dict:
                 if diagnostic:
                     raise DescendantProbeError(
                         "Cgroup guard emitted unexpected stderr")
-                try:
-                    receipts = [json.loads(line) for line in output.decode(
-                        "utf-8").splitlines() if line.lstrip().startswith("{")]
-                except (UnicodeError, json.JSONDecodeError) as exc:
-                    raise DescendantProbeError("Malformed cgroup guard receipt") from exc
+                receipts = _parse_scope_guard_stdout(output)
                 matching = [
                     record for record in receipts
                     if isinstance(record, dict)
