@@ -411,36 +411,104 @@ def _grandchild(unit: str, ready: Path) -> int:
         time.sleep(0.25)
 
 
+def _require_unoccupied_worker_markers(marker: Path) -> None:
+    """Reject stale marker paths before creating a detached grandchild.
+
+    This preflight is a safety guard for an owner-only disposable VM temp
+    directory, not protection against a hostile process sharing the UID.
+    """
+    try:
+        parent = marker.parent.lstat()
+        if (not stat.S_ISDIR(parent.st_mode)
+                or parent.st_uid != os.geteuid()
+                or parent.st_mode & 0o077):
+            raise DescendantProbeError("Untrusted descendant marker directory")
+        ready = marker.with_suffix(".ready")
+        paths = (marker, marker.with_suffix(".pending"),
+                 ready, ready.with_name(ready.name + ".pending"))
+        for entry in paths:
+            try:
+                entry.lstat()
+            except FileNotFoundError:
+                continue
+            raise DescendantProbeError("Descendant marker path already occupied")
+    except OSError as exc:
+        raise DescendantProbeError("Cannot verify fresh descendant marker paths") from exc
+
+
+def _cleanup_failed_worker_child(child: subprocess.Popen, fd: int | None) -> None:
+    """Kill and reap our direct, still-owned child if worker setup fails.
+
+    A successfully pinned child is signaled only through its pidfd. If
+    pidfd_open failed, the direct child has NOT been reaped and the PID is
+    therefore not recyclable: Popen.kill targets that known owned child.
+    Neither branch accepts the failed scope as validated cleanup evidence.
+    """
+    try:
+        if fd is not None:
+            try:
+                signal.pidfd_send_signal(fd, signal.SIGKILL, None, 0)
+            except ProcessLookupError:
+                pass
+        elif child.poll() is None:
+            child.kill()
+    finally:
+        try:
+            child.wait(timeout=3)
+        except subprocess.TimeoutExpired as exc:
+            raise DescendantProbeError(
+                "Failed to reap detached grandchild after worker error") from exc
+
+
 def _worker(marker: Path, unit: str) -> int:
     if not belongs_to_scope(os.getpid(), unit):
         raise DescendantProbeError("worker is outside assigned scope")
     _require_inherited_file_limit()
+    # Do not fork a SIGTERM-resistant child before checking kernel cleanup
+    # support and detecting pre-planted control files.
+    _require_pidfd_cleanup()
+    _require_unoccupied_worker_markers(marker)
     ready = marker.with_suffix(".ready")
     child = subprocess.Popen(
         [sys.executable, "-I", str(Path(__file__).resolve()),
          "--grandchild", unit, str(ready)],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
-    deadline = time.monotonic() + 5
-    while not ready.is_file() and time.monotonic() < deadline:
-        if child.poll() is not None:
-            raise DescendantProbeError("detached grandchild exited before ready")
-        time.sleep(0.05)
-    if (not ready.is_file()
-            or _read_bounded_scope_log(ready, MAX_READY_MARKER_BYTES)
-               != b"sigterm_ignored"):
-        raise DescendantProbeError("SIGTERM-resistant child was not ready")
-    identity = proc_identity(child.pid)
-    if not identity or not belongs_to_scope(child.pid, unit):
-        raise DescendantProbeError("grandchild did not enter assigned scope")
-    record = {"pid": child.pid, "starttime": identity[1], "unit": unit}
-    tmp = marker.with_suffix(".pending")
-    _write_new_private_marker(
-        tmp, json.dumps(record, separators=(",", ":")).encode("ascii"),
-        MAX_CHILD_MARKER_BYTES)
-    os.replace(tmp, marker)
-    while True:
-        time.sleep(0.25)
+    child_pidfd = None
+    try:
+        try:
+            child_pidfd = os.pidfd_open(child.pid, 0)
+        except (OSError, ValueError) as exc:
+            raise DescendantProbeError(
+                "Cannot pin worker-owned grandchild after spawn") from exc
+        deadline = time.monotonic() + 5
+        while not ready.is_file() and time.monotonic() < deadline:
+            if child.poll() is not None:
+                raise DescendantProbeError("detached grandchild exited before ready")
+            time.sleep(0.05)
+        if (not ready.is_file()
+                or _read_bounded_scope_log(ready, MAX_READY_MARKER_BYTES)
+                   != b"sigterm_ignored"):
+            raise DescendantProbeError("SIGTERM-resistant child was not ready")
+        identity = proc_identity(child.pid)
+        if not identity or not belongs_to_scope(child.pid, unit):
+            raise DescendantProbeError("grandchild did not enter assigned scope")
+        record = {"pid": child.pid, "starttime": identity[1], "unit": unit}
+        tmp = marker.with_suffix(".pending")
+        _write_new_private_marker(
+            tmp, json.dumps(record, separators=(",", ":")).encode("ascii"),
+            MAX_CHILD_MARKER_BYTES)
+        os.replace(tmp, marker)
+        while True:
+            time.sleep(0.25)
+    except BaseException:
+        # The supervisor also stops the scope, but an early worker failure
+        # must not leave cleanup entirely to that separate actor.
+        _cleanup_failed_worker_child(child, child_pidfd)
+        raise
+    finally:
+        if child_pidfd is not None:
+            os.close(child_pidfd)
 
 
 
