@@ -236,6 +236,85 @@ class NativeDescendantTests(unittest.TestCase):
         self.assertTrue(result["descendant_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertFalse(result["windows_binary_executed"])
 
+    def test_private_marker_is_exclusive_owner_only_and_bounded(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-91-exclusive-") as root:
+            folder = Path(root)
+            marker = folder / "ready"
+            payload = b"sigterm_ignored"
+            smoke._write_new_private_marker(
+                marker, payload, smoke.MAX_READY_MARKER_BYTES)
+            self.assertEqual(marker.read_bytes(), payload)
+            self.assertEqual(marker.stat().st_mode & 0o777, 0o600)
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "exclusively"):
+                smoke._write_new_private_marker(
+                    marker, b"overwrite", smoke.MAX_READY_MARKER_BYTES)
+            self.assertEqual(marker.read_bytes(), payload)
+            for data, limit in (
+                    (b"", smoke.MAX_READY_MARKER_BYTES),
+                    (b"X" * (smoke.MAX_READY_MARKER_BYTES + 1),
+                     smoke.MAX_READY_MARKER_BYTES),
+                    ("not-bytes", smoke.MAX_READY_MARKER_BYTES),
+                    (b"ok", 0), (b"ok", True),
+                    (b"ok", smoke.MAX_CHILD_MARKER_BYTES + 1)):
+                with self.subTest(data=str(data)[:20], limit=limit):
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        smoke._write_new_private_marker(
+                            folder / "invalid", data, limit)
+                    self.assertFalse((folder / "invalid").exists())
+
+    def test_private_marker_refuses_preexisting_links_and_untrusted_parent(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-91-links-") as root:
+            folder = Path(root)
+            canary = folder / "canary"
+            canary.write_bytes(b"do-not-change")
+            symlink = folder / "symlink"
+            symlink.symlink_to(canary)
+            hardlink = folder / "hardlink"
+            os.link(canary, hardlink)
+            fifo = folder / "fifo"
+            os.mkfifo(fifo)
+            for target in (symlink, hardlink, fifo, canary):
+                with self.subTest(path=target.name):
+                    with self.assertRaises(smoke.DescendantProbeError):
+                        smoke._write_new_private_marker(target, b"altered", 64)
+                    self.assertEqual(canary.read_bytes(), b"do-not-change")
+            untrusted = folder / "world-readable"
+            untrusted.mkdir(mode=0o755)
+            untrusted.chmod(0o755)
+            with self.assertRaisesRegex(
+                    smoke.DescendantProbeError, "Untrusted private"):
+                smoke._write_new_private_marker(
+                    untrusted / "marker", b"x", 64)
+            self.assertFalse((untrusted / "marker").exists())
+
+    def test_worker_refuses_preplanted_pending_symlink_without_clobbering(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s1-91-pending-") as root:
+            folder = Path(root)
+            marker = folder / "child.json"
+            pending = marker.with_suffix(".pending")
+            canary = folder / "canary"
+            canary.write_bytes(b"unchanged")
+            pending.symlink_to(canary)
+            ready = marker.with_suffix(".ready")
+            ready.write_bytes(b"sigterm_ignored")
+            child = mock.Mock()
+            child.pid = 24680
+            child.poll.return_value = None
+            with (mock.patch.object(smoke, "belongs_to_scope",
+                                    return_value=True),
+                  mock.patch.object(resource, "getrlimit",
+                                    return_value=(32768, 32768)),
+                  mock.patch.object(smoke, "proc_identity",
+                                    return_value=("S", "3333")),
+                  mock.patch.object(smoke.subprocess, "Popen",
+                                    return_value=child)):
+                with self.assertRaisesRegex(
+                        smoke.DescendantProbeError, "exclusively"):
+                    smoke._worker(marker, self.unit)
+            self.assertEqual(canary.read_bytes(), b"unchanged")
+            self.assertFalse(marker.exists())
+
     def test_child_marker_requires_exact_bounded_nonduplicate_json(self):
         with tempfile.TemporaryDirectory(prefix="pe-s1-90-marker-") as root:
             marker = Path(root) / "child.json"
