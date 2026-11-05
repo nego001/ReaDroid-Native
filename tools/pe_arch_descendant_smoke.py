@@ -684,6 +684,7 @@ def run_native_descendant_smoke() -> dict:
                 proof = True
                 check_supervisor_cancel()
                 stopped = stop_scope(unit)
+                check_supervisor_cancel()
                 if not stopped:
                     raise DescendantProbeError("systemctl could not stop scope")
                 if not wait_until_dead(child_pid, child_starttime, 9):
@@ -691,6 +692,7 @@ def run_native_descendant_smoke() -> dict:
                 # A vanished PID alone does not prove the whole scope empty.
                 # Demand the final systemd state and kernel cgroup.events.
                 cleanup_evidence = stop_and_attest_scope(unit)
+                check_supervisor_cancel()
                 if (cleanup_evidence.get("scope") != unit
                         or cleanup_evidence.get("verified") is not True
                         or cleanup_evidence.get("scope_quiescent") is not True
