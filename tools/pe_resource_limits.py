@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -38,6 +39,40 @@ def _validate_scope_name(unit_name: str) -> None:
         raise ResourceLimitsUnavailable("Nome de escopo inválido")
 
 
+def _trusted_discovered_systemd_binary(executable: object) -> bool:
+    """Check a PATH-discovered systemd binary and its entire directory chain.
+
+    A file being executable is not enough: an unprivileged user can plant
+    similarly named scripts in a writable PATH directory. The default,
+    production lookup must end at a root-owned, non-writable regular binary,
+    through root-owned, non-writable real (not symlinked) directories. An
+    explicit executable is only an injected test seam, or a path already
+    validated by the native cleanup attestor.
+    """
+    if not isinstance(executable, str):
+        return False
+    raw = executable
+    if (not os.path.isabs(raw) or os.path.normpath(raw) != raw
+            or not hasattr(os, "O_NOFOLLOW")):
+        return False
+    candidate = Path(raw)
+    try:
+        metadata = candidate.lstat()
+        if (not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != 0 or metadata.st_mode & 0o022
+                or not os.access(candidate, os.X_OK)):
+            return False
+        for parent in candidate.parents:
+            parent_info = parent.lstat()
+            if (not stat.S_ISDIR(parent_info.st_mode)
+                    or parent_info.st_uid != 0
+                    or parent_info.st_mode & 0o022):
+                return False
+    except OSError:
+        return False
+    return True
+
+
 def stop_scope(unit_name: str, *, systemctl_path: str | None = None) -> bool:
     """Best-effort termination of the whole cgroup, without invoking a shell.
 
@@ -49,7 +84,10 @@ def stop_scope(unit_name: str, *, systemctl_path: str | None = None) -> bool:
     if not executable:
         return False
     launcher = Path(executable)
-    if launcher.is_symlink() or not launcher.is_file() or not os.access(launcher, os.X_OK):
+    if (launcher.is_symlink() or not launcher.is_file()
+            or not os.access(launcher, os.X_OK)
+            or (systemctl_path is None
+                and not _trusted_discovered_systemd_binary(executable))):
         return False
     try:
         result = subprocess.run(
@@ -104,7 +142,10 @@ def wrap_in_cgroup_scope(command: list[str], *, timeout_seconds: int = 600,
     if not executable:
         raise ResourceLimitsUnavailable("systemd-run ausente; limites obrigatórios")
     launcher = Path(executable)
-    if launcher.is_symlink() or not launcher.is_file() or not os.access(launcher, os.X_OK):
+    if (launcher.is_symlink() or not launcher.is_file()
+            or not os.access(launcher, os.X_OK)
+            or (systemd_run_path is None
+                and not _trusted_discovered_systemd_binary(executable))):
         raise ResourceLimitsUnavailable("systemd-run indisponível ou não confiável")
     verifier = Path(__file__).with_name("pe_cgroup_guard.py")
     if verifier.is_symlink() or not verifier.is_file():
