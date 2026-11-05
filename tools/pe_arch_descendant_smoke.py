@@ -297,7 +297,7 @@ def _require_proc_fsize_record(raw: bytes) -> None:
     marker. The test's 32 KiB per-file policy is not a total disk quota.
     """
     if (type(raw) is not bytes or not 0 < len(raw) <= MAX_PROC_LIMITS_BYTES
-            or b"\\x00" in raw):
+            or b"\x00" in raw):
         raise DescendantProbeError("Invalid bounded kernel process limits")
     try:
         rows = [line.split() for line in raw.decode("ascii").splitlines()]
