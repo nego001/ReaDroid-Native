@@ -20,7 +20,8 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
     def run_fixture(self, *, valid_seccomp: bool,
                     include_guard: bool = True, include_scope: bool = True,
                     include_private_proof: bool = True, stop_accepted: bool = True,
-                    cleanup_changes=None, cleanup_remove=()):
+                    cleanup_changes=None, cleanup_remove=(),
+                    capture_error=False):
         with tempfile.TemporaryDirectory(prefix="negresco-scope-contract-") as temp:
             root = Path(temp)
             pe = root / "synthetic.exe"
@@ -90,10 +91,13 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 wrap = stack.enter_context(mock.patch.object(
                     scoped, "wrap_in_cgroup_scope", side_effect=scope_argv))
                 process = stack.enter_context(mock.patch.object(
-                    scoped.subprocess, "run",
+                    scoped.bounded, "run_bounded_native",
+                    side_effect=(scoped.bounded.BoundedNativeChildError(
+                        "stdout exceeded limit") if capture_error else None),
                     return_value=mock.Mock(
                         returncode=0,
-                        stdout="\n".join(json.dumps(x) for x in payload))))
+                        stdout="\n".join(json.dumps(x) for x in payload).encode("utf-8"),
+                        stderr=b"")))
                 quota = stack.enter_context(mock.patch.object(
                     scoped, "read_scope_proof",
                     side_effect=(
@@ -113,7 +117,8 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 if (valid_seccomp and include_guard and include_scope
                         and include_private_proof and stop_accepted
                         and scoped._verified_scope_cleanup(
-                            self.UNIT, cleanup_evidence)):
+                            self.UNIT, cleanup_evidence)
+                        and not capture_error):
                     result = scoped.run_scoped_seccomp_probe(
                         Path("/trusted-ghidra"), pe, root)
                     self.assertEqual(
@@ -127,9 +132,12 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 vm.assert_called_once()
                 wrap.assert_called_once()
                 process.assert_called_once()
-                self.assertTrue(process.call_args.kwargs["close_fds"])
-                self.assertEqual(process.call_args.kwargs["stdin"],
-                                 scoped.subprocess.DEVNULL)
+                self.assertEqual(process.call_args.kwargs["max_stdout"],
+                                 scoped.MAX_SCOPE_STDOUT_BYTES)
+                self.assertEqual(process.call_args.kwargs["max_stderr"],
+                                 scoped.MAX_SCOPE_STDERR_BYTES)
+                self.assertEqual(process.call_args.kwargs["timeout"], 85)
+                self.assertIsInstance(process.call_args.kwargs["env"], dict)
                 stop.assert_called_once_with(self.UNIT)
 
     def test_accepts_only_all_joint_proofs(self):
@@ -172,6 +180,10 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                              "scope_collected": True,
                              "stop_request_accepted": False,
                          })
+
+    def test_bounded_output_overflow_refuses_pass_but_attests_scope_cleanup(self):
+        # Mock an overflow from the production bounded collector.
+        self.run_fixture(valid_seccomp=True, capture_error=True)
 
     def test_direct_probe_refuses_to_run_outside_real_arch_vm(self):
         with tempfile.TemporaryDirectory() as temp:
