@@ -209,7 +209,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                         native, "verify_arch_vm",
                         side_effect=native.ArchVmUnavailable("not a VM")):
                     with mock.patch.object(native, "new_scope_unit") as scope:
-                        with mock.patch.object(native.subprocess, "run") as run:
+                        with mock.patch.object(native.bounded, "run_bounded_native") as run:
                             with self.assertRaises(native.ArchVmUnavailable):
                                 native.run_native_scoped_ghidra(
                                     Path("/ghidra"), pe, root)
@@ -236,7 +236,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
 
     def test_refuses_to_run_as_root(self):
         with mock.patch.object(native.os, "geteuid", return_value=0):
-            with mock.patch.object(native.subprocess, "run") as started:
+            with mock.patch.object(native.bounded, "run_bounded_native") as started:
                 with self.assertRaisesRegex(native.ScopedGhidraError, "unprivileged"):
                     native.run_native_scoped_ghidra(
                         Path("/ghidra"), Path("/input.exe"), Path("/tmp"))
