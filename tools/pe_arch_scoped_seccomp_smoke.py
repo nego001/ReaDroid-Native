@@ -65,7 +65,9 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
         canary.write_text("synthetic host descriptor", encoding="ascii")
         canary.chmod(0o600)
         work = root / "sandbox-work"
-        (work / "scripts").mkdir(parents=True, mode=0o700)
+        # Keep the parent private too, not only its scripts subdirectory.
+        work.mkdir(mode=0o700)
+        (work / "scripts").mkdir(mode=0o700)
         (work / "project").mkdir(mode=0o700)
         # Capped, exclusive staging BEFORE launching a user-systemd scope.
         # This bounds combined fixture copies, not Ghidra's runtime writes.
