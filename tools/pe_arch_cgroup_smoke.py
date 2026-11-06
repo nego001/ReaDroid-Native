@@ -15,6 +15,7 @@ import sys
 import tempfile
 
 from pe_arch_vm_evidence import _verified_scope_cleanup
+import pe_arch_vm_s1_69_bounded_native_child as bounded
 from pe_resource_limits import (ResourceLimitsUnavailable, new_scope_unit,
                                 wrap_in_cgroup_scope)
 from pe_resource_evidence import (read_scope_proof, corroborate_guard_receipt,
@@ -81,11 +82,16 @@ def run_smoke() -> dict:
         argv = wrap_in_cgroup_scope(
             probe, timeout_seconds=20, unit_name=unit, proof_path=proof_path)
         try:
-            process = subprocess.run(
-                argv, stdin=subprocess.DEVNULL, capture_output=True,
-                text=True, timeout=28, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError("Native systemd scope probe failed or timed out") from exc
+            # Bound stdout/stderr WHILE reading, before a synthetic child
+            # can allocate unbounded host memory. The non-reaping supervisor
+            # retires its dedicated process group before returning.
+            process = bounded.run_bounded_native(
+                argv, env=dict(os.environ), timeout=28,
+                max_stdout=MAX_STDOUT_BYTES, max_stderr=8192)
+        except bounded.BoundedNativeChildError as exc:
+            raise RuntimeError(
+                "Native systemd scope probe timed out or exceeded output budget"
+            ) from exc
         finally:
             try:
                 cleanup = stop_and_attest_scope(unit)
@@ -100,9 +106,12 @@ def run_smoke() -> dict:
         if not _verified_scope_cleanup(unit, cleanup):
             raise RuntimeError("Native cgroup cleanup proof failed full contract")
         if process.returncode != 0:
-            raise RuntimeError("Native scope refused verification: " +
-                               process.stderr[-1200:])
-        records = _parse_probe_records(process.stdout)
+            raise RuntimeError("Native scope refused verification (nonzero exit)")
+        try:
+            output = process.stdout.decode("utf-8")
+        except UnicodeError as exc:
+            raise RuntimeError("Malformed native scope output encoding") from exc
+        records = _parse_probe_records(output)
         try:
             private = read_scope_proof(proof_path, unit)
             corroborate_guard_receipt(records, private)
