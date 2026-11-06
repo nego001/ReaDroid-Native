@@ -62,6 +62,8 @@ class SandboxProfileTests(unittest.TestCase):
         self.assertNotIn(str(self.working / "input.exe"), command)
         self.assertNotIn("-noanalysis", command)
         self.assertIn("/work/ghidra-functions.json", command)
+        self.assertEqual(command[command.index("-log")+1], "/tmp/ghidra.log")
+        self.assertNotIn("/work/ghidra.log", command)
         self.assertIn("-analysisTimeoutPerFile", command)
         self.assertEqual(command[command.index("-analysisTimeoutPerFile") + 1], "390")
         self.assertNotIn("--share-net", command)
