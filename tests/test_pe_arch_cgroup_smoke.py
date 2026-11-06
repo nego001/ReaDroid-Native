@@ -1,6 +1,7 @@
 """Native Arch cgroup contracts; synthetic receipts, NEVER a live host scope."""
 import json
 from pathlib import Path
+import stat
 from types import SimpleNamespace
 import sys
 import unittest
@@ -237,6 +238,48 @@ class NativeVmGateTrustTests(unittest.TestCase):
                  "show-environment"],
             ],
         )
+
+    def test_root_owned_same_directory_python_alias_is_accepted(self):
+        # Model the common Arch /usr/bin/python3 -> python3.X packaging.
+        # The target is still validated as a root-owned regular binary.
+        alias = "/usr/bin/python3"
+        target = "/usr/bin/python3.14"
+        with (mock.patch.object(gate.shutil, "which", return_value=alias),
+              mock.patch.object(gate, "_trusted_discovered_systemd_binary",
+                                side_effect=lambda path: path == target) as trust,
+              mock.patch.object(gate.Path, "lstat", return_value=SimpleNamespace(
+                  st_mode=stat.S_IFLNK | 0o777, st_uid=0)),
+              mock.patch.object(gate.os, "readlink",
+                                return_value="python3.14")):
+            self.assertEqual(gate._trusted_vm_tool("python3"), alias)
+        self.assertEqual(trust.call_args_list[-1].args, (target,))
+
+    def test_untrusted_symlink_aliases_are_never_vm_witnesses(self):
+        alias = "/usr/bin/systemd-detect-virt"
+        for target, uid, target_trusted in (
+                ("../../tmp/fake", 0, True),
+                ("/tmp/fake", 0, True),
+                ("trusted/subdir", 0, True),
+                ("../trusted", 0, True),
+                ("trusted", 1000, True),
+                ("trusted", 0, False)):
+            with self.subTest(target=target, uid=uid,
+                              trusted=target_trusted):
+                with (mock.patch.object(gate.shutil, "which",
+                                        return_value=alias),
+                      mock.patch.object(
+                          gate, "_trusted_discovered_systemd_binary",
+                          side_effect=lambda path: (
+                              path == "/usr/bin/trusted" and target_trusted)),
+                      mock.patch.object(gate.Path, "lstat",
+                                        return_value=SimpleNamespace(
+                                            st_mode=stat.S_IFLNK | 0o777,
+                                            st_uid=uid)),
+                      mock.patch.object(gate.os, "readlink",
+                                        return_value=target)):
+                    with self.assertRaisesRegex(
+                            gate.ArchVmUnavailable, "trusted system binary"):
+                        gate._trusted_vm_tool("systemd-detect-virt")
 
     def test_inconclusive_container_result_refuses_even_with_trusted_paths(self):
         from contextlib import ExitStack
