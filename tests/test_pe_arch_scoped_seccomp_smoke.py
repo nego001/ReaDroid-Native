@@ -80,6 +80,9 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                         "status": "ARCH_VM_PREFLIGHT_PASSED",
                         "vm_confirmed": True, "container": False}))
                 stack.enter_context(mock.patch.object(
+                    scoped.storage, "require_bounded_work_mount",
+                    return_value={"kernel_storage_limit_observed_locally": True}))
+                stack.enter_context(mock.patch.object(
                     scoped, "new_scope_unit", return_value=self.UNIT))
                 stack.enter_context(mock.patch.object(
                     scoped, "seccomp_filter_count", return_value=1))
@@ -204,6 +207,8 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                                         "vm_confirmed": True, "container": False}),
                   mock.patch.object(scoped, "seccomp_filter_count",
                                     return_value=1),
+                  mock.patch.object(scoped.storage, "require_bounded_work_mount",
+                                    return_value={"kernel_storage_limit_observed_locally": True}),
                   mock.patch.object(
                       scoped.storage, "stage_bounded_fixtures",
                       side_effect=scoped.storage.NativeStorageBudgetError(
