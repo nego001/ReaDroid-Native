@@ -27,6 +27,7 @@ if sys.flags.isolated:
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
+import pe_native_workspace_budget as storage
 from pe_arch_vm_checkout_pin import (verify_source_checkout_pin,
                                      CheckoutPinError)
 import pe_arch_vm_evidence as evidence
@@ -106,9 +107,18 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
     scripts = work / "scripts"
     scripts.mkdir(parents=True, mode=0o700)
     (work / "project").mkdir(mode=0o700)
-    shutil.copyfile(GHIDRA_SCRIPT, scripts / GHIDRA_SCRIPT.name)
-    shutil.copyfile(PROBE, work / "pe_sandbox_probe.py")
-    shutil.copyfile(pe, work / "input.exe")
+    try:
+        storage.stage_bounded_fixtures([
+            (GHIDRA_SCRIPT, scripts / GHIDRA_SCRIPT.name,
+             storage.MAX_STAGE_SCRIPT_BYTES),
+            (PROBE, work / "pe_sandbox_probe.py",
+             storage.MAX_STAGE_SCRIPT_BYTES),
+            (pe, work / "input.exe",
+             storage.MAX_STAGE_SYNTHETIC_PE_BYTES),
+        ])
+    except storage.NativeStorageBudgetError as exc:
+        raise ArchVmValidationError(
+            "Native Bubblewrap fixture staging exceeded budget") from exc
     try:
         argv = build_command(ghidra_home, work, 120)
         boundary = argv.index("--")
@@ -128,6 +138,11 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
     except (OSError, ValueError, SandboxUnavailable,
             subprocess.TimeoutExpired) as exc:
         raise ArchVmValidationError("Real Arch Bubblewrap probe could not execute") from exc
+    try:
+        storage.audit_postrun_workspace(work)
+    except storage.NativeStorageBudgetError as exc:
+        raise ArchVmValidationError(
+            "Native Bubblewrap workspace post-run footprint not accepted") from exc
     if result.returncode != 0:
         raise ArchVmValidationError("Real Arch Bubblewrap isolation probe failed")
     try:
