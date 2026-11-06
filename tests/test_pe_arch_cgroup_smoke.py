@@ -155,6 +155,11 @@ class NativeVmGateTrustTests(unittest.TestCase):
     def environment(self, *, untrusted=None, container_rc=1):
         untrusted = set(untrusted or ())
         def lookup(name):
+            # Spoofed candidates must be outside the real Arch /usr/bin
+            # directory. /usr/bin/python3 is often an authentic root-owned
+            # symlink, so using it as a *fake* produced a false regression.
+            if name in untrusted:
+                return "/tmp/pe-s2-02-untrusted/" + name
             return "/usr/bin/" + name
 
         def trusted(path):
