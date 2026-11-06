@@ -26,6 +26,7 @@ import tempfile
 
 from pe_auto_inventory import PEProbeError, inspect_pe
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
+import pe_native_workspace_budget as storage
 from pe_resource_limits import (wrap_in_cgroup_scope, new_scope_unit,
                                 ResourceLimitsUnavailable)
 from pe_resource_evidence import read_scope_proof, InvalidResourceEvidence
@@ -353,7 +354,8 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
                       output: str | Path, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
                       *, sandbox_mode: str = "bwrap", deep_preview: bool = False,
                       require_cgroup_limits: bool = False,
-                      require_seccomp: bool = False) -> dict:
+                      require_seccomp: bool = False,
+                      work_quota_root: Path | None = None) -> dict:
     """Run trusted Ghidra tooling and atomically write bounded JSON evidence."""
     if sys.platform != "linux":
         raise HeadlessError("PE-A2 suporta somente Linux; Windows será validado depois")
@@ -375,6 +377,17 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         # systemd-run --scope forwarding of an explicit seccomp filter fd
         # has not been independently demonstrated on a native Arch host.
         raise HeadlessError("Seccomp com cgroup estrito ainda não homologado")
+    # Bound the host-backed workspace itself before copying any PE bytes.
+    if require_cgroup_limits:
+        if work_quota_root is None:
+            raise HeadlessError(
+                "Strict cgroup analysis requires explicit /work disk quota")
+        try:
+            storage.require_bounded_work_mount(Path(work_quota_root))
+        except storage.NativeStorageBudgetError as exc:
+            raise HeadlessError("Native work filesystem quota unavailable") from exc
+    elif work_quota_root is not None:
+        raise HeadlessError("Quota root only allowed with strict cgroup limits")
     target = Path(binary)
     destination = Path(output)
     if destination.exists() or destination.is_symlink():
@@ -385,8 +398,10 @@ def inspect_functions(binary: str | Path, ghidra_home: str | Path,
         raise HeadlessError("Arquivo de entrada não pode ser link simbólico")
     launcher = _locate_ghidra(Path(ghidra_home))
 
-    with (tempfile.TemporaryDirectory(prefix="negresco-pe-a2-") as private,
-          tempfile.TemporaryDirectory(prefix="negresco-pe-proof-") as proof_private):
+    with (tempfile.TemporaryDirectory(
+              prefix="negresco-pe-a2-", dir=work_quota_root) as private,
+          tempfile.TemporaryDirectory(
+              prefix="negresco-pe-proof-", dir=work_quota_root) as proof_private):
         working = Path(private)
         proof_path = Path(proof_private) / "limits.json"
         snapshot = working / "input.exe"
@@ -596,6 +611,8 @@ def main(argv=None) -> int:
                         help="Exigir seccomp BPF dentro do Bubblewrap; incompatível por enquanto com cgroups estritos")
     parser.add_argument("--require-cgroup-limits", action="store_true",
                         help="Exigir escopo systemd user cgroup v2 com RAM/processos/CPU limitados, sem fallback")
+    parser.add_argument("--native-work-quota-root", type=Path,
+                        help="Dedicated private sized tmpfs for strict cgroup workspace")
     parser.add_argument("--allow-unisolated-synthetic-fixture", action="store_true",
                         help="Somente para CI com PE sintético confiável; desativa isolamento")
     args = parser.parse_args(argv)
@@ -605,6 +622,7 @@ def main(argv=None) -> int:
                                    deep_preview=args.deep_preview,
                                    require_cgroup_limits=args.require_cgroup_limits,
                                    require_seccomp=args.require_seccomp,
+                                   work_quota_root=args.native_work_quota_root,
                                    sandbox_mode=("trusted-fixture"
                                        if args.allow_unisolated_synthetic_fixture
                                        else "bwrap"))
