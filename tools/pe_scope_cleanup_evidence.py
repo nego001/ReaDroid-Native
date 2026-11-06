@@ -17,7 +17,9 @@ import shutil
 import stat
 
 import pe_arch_vm_s1_69_bounded_native_child as bounded
-from pe_resource_limits import _validate_scope_name, stop_scope
+from pe_resource_limits import (
+    _trusted_discovered_systemd_binary, _validate_scope_name, stop_scope,
+)
 
 MAX_SHOW_BYTES = 4096
 MAX_CGROUP_EVENTS_BYTES = 4096
@@ -37,14 +39,16 @@ def _validated_systemctl(systemctl_path: str | None) -> str:
     if (not path.is_absolute() or path.is_symlink()
             or not path.is_file() or not os.access(path, os.X_OK)):
         raise ScopeCleanupUnavailable("Untrusted systemctl executable")
-    # When discovered from PATH, never treat a user-writable script as a
-    # systemd authority. Explicit paths are only an injectable test seam;
-    # native acceptance always calls this without a path override.
-    if systemctl_path is None:
-        metadata = path.stat()
-        if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-            raise ScopeCleanupUnavailable(
-                "Discovered systemctl is not a trusted system binary")
+    # PE-S2.03: the final cleanup attestor is a security boundary, not
+    # merely a report parser. A root-owned file inside a group/world-writable
+    # or symlinked parent could be replaced between check and execution.
+    # Reuse the exact root-owned executable + entire ancestor chain policy
+    # used by scope creation and the native Arch VM gate.
+    # Explicit paths remain a narrow test seam; production does not override.
+    if (systemctl_path is None
+            and not _trusted_discovered_systemd_binary(command)):
+        raise ScopeCleanupUnavailable(
+            "Discovered systemctl or its ancestors are not trusted")
     return str(path)
 
 
