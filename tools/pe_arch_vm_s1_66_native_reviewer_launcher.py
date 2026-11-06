@@ -151,6 +151,18 @@ def review_native_acceptance(
     try:
         quota_root = Path(native_work_quota_root)
         _absolute(quota_root)
+        # The writable quota mount must be separate from the checked-out
+        # source, the Ghidra release and the private receipt destination.
+        # Otherwise a kernel-sized FS may still corrupt trusted evidence.
+        if (quota_root == SOURCE_ROOT or quota_root in SOURCE_ROOT.parents
+                or SOURCE_ROOT in quota_root.parents
+                or quota_root == home or quota_root in home.parents
+                or home in quota_root.parents
+                or quota_root == receipt.parent
+                or quota_root in receipt.parent.parents
+                or receipt.parent in quota_root.parents):
+            raise ReviewerLaunchError(
+                "Native quota root must not overlap trusted source or evidence")
         storage.require_bounded_work_mount(quota_root)
     except (OSError, ValueError, TypeError,
             storage.NativeStorageBudgetError) as exc:
