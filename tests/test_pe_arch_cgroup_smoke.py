@@ -1,12 +1,14 @@
 """Native Arch cgroup contracts; synthetic receipts, NEVER a live host scope."""
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_cgroup_smoke as native
+import pe_arch_vm_gate as gate
 
 
 UNIT = "negresco-pe-0123456789abcdef01234567.scope"
@@ -139,6 +141,112 @@ class NativeArchSmokeTests(unittest.TestCase):
     def test_nonzero_child_exit_never_approves(self):
         with self.assertRaisesRegex(RuntimeError, "Native scope refused"):
             self.run_synthetic(status=2)
+
+
+
+class NativeVmGateTrustTests(unittest.TestCase):
+    """S2.02: never treat user-controlled PATH scripts as VM witnesses.
+
+    These tests simulate command results and guest state only. They do not
+    create cgroups, detect an actual VM, execute systemd or start a child.
+    """
+
+    def environment(self, *, untrusted=None, container_rc=1):
+        untrusted = set(untrusted or ())
+        def lookup(name):
+            return "/usr/bin/" + name
+
+        def trusted(path):
+            return Path(path).name not in untrusted
+
+        def command(argv, **kwargs):
+            # The container checker uses exit=1 when not in a container.
+            return SimpleNamespace(
+                returncode=container_rc if "--container" in argv else 0)
+
+        return (
+            mock.patch.object(gate, "preflight"),
+            mock.patch.object(gate.os, "geteuid", return_value=1000),
+            mock.patch.object(gate.os, "getuid", return_value=1000),
+            mock.patch.object(gate.shutil, "which", side_effect=lookup),
+            mock.patch.object(gate, "_trusted_discovered_systemd_binary",
+                              side_effect=trusted),
+            mock.patch.object(gate.subprocess, "run", side_effect=command),
+            mock.patch.dict(gate.os.environ,
+                            {"XDG_RUNTIME_DIR": "/run/user/1000"}),
+            mock.patch.object(gate.Path, "is_dir", return_value=True),
+            mock.patch.object(gate.Path, "is_symlink", return_value=False),
+            mock.patch.object(gate.Path, "stat",
+                              return_value=SimpleNamespace(st_uid=1000)),
+        )
+
+    def test_path_injected_virtualization_witness_refuses_before_any_subprocess(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            patches = self.environment(untrusted={"systemd-detect-virt"})
+            entered = [stack.enter_context(p) for p in patches]
+            with self.assertRaisesRegex(gate.ArchVmUnavailable,
+                                        "systemd-detect-virt.*trusted"):
+                gate.verify_arch_vm()
+        entered[5].assert_not_called()
+
+    def test_path_injected_user_bus_witness_refuses_without_executing_script(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            patches = self.environment(untrusted={"systemctl"})
+            entered = [stack.enter_context(p) for p in patches]
+            with self.assertRaisesRegex(gate.ArchVmUnavailable,
+                                        "systemctl.*trusted"):
+                gate.verify_arch_vm()
+        invocations = [call.args[0] for call in entered[5].call_args_list]
+        self.assertEqual(invocations, [
+            ["/usr/bin/systemd-detect-virt", "--container", "--quiet"],
+            ["/usr/bin/systemd-detect-virt", "--vm", "--quiet"],
+        ])
+        self.assertNotIn("/usr/bin/systemctl", [x[0] for x in invocations])
+
+    def test_path_injected_runtime_tools_cannot_pass_vm_gate(self):
+        from contextlib import ExitStack
+        for name in ("bwrap", "systemd-run", "python3",
+                     "x86_64-w64-mingw32-gcc"):
+            with self.subTest(name=name), ExitStack() as stack:
+                patches = self.environment(untrusted={name})
+                entered = [stack.enter_context(p) for p in patches]
+                with self.assertRaisesRegex(gate.ArchVmUnavailable,
+                                            name + ".*trusted"):
+                    gate.verify_arch_vm()
+                commands = [call.args[0][0]
+                            for call in entered[5].call_args_list]
+                self.assertNotIn("/usr/bin/" + name, commands)
+
+    def test_mocked_trusted_vm_checker_calls_absolute_commands_and_stays_local(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            patches = self.environment()
+            entered = [stack.enter_context(p) for p in patches]
+            result = gate.verify_arch_vm()
+        self.assertEqual(result["status"], "ARCH_VM_PREFLIGHT_PASSED")
+        self.assertIs(result["vm_confirmed"], True)
+        self.assertIs(result["real_cgroup_test_executed"], False)
+        self.assertEqual(
+            [x.args[0] for x in entered[5].call_args_list],
+            [
+                ["/usr/bin/systemd-detect-virt", "--container", "--quiet"],
+                ["/usr/bin/systemd-detect-virt", "--vm", "--quiet"],
+                ["/usr/bin/systemctl", "--user", "--no-ask-password",
+                 "show-environment"],
+            ],
+        )
+
+    def test_inconclusive_container_result_refuses_even_with_trusted_paths(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            patches = self.environment(container_rc=2)
+            entered = [stack.enter_context(p) for p in patches]
+            with self.assertRaisesRegex(gate.ArchVmUnavailable,
+                                        "inconclusive"):
+                gate.verify_arch_vm()
+        self.assertEqual(entered[5].call_count, 1)
 
 
 if __name__ == "__main__":
