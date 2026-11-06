@@ -15,16 +15,29 @@ import subprocess
 import sys
 
 from pe_arch_cgroup_smoke import preflight
+from pe_resource_limits import _trusted_discovered_systemd_binary
 
 
 class ArchVmUnavailable(RuntimeError):
     pass
 
 
-def _system_command(name: str, *args: str) -> None:
+def _trusted_vm_tool(name: str) -> str:
+    """Never execute a PATH-injected user binary as a VM safety witness.
+
+    Require an absolute normalized, root-owned, non-writable executable and
+    root-owned, non-writable, non-symlinked ancestors before any native probe.
+    Metadata checks are necessary local preconditions, NOT independent proof
+    of a hypervisor, VM origin, or a trusted operator.
+    """
     executable = shutil.which(name)
-    if not executable:
-        raise ArchVmUnavailable(name + " not installed")
+    if not _trusted_discovered_systemd_binary(executable):
+        raise ArchVmUnavailable(name + " is not a trusted system binary")
+    return executable
+
+
+def _system_command(name: str, *args: str) -> None:
+    executable = _trusted_vm_tool(name)
     try:
         result = subprocess.run(
             [executable, *args], stdin=subprocess.DEVNULL,
@@ -44,11 +57,10 @@ def verify_arch_vm() -> dict:
     if os.geteuid() == 0:
         raise ArchVmUnavailable("root cannot run validation")
     # Check container separately: --vm may also see an underlying hypervisor.
-    if not shutil.which("systemd-detect-virt"):
-        raise ArchVmUnavailable("systemd-detect-virt unavailable")
+    virt_tool = _trusted_vm_tool("systemd-detect-virt")
     try:
         container = subprocess.run(
-            ["systemd-detect-virt", "--container", "--quiet"],
+            [virt_tool, "--container", "--quiet"],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, timeout=8, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -67,8 +79,7 @@ def verify_arch_vm() -> dict:
         raise ArchVmUnavailable("private systemd user runtime is unavailable")
     for binary in ("bwrap", "systemd-run", "systemctl", "python3",
                    "x86_64-w64-mingw32-gcc"):
-        if not shutil.which(binary):
-            raise ArchVmUnavailable(binary + " is missing")
+        _trusted_vm_tool(binary)
     return {"status": "ARCH_VM_PREFLIGHT_PASSED",
             "vm_confirmed": True, "container": False,
             "root": False, "systemd_user_bus": True,
