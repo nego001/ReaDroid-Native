@@ -35,7 +35,13 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
         self.options = {
             "expected_source_commit": COMMIT,
             "reviewer_challenge": CHALLENGE,
+            "native_work_quota_root": Path("/reviewer/native-work-quota"),
         }
+        guard = mock.patch.object(
+            launcher.storage, "require_bounded_work_mount",
+            return_value={"kernel_storage_limit_observed_locally": True})
+        guard.start()
+        self.addCleanup(guard.stop)
         self.ready = {
             "status": launcher.preflight.STATUS,
             "source_commit": COMMIT,
@@ -150,6 +156,9 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
         self.assertEqual(args[args.index("--expected-source-commit")+1], COMMIT)
         self.assertEqual(args[args.index("--reviewer-challenge")+1], CHALLENGE)
         self.assertEqual(args[args.index("--evidence-output")+1], str(self.receipt))
+        self.assertEqual(
+            args[args.index("--native-work-quota-root")+1],
+            "/reviewer/native-work-quota")
         # PE-S1.69 helper itself owns pipes, DEVNULL and process session.
         self.assertEqual(run.call_args.kwargs["max_stdout"], launcher.MAX_STDOUT)
         self.assertEqual(run.call_args.kwargs["max_stderr"], launcher.MAX_STDERR)
