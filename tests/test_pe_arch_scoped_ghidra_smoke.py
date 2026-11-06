@@ -242,6 +242,31 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                 launch.assert_not_called()
                 process.assert_not_called()
 
+    def test_unbounded_host_work_refuses_before_native_ghidra_scope(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ-test")
+            with (mock.patch.object(native.os, "geteuid", return_value=1000),
+                  mock.patch.object(native, "verify_arch_vm",
+                                    return_value={
+                                        "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                        "vm_confirmed": True, "container": False}),
+                  mock.patch.object(
+                      native.storage, "require_bounded_work_mount",
+                      side_effect=native.storage.NativeStorageBudgetError(
+                          "not a private finite tmpfs")),
+                  mock.patch.object(native, "new_scope_unit") as unit,
+                  mock.patch.object(native, "wrap_in_cgroup_scope") as scope,
+                  mock.patch.object(native.bounded, "run_bounded_native") as run):
+                with self.assertRaisesRegex(
+                        native.ScopedGhidraError, "quota-limited"):
+                    native.run_native_scoped_ghidra(
+                        Path("/fake-ghidra"), pe, root)
+                unit.assert_not_called()
+                scope.assert_not_called()
+                run.assert_not_called()
+
     def test_direct_call_outside_arch_vm_never_creates_scope(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
