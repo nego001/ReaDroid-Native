@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 
+from pe_arch_vm_evidence import _verified_scope_cleanup
 from pe_resource_limits import (ResourceLimitsUnavailable, new_scope_unit,
                                 wrap_in_cgroup_scope)
 from pe_resource_evidence import (read_scope_proof, corroborate_guard_receipt,
@@ -92,12 +93,12 @@ def run_smoke() -> dict:
                 raise RuntimeError(
                     "Native cgroup scope final cleanup was not proven") from exc
 
-        if (cleanup.get("scope") != unit or cleanup.get("verified") is not True
-                or cleanup.get("scope_quiescent") is not True
-                or cleanup.get("cgroup_unpopulated") is not True
-                or cleanup.get("active_state") != "inactive"
-                or cleanup.get("sub_state") != "dead"):
-            raise RuntimeError("Native cgroup scope still active or populated")
+        # Full, shared systemd lifecycle schema is mandatory at this
+        # intermediate PASS boundary, not merely selected positive fields.
+        # Reject missing/extra claims, wrong stop types and inconsistent
+        # collected/not-found states exactly as final acceptance does.
+        if not _verified_scope_cleanup(unit, cleanup):
+            raise RuntimeError("Native cgroup cleanup proof failed full contract")
         if process.returncode != 0:
             raise RuntimeError("Native scope refused verification: " +
                                process.stderr[-1200:])
