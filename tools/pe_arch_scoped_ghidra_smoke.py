@@ -19,6 +19,7 @@ import tempfile
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 import pe_arch_vm_s1_69_bounded_native_child as bounded
 from pe_arch_vm_evidence import _verified_scope_cleanup
+import pe_native_workspace_budget as storage
 from pe_auto_ghidra import (_validated_function_evidence,
                             _validated_deep_evidence, HeadlessError)
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
@@ -79,10 +80,21 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
         scripts = workspace / "scripts"
         scripts.mkdir(parents=True, mode=0o700)
         (workspace / "project").mkdir(mode=0o700)
-        for name in ("NegrescoFunctionInventory.java", "NegrescoDeepPreview.java",
-                     "NegrescoSeccompRuntimeProof.java"):
-            shutil.copyfile(SCRIPT_HOME / name, scripts / name)
-        shutil.copyfile(synthetic_pe, workspace / "input.exe")
+        fixtures = [
+            (SCRIPT_HOME / name, scripts / name,
+             storage.MAX_STAGE_SCRIPT_BYTES)
+            for name in ("NegrescoFunctionInventory.java",
+                         "NegrescoDeepPreview.java",
+                         "NegrescoSeccompRuntimeProof.java")
+        ]
+        fixtures.append(
+            (synthetic_pe, workspace / "input.exe",
+             storage.MAX_STAGE_SYNTHETIC_PE_BYTES))
+        try:
+            storage.stage_bounded_fixtures(fixtures)
+        except storage.NativeStorageBudgetError as exc:
+            raise ScopedGhidraError(
+                "Native Ghidra fixtures exceeded bounded staging budget") from exc
         proof_folder = root / "private-cgroup-proof"
         proof_folder.mkdir(mode=0o700)
         proof_path = proof_folder / "quota.json"
@@ -126,6 +138,13 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
         if not _verified_scope_cleanup(unit, scope_cleanup):
             raise ScopedGhidraError(
                 "Ghidra scope cleanup attestation failed full contract")
+        try:
+            # A post-run audit is an acceptance gate, NOT a runtime disk
+            # quota. VM acceptance still requires a real storage cap.
+            storage.audit_postrun_workspace(root)
+        except storage.NativeStorageBudgetError as exc:
+            raise ScopedGhidraError(
+                "Native Ghidra workspace post-run footprint not accepted") from exc
         if result.returncode != 0:
             raise ScopedGhidraError("Real Ghidra with cgroup/seccomp exited nonzero")
         try:
