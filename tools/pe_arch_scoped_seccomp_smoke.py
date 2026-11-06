@@ -56,6 +56,13 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
             or environment.get("vm_confirmed") is not True
             or environment.get("container") is not False):
         raise ScopedSeccompSmokeError("Native Arch VM gate not attested")
+    # The source of /work must itself have an enforced kernel ceiling.
+    # A post-run du/stat audit cannot substitute for this live quota.
+    try:
+        storage.require_bounded_work_mount(workspace_root)
+    except storage.NativeStorageBudgetError as exc:
+        raise ScopedSeccompSmokeError(
+            "Native scoped seccomp requires quota-limited /work") from exc
     unit = new_scope_unit()
     baseline = seccomp_filter_count()
     with tempfile.TemporaryDirectory(prefix="negresco-scope-seccomp-",
