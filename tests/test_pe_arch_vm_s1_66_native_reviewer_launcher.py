@@ -123,6 +123,19 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                 execute_synthetic_native_acceptance=True, **overrides)
         return result, pre, run
 
+    def test_execution_without_quota_root_refuses_before_vm_preflight(self):
+        with (mock.patch.object(
+                  launcher.preflight, "native_readiness") as vm,
+              mock.patch.object(
+                  launcher.bounded, "run_bounded_native") as run):
+            with self.assertRaisesRegex(
+                    launcher.ReviewerLaunchError, "quota mount"):
+                self.call(
+                    execute_synthetic_native_acceptance=True,
+                    native_work_quota_root=None)
+            vm.assert_not_called()
+            run.assert_not_called()
+
     def test_default_plan_does_not_probe_vm_or_launch_subprocess(self):
         with (
             mock.patch.object(launcher.preflight, "native_readiness") as pre,
