@@ -49,6 +49,7 @@ def _copy_one(source: Path, target: Path, limit: int) -> int:
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     dst_fd = None
     created = False
+    completed = False
     try:
         src_fd = os.open(source, flags)
         try:
@@ -84,20 +85,23 @@ def _copy_one(source: Path, target: Path, limit: int) -> int:
             if total != before.st_size or identity(before) != identity(after):
                 raise NativeStorageBudgetError(
                     "Native fixture changed during bounded staging")
+            completed = True
             return total
         finally:
             os.close(src_fd)
     except OSError as exc:
         raise NativeStorageBudgetError(
             "Native fixture could not be securely staged") from exc
-    except BaseException:
-        raise
     finally:
         if dst_fd is not None:
             os.close(dst_fd)
-        # Success leaves the new exclusive file. Failed partial writes are
-        # removed by stage_bounded_fixtures' rollback below, or the private
-        # TemporaryDirectory cleanup at the callsite.
+        # Never leave an incompletely copied destination on failure. The
+        # directory is owner-only, and O_EXCL guarantees it was our inode.
+        if created and not completed:
+            try:
+                os.unlink(target)
+            except FileNotFoundError:
+                pass
 
 
 def stage_bounded_fixtures(items: list[tuple[Path, Path, int]]) -> int:
