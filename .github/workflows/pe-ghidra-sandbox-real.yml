@@ -763,6 +763,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_auto_ghidra.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_native_workspace_budget.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_cgroup_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_resource_evidence.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
@@ -805,6 +806,7 @@ jobs:
           set -euo pipefail
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_ghidra_sandbox.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_native_workspace_budget.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_cgroup_guard.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_evidence.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
