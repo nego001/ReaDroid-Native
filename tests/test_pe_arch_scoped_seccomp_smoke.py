@@ -19,7 +19,8 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
 
     def run_fixture(self, *, valid_seccomp: bool,
                     include_guard: bool = True, include_scope: bool = True,
-                    include_private_proof: bool = True, stop_accepted: bool = True):
+                    include_private_proof: bool = True, stop_accepted: bool = True,
+                    cleanup_changes=None, cleanup_remove=()):
         with tempfile.TemporaryDirectory(prefix="negresco-scope-contract-") as temp:
             root = Path(temp)
             pe = root / "synthetic.exe"
@@ -46,6 +47,20 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
             if include_guard:
                 payload.append(kernel_receipt)
             payload.append(sandbox_receipt)
+            cleanup_evidence = {
+                "scope": self.UNIT,
+                "verified": True, "scope_quiescent": True,
+                "cgroup_unpopulated": True,
+                "stop_request_accepted": True,
+                "load_state": "loaded",
+                "active_state": "inactive",
+                "sub_state": "dead",
+                "scope_collected": False,
+            }
+            if cleanup_changes is not None:
+                cleanup_evidence.update(cleanup_changes)
+            for name in cleanup_remove:
+                cleanup_evidence.pop(name, None)
 
             def scope_argv(command, **options):
                 self.assertEqual(options["unit_name"], self.UNIT)
@@ -92,20 +107,13 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 stop = stack.enter_context(mock.patch.object(
                     scoped, "stop_and_attest_scope",
                     side_effect=(
-                        lambda unit: {
-                            "scope": self.UNIT,
-                            "verified": True, "scope_quiescent": True,
-                            "cgroup_unpopulated": True,
-                            "stop_request_accepted": True,
-                            "load_state": "loaded",
-                            "active_state": "inactive",
-                            "sub_state": "dead",
-                            "scope_collected": False
-                        }
-                    ) if stop_accepted else scoped.ScopeCleanupUnavailable(
-                        "scope still active")))
+                        (lambda unit: cleanup_evidence)
+                        if stop_accepted else scoped.ScopeCleanupUnavailable(
+                            "scope still active"))))
                 if (valid_seccomp and include_guard and include_scope
-                        and include_private_proof and stop_accepted):
+                        and include_private_proof and stop_accepted
+                        and scoped._verified_scope_cleanup(
+                            self.UNIT, cleanup_evidence)):
                     result = scoped.run_scoped_seccomp_probe(
                         Path("/trusted-ghidra"), pe, root)
                     self.assertEqual(
@@ -139,6 +147,31 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
 
     def test_rejects_scope_stop_refusal_even_with_all_other_proofs(self):
         self.run_fixture(valid_seccomp=True, stop_accepted=False)
+
+    def test_joint_seccomp_probe_rejects_malformed_cleanup_receipt(self):
+        # All processes and cgroup scopes are mocked; never run native PE.
+        for delta in (
+            {"active_state": "active"},
+            {"load_state": "not-found"},  # contradicts collected=False
+            {"scope_collected": True},   # contradicts loaded state
+            {"stop_request_accepted": 1},
+            {"verified": 1},
+            {"release_permitted": True},
+        ):
+            with self.subTest(delta=delta):
+                self.run_fixture(valid_seccomp=True,
+                                 cleanup_changes=delta)
+        for missing in ("scope", "load_state", "sub_state",
+                        "stop_request_accepted"):
+            with self.subTest(missing=missing):
+                self.run_fixture(valid_seccomp=True,
+                                 cleanup_remove=(missing,))
+        self.run_fixture(valid_seccomp=True,
+                         cleanup_changes={
+                             "load_state": "not-found",
+                             "scope_collected": True,
+                             "stop_request_accepted": False,
+                         })
 
     def test_direct_probe_refuses_to_run_outside_real_arch_vm(self):
         with tempfile.TemporaryDirectory() as temp:
