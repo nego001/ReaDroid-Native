@@ -121,7 +121,10 @@ def build_command(ghidra_home: Path, working: Path,
         "/work/ghidra-functions.json",
         "-analysisTimeoutPerFile", str(max(1, timeout_seconds - 30)),
         "-max-cpu", "2", "-readOnly", "-deleteProject",
-        "-log", "/work/ghidra.log",
+        # Keep Ghidra's own verbose log on the kernel-sized /tmp tmpfs
+        # rather than letting this log fill the host-backed /work tree.
+        # This log is diagnostic only; source receipts stay in /work.
+        "-log", "/tmp/ghidra.log",
     ]
     if deep_preview:
         before = argv.index("-analysisTimeoutPerFile")
