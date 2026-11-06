@@ -58,6 +58,7 @@ class ReviewerPinnedMandatoryReadinessTests(unittest.TestCase):
         argv = ["pe_arch_vm_validation.py",
                 "--ghidra-home", str(GHIDRA),
                 "--ghidra-archive", str(ARCHIVE),
+                "--native-work-quota-root", "/isolated/negresco-pe-work-review",
                 "--evidence-output", str(DEST),
                 "--reviewer-challenge",
                 overrides.get("challenge", CHALLENGE)]
@@ -95,7 +96,9 @@ class ReviewerPinnedMandatoryReadinessTests(unittest.TestCase):
         inspect.assert_called_once_with(
             GHIDRA, ARCHIVE, validation.Path(validation.__file__).resolve().parents[1],
             DEST, expected_source_commit=COMMIT, reviewer_challenge=CHALLENGE)
-        native.assert_called_once_with(GHIDRA, ARCHIVE, timeout_seconds=420)
+        native.assert_called_once_with(
+            GHIDRA, ARCHIVE, timeout_seconds=420,
+            work_quota_root=Path("/isolated/negresco-pe-work-review"))
         receipt.assert_called_once()
         self.assertEqual(git.call_count, 2)
         doc = json.loads(out)
