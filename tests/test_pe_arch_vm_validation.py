@@ -278,6 +278,46 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             self.assertTrue(result["inherited_host_fd_hidden"])
             self.assertTrue(run.call_args.kwargs["close_fds"])
 
+    def test_native_bwrap_oversized_staging_rejects_without_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ-synthetic")
+            with (mock.patch.object(
+                    validation.storage, "stage_bounded_fixtures",
+                    side_effect=validation.storage.NativeStorageBudgetError(
+                        "synthetic fixture too large")),
+                  mock.patch.object(validation, "build_command") as build,
+                  mock.patch.object(validation.subprocess, "run") as process):
+                with self.assertRaisesRegex(
+                        validation.ArchVmValidationError, "staging"):
+                    validation.native_bwrap_probe(
+                        Path("/synthetic-ghidra"), pe, root)
+                build.assert_not_called()
+                process.assert_not_called()
+
+    def test_native_bwrap_postrun_storage_audit_failure_blocks_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ-synthetic")
+            command = ["/usr/bin/bwrap", "--unshare-all", "--",
+                       "/usr/bin/placeholder"]
+            with (mock.patch.object(validation, "build_command",
+                                    return_value=command),
+                  mock.patch.object(validation.storage,
+                                    "audit_postrun_workspace",
+                                    side_effect=(
+                                        validation.storage.NativeStorageBudgetError(
+                                            "too much disk"))),
+                  mock.patch.object(validation.subprocess, "run",
+                                    return_value=mock.Mock(returncode=0,
+                                                           stdout="{}"))):
+                with self.assertRaisesRegex(
+                        validation.ArchVmValidationError, "footprint"):
+                    validation.native_bwrap_probe(
+                        Path("/synthetic-ghidra"), pe, root)
+
     def test_arch_vm_rejects_unproven_scoped_seccomp_before_ghidra(self):
         with tempfile.TemporaryDirectory() as tmp:
             ghidra = Path(tmp) / "ghidra"
