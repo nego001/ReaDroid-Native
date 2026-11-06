@@ -131,8 +131,35 @@ class NativeArchSmokeTests(unittest.TestCase):
                 {**CLEANUP, "active_state": "active"},
         ):
             with self.subTest(replacement=replacement):
-                with self.assertRaisesRegex(RuntimeError, "still active"):
+                with self.assertRaisesRegex(RuntimeError, "full contract"):
                     self.run_synthetic(cleanup=replacement)
+
+    def test_cgroup_intermediate_pass_requires_complete_cleanup_receipt(self):
+        # An end-to-end final receipt already requires all fields. The
+        # intermediate native cgroup PASS must apply the same contract.
+        for delta in (
+            {"load_state": "loaded"},
+            {"scope_collected": False},
+            {"active_state": "activating"},
+            {"stop_request_accepted": 1},
+            {"verified": 1},
+            {"unverified_release_allowed": True},
+        ):
+            with self.subTest(delta=delta):
+                with self.assertRaisesRegex(RuntimeError, "full contract"):
+                    self.run_synthetic(cleanup={**CLEANUP, **delta})
+        for missing in ("load_state", "scope_collected", "sub_state",
+                        "stop_request_accepted", "cgroup_unpopulated"):
+            with self.subTest(missing=missing):
+                proof = dict(CLEANUP)
+                proof.pop(missing)
+                with self.assertRaisesRegex(RuntimeError, "full contract"):
+                    self.run_synthetic(cleanup=proof)
+        # Correct inactive, loaded and not-collected contract remains valid.
+        loaded = {**CLEANUP, "load_state": "loaded",
+                  "scope_collected": False, "stop_request_accepted": True}
+        self.assertEqual(self.run_synthetic(cleanup=loaded)["status"],
+                         "PASS_NATIVE_ARCH_CGROUP")
 
     def test_timeout_also_attempts_scope_cleanup(self):
         with self.assertRaisesRegex(RuntimeError, "timed out"):
