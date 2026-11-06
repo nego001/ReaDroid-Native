@@ -38,6 +38,7 @@ from pe_arch_vm_evidence import AcceptanceReceiptError
 from pe_arch_vm_receipt_verify import ReceiptReviewError
 import pe_arch_vm_s1_67_receipt_binding as binding
 import pe_arch_vm_s1_69_bounded_native_child as bounded
+import pe_native_workspace_budget as storage
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = SOURCE_ROOT / "tools/pe_arch_vm_validation.py"
@@ -98,7 +99,8 @@ def _private_destination(path: Path) -> None:
 def review_native_acceptance(
         ghidra_home: Path, ghidra_archive: Path, evidence_output: Path, *,
         expected_source_commit: str, reviewer_challenge: str,
-        execute_synthetic_native_acceptance: bool = False) -> dict:
+        execute_synthetic_native_acceptance: bool = False,
+        native_work_quota_root: Path | None = None) -> dict:
     """Return no-exec plan by default; explicit run only in vetted native VM.
 
     IMPORTANT: the local VM gate is a necessary safety precondition, but
@@ -143,6 +145,17 @@ def review_native_acceptance(
             "apk_or_ota_publication_authorized": False,
         }
 
+    if native_work_quota_root is None:
+        raise ReviewerLaunchError(
+            "Explicit native quota mount required before synthetic acceptance")
+    try:
+        quota_root = Path(native_work_quota_root)
+        _absolute(quota_root)
+        storage.require_bounded_work_mount(quota_root)
+    except (OSError, ValueError, TypeError,
+            storage.NativeStorageBudgetError) as exc:
+        raise ReviewerLaunchError(
+            "Reviewer /work mount is not a private kernel-sized tmpfs") from exc
     try:
         # S1.58: real VM/container/user-bus + pinned source/Ghidra preflight.
         # It is repeated *inside* S1.5's --reviewer-pinned-checkout flow.
@@ -171,6 +184,7 @@ def review_native_acceptance(
             sys.executable, "-I", "-B", str(ACCEPTANCE),
             "--ghidra-home", str(home),
             "--ghidra-archive", str(archive),
+            "--native-work-quota-root", str(quota_root),
             "--evidence-output", str(receipt),
             "--expected-source-commit", expected_source_commit,
             "--reviewer-challenge", reviewer_challenge,
@@ -297,6 +311,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence-output", required=True, type=Path)
     parser.add_argument("--expected-source-commit", required=True)
     parser.add_argument("--reviewer-challenge", required=True)
+    parser.add_argument(
+        "--native-work-quota-root", type=Path,
+        help="Reviewer-provisioned dedicated 64-512MiB owner-only tmpfs; "
+             "mandatory with --execute-synthetic-native-acceptance")
     parser.add_argument("--execute-synthetic-native-acceptance",
                         action="store_true")
     args = parser.parse_args(argv)
@@ -305,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
             args.ghidra_home, args.ghidra_archive, args.evidence_output,
             expected_source_commit=args.expected_source_commit,
             reviewer_challenge=args.reviewer_challenge,
+            native_work_quota_root=args.native_work_quota_root,
             execute_synthetic_native_acceptance=
                 args.execute_synthetic_native_acceptance)
         print(json.dumps(report, sort_keys=True))
