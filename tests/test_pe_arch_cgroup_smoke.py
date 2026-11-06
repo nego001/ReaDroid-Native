@@ -39,7 +39,8 @@ class NativeArchSmokeTests(unittest.TestCase):
                       failure=None, status=0):
         stdout = "\n".join(json.dumps(x) for x in
                            ([GUARD, CHILD] if records is None else records)) + "\n"
-        result = mock.Mock(returncode=status, stderr="synthetic", stdout=stdout)
+        result = mock.Mock(returncode=status, stderr=b"synthetic",
+                           stdout=stdout.encode("utf-8"))
 
         def wrap(command, **kwargs):
             if write_proof:
@@ -62,7 +63,7 @@ class NativeArchSmokeTests(unittest.TestCase):
             mock.patch.object(native, "new_scope_unit", return_value=UNIT),
             mock.patch.object(native, "wrap_in_cgroup_scope",
                               side_effect=wrap) as wrapped,
-            mock.patch.object(native.subprocess, "run",
+            mock.patch.object(native.bounded, "run_bounded_native",
                               side_effect=failure if failure else None,
                               return_value=result) as launched,
             mock.patch.object(native, "stop_and_attest_scope",
@@ -79,8 +80,10 @@ class NativeArchSmokeTests(unittest.TestCase):
                 stopped.assert_called_once_with(UNIT)
                 launched.assert_called_once()
                 self.assertEqual(launched.call_args.kwargs["timeout"], 28)
-                self.assertEqual(launched.call_args.kwargs["stdin"],
-                                 native.subprocess.DEVNULL)
+                self.assertEqual(launched.call_args.kwargs["max_stdout"],
+                                 native.MAX_STDOUT_BYTES)
+                self.assertEqual(launched.call_args.kwargs["max_stderr"], 8192)
+                self.assertIsInstance(launched.call_args.kwargs["env"], dict)
 
     def test_success_requires_private_quota_and_quiescent_scope(self):
         result = self.run_synthetic()
@@ -161,10 +164,13 @@ class NativeArchSmokeTests(unittest.TestCase):
         self.assertEqual(self.run_synthetic(cleanup=loaded)["status"],
                          "PASS_NATIVE_ARCH_CGROUP")
 
-    def test_timeout_also_attempts_scope_cleanup(self):
-        with self.assertRaisesRegex(RuntimeError, "timed out"):
-            self.run_synthetic(failure=native.subprocess.TimeoutExpired(
-                cmd=["synthetic"], timeout=28))
+    def test_timeout_or_output_overflow_also_attempts_scope_cleanup(self):
+        for reason in ("timeout", "stdout exceeded limit",
+                       "stderr exceeded limit"):
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(RuntimeError, "output budget"):
+                    self.run_synthetic(
+                        failure=native.bounded.BoundedNativeChildError(reason))
 
     def test_nonzero_child_exit_never_approves(self):
         with self.assertRaisesRegex(RuntimeError, "Native scope refused"):
