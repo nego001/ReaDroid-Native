@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -31,9 +32,32 @@ def _trusted_vm_tool(name: str) -> str:
     of a hypervisor, VM origin, or a trusted operator.
     """
     executable = shutil.which(name)
-    if not _trusted_discovered_systemd_binary(executable):
-        raise ArchVmUnavailable(name + " is not a trusted system binary")
-    return executable
+    if _trusted_discovered_systemd_binary(executable):
+        return executable
+
+    # Arch may ship an official root-owned same-directory alias such as
+    # /usr/bin/python3 -> python3.14. Accept exactly one such link only when
+    # both the alias owner and the final regular-file target are trusted.
+    # Never follow an absolute, cross-directory or multi-hop link. Preserve
+    # the original argv[0] for multicall binaries such as systemd tools.
+    if isinstance(executable, str):
+        alias = Path(executable)
+        try:
+            metadata = alias.lstat()
+            target_name = os.readlink(alias)
+            if (alias.is_absolute()
+                    and str(alias) == os.path.normpath(str(alias))
+                    and stat.S_ISLNK(metadata.st_mode)
+                    and metadata.st_uid == 0
+                    and target_name not in ("", ".", "..")
+                    and "/" not in target_name
+                    and "\\" not in target_name
+                    and _trusted_discovered_systemd_binary(
+                        str(alias.with_name(target_name)))):
+                return executable
+        except (OSError, ValueError):
+            pass
+    raise ArchVmUnavailable(name + " is not a trusted system binary")
 
 
 def _system_command(name: str, *args: str) -> None:
