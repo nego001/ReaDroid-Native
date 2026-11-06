@@ -100,6 +100,12 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
     """Run the Ubuntu isolation probe under the actual Arch VM kernel."""
     if not PROBE.is_file() or not GHIDRA_SCRIPT.is_file():
         raise ArchVmValidationError("Bubblewrap probe/source scripts missing")
+    # Direct probe entrypoints must not stage files on an unbounded host FS.
+    try:
+        storage.require_bounded_work_mount(root)
+    except storage.NativeStorageBudgetError as exc:
+        raise ArchVmValidationError(
+            "Native Bubblewrap probe requires dedicated work filesystem quota") from exc
     canary = root / "host-private-canary"
     canary.write_text("synthetic-marker", encoding="ascii")
     canary.chmod(0o600)
@@ -165,7 +171,8 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
 
 
 def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
-                         timeout_seconds: int = 420) -> dict:
+                         timeout_seconds: int = 420,
+                         work_quota_root: Path | None = None) -> dict:
     if (not ghidra_home.is_absolute() or ghidra_home.is_symlink()
             or not (ghidra_home / "support/analyzeHeadless").is_file()):
         raise ArchVmValidationError("Trusted absolute Ghidra directory required")
@@ -176,7 +183,16 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
     java25_preflight()
     if type(timeout_seconds) is not int or not 90 <= timeout_seconds <= 1800:
         raise ArchVmValidationError("Unsupported timeout for real Ghidra")
-    with tempfile.TemporaryDirectory(prefix="negresco-arch-vm-ghidra-") as directory:
+    if work_quota_root is None:
+        raise ArchVmValidationError(
+            "Native Ghidra requires explicit work filesystem quota root")
+    try:
+        storage.require_bounded_work_mount(work_quota_root)
+    except storage.NativeStorageBudgetError as exc:
+        raise ArchVmValidationError(
+            "Native Ghidra work filesystem quota unavailable") from exc
+    with tempfile.TemporaryDirectory(
+            prefix="negresco-arch-vm-ghidra-", dir=work_quota_root) as directory:
         root = Path(directory)
         pe = root / "synthetic-fixture.exe"
         report_path = root / "result.json"
@@ -221,7 +237,8 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
                 "Real Ghidra under simultaneous cgroup/seccomp not proven")
         report = inspect_functions(
             pe, ghidra_home, report_path, timeout_seconds=timeout_seconds,
-            sandbox_mode="bwrap", require_cgroup_limits=True, deep_preview=True)
+            sandbox_mode="bwrap", require_cgroup_limits=True, deep_preview=True,
+            work_quota_root=work_quota_root)
         limits = report.get("limitations", {})
         proof = limits.get("resource_limits")
         if (limits.get("os_sandbox") != "bubblewrap_profile"
@@ -256,8 +273,19 @@ def validate_real_ghidra(ghidra_home: Path, release_zip: Path, *,
 
 
 def run_acceptance(ghidra_home: Path, release_zip: Path, *,
-                   timeout_seconds: int = 420) -> dict:
+                   timeout_seconds: int = 420,
+                   work_quota_root: Path | None = None) -> dict:
     environment = verify_arch_vm()
+    # Reviewer-prepared tmpfs is required before ANY destructive native
+    # lifecycle tests. This is a local mount check, not external attestation.
+    if work_quota_root is None:
+        raise ArchVmValidationError(
+            "Native acceptance requires reviewer-prepared work quota root")
+    try:
+        storage.require_bounded_work_mount(work_quota_root)
+    except storage.NativeStorageBudgetError as exc:
+        raise ArchVmValidationError(
+            "Native acceptance work quota unavailable") from exc
     quotas = run_smoke()
     # Refuse before starting the SIGTERM-resistant descendant experiment if
     # the harmless initial scope lacked private quotas or final kernel cleanup.
@@ -288,7 +316,8 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
             or descendants["descendant_cleanup_evidence"].get("cgroup_unpopulated") is not True):
         raise ArchVmValidationError("Native cgroup and descendant lifecycle not approved")
     ghidra = validate_real_ghidra(ghidra_home, release_zip,
-                                 timeout_seconds=timeout_seconds)
+                                 timeout_seconds=timeout_seconds,
+                                 work_quota_root=work_quota_root)
     report = {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
               "cgroup": {k: quotas[k] for k in
                          ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
@@ -312,6 +341,10 @@ def main() -> int:
     parser.add_argument("--ghidra-home", required=True, type=Path)
     parser.add_argument("--ghidra-archive", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=420)
+    parser.add_argument(
+        "--native-work-quota-root", type=Path,
+        help="Reviewer-provisioned private tmpfs mount (64-512 MiB); "
+             "required for native acceptance, never auto-mounted")
     parser.add_argument("--evidence-output", type=Path,
                         help="Optional new JSON receipt file inside an owner-only 0700 directory; never overwrites")
     parser.add_argument("--reviewer-challenge",
@@ -406,7 +439,8 @@ def main() -> int:
             # Do not append preflight to the exact operator stdout contract:
             # it is a local gate, never an attestation of the guest.
         proof = run_acceptance(args.ghidra_home, args.ghidra_archive,
-                               timeout_seconds=args.timeout_seconds)
+                               timeout_seconds=args.timeout_seconds,
+                               work_quota_root=args.native_work_quota_root)
         if checkout_pin is not None:
             # The workload may have created files after the preflight.
             # Refuse to publish a receipt if the pinned checkout changed
