@@ -86,6 +86,31 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                     self.assertEqual(validation.main(), 2)
                 native.assert_not_called()
 
+    def test_missing_live_work_quota_refuses_before_any_native_scope(self):
+        with (mock.patch.object(validation, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+              mock.patch.object(validation, "run_smoke") as scope):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "work quota root"):
+                validation.run_acceptance(
+                    Path("/sample/ghidra"), Path("/sample/zip"))
+            scope.assert_not_called()
+
+    def test_unverified_live_mount_blocks_all_native_scope_probes(self):
+        with (mock.patch.object(validation, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+              mock.patch.object(
+                  validation.storage, "require_bounded_work_mount",
+                  side_effect=validation.storage.NativeStorageBudgetError(
+                      "not a mounted tmpfs")),
+              mock.patch.object(validation, "run_smoke") as scope):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "quota unavailable"):
+                validation.run_acceptance(
+                    Path("/sample/ghidra"), Path("/sample/zip"),
+                    work_quota_root=Path("/reviewer/workquota"))
+            scope.assert_not_called()
+
     def test_vm_gate_refuses_before_any_resource_or_ghidra_test(self):
         with mock.patch.object(validation, "verify_arch_vm",
                                side_effect=gate.ArchVmUnavailable("not a VM")):
