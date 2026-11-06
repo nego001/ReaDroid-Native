@@ -93,6 +93,9 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                         "status": "ARCH_VM_PREFLIGHT_PASSED",
                         "vm_confirmed": True, "container": False}))
                 stack.enter_context(mock.patch.object(
+                    native.storage, "require_bounded_work_mount",
+                    return_value={"kernel_storage_limit_observed_locally": True}))
+                stack.enter_context(mock.patch.object(
                     native, "new_scope_unit", return_value=self.UNIT))
                 stack.enter_context(mock.patch.object(
                     native, "build_command", side_effect=lambda home, work, timeout,
@@ -225,6 +228,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                                     return_value={
                                         "status": "ARCH_VM_PREFLIGHT_PASSED",
                                         "vm_confirmed": True, "container": False}),
+                  mock.patch.object(native.storage, "require_bounded_work_mount",
+                                    return_value={"kernel_storage_limit_observed_locally": True}),
                   mock.patch.object(
                       native.storage, "stage_bounded_fixtures",
                       side_effect=native.storage.NativeStorageBudgetError(
