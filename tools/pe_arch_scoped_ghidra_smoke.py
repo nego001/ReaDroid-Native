@@ -72,6 +72,12 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             or environment.get("container") is not False):
         raise ScopedGhidraError("Native Arch VM safety gate was not attested")
 
+    try:
+        storage.require_bounded_work_mount(private_root)
+    except storage.NativeStorageBudgetError as exc:
+        raise ScopedGhidraError(
+            "Native Ghidra requires quota-limited /work") from exc
+
     unit = new_scope_unit()
     with tempfile.TemporaryDirectory(prefix="negresco-native-arch-ghidra-both-",
                                      dir=private_root) as temp:
