@@ -20,7 +20,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
     UNIT = "negresco-pe-0123456789abcdef01234567.scope"
 
     def run_contract(self, *, stop_accepted=True, code=0, scope=True,
-                     guard=True, decompiled=True, limit_proof=True):
+                     guard=True, decompiled=True, limit_proof=True,
+                     cleanup_changes=None, cleanup_remove=()):
         with tempfile.TemporaryDirectory(prefix="negresco-combined-contract-") as temp:
             base = Path(temp)
             pe = base / "synthetic.exe"
@@ -51,6 +52,21 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                 self.assertIn("NegrescoSeccompRuntimeProof.java", argv)
                 return ["systemd-run-mocked", *argv]
 
+            cleanup_evidence = {
+                "scope": self.UNIT,
+                "verified": True,
+                "scope_quiescent": True,
+                "cgroup_unpopulated": True,
+                "stop_request_accepted": True,
+                "load_state": "loaded",
+                "active_state": "inactive",
+                "sub_state": "dead",
+                "scope_collected": False,
+            }
+            if cleanup_changes is not None:
+                cleanup_evidence.update(cleanup_changes)
+            for field in cleanup_remove:
+                cleanup_evidence.pop(field, None)
             good_proof = {"verification": "guard_verified_before_bwrap",
                           "memory_max_bytes": 4294967296,
                           "tasks_max": 128, "cpu_quota": 200000,
@@ -80,18 +96,9 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                 stop = stack.enter_context(mock.patch.object(
                     native, "stop_and_attest_scope",
                     side_effect=(
-                        lambda unit: {
-                            "scope": self.UNIT,
-                            "verified": True, "scope_quiescent": True,
-                            "cgroup_unpopulated": True,
-                            "stop_request_accepted": True,
-                            "load_state": "loaded",
-                            "active_state": "inactive",
-                            "sub_state": "dead",
-                            "scope_collected": False
-                        }
-                    ) if stop_accepted else native.ScopeCleanupUnavailable(
-                        "scope still active")))
+                        (lambda unit: cleanup_evidence)
+                        if stop_accepted else native.ScopeCleanupUnavailable(
+                            "scope still active"))))
                 read = stack.enter_context(mock.patch.object(
                     native, "read_scope_proof",
                     side_effect=(lambda path, unit: good_proof)
@@ -109,7 +116,9 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                         "functions": [{"decompile_status": "ok" if decompiled
                                        else "unavailable"}]}))
                 approved = (stop_accepted and code == 0 and scope and guard
-                            and decompiled and limit_proof)
+                            and decompiled and limit_proof
+                            and native._verified_scope_cleanup(
+                                self.UNIT, cleanup_evidence))
                 if approved:
                     report_value = native.run_native_scoped_ghidra(
                         Path("/synthetic-ghidra"), pe, base)
@@ -155,6 +164,27 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
 
     def test_refuses_zero_successful_decompilations(self):
         self.run_contract(decompiled=False)
+
+    def test_real_ghidra_intermediate_pass_rejects_malformed_cleanup_receipt(self):
+        # Pure mocks: no Ghidra, cgroup or Windows execution occurs here.
+        for changed in (
+            {"active_state": "active"},
+            {"sub_state": "running"},
+            {"load_state": "not-found"},
+            {"scope_collected": True},
+            {"stop_request_accepted": 1},
+            {"verified": 1},
+            {"reviewer_approved_release": True},
+        ):
+            with self.subTest(changed=changed):
+                self.run_contract(cleanup_changes=changed)
+        for missing in ("scope", "load_state", "active_state",
+                        "scope_collected", "stop_request_accepted"):
+            with self.subTest(missing=missing):
+                self.run_contract(cleanup_remove=(missing,))
+        self.run_contract(cleanup_changes={
+            "load_state": "not-found", "scope_collected": True,
+            "stop_request_accepted": False})
 
     def test_direct_call_outside_arch_vm_never_creates_scope(self):
         with tempfile.TemporaryDirectory() as temp:
