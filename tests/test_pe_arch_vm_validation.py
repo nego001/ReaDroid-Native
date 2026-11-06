@@ -53,6 +53,22 @@ class ArchVmGateTests(unittest.TestCase):
 
 
 class ArchVmAcceptanceTests(unittest.TestCase):
+    def setUp(self):
+        # Tests simulate VM/FS state only. Real tmpfs verification has a
+        # separate real-file unit suite and is never faked in production.
+        guard = mock.patch.object(
+            validation.storage, "require_bounded_work_mount",
+            return_value={"kernel_storage_limit_observed_locally": True})
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def run_quota_acceptance(self, *args, **kwargs):
+        kwargs.setdefault("work_quota_root", Path(tempfile.gettempdir()))
+        return validation.run_acceptance(*args, **kwargs)
+
+    def validate_quota_ghidra(self, *args, **kwargs):
+        kwargs.setdefault("work_quota_root", Path(tempfile.gettempdir()))
+        return validation.validate_real_ghidra(*args, **kwargs)
     def test_s1_24_missing_or_invalid_challenge_blocks_vm_run(self):
         from contextlib import redirect_stderr
         from io import StringIO
@@ -76,7 +92,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             with mock.patch.object(validation, "run_smoke") as quotas:
                 with mock.patch.object(validation, "validate_real_ghidra") as ghidra:
                     with self.assertRaises(gate.ArchVmUnavailable):
-                        validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+                        self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         quotas.assert_not_called()
         ghidra.assert_not_called()
 
@@ -89,7 +105,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                     with mock.patch.object(validation, "validate_real_ghidra") as ghidra:
                         with self.assertRaisesRegex(
                                 validation.ArchVmValidationError, "not approved"):
-                            validation.run_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+                            self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
         ghidra.assert_not_called()
 
     def test_unproven_initial_scope_blocks_descendant_experiment(self):
@@ -117,7 +133,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                             validation.ArchVmValidationError,
                             "Initial native cgroup"):
-                        validation.run_acceptance(
+                        self.run_quota_acceptance(
                             Path("/sample/ghidra"), Path("/sample/zip"))
                 descendant.assert_not_called()
                 ghidra.assert_not_called()
@@ -163,7 +179,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                            return_value={"status": "PASS_REAL_ARCH_VM_GHIDRA"}):
                         with mock.patch.object(
                                 validation, "validate_native_acceptance_report") as policy:
-                            result = validation.run_acceptance(
+                            result = self.run_quota_acceptance(
                                 Path("/sample/ghidra"), Path("/sample/zip"))
         policy.assert_called_once_with(result)
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
@@ -221,7 +237,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                     validation.ArchVmValidationError, "PASS refused"):
-                validation.run_acceptance(
+                self.run_quota_acceptance(
                     Path("/sample/ghidra"), Path("/sample/zip"))
 
     def test_rejects_unsupported_ghidra_release_even_with_launch_script(self):
@@ -343,7 +359,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                     with self.assertRaisesRegex(
                                             validation.ArchVmValidationError,
                                             "joint native attestation incomplete"):
-                                        validation.validate_real_ghidra(
+                                        self.validate_quota_ghidra(
                                             ghidra, Path(tmp) / "synthetic.zip")
                                 inspect.assert_not_called()
 
@@ -413,7 +429,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                         validation.ArchVmValidationError,
                         "inventories disagree"):
-                    validation.validate_real_ghidra(home, Path(temp) / "release.zip")
+                    self.validate_quota_ghidra(home, Path(temp) / "release.zip")
 
     def test_real_ghidra_requires_private_quota_proof(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -481,7 +497,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                                               "windows_binary_executed": False})):
                                     with self.assertRaisesRegex(
                                             validation.ArchVmValidationError, "incomplete"):
-                                        validation.validate_real_ghidra(
+                                        self.validate_quota_ghidra(
                                             home, Path("/fake/release.zip"),
                                             timeout_seconds=420)
 
