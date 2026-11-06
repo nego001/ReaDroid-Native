@@ -17,6 +17,7 @@ import sys
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
+from pe_arch_vm_evidence import _verified_scope_cleanup
 from pe_auto_ghidra import (_validated_function_evidence,
                             _validated_deep_evidence, HeadlessError)
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
@@ -114,10 +115,11 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             except ScopeCleanupUnavailable as exc:
                 raise ScopedGhidraError(
                     "Cannot prove Ghidra cgroup fully stopped") from exc
-        if (scope_cleanup.get("scope") != unit
-                or scope_cleanup.get("verified") is not True
-                or scope_cleanup.get("cgroup_unpopulated") is not True):
-            raise ScopedGhidraError("Ghidra scope cleanup attestation incomplete")
+        # Share the final reviewer's exact cleanup contract. Otherwise
+        # a malformed systemd state could be promoted to an interim PASS.
+        if not _verified_scope_cleanup(unit, scope_cleanup):
+            raise ScopedGhidraError(
+                "Ghidra scope cleanup attestation failed full contract")
         if result.returncode != 0:
             raise ScopedGhidraError("Real Ghidra with cgroup/seccomp exited nonzero")
         if len(result.stdout) > 128 * 1024:
