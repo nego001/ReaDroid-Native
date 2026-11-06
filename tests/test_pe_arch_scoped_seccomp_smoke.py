@@ -193,7 +193,7 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
             with mock.patch.object(scoped, "verify_arch_vm",
                                    side_effect=scoped.ArchVmUnavailable("not native")):
                 with mock.patch.object(scoped, "new_scope_unit") as unit:
-                    with mock.patch.object(scoped.subprocess, "run") as launch:
+                    with mock.patch.object(scoped.bounded, "run_bounded_native") as launch:
                         with self.assertRaises(scoped.ArchVmUnavailable):
                             scoped.run_scoped_seccomp_probe(
                                 Path("/trusted-ghidra"), pe, root)
