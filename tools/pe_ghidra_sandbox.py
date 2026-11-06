@@ -19,6 +19,14 @@ import stat
 class SandboxUnavailable(RuntimeError):
     pass
 
+
+# PE-S2.07: actual kernel-enforced per-mount tmpfs ceilings, not an
+# aggregate quota on /work, host systemd logs, or other writable mounts.
+# Bwrap's --size BYTES applies to the immediately following --tmpfs.
+TMPFS_TMP_MAX_BYTES = 256 * 1024 * 1024
+TMPFS_HOME_MAX_BYTES = 16 * 1024 * 1024
+
+
 def build_command(ghidra_home: Path, working: Path,
                   timeout_seconds: int, *, bwrap_path: str | None = None,
                   deep_preview: bool = False) -> list[str]:
@@ -71,7 +79,9 @@ def build_command(ghidra_home: Path, working: Path,
 
     argv += ["--dir", "/opt", "--ro-bind", str(root), "/opt/negresco-ghidra",
              "--dir", "/work", "--bind", str(workspace), "/work",
-             "--dir", "/etc", "--tmpfs", "/tmp", "--tmpfs", "/home",
+             "--dir", "/etc",
+             "--size", str(TMPFS_TMP_MAX_BYTES), "--tmpfs", "/tmp",
+             "--size", str(TMPFS_HOME_MAX_BYTES), "--tmpfs", "/home",
              "--proc", "/proc", "--dev", "/dev",
              "--setenv", "HOME", "/work",
              "--setenv", "XDG_CACHE_HOME", "/work",
