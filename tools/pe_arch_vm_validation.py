@@ -104,8 +104,11 @@ def native_bwrap_probe(ghidra_home: Path, pe: Path, root: Path) -> dict:
     canary.write_text("synthetic-marker", encoding="ascii")
     canary.chmod(0o600)
     work = root / "probe-workspace"
+    # pathlib.mkdir(parents=True) uses default permissions on created
+    # ancestors. Create the bound work root explicitly as owner-only.
+    work.mkdir(mode=0o700)
     scripts = work / "scripts"
-    scripts.mkdir(parents=True, mode=0o700)
+    scripts.mkdir(mode=0o700)
     (work / "project").mkdir(mode=0o700)
     try:
         storage.stage_bounded_fixtures([
