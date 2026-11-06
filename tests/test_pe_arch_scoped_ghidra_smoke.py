@@ -75,6 +75,16 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(
                     native.os, "geteuid", return_value=1000))
+                # VM/gating is intentionally mocked in this suite. The
+                # staging and workspace scanner have separate real-file
+                # regression tests, avoiding fictional uid=1000 metadata
+                # being compared against a runner-owned temp directory.
+                stack.enter_context(mock.patch.object(
+                    native.storage, "stage_bounded_fixtures",
+                    return_value=1024))
+                stack.enter_context(mock.patch.object(
+                    native.storage, "audit_postrun_workspace",
+                    return_value=4096))
                 gate = stack.enter_context(mock.patch.object(
                     native, "verify_arch_vm", return_value={
                         "status": "ARCH_VM_PREFLIGHT_PASSED",
