@@ -78,7 +78,9 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
         root = Path(temp)
         workspace = root / "workspace"
         scripts = workspace / "scripts"
-        scripts.mkdir(parents=True, mode=0o700)
+        # Avoid implicit parent creation with default 0755 permissions.
+        workspace.mkdir(mode=0o700)
+        scripts.mkdir(mode=0o700)
         (workspace / "project").mkdir(mode=0o700)
         fixtures = [
             (SCRIPT_HOME / name, scripts / name,
