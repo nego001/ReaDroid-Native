@@ -33,6 +33,11 @@ class HeadlessRunnerTests(unittest.TestCase):
         (self.home / "support").mkdir(parents=True)
         self.launcher = self.home / "support" / "analyzeHeadless"
         self._fake("success")
+        quota = mock.patch.object(
+            runner.storage, "require_bounded_work_mount",
+            return_value={"kernel_storage_limit_observed_locally": True})
+        quota.start()
+        self.addCleanup(quota.stop)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -249,7 +254,8 @@ if args.count("-postScript") == 2:
                     }) as stop:
                         report = runner.inspect_functions(
                             self.input, self.home, self.output, 3,
-                            sandbox_mode="bwrap", require_cgroup_limits=True)
+                            sandbox_mode="bwrap", require_cgroup_limits=True,
+                                work_quota_root=self.workspace)
         self.assertEqual(report["limitations"]["resource_scope"],
                          "systemd_user_cgroup_v2_verified_at_start")
         self.assertEqual(report["limitations"]["resource_limits"]["tasks_max"], 128)
@@ -284,7 +290,8 @@ if args.count("-postScript") == 2:
                                 runner.HeadlessError, "não comprovados"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 3,
-                                sandbox_mode="bwrap", require_cgroup_limits=True)
+                                sandbox_mode="bwrap", require_cgroup_limits=True,
+                                work_quota_root=self.workspace)
         self.assertFalse(self.output.exists())
 
     def test_strict_scope_never_publishes_when_cgroup_is_still_populated(self):
@@ -306,7 +313,8 @@ if args.count("-postScript") == 2:
                                 runner.HeadlessError, "cgroup ocupado"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 3,
-                                sandbox_mode="bwrap", require_cgroup_limits=True)
+                                sandbox_mode="bwrap", require_cgroup_limits=True,
+                                work_quota_root=self.workspace)
         stop.assert_called_once_with(unit)
         self.assertFalse(self.output.exists())
 
@@ -326,7 +334,8 @@ if args.count("-postScript") == 2:
                                                      "Estado final do cgroup"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 3,
-                                sandbox_mode="bwrap", require_cgroup_limits=True)
+                                sandbox_mode="bwrap", require_cgroup_limits=True,
+                                work_quota_root=self.workspace)
         self.assertFalse(self.output.exists())
 
     def test_strict_scope_stops_on_timeout_without_publishing_report(self):
@@ -353,7 +362,8 @@ if args.count("-postScript") == 2:
                         with self.assertRaisesRegex(runner.HeadlessError, "excedeu"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 1,
-                                sandbox_mode="bwrap", require_cgroup_limits=True)
+                                sandbox_mode="bwrap", require_cgroup_limits=True,
+                                work_quota_root=self.workspace)
         stop.assert_called_once_with(unit)
         self.assertFalse(self.output.exists())
 
@@ -378,7 +388,8 @@ if args.count("-postScript") == 2:
                                 runner.HeadlessError, "cgroup ocupado"):
                             runner.inspect_functions(
                                 self.input, self.home, self.output, 3,
-                                sandbox_mode="bwrap", require_cgroup_limits=True)
+                                sandbox_mode="bwrap", require_cgroup_limits=True,
+                                work_quota_root=self.workspace)
         self.assertFalse(self.output.exists())
 
     def test_strict_cgroup_never_uses_unisolated_fixture_mode(self):
