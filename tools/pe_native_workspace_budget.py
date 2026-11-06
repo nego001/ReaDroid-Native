@@ -200,3 +200,112 @@ def audit_postrun_workspace(
     except OSError as exc:
         raise NativeStorageBudgetError(
             "Native workspace post-run audit could not be completed") from exc
+
+
+# PE-S2.08: a separate, reviewer-provisioned, dedicated tmpfs mounted in
+# the native Arch VM is the only acceptable runtime writable /work source.
+# statvfs + mountinfo are LOCAL observations; they do not attest who mounted
+# it, prevent a concurrent privileged remount, or limit the host journal.
+MIN_LIVE_WORK_BYTES = 64 * 1024 * 1024
+MAX_LIVE_WORK_BYTES = 512 * 1024 * 1024
+_MOUNTINFO_MAX_BYTES = 1024 * 1024
+
+
+def _decode_mountinfo_path(raw: str) -> str:
+    """Only the four kernel-defined escaped separators are accepted."""
+    import re
+
+    decoded = re.sub(
+        r"\\(040|011|012|134)",
+        lambda match: chr(int(match.group(1), 8)), raw)
+    if "\\" in decoded or "\x00" in decoded:
+        raise NativeStorageBudgetError("Malformed Linux mountinfo path")
+    return decoded
+
+
+def require_bounded_work_mount(workspace: Path) -> dict:
+    """Require workspace inside a *dedicated* private, size-capped tmpfs.
+
+    This helper does not mount anything, modify host settings or claim an
+    independent reviewer. The mount must be created OUTSIDE this process by
+    the VM reviewer, and checked again after native scope cleanup.
+    """
+    import sys
+
+    if sys.platform != "linux" or os.geteuid() == 0:
+        raise NativeStorageBudgetError("Native work quota requires non-root Linux")
+    if not isinstance(workspace, Path) or not workspace.is_absolute():
+        raise NativeStorageBudgetError("Native work quota path must be absolute")
+    if str(workspace) != os.path.normpath(str(workspace)):
+        raise NativeStorageBudgetError("Noncanonical native work quota path")
+    try:
+        with open("/proc/self/mountinfo", "rb") as stream:
+            raw = stream.read(_MOUNTINFO_MAX_BYTES + 1)
+        if len(raw) > _MOUNTINFO_MAX_BYTES or not raw.endswith(b"\n"):
+            raise NativeStorageBudgetError("Incomplete native mount table")
+        table = raw.decode("ascii")
+        mounts = []
+        for line in table.splitlines():
+            fields = line.split()
+            if len(fields) < 10 or fields.count("-") != 1:
+                raise NativeStorageBudgetError("Malformed native mount table entry")
+            sep = fields.index("-")
+            if sep < 6 or len(fields) < sep + 4:
+                raise NativeStorageBudgetError("Incomplete native mount record")
+            mount = _decode_mountinfo_path(fields[4])
+            if not os.path.isabs(mount) or os.path.normpath(mount) != mount:
+                raise NativeStorageBudgetError("Noncanonical native mount point")
+            mounts.append((Path(mount), fields[2], fields[3],
+                           fields[5].split(","), fields[6:sep],
+                           fields[sep+1], fields[sep+3].split(",")))
+        candidates = [m for m in mounts
+                      if workspace == m[0] or m[0] in workspace.parents]
+        if not candidates:
+            raise NativeStorageBudgetError("Native workspace has no mount record")
+        mount = max(candidates, key=lambda m: len(m[0].parts))
+        root, device, subroot, options, propagation, fstype, super_opts = mount
+        if (fstype != "tmpfs" or subroot != "/"
+                or "rw" not in options
+                or any(value.startswith(("shared:", "master:"))
+                       for value in propagation)
+                or not any(value.startswith("size=")
+                           for value in super_opts)
+                or root in (Path("/"), Path("/tmp"), Path("/dev/shm"))
+                or len(root.parts) < 3):
+            raise NativeStorageBudgetError(
+                "Native /work must use a dedicated private, explicitly sized tmpfs")
+        # A nested mount inside the dedicated source tree would let writes
+        # bypass the shared tmpfs size budget.
+        if any(other[0] != root and root in other[0].parents
+               for other in mounts):
+            raise NativeStorageBudgetError(
+                "Nested mount could bypass native /work storage budget")
+        relative = workspace.relative_to(root)
+        chain = (root, *(root.joinpath(*relative.parts[:i])
+                         for i in range(1, len(relative.parts)+1)))
+        for path in chain:
+            meta = path.lstat()
+            if (not stat.S_ISDIR(meta.st_mode)
+                    or meta.st_uid != os.geteuid()
+                    or meta.st_mode & 0o077):
+                raise NativeStorageBudgetError(
+                    "Native /work mount and descendants must be private 0700 directories")
+        workstat = workspace.stat()
+        fs = os.statvfs(workspace)
+        capacity = fs.f_frsize * fs.f_blocks
+        if (not MIN_LIVE_WORK_BYTES <= capacity <= MAX_LIVE_WORK_BYTES
+                or fs.f_bavail * fs.f_frsize < 32 * 1024 * 1024
+                or device != f"{os.major(workstat.st_dev)}:{os.minor(workstat.st_dev)}"):
+            raise NativeStorageBudgetError(
+                "Native /work filesystem size, free space or device mismatch")
+        return {
+            "work_mount_type": "tmpfs",
+            "mounted_size_bytes": capacity,
+            "mount_source_kind": "dedicated_reviewer_prepared",
+            "kernel_storage_limit_observed_locally": True,
+            "journald_budget_verified": False,
+            "independent_vm_attested": False,
+        }
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise NativeStorageBudgetError(
+            "Native work mount cannot be safely verified") from exc
