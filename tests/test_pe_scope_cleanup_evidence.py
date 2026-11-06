@@ -5,6 +5,7 @@ No real scope or systemd service is started in Ubuntu/Arch container CI.
 """
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import stat
 import sys
 import tempfile
@@ -430,6 +431,75 @@ class ScopeCleanupEvidenceTests(unittest.TestCase):
                 scope.stop_and_attest_scope(
                     self.UNIT, systemctl_path=str(self.systemctl),
                     mount_root=self.cgroup)
+
+    def test_discovered_systemctl_requires_root_owned_nonwritable_ancestors(self):
+        # Metadata is mocked to model a root-owned executable planted in a
+        # writable/symlinked directory. The old leaf-only check accepted it.
+        variants = ("world_writable_parent", "group_writable_parent",
+                    "unowned_parent", "symlink_parent",
+                    "writable_leaf", "unowned_leaf")
+        for variant in variants:
+            with self.subTest(variant=variant):
+                def fake_lstat(path):
+                    entry = Path(path)
+                    if entry == self.systemctl:
+                        mode = stat.S_IFREG | 0o755
+                        uid = 0
+                        if variant == "writable_leaf":
+                            mode |= 0o022
+                        elif variant == "unowned_leaf":
+                            uid = os.geteuid()
+                            # CI may run as nobody or root; a nonzero owner
+                            # must be represented regardless of user.
+                            uid = 1000
+                    else:
+                        mode, uid = stat.S_IFDIR | 0o755, 0
+                        if entry == self.systemctl.parent:
+                            if variant == "world_writable_parent":
+                                mode |= 0o002
+                            elif variant == "group_writable_parent":
+                                mode |= 0o020
+                            elif variant == "unowned_parent":
+                                uid = 1000
+                            elif variant == "symlink_parent":
+                                mode = stat.S_IFLNK | 0o777
+                    return SimpleNamespace(st_mode=mode, st_uid=uid)
+
+                with (mock.patch.object(scope.shutil, "which",
+                                        return_value=str(self.systemctl)),
+                      mock.patch.object(Path, "lstat", autospec=True,
+                                        side_effect=fake_lstat),
+                      mock.patch.object(scope, "stop_scope") as stop,
+                      mock.patch.object(scope.bounded, "run_bounded_native")
+                                        as show):
+                    with self.assertRaisesRegex(
+                            scope.ScopeCleanupUnavailable,
+                            "Cannot verify scope cleanup"):
+                        scope.stop_and_attest_scope(self.UNIT,
+                                                    mount_root=self.cgroup)
+                    stop.assert_not_called()
+                    show.assert_not_called()
+
+    def test_discovered_systemctl_trusted_ancestor_chain_remains_allowed(self):
+        # A simulated trusted path is accepted. No systemd command is
+        # executed: production still requires independently validated kernel
+        # cgroup proof after the two bounded state queries.
+        def root_owned_lstat(path):
+            leaf = Path(path) == self.systemctl
+            return SimpleNamespace(
+                st_mode=(stat.S_IFREG if leaf else stat.S_IFDIR) | 0o755,
+                st_uid=0)
+
+        with (mock.patch.object(scope.shutil, "which",
+                                return_value=str(self.systemctl)),
+              mock.patch.object(Path, "lstat", autospec=True,
+                                side_effect=root_owned_lstat),
+              mock.patch.object(scope, "stop_scope") as stop,
+              mock.patch.object(scope.bounded, "run_bounded_native") as show):
+            self.assertEqual(scope._validated_systemctl(None),
+                             str(self.systemctl))
+            stop.assert_not_called()
+            show.assert_not_called()
 
     def test_path_injected_user_owned_systemctl_is_never_trusted(self):
         with mock.patch.object(scope.shutil, "which",
