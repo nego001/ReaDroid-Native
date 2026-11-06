@@ -21,7 +21,7 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                     include_guard: bool = True, include_scope: bool = True,
                     include_private_proof: bool = True, stop_accepted: bool = True,
                     cleanup_changes=None, cleanup_remove=(),
-                    capture_error=False):
+                    capture_error=False, audit_error=False):
         with tempfile.TemporaryDirectory(prefix="negresco-scope-contract-") as temp:
             root = Path(temp)
             pe = root / "synthetic.exe"
@@ -108,6 +108,11 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                         if include_private_proof
                         else (_ for _ in ()).throw(
                             scoped.InvalidResourceEvidence("absent")))))
+                stack.enter_context(mock.patch.object(
+                    scoped.storage, "audit_postrun_workspace",
+                    side_effect=(scoped.storage.NativeStorageBudgetError(
+                        "workspace too large") if audit_error else None),
+                    return_value=4096))
                 stop = stack.enter_context(mock.patch.object(
                     scoped, "stop_and_attest_scope",
                     side_effect=(
@@ -118,7 +123,7 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                         and include_private_proof and stop_accepted
                         and scoped._verified_scope_cleanup(
                             self.UNIT, cleanup_evidence)
-                        and not capture_error):
+                        and not capture_error and not audit_error):
                     result = scoped.run_scoped_seccomp_probe(
                         Path("/trusted-ghidra"), pe, root)
                     self.assertEqual(
@@ -184,6 +189,33 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
     def test_bounded_output_overflow_refuses_pass_but_attests_scope_cleanup(self):
         # Mock an overflow from the production bounded collector.
         self.run_fixture(valid_seccomp=True, capture_error=True)
+
+    def test_oversized_postrun_workspace_blocks_pass_after_scope_cleanup(self):
+        self.run_fixture(valid_seccomp=True, audit_error=True)
+
+    def test_fixture_staging_refusal_blocks_scope_process_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ-synthetic")
+            with (mock.patch.object(scoped, "verify_arch_vm",
+                                    return_value={
+                                        "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                        "vm_confirmed": True, "container": False}),
+                  mock.patch.object(scoped, "seccomp_filter_count",
+                                    return_value=1),
+                  mock.patch.object(
+                      scoped.storage, "stage_bounded_fixtures",
+                      side_effect=scoped.storage.NativeStorageBudgetError(
+                          "source exceeded 2 MiB")),
+                  mock.patch.object(scoped, "wrap_in_cgroup_scope") as launch,
+                  mock.patch.object(scoped.bounded, "run_bounded_native") as process):
+                with self.assertRaisesRegex(
+                        scoped.ScopedSeccompSmokeError, "staging"):
+                    scoped.run_scoped_seccomp_probe(
+                        Path("/trusted-ghidra"), pe, root)
+                launch.assert_not_called()
+                process.assert_not_called()
 
     def test_direct_probe_refuses_to_run_outside_real_arch_vm(self):
         with tempfile.TemporaryDirectory() as temp:
