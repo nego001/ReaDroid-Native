@@ -21,7 +21,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
 
     def run_contract(self, *, stop_accepted=True, code=0, scope=True,
                      guard=True, decompiled=True, limit_proof=True,
-                     cleanup_changes=None, cleanup_remove=()):
+                     cleanup_changes=None, cleanup_remove=(),
+                     capture_error=False):
         with tempfile.TemporaryDirectory(prefix="negresco-combined-contract-") as temp:
             base = Path(temp)
             pe = base / "synthetic.exe"
@@ -91,8 +92,12 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                 wrap = stack.enter_context(mock.patch.object(
                     native, "wrap_in_cgroup_scope", side_effect=intercept_wrap))
                 run = stack.enter_context(mock.patch.object(
-                    native.subprocess, "run",
-                    return_value=mock.Mock(returncode=code, stdout=report)))
+                    native.bounded, "run_bounded_native",
+                    side_effect=(native.bounded.BoundedNativeChildError(
+                        "stdout exceeded limit") if capture_error else None),
+                    return_value=mock.Mock(
+                        returncode=code, stdout=report.encode("utf-8"),
+                        stderr=b"")))
                 stop = stack.enter_context(mock.patch.object(
                     native, "stop_and_attest_scope",
                     side_effect=(
@@ -118,7 +123,8 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                 approved = (stop_accepted and code == 0 and scope and guard
                             and decompiled and limit_proof
                             and native._verified_scope_cleanup(
-                                self.UNIT, cleanup_evidence))
+                                self.UNIT, cleanup_evidence)
+                            and not capture_error)
                 if approved:
                     report_value = native.run_native_scoped_ghidra(
                         Path("/synthetic-ghidra"), pe, base)
@@ -141,9 +147,12 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                 gate.assert_called_once()
                 wrap.assert_called_once()
                 run.assert_called_once()
-                self.assertTrue(run.call_args.kwargs["close_fds"])
-                self.assertEqual(run.call_args.kwargs["stdin"],
-                                 native.subprocess.DEVNULL)
+                self.assertEqual(run.call_args.kwargs["max_stdout"],
+                                 native.MAX_SCOPE_STDOUT_BYTES)
+                self.assertEqual(run.call_args.kwargs["max_stderr"],
+                                 native.MAX_SCOPE_STDERR_BYTES)
+                self.assertEqual(run.call_args.kwargs["timeout"], 450)
+                self.assertIsInstance(run.call_args.kwargs["env"], dict)
                 stop.assert_called_once_with(self.UNIT)
 
     def test_pass_only_with_genuine_joint_receipts_and_decompilation(self):
@@ -185,6 +194,10 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
         self.run_contract(cleanup_changes={
             "load_state": "not-found", "scope_collected": True,
             "stop_request_accepted": False})
+
+    def test_bounded_output_overflow_refuses_pass_and_attests_cleanup(self):
+        # Contract mock for oversized output; no real Ghidra is launched.
+        self.run_contract(capture_error=True)
 
     def test_direct_call_outside_arch_vm_never_creates_scope(self):
         with tempfile.TemporaryDirectory() as temp:
