@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
+from pe_arch_vm_evidence import _verified_scope_cleanup
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope,
                                 ResourceLimitsUnavailable)
@@ -101,10 +102,11 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
             except ScopeCleanupUnavailable as exc:
                 raise ScopedSeccompSmokeError(
                     "Cannot prove scoped probe fully stopped") from exc
-        if (scope_cleanup.get("scope") != unit
-                or scope_cleanup.get("verified") is not True
-                or scope_cleanup.get("cgroup_unpopulated") is not True):
-            raise ScopedSeccompSmokeError("Scope cleanup attestation incomplete")
+        # Do not emit an intermediate PASS based on a few affirmative
+        # flags when final acceptance demands a complete systemd contract.
+        if not _verified_scope_cleanup(unit, scope_cleanup):
+            raise ScopedSeccompSmokeError(
+                "Scope cleanup attestation failed full contract")
         if proc.returncode != 0:
             raise ScopedSeccompSmokeError(
                 "Scoped seccomp/bwrap child rejected probe (exit nonzero)")
