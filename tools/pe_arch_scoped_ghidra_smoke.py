@@ -17,6 +17,7 @@ import sys
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
+import pe_arch_vm_s1_69_bounded_native_child as bounded
 from pe_arch_vm_evidence import _verified_scope_cleanup
 from pe_auto_ghidra import (_validated_function_evidence,
                             _validated_deep_evidence, HeadlessError)
@@ -33,6 +34,8 @@ from pe_seccomp_runtime_evidence import (baseline_from_scope_receipts,
 
 SCRIPT_HOME = Path(__file__).resolve().parent / "ghidra_scripts"
 BRIDGE = Path(__file__).resolve().parent / "pe_scoped_seccomp_launcher.py"
+MAX_SCOPE_STDOUT_BYTES = 128 * 1024
+MAX_SCOPE_STDERR_BYTES = 8192
 
 
 class ScopedGhidraError(RuntimeError):
@@ -102,13 +105,16 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
             unit_name=unit, proof_path=proof_path)
         try:
             try:
-                result = subprocess.run(
-                    wrapped, stdin=subprocess.DEVNULL, capture_output=True,
-                    text=True, timeout=timeout_seconds + 30,
-                    check=False, close_fds=True)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+                # Reject excessive output at read-time, not after
+                # subprocess.run() has already buffered it in host RAM.
+                result = bounded.run_bounded_native(
+                    wrapped, env=dict(os.environ), timeout=timeout_seconds + 30,
+                    max_stdout=MAX_SCOPE_STDOUT_BYTES,
+                    max_stderr=MAX_SCOPE_STDERR_BYTES)
+            except bounded.BoundedNativeChildError as exc:
                 raise ScopedGhidraError(
-                    "Native scoped Ghidra failed to start or timed out") from exc
+                    "Native scoped Ghidra output or execution budget exceeded"
+                ) from exc
         finally:
             try:
                 scope_cleanup = stop_and_attest_scope(unit)
@@ -122,12 +128,11 @@ def run_native_scoped_ghidra(ghidra_home: Path, synthetic_pe: Path,
                 "Ghidra scope cleanup attestation failed full contract")
         if result.returncode != 0:
             raise ScopedGhidraError("Real Ghidra with cgroup/seccomp exited nonzero")
-        if len(result.stdout) > 128 * 1024:
-            raise ScopedGhidraError("Ghidra scope attestation stdout exceeded bound")
         try:
-            lines = [json.loads(line) for line in result.stdout.splitlines()
+            output = result.stdout.decode("utf-8")
+            lines = [json.loads(line) for line in output.splitlines()
                      if line.lstrip().startswith("{")]
-        except json.JSONDecodeError as exc:
+        except (UnicodeError, json.JSONDecodeError) as exc:
             raise ScopedGhidraError("Malformed native scoped Ghidra receipt") from exc
         scope_confirmed = any(
             isinstance(item, dict) and item.get("scope_seccomp_guard") == "passed"
