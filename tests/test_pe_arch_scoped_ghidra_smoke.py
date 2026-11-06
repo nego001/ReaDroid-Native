@@ -22,7 +22,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
     def run_contract(self, *, stop_accepted=True, code=0, scope=True,
                      guard=True, decompiled=True, limit_proof=True,
                      cleanup_changes=None, cleanup_remove=(),
-                     capture_error=False):
+                     capture_error=False, audit_error=False):
         with tempfile.TemporaryDirectory(prefix="negresco-combined-contract-") as temp:
             base = Path(temp)
             pe = base / "synthetic.exe"
@@ -84,6 +84,9 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                     return_value=1024))
                 stack.enter_context(mock.patch.object(
                     native.storage, "audit_postrun_workspace",
+                    side_effect=(native.storage.NativeStorageBudgetError(
+                        "workspace exceeds post-run budget")
+                        if audit_error else None),
                     return_value=4096))
                 gate = stack.enter_context(mock.patch.object(
                     native, "verify_arch_vm", return_value={
@@ -134,7 +137,7 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
                             and decompiled and limit_proof
                             and native._verified_scope_cleanup(
                                 self.UNIT, cleanup_evidence)
-                            and not capture_error)
+                            and not capture_error and not audit_error)
                 if approved:
                     report_value = native.run_native_scoped_ghidra(
                         Path("/synthetic-ghidra"), pe, base)
@@ -208,6 +211,31 @@ class ArchRealCombinedSmokeContracts(unittest.TestCase):
     def test_bounded_output_overflow_refuses_pass_and_attests_cleanup(self):
         # Contract mock for oversized output; no real Ghidra is launched.
         self.run_contract(capture_error=True)
+
+    def test_oversize_postrun_ghidra_workspace_blocks_interim_pass(self):
+        self.run_contract(audit_error=True)
+
+    def test_oversized_fixture_staging_refuses_before_starting_ghidra(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ-synthetic")
+            with (mock.patch.object(native.os, "geteuid", return_value=1000),
+                  mock.patch.object(native, "verify_arch_vm",
+                                    return_value={
+                                        "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                        "vm_confirmed": True, "container": False}),
+                  mock.patch.object(
+                      native.storage, "stage_bounded_fixtures",
+                      side_effect=native.storage.NativeStorageBudgetError(
+                          "oversized fixture")),
+                  mock.patch.object(native, "wrap_in_cgroup_scope") as launch,
+                  mock.patch.object(native.bounded, "run_bounded_native") as process):
+                with self.assertRaisesRegex(native.ScopedGhidraError, "staging"):
+                    native.run_native_scoped_ghidra(
+                        Path("/synthetic-ghidra"), pe, root)
+                launch.assert_not_called()
+                process.assert_not_called()
 
     def test_direct_call_outside_arch_vm_never_creates_scope(self):
         with tempfile.TemporaryDirectory() as temp:
