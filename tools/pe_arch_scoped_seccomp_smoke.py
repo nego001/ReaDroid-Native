@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
+import pe_arch_vm_s1_69_bounded_native_child as bounded
 from pe_arch_vm_evidence import _verified_scope_cleanup
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope,
@@ -35,6 +36,8 @@ TOOLS = Path(__file__).resolve().parent
 PROBE = TOOLS.parent / "tests/pe_sandbox_probe.py"
 SCRIPT = TOOLS / "ghidra_scripts/NegrescoFunctionInventory.java"
 BRIDGE = TOOLS / "pe_scoped_seccomp_launcher.py"
+MAX_SCOPE_STDOUT_BYTES = 64 * 1024
+MAX_SCOPE_STDERR_BYTES = 8192
 
 
 def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
@@ -87,12 +90,16 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
                 bridge_argv, timeout_seconds=70,
                 unit_name=unit, proof_path=proof_path)
             try:
-                proc = subprocess.run(
-                    argv, stdin=subprocess.DEVNULL, capture_output=True,
-                    text=True, check=False, timeout=85, close_fds=True)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+                # Avoid capture_output=True: it reads the full output into
+                # RAM before the host can reject a hostile/noisy descendant.
+                proc = bounded.run_bounded_native(
+                    argv, env=dict(os.environ), timeout=85,
+                    max_stdout=MAX_SCOPE_STDOUT_BYTES,
+                    max_stderr=MAX_SCOPE_STDERR_BYTES)
+            except bounded.BoundedNativeChildError as exc:
                 raise ScopedSeccompSmokeError(
-                    "Native scoped seccomp probe timed out or could not start") from exc
+                    "Native scoped seccomp output or execution budget exceeded"
+                ) from exc
         finally:
             os.close(host_fd)
             # A transient unit can already be garbage-collected on exit.
@@ -111,10 +118,12 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
             raise ScopedSeccompSmokeError(
                 "Scoped seccomp/bwrap child rejected probe (exit nonzero)")
         try:
-            records = [json.loads(line) for line in proc.stdout.splitlines()
+            output = proc.stdout.decode("utf-8")
+            records = [json.loads(line) for line in output.splitlines()
                        if line.lstrip().startswith("{")]
-        except json.JSONDecodeError as exc:
-            raise ScopedSeccompSmokeError("Malformed native scoped probe JSON") from exc
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ScopedSeccompSmokeError(
+                "Malformed native scoped probe output") from exc
         scope_ok = any(
             isinstance(record, dict)
             and record.get("scope_seccomp_guard") == "passed"
