@@ -649,6 +649,25 @@ jobs:
                      for item in records)
           print("REAL FILTER/FD BRIDGE: PASS; CGROUP QUOTAS: MOCKED (NOT HOMOLOGATED)")
           PY
+      - name: PE-S2.07 real Bubblewrap tmpfs kernel ENOSPC enforcement (no PE execution)
+        run: |
+          set -euo pipefail
+          python3 tests/pe_bwrap_tmpfs_quota_real_ci.py \
+            "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s2-07-tmpfs-proof.json"
+          python3 - "$RUNNER_TEMP/pe-s2-07-tmpfs-proof.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert result["status"] == "PASS_REAL_BWRAP_TMPFS_SIZE_AND_ENOSPC"
+          assert all(item["enospc_verified"] is True
+                     for item in result["kernel_enospc_by_mount"].values())
+          assert result["host_work_filesystem_quota_verified"] is False
+          assert result["journald_quota_verified"] is False
+          assert result["native_arch_vm_homologated"] is False
+          print("KERNEL TMPFS ENOSPC: PASS; /work and journald: NOT QUOTA-VERIFIED")
+          PY
       - name: Run real Ghidra in REQUIRED Bubblewrap profile
         run: |
           set -euo pipefail
