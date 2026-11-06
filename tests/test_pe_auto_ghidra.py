@@ -186,6 +186,17 @@ if args.count("-postScript") == 2:
         self.assertTrue(options["start_new_session"])
         self.assertFalse(self.output.exists())
 
+    def test_strict_mode_requires_bounded_work_root_before_launch(self):
+        with (mock.patch.object(runner, "new_scope_unit") as unit,
+              mock.patch.object(runner, "build_command") as command):
+            with self.assertRaisesRegex(
+                    runner.HeadlessError, "explicit /work disk quota"):
+                runner.inspect_functions(
+                    self.input, self.home, self.output, 3,
+                    sandbox_mode="bwrap", require_cgroup_limits=True)
+            unit.assert_not_called()
+            command.assert_not_called()
+
     def test_seccomp_opt_in_requires_bwrap_and_refuses_unvalidated_scope_chain(self):
         with self.assertRaisesRegex(runner.HeadlessError, "Seccomp exige Bubblewrap"):
             self.run_synthetic(self.input, self.home, self.output, 3,
