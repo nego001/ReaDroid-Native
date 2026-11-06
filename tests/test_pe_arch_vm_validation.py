@@ -15,7 +15,9 @@ import pe_arch_vm_validation as validation
 class ArchVmGateTests(unittest.TestCase):
     def test_container_is_rejected_even_when_running_above_a_vm(self):
         with mock.patch.object(gate, "preflight"):
-            with mock.patch.object(gate.shutil, "which", return_value="/usr/bin/tool"):
+            with (mock.patch.object(gate.shutil, "which", return_value="/usr/bin/tool"),
+                  mock.patch.object(gate, "_trusted_discovered_systemd_binary",
+                                    return_value=True)):
                 with mock.patch.object(gate.subprocess, "run",
                                        return_value=mock.Mock(returncode=0)):
                     with self.assertRaisesRegex(gate.ArchVmUnavailable, "container"):
@@ -23,7 +25,9 @@ class ArchVmGateTests(unittest.TestCase):
 
     def test_vm_probe_failure_blocks_acceptance(self):
         with mock.patch.object(gate, "preflight"):
-            with mock.patch.object(gate.shutil, "which", return_value="/usr/bin/tool"):
+            with (mock.patch.object(gate.shutil, "which", return_value="/usr/bin/tool"),
+                  mock.patch.object(gate, "_trusted_discovered_systemd_binary",
+                                    return_value=True)):
                 with mock.patch.object(gate.subprocess, "run",
                                        return_value=mock.Mock(returncode=1)):
                     with mock.patch.object(gate, "_system_command",
@@ -33,7 +37,9 @@ class ArchVmGateTests(unittest.TestCase):
 
     def test_missing_user_bus_is_rejected(self):
         with mock.patch.object(gate, "preflight"):
-            with mock.patch.object(gate.shutil, "which", return_value="/usr/bin/tool"):
+            with (mock.patch.object(gate.shutil, "which", return_value="/usr/bin/tool"),
+                  mock.patch.object(gate, "_trusted_discovered_systemd_binary",
+                                    return_value=True)):
                 with mock.patch.object(gate.subprocess, "run",
                                        return_value=mock.Mock(returncode=1)):
                     with mock.patch.object(gate, "_system_command"):
