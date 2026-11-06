@@ -222,6 +222,30 @@ class ArchScopedSeccompSmokeTests(unittest.TestCase):
                 launch.assert_not_called()
                 process.assert_not_called()
 
+    def test_unbounded_host_work_refuses_before_native_systemd_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pe = root / "synthetic.exe"
+            pe.write_bytes(b"MZ-test")
+            with (mock.patch.object(scoped, "verify_arch_vm",
+                                    return_value={
+                                        "status": "ARCH_VM_PREFLIGHT_PASSED",
+                                        "vm_confirmed": True, "container": False}),
+                  mock.patch.object(
+                      scoped.storage, "require_bounded_work_mount",
+                      side_effect=scoped.storage.NativeStorageBudgetError(
+                          "plain host disk")),
+                  mock.patch.object(scoped, "new_scope_unit") as unit,
+                  mock.patch.object(scoped, "wrap_in_cgroup_scope") as scope,
+                  mock.patch.object(scoped.bounded, "run_bounded_native") as run):
+                with self.assertRaisesRegex(
+                        scoped.ScopedSeccompSmokeError, "quota-limited"):
+                    scoped.run_scoped_seccomp_probe(
+                        Path("/fake-ghidra"), pe, root)
+                unit.assert_not_called()
+                scope.assert_not_called()
+                run.assert_not_called()
+
     def test_direct_probe_refuses_to_run_outside_real_arch_vm(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
