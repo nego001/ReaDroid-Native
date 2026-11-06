@@ -18,6 +18,7 @@ import tempfile
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 import pe_arch_vm_s1_69_bounded_native_child as bounded
 from pe_arch_vm_evidence import _verified_scope_cleanup
+import pe_native_workspace_budget as storage
 from pe_ghidra_sandbox import build_command, SandboxUnavailable
 from pe_resource_limits import (new_scope_unit, wrap_in_cgroup_scope,
                                 ResourceLimitsUnavailable)
@@ -66,9 +67,20 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
         work = root / "sandbox-work"
         (work / "scripts").mkdir(parents=True, mode=0o700)
         (work / "project").mkdir(mode=0o700)
-        shutil.copyfile(SCRIPT, work / "scripts" / SCRIPT.name)
-        shutil.copyfile(PROBE, work / "pe_sandbox_probe.py")
-        shutil.copyfile(pe, work / "input.exe")
+        # Capped, exclusive staging BEFORE launching a user-systemd scope.
+        # This bounds combined fixture copies, not Ghidra's runtime writes.
+        try:
+            storage.stage_bounded_fixtures([
+                (SCRIPT, work / "scripts" / SCRIPT.name,
+                 storage.MAX_STAGE_SCRIPT_BYTES),
+                (PROBE, work / "pe_sandbox_probe.py",
+                 storage.MAX_STAGE_SCRIPT_BYTES),
+                (pe, work / "input.exe",
+                 storage.MAX_STAGE_SYNTHETIC_PE_BYTES),
+            ])
+        except storage.NativeStorageBudgetError as exc:
+            raise ScopedSeccompSmokeError(
+                "Native seccomp fixtures exceeded bounded staging budget") from exc
         proof_root = root / "evidence"
         proof_root.mkdir(mode=0o700)
         proof_path = proof_root / "quota-proof.json"
@@ -114,6 +126,11 @@ def run_scoped_seccomp_probe(ghidra_home: Path, pe: Path,
         if not _verified_scope_cleanup(unit, scope_cleanup):
             raise ScopedSeccompSmokeError(
                 "Scope cleanup attestation failed full contract")
+        try:
+            storage.audit_postrun_workspace(root)
+        except storage.NativeStorageBudgetError as exc:
+            raise ScopedSeccompSmokeError(
+                "Native seccomp workspace post-run footprint not accepted") from exc
         if proc.returncode != 0:
             raise ScopedSeccompSmokeError(
                 "Scoped seccomp/bwrap child rejected probe (exit nonzero)")
