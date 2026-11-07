@@ -28,6 +28,7 @@ import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 import pe_native_workspace_budget as storage
+import pe_native_work_enospc as live_work_enospc
 import pe_journald_policy as journald_policy
 import pe_journald_runtime as journald_runtime
 from pe_arch_vm_checkout_pin import (verify_source_checkout_pin,
@@ -300,6 +301,14 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     except journald_runtime.JournaldRuntimeError as exc:
         raise ArchVmValidationError(
             "Native journald service/cgroup observation unavailable") from exc
+    # S2.11: real ENOSPC and cleanup on the same reviewer-prepared tmpfs,
+    # only after native Arch preflight and before any cgroup/PE workload.
+    # This remains a LOCAL observation, not VM or journal attestation.
+    try:
+        live_work_enospc.require_native_work_enospc(work_quota_root)
+    except live_work_enospc.NativeWorkEnospcError as exc:
+        raise ArchVmValidationError(
+            "Native /work ENOSPC enforcement or cleanup unproven") from exc
     quotas = run_smoke()
     # Refuse before starting the SIGTERM-resistant descendant experiment if
     # the harmless initial scope lacked private quotas or final kernel cleanup.

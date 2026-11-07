@@ -61,6 +61,12 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             return_value={"kernel_storage_limit_observed_locally": True})
         guard.start()
         self.addCleanup(guard.stop)
+        work_enospc = mock.patch.object(
+            validation.live_work_enospc, "require_native_work_enospc",
+            return_value={"status": "LOCAL_NATIVE_WORK_TMPFS_FALLOCATE_ENOSPC",
+                          "native_arch_vm_independently_attested": False})
+        work_enospc.start()
+        self.addCleanup(work_enospc.stop)
         journal = mock.patch.object(
             validation.journald_policy, "require_journald_declared_policy",
             return_value={"status": "LOCAL_JOURNALD_DECLARED_POLICY_ONLY",
@@ -83,6 +89,19 @@ class ArchVmAcceptanceTests(unittest.TestCase):
               mock.patch.object(validation, "run_smoke") as scope):
             with self.assertRaisesRegex(
                     validation.ArchVmValidationError, "service/cgroup"):
+                self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+            scope.assert_not_called()
+
+    def test_unproven_native_work_enospc_refuses_before_first_scope(self):
+        with (mock.patch.object(validation, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+              mock.patch.object(validation.live_work_enospc,
+                                "require_native_work_enospc",
+                                side_effect=validation.live_work_enospc.NativeWorkEnospcError(
+                                    "storage not enforced")),
+              mock.patch.object(validation, "run_smoke") as scope):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "ENOSPC"):
                 self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
             scope.assert_not_called()
 
