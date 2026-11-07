@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_65_observer_prepare as prep
 import pe_arch_vm_s1_63_external_observer as external
 import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
-from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture
+from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture, SESSION
 from test_pe_arch_vm_s1_63_external_observer import (
     ExternalObserverSigningTests,
 )
@@ -74,6 +74,7 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
             "expected_domain_uuid": semantic_fixtures.UUID,
             "expected_host_sha256": host_pin,
             "expected_guest_sha256": hashlib.sha256(raw_guest).hexdigest(),
+            "expected_session_id": SESSION,
         })
 
     def prepare(self, **overrides):
@@ -142,6 +143,13 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
                     self.assertFalse(self.manifest.exists())
                 finally:
                     target.write_bytes(original)
+
+    def test_wrong_session_pin_blocks_unsigned_manifest(self):
+        for bad in ("f"*64, "0"*64, "F"*64, "a"*63):
+            with self.subTest(bad=bad), self.assertRaises(
+                    prep.ObserverPreparationError):
+                self.prepare(expected_session_id=bad)
+            self.assertFalse(self.manifest.exists())
 
     def test_wrong_pinned_domain_and_uuid_block_manifest(self):
         for key, value in (

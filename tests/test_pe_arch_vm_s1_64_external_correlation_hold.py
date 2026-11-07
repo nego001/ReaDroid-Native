@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_64_external_correlation_hold as final
 import pe_arch_vm_s1_63_external_observer as external
 import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
-from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture
+from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture, SESSION
 import pe_arch_vm_handoff_review as handoff
 from test_pe_arch_vm_s1_62_signed_runtime_hold import (
     SignedRuntimeCombinedReviewTests,
@@ -132,6 +132,7 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
             "expected_domain_uuid": semantic_fixtures.UUID,
             "expected_host_sha256": self.external_host_pin,
             "expected_guest_sha256": self.external_guest_pin,
+            "expected_session_id": SESSION,
         }
 
     def resign(self):
@@ -363,6 +364,10 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
                     self.owner, self.owner, self.case.source,
                     self.case.request, **self.pins)
         local_review.assert_not_called()
+
+    def test_wrong_external_session_pin_refused_even_with_valid_signatures(self):
+        with self.assertRaises(final.ThreeWayReviewError):
+            self.run_review(expected_session_id="f"*64)
 
     def test_wrong_original_challenge_fails_closed(self):
         with self.assertRaises(final.ThreeWayReviewError):

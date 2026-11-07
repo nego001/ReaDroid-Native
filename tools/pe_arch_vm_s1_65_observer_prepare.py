@@ -48,6 +48,7 @@ PINS = (
     # solely from the unsigned logs that will enter the manifest.
     "expected_domain", "expected_domain_uuid",
     "expected_host_sha256", "expected_guest_sha256",
+    "expected_session_id",
 )
 
 
@@ -180,7 +181,8 @@ def prepare_observer_manifest(
         expected_reviewer_id: str,
         expected_witness_id: str,
         expected_domain: str, expected_domain_uuid: str,
-        expected_host_sha256: str, expected_guest_sha256: str) -> dict:
+        expected_host_sha256: str, expected_guest_sha256: str,
+        expected_session_id: str) -> dict:
     """Manifest from four logs only after mandatory two-log semantic HOLD gate."""
     for label, pin in (
         ("challenge", expected_challenge),
@@ -272,7 +274,8 @@ def prepare_observer_manifest(
             expected_domain=expected_domain,
             expected_domain_uuid=expected_domain_uuid,
             expected_host_sha256=expected_host_sha256,
-            expected_guest_sha256=expected_guest_sha256)
+            expected_guest_sha256=expected_guest_sha256,
+            expected_session_id=expected_session_id)
     except runtime_chain.RuntimeTextReviewError as exc:
         raise ObserverPreparationError(
             "S2.13 runtime/cleanup records are not one coherent session") from exc

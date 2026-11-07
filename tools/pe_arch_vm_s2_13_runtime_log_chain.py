@@ -71,10 +71,12 @@ def _int(value: str, maximum: int) -> int:
 
 
 def _pins(data: dict, schema: str, *, commit: str, challenge: str,
-          domain: str, uuid: str, host_sha: str, guest_sha: str):
+          domain: str, uuid: str, host_sha: str, guest_sha: str,
+          session_id: str):
     for value, regex in ((commit, COMMIT), (challenge, HEX),
                          (domain, DOMAIN), (uuid, UUID),
-                         (host_sha, HEX), (guest_sha, HEX)):
+                         (host_sha, HEX), (guest_sha, HEX),
+                         (session_id, HEX)):
         if type(value) is not str or regex.fullmatch(value) is None:
             raise RuntimeTextReviewError("Invalid out-of-band pin")
     expected = {"schema": schema, "classification": CLASSIFICATION,
@@ -83,9 +85,10 @@ def _pins(data: dict, schema: str, *, commit: str, challenge: str,
                 "prior_host_record_sha256": host_sha,
                 "prior_guest_record_sha256": guest_sha}
     if (commit == "0"*40 or challenge == "0"*64
+            or session_id == "0"*64
             or any(data[key] != value for key, value in expected.items())
             or HEX.fullmatch(data["session_id"]) is None
-            or data["session_id"] == "0"*64
+            or data["session_id"] != session_id
             or SCOPE_PATTERN.fullmatch(data["scope"]) is None
             or any(data[key] != "false" for key in (
                 "windows_binary_executed", "independent_vm_attestation",
@@ -96,14 +99,16 @@ def _pins(data: dict, schema: str, *, commit: str, challenge: str,
 def review_runtime_cleanup_text(runtime_raw: bytes, cleanup_raw: bytes, *,
         expected_source_commit: str, expected_challenge: str,
         expected_domain: str, expected_domain_uuid: str,
-        expected_host_sha256: str, expected_guest_sha256: str) -> dict:
+        expected_host_sha256: str, expected_guest_sha256: str,
+        expected_session_id: str) -> dict:
     """No I/O: check two already-read texts; never return an attested PASS."""
     r = _parse(runtime_raw, RUNTIME_KEYS)
     c = _parse(cleanup_raw, CLEANUP_KEYS)
     expected = {"commit": expected_source_commit,
                 "challenge": expected_challenge, "domain": expected_domain,
                 "uuid": expected_domain_uuid, "host_sha": expected_host_sha256,
-                "guest_sha": expected_guest_sha256}
+                "guest_sha": expected_guest_sha256,
+                "session_id": expected_session_id}
     _pins(r, RUNTIME_SCHEMA, **expected)
     _pins(c, CLEANUP_SCHEMA, **expected)
     if (r["session_id"] != c["session_id"] or r["scope"] != c["scope"]

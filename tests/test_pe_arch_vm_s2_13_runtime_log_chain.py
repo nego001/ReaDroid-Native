@@ -12,15 +12,17 @@ DOMAIN = "reviewer-native-arch-01"
 UUID = "12345678-abcd-4ef0-8123-123456789abc"
 HOST = "c"*64
 GUEST = "d"*64
+SESSION = "1"*64
 
 
 def make_fixture(*, commit=COMMIT, challenge=CHALLENGE,
-                 domain=DOMAIN, uuid=UUID, host=HOST, guest=GUEST):
+                 domain=DOMAIN, uuid=UUID, host=HOST, guest=GUEST,
+                 session=SESSION):
     common = {
         "classification": chain.CLASSIFICATION, "source_commit": commit,
         "reviewer_challenge": challenge, "domain_name": domain,
         "domain_uuid": uuid, "prior_host_record_sha256": host,
-        "prior_guest_record_sha256": guest, "session_id": "1"*64,
+        "prior_guest_record_sha256": guest, "session_id": session,
         "scope": "negresco-pe-"+"2"*24+".scope",
         "windows_binary_executed": "false",
         "independent_vm_attestation": "false", "release_authorized": "false"}
@@ -41,7 +43,8 @@ def make_fixture(*, commit=COMMIT, challenge=CHALLENGE,
 def review(r,c,**kw):
     opts = {"expected_source_commit": COMMIT, "expected_challenge": CHALLENGE,
             "expected_domain": DOMAIN, "expected_domain_uuid": UUID,
-            "expected_host_sha256": HOST, "expected_guest_sha256": GUEST}
+            "expected_host_sha256": HOST, "expected_guest_sha256": GUEST,
+            "expected_session_id": SESSION}
     return chain.review_runtime_cleanup_text(r,c,**{**opts,**kw})
 
 
@@ -96,6 +99,25 @@ class RuntimeTextChainContracts(unittest.TestCase):
                      {"expected_source_commit":"e"*40}):
             with self.assertRaises(chain.RuntimeTextReviewError):
                 review(self.r,self.c,**opts)
+
+    def test_wrong_out_of_band_session_pin_rejected(self):
+        for bad in ("f"*64, "0"*64, "F"*64, "", "1"*63):
+            with self.subTest(bad=bad), self.assertRaises(
+                    chain.RuntimeTextReviewError):
+                review(self.r, self.c, expected_session_id=bad)
+
+    def test_rehashed_both_logs_from_other_session_rejected(self):
+        # Even two rewritten, rehashed, newly signed logs cannot override
+        # a separately selected session pin.
+        old_session = b"session_id=" + SESSION.encode("ascii")
+        new_session = b"session_id=" + b"f"*64
+        runtime = self.r.replace(old_session, new_session)
+        cleanup = self.c.replace(old_session, new_session)
+        cleanup = cleanup.replace(
+            hashlib.sha256(self.r).hexdigest().encode("ascii"),
+            hashlib.sha256(runtime).hexdigest().encode("ascii"))
+        with self.assertRaises(chain.RuntimeTextReviewError):
+            review(runtime, cleanup)
 
     def test_no_forged_release_or_pe_execution(self):
         r,c=repin(self.r,self.c,

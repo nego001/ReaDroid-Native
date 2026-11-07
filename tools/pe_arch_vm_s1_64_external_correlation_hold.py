@@ -93,6 +93,7 @@ EXTERNAL_PIN_KEYS = (
     # S1.75: mandatory out-of-band pins for post-signature semantics.
     "expected_domain", "expected_domain_uuid",
     "expected_host_sha256", "expected_guest_sha256",
+    "expected_session_id",
 )
 
 
@@ -151,6 +152,7 @@ def review_three_signed_packages(
         expected_observer_signers_sha256: str, expected_observer_id: str,
         expected_domain: str, expected_domain_uuid: str,
         expected_host_sha256: str, expected_guest_sha256: str,
+        expected_session_id: str,
         require_readonly_source_view: bool = False) -> dict:
     """Require S1.62, S1.63 and mandatory post-signature S1.73 review.
 
@@ -242,7 +244,8 @@ def review_three_signed_packages(
             expected_domain=expected_domain,
             expected_domain_uuid=expected_domain_uuid,
             expected_host_sha256=expected_host_sha256,
-            expected_guest_sha256=expected_guest_sha256)
+            expected_guest_sha256=expected_guest_sha256,
+            expected_session_id=expected_session_id)
         if (chained["status"] !=
                 "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD"
                 or chained["independent_vm_attestation"] is not False
