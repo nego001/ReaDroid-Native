@@ -55,6 +55,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s1_69_bounded_native_child.py",
     "tools/pe_native_workspace_budget.py",
     "tools/pe_native_work_enospc.py",
+    "tools/pe_arch_vm_s2_12_session_continuity.py",
     "tools/pe_journald_policy.py",
     "tools/pe_journald_runtime.py",
     "tools/pe_arch_vm_s1_70_readonly_libvirt_host_capture.py",

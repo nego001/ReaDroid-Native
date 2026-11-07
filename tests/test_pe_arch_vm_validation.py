@@ -78,6 +78,29 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             return_value={"status": "LOCAL_JOURNALD_SERVICE_CGROUP_OBSERVED_ONLY"})
         live.start()
         self.addCleanup(live.stop)
+        local_snapshot = {"status": "LOCAL_PRE_POST_NATIVE_STATE_NOT_EXTERNAL_ATTESTATION"}
+        begin = mock.patch.object(
+            validation.continuity, "capture_local_snapshot",
+            return_value=local_snapshot)
+        begin.start()
+        self.addCleanup(begin.stop)
+        end = mock.patch.object(
+            validation.continuity, "require_unchanged_after_work",
+            return_value={"status": "LOCAL_NATIVE_WORK_JOURNAL_CONTINUITY_ONLY"})
+        end.start()
+        self.addCleanup(end.stop)
+
+    def test_missing_pre_work_snapshot_blocks_first_native_scope(self):
+        with (mock.patch.object(validation, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+              mock.patch.object(validation.continuity,
+                                "capture_local_snapshot",
+                                side_effect=validation.continuity.NativeContinuityError("missing")),
+              mock.patch.object(validation, "run_smoke") as scope):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "pre-scope"):
+                self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+            scope.assert_not_called()
 
     def test_journald_runtime_unavailable_blocks_first_native_scope(self):
         with (mock.patch.object(validation, "verify_arch_vm",

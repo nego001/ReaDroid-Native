@@ -29,6 +29,7 @@ import tempfile
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 import pe_native_workspace_budget as storage
 import pe_native_work_enospc as live_work_enospc
+import pe_arch_vm_s2_12_session_continuity as continuity
 import pe_journald_policy as journald_policy
 import pe_journald_runtime as journald_runtime
 from pe_arch_vm_checkout_pin import (verify_source_checkout_pin,
@@ -309,6 +310,13 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     except live_work_enospc.NativeWorkEnospcError as exc:
         raise ArchVmValidationError(
             "Native /work ENOSPC enforcement or cleanup unproven") from exc
+    # S2.12: hold the SAME local work-volume and journald state across the
+    # real scoped lifecycle; no independent host or VM attestation claim.
+    try:
+        local_before = continuity.capture_local_snapshot(work_quota_root)
+    except continuity.NativeContinuityError as exc:
+        raise ArchVmValidationError(
+            "Native pre-scope work/journald continuity unavailable") from exc
     quotas = run_smoke()
     # Refuse before starting the SIGTERM-resistant descendant experiment if
     # the harmless initial scope lacked private quotas or final kernel cleanup.
@@ -341,6 +349,11 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     ghidra = validate_real_ghidra(ghidra_home, release_zip,
                                  timeout_seconds=timeout_seconds,
                                  work_quota_root=work_quota_root)
+    try:
+        continuity.require_unchanged_after_work(work_quota_root, local_before)
+    except continuity.NativeContinuityError as exc:
+        raise ArchVmValidationError(
+            "Native post-scope work/journald continuity changed") from exc
     report = {"status": "PASS_PE_S1_5_ARCH_VM", "environment": environment,
               "cgroup": {k: quotas[k] for k in
                          ("memory_max", "pids_max", "cpu_quota", "cpu_period")},
