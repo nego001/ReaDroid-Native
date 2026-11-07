@@ -31,6 +31,7 @@ import sys
 sys.path.insert(0, "/work")
 from pe_native_workspace_budget import (require_bounded_work_mount,
                                        NativeStorageBudgetError)
+from pe_native_work_enospc import require_native_work_enospc
 
 mode = sys.argv[1]
 root = Path("/work/limited")
@@ -89,7 +90,15 @@ if not enospc or not 0 < accepted <= capacity:
 free_after = os.statvfs(workspace)
 if free_after.f_bavail * free_after.f_frsize < 32 * 1024 * 1024:
     raise RuntimeError("Work tmpfs did not recover free space after cleanup")
+fallocate_proof = require_native_work_enospc(workspace)
+if (fallocate_proof["status"] != "LOCAL_NATIVE_WORK_TMPFS_FALLOCATE_ENOSPC"
+        or fallocate_proof["enospc_observed_on_oversize_reservation"] is not True
+        or fallocate_proof["recovered_after_cleanup"] is not True
+        or fallocate_proof["native_arch_vm_independently_attested"] is not False):
+    raise RuntimeError("Native fallocate verifier did not pass on real tmpfs")
 print(json.dumps({
+    "native_fallocate_enospc": True,
+    "native_fallocate_cleanup": True,
     "status": "PASS_REAL_BWRAP_DEDICATED_WORK_TMPFS_ENOSPC",
     "mount_size_bytes": capacity,
     "bytes_written_before_enospc": accepted,
@@ -135,8 +144,13 @@ def build_isolated_work_command(production: list[str], host_work: Path,
         ])
     if not MODULE.is_file() or MODULE.is_symlink():
         raise RuntimeError("Pinned storage verifier unavailable")
+    native_helper = MODULE.with_name("pe_native_work_enospc.py")
+    if not native_helper.is_file() or native_helper.is_symlink():
+        raise RuntimeError("Pinned native ENOSPC helper unavailable")
     profile.extend(["--ro-bind", str(MODULE),
-                    "/work/pe_native_workspace_budget.py"])
+                    "/work/pe_native_workspace_budget.py",
+                    "--ro-bind", str(native_helper),
+                    "/work/pe_native_work_enospc.py"])
     if (any(profile[i:i+3] == ["--bind", str(host_work), "/work"]
             for i in range(len(profile)-2))
             or profile.count("--tmpfs") < 3):
@@ -180,13 +194,16 @@ def main() -> int:
         expected = secret.read_bytes()
         positive = run_case(ghidra, work, "bounded")
         if (set(positive) != {
-                "status", "mount_size_bytes", "bytes_written_before_enospc",
+                "status", "native_fallocate_enospc", "native_fallocate_cleanup",
+                "mount_size_bytes", "bytes_written_before_enospc",
                 "enospc_verified", "real_mountinfo_verifier",
                 "work_is_separate_from_host", "cleanup_frees_space",
                 "host_work_filesystem_quota_verified", "journald_quota_verified",
                 "native_arch_vm_attested"}
                 or positive["status"] !=
                     "PASS_REAL_BWRAP_DEDICATED_WORK_TMPFS_ENOSPC"
+                or positive["native_fallocate_enospc"] is not True
+                or positive["native_fallocate_cleanup"] is not True
                 or type(positive["mount_size_bytes"]) is not int
                 or positive["mount_size_bytes"] != BOUNDED_BYTES
                 or type(positive["bytes_written_before_enospc"]) is not int

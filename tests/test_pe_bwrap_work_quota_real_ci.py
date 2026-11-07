@@ -27,6 +27,7 @@ class WorkQuotaProfileContracts(unittest.TestCase):
         self.assertNotIn(str(WORK), result)
         self.assertIn("/work/limited", result)
         self.assertIn("--ro-bind", result)
+        self.assertIn("/work/pe_native_work_enospc.py", result)
         self.assertIn("0700", result)
         self.assertEqual(result.count("--tmpfs"), 3)
         self.assertEqual(result.count("--"), 1)

@@ -704,6 +704,8 @@ jobs:
           assert actual["status"] == "PASS_REAL_BWRAP_DEDICATED_WORK_TMPFS_ENOSPC"
           assert actual["mount_size_bytes"] == 64 * 1024 * 1024
           assert actual["enospc_verified"] is True
+          assert actual["native_fallocate_enospc"] is True
+          assert actual["native_fallocate_cleanup"] is True
           assert actual["real_mountinfo_verifier"] is True
           assert proof["unsafe_real_work_mounts_rejected"] == ["undersized", "nested"]
           assert proof["independent_arch_vm_attested"] is False
