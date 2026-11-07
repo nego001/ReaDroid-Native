@@ -61,6 +61,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s1_70_readonly_libvirt_host_capture.py",
     "tools/pe_arch_vm_s1_71_guestinfo_os_capture.py",
     "tools/pe_arch_vm_s2_15_readonly_host_domstats.py",
+    "tools/pe_arch_vm_s2_16_signed_domstats_extension.py",
     "tools/pe_arch_vm_s2_13_runtime_log_chain.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
