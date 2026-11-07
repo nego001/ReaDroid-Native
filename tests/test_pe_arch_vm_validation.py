@@ -286,6 +286,7 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                             result = self.run_quota_acceptance(
                                 Path("/sample/ghidra"), Path("/sample/zip"))
         policy.assert_called_once_with(result)
+        # S2.12 continuity gate was applied AFTER the synthetic Ghidra run.
         self.assertEqual(result["status"], "PASS_PE_S1_5_ARCH_VM")
         self.assertFalse(result["windows_binary_executed"])
         self.assertEqual(result["cgroup_lifecycle"], quotas)
@@ -293,6 +294,58 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             "scope_cleanup_evidence"]["cgroup_unpopulated"])
         self.assertTrue(result["descendant_lifecycle"][
             "descendant_cleanup_evidence"]["cgroup_unpopulated"])
+
+    def test_post_scope_journald_or_work_drift_blocks_final_pass(self):
+        quotas = {
+            "status": "PASS_NATIVE_ARCH_CGROUP",
+            "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+            "memory_max": 4294967296, "pids_max": 128,
+            "cpu_quota": 200000, "cpu_period": 100000,
+            "quota_private_proof": {
+                "verification": "guard_verified_before_bwrap",
+                "memory_max_bytes": 4294967296, "tasks_max": 128,
+                "cpu_quota": 200000, "cpu_period": 100000},
+            "scope_cleanup_evidence": {
+                "scope": "negresco-pe-cccccccccccccccccccccccc.scope",
+                "verified": True, "scope_quiescent": True,
+                "cgroup_unpopulated": True,
+                "active_state": "inactive", "sub_state": "dead"},
+            "ghidra_executed": False, "windows_binary_executed": False,
+        }
+        descendant = {"status": "PASS_NATIVE_ARCH_DESCENDANTS",
+                      "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                      "detached_sigterm_ignoring_child_terminated": True,
+                      "systemd_stop_succeeded": True,
+                      "quota_verified": True,
+                      "quota_private_proof": {
+                          "verification": "guard_verified_before_bwrap",
+                          "memory_max_bytes": 4294967296,
+                          "tasks_max": 128,
+                          "cpu_quota": 200000, "cpu_period": 100000},
+                      "descendant_cleanup_evidence": {
+                          "scope": "negresco-pe-0123456789abcdef01234567.scope",
+                          "verified": True, "scope_quiescent": True,
+                          "cgroup_unpopulated": True,
+                          "active_state": "inactive", "sub_state": "dead"}}
+        with (
+            mock.patch.object(validation, "verify_arch_vm",
+                              return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+            mock.patch.object(validation, "run_smoke", return_value=quotas),
+            mock.patch.object(validation, "run_native_descendant_smoke",
+                              return_value=descendant),
+            mock.patch.object(validation, "validate_real_ghidra",
+                              return_value={"status": "PASS_REAL_ARCH_VM_GHIDRA"}),
+            mock.patch.object(validation.continuity,
+                              "require_unchanged_after_work",
+                              side_effect=validation.continuity.NativeContinuityError(
+                                  "journald PID changed")),
+            mock.patch.object(validation,
+                              "validate_native_acceptance_report") as release_gate,
+        ):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "post-scope"):
+                self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+            release_gate.assert_not_called()
 
     def test_stdout_pass_without_valid_private_receipt_policy_is_refused(self):
         # A forged-looking PASS from internal stages cannot reach stdout just

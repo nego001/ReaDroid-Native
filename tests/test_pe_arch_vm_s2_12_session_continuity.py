@@ -89,7 +89,7 @@ class NativeSessionContinuityContracts(unittest.TestCase):
         for after in (
                 self.capture(service={**SERVICE, "journald_pid_observed": 322}),
                 self.capture(policy={**JOURNAL, "runtime_max_use_bytes": 16*1024*1024}),
-                self.capture(work={**WORK, "mounted_size_bytes": 128*1024*1024})):
+                {**before, "work_filesystem_capacity_bytes": 128*1024*1024}):
             with self.subTest(after=after):
                 with (mock.patch.object(state, "capture_local_snapshot",
                                         return_value=after),
