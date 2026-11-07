@@ -189,12 +189,17 @@ def prepare_observer_manifest(
         ("request", expected_request_sha256),
         ("custody", expected_custody_sha256),
         ("receipt", expected_receipt_sha256),
+        ("session ID", expected_session_id),
         ("observer key", expected_observer_signers_sha256),
         ("reviewer key", expected_reviewer_signers_sha256),
         ("witness key", expected_witness_signers_sha256),
     ):
         _require_pin(pin, label)
     if (expected_challenge == "0" * 64
+            or expected_session_id == "0" * 64
+            or expected_session_id in (expected_challenge,
+                                        expected_host_sha256,
+                                        expected_guest_sha256)
             or not isinstance(expected_source_commit, str)
             or COMMIT_SHA.fullmatch(expected_source_commit) is None
             or expected_source_commit == "0" * 40):

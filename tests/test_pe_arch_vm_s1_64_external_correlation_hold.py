@@ -369,6 +369,15 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
         with self.assertRaises(final.ThreeWayReviewError):
             self.run_review(expected_session_id="f"*64)
 
+    def test_invalid_external_session_id_refused_before_signed_file_reads(self):
+        with mock.patch.object(final.local, "review_signed_runtime") as local_review:
+            with self.assertRaises(final.ThreeWayReviewError):
+                final.review_three_signed_packages(
+                    self.owner, self.observer_dir, self.case.source,
+                    self.case.request, **{**self.pins,
+                                         "expected_session_id": "0"*64})
+            local_review.assert_not_called()
+
     def test_wrong_original_challenge_fails_closed(self):
         with self.assertRaises(final.ThreeWayReviewError):
             self.run_review(expected_challenge="e" * 64)

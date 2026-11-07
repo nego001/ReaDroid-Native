@@ -86,6 +86,7 @@ def _pins(data: dict, schema: str, *, commit: str, challenge: str,
                 "prior_guest_record_sha256": guest_sha}
     if (commit == "0"*40 or challenge == "0"*64
             or session_id == "0"*64
+            or session_id in (challenge, host_sha, guest_sha)
             or any(data[key] != value for key, value in expected.items())
             or HEX.fullmatch(data["session_id"]) is None
             or data["session_id"] != session_id

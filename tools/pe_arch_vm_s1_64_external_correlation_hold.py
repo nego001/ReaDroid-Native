@@ -170,6 +170,18 @@ def review_three_signed_packages(
                 or private in observed.parents or observed in private.parents):
             raise ThreeWayReviewError("Observer and operator folders must be separate")
 
+        # S2.14: the observer's session ID MUST originate out-of-band,
+        # and cannot reuse the review challenge or prior record hashes.
+        # Reject bad caller pins before any signed-custody file is read.
+        if (type(expected_session_id) is not str
+                or runtime_chain.HEX.fullmatch(expected_session_id) is None
+                or expected_session_id == "0" * 64
+                or expected_session_id in (
+                    expected_challenge, expected_host_sha256,
+                    expected_guest_sha256)):
+            raise ThreeWayReviewError(
+                "Reviewer-selected session ID invalid or not independently distinct")
+
         # Compare exact bytes across both full reviews to catch persistent
         # package replacement between stages; this is not an atomic snapshot.
         before = {

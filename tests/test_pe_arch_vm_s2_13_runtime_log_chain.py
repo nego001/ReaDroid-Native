@@ -106,6 +106,13 @@ class RuntimeTextChainContracts(unittest.TestCase):
                     chain.RuntimeTextReviewError):
                 review(self.r, self.c, expected_session_id=bad)
 
+    def test_pin_must_not_reuse_challenge_or_record_hashes(self):
+        for reused in (CHALLENGE, HOST, GUEST):
+            with self.subTest(reused=reused):
+                runtime, cleanup = make_fixture(session=reused)
+                with self.assertRaises(chain.RuntimeTextReviewError):
+                    review(runtime, cleanup, expected_session_id=reused)
+
     def test_rehashed_both_logs_from_other_session_rejected(self):
         # Even two rewritten, rehashed, newly signed logs cannot override
         # a separately selected session pin.
