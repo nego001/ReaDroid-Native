@@ -12,7 +12,7 @@ DOMAIN = "reviewer-native-arch-01"
 UUID = "12345678-abcd-4ef0-8123-123456789abc"
 HOST = "c"*64
 GUEST = "d"*64
-SESSION = "1"*64
+SESSION = "6"*64
 
 
 def make_fixture(*, commit=COMMIT, challenge=CHALLENGE,
@@ -74,7 +74,7 @@ class RuntimeTextChainContracts(unittest.TestCase):
                                   b"seccomp_filter_count=3"),self.c)
 
     def test_mismatched_session_or_scope(self):
-        for c in (self.c.replace(b"session_id="+b"1"*64,b"session_id="+b"8"*64),
+        for c in (self.c.replace(b"session_id="+SESSION.encode("ascii"),b"session_id="+b"8"*64),
                   self.c.replace(b"negresco-pe-"+b"2"*24,
                                  b"negresco-pe-"+b"3"*24)):
             with self.assertRaises(chain.RuntimeTextReviewError):
