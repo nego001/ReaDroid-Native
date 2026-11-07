@@ -112,7 +112,8 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
             **{
                 **{key: value for key, value in self.pin.items()
                    if key not in ("expected_domain", "expected_domain_uuid",
-                                  "expected_host_sha256", "expected_guest_sha256")},
+                                  "expected_host_sha256", "expected_guest_sha256",
+                                  "expected_session_id")},
                 "expected_manifest_sha256": result["manifest_sha256"],
                 "expected_signature_sha256": hashlib.sha256(
                     self.signature.read_bytes()).hexdigest(),
