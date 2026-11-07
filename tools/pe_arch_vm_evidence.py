@@ -54,6 +54,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s1_67_receipt_binding.py",
     "tools/pe_arch_vm_s1_69_bounded_native_child.py",
     "tools/pe_native_workspace_budget.py",
+    "tools/pe_journald_policy.py",
     "tools/pe_arch_vm_s1_70_readonly_libvirt_host_capture.py",
     "tools/pe_arch_vm_s1_71_guestinfo_os_capture.py",
     "tools/pe_arch_cgroup_smoke.py",

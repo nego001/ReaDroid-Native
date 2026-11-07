@@ -39,6 +39,7 @@ from pe_arch_vm_receipt_verify import ReceiptReviewError
 import pe_arch_vm_s1_67_receipt_binding as binding
 import pe_arch_vm_s1_69_bounded_native_child as bounded
 import pe_native_workspace_budget as storage
+import pe_journald_policy as journald_policy
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = SOURCE_ROOT / "tools/pe_arch_vm_validation.py"
@@ -168,6 +169,13 @@ def review_native_acceptance(
             storage.NativeStorageBudgetError) as exc:
         raise ReviewerLaunchError(
             "Reviewer /work mount is not a private kernel-sized tmpfs") from exc
+    # S2.09: read-only journal config check before any native workload.
+    # This is NOT proof of running journald settings or a hard disk quota.
+    try:
+        journald_policy.require_journald_declared_policy()
+    except journald_policy.JournaldPolicyError as exc:
+        raise ReviewerLaunchError(
+            "Reviewer VM journald declared policy missing or unsafe") from exc
     try:
         # S1.58: real VM/container/user-bus + pinned source/Ghidra preflight.
         # It is repeated *inside* S1.5's --reviewer-pinned-checkout flow.

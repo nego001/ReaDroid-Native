@@ -28,6 +28,7 @@ import tempfile
 
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 import pe_native_workspace_budget as storage
+import pe_journald_policy as journald_policy
 from pe_arch_vm_checkout_pin import (verify_source_checkout_pin,
                                      CheckoutPinError)
 import pe_arch_vm_evidence as evidence
@@ -286,6 +287,13 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     except storage.NativeStorageBudgetError as exc:
         raise ArchVmValidationError(
             "Native acceptance work quota unavailable") from exc
+    # S2.09: declared journal retention policy is a necessary local gate,
+    # never proof of effective daemon settings or a kernel disk quota.
+    try:
+        journald_policy.require_journald_declared_policy()
+    except journald_policy.JournaldPolicyError as exc:
+        raise ArchVmValidationError(
+            "Native journald declared policy is absent or unsafe") from exc
     quotas = run_smoke()
     # Refuse before starting the SIGTERM-resistant descendant experiment if
     # the harmless initial scope lacked private quotas or final kernel cleanup.

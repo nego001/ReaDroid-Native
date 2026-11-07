@@ -805,6 +805,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_native_workspace_budget.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_native_live_work_mount.py' -v
+          python3 -m unittest discover -s tests -p 'test_pe_journald_policy.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_cgroup_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_resource_evidence.py' -v
           python3 -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v
@@ -849,6 +850,7 @@ jobs:
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_limits.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_native_workspace_budget.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_native_live_work_mount.py' -v
+          runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_journald_policy.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_cgroup_guard.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_resource_evidence.py' -v
           runuser -u nobody -- python -m unittest discover -s tests -p 'test_pe_arch_cgroup_smoke.py' -v

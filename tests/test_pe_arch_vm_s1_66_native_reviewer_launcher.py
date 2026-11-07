@@ -42,6 +42,11 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             return_value={"kernel_storage_limit_observed_locally": True})
         guard.start()
         self.addCleanup(guard.stop)
+        journal = mock.patch.object(
+            launcher.journald_policy, "require_journald_declared_policy",
+            return_value={"status": "LOCAL_JOURNALD_DECLARED_POLICY_ONLY"})
+        journal.start()
+        self.addCleanup(journal.stop)
         self.ready = {
             "status": launcher.preflight.STATUS,
             "source_commit": COMMIT,
@@ -134,6 +139,19 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                     execute_synthetic_native_acceptance=True,
                     native_work_quota_root=None)
             vm.assert_not_called()
+            run.assert_not_called()
+
+    def test_unsafe_journal_refuses_before_native_preflight(self):
+        with (mock.patch.object(launcher.journald_policy,
+                                "require_journald_declared_policy",
+                                side_effect=launcher.journald_policy.JournaldPolicyError(
+                                    "unsafe")),
+              mock.patch.object(launcher.preflight, "native_readiness") as pre,
+              mock.patch.object(launcher.bounded, "run_bounded_native") as run):
+            with self.assertRaisesRegex(
+                    launcher.ReviewerLaunchError, "journald"):
+                self.call(execute_synthetic_native_acceptance=True)
+            pre.assert_not_called()
             run.assert_not_called()
 
     def test_default_plan_does_not_probe_vm_or_launch_subprocess(self):

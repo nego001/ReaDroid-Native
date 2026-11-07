@@ -61,6 +61,25 @@ class ArchVmAcceptanceTests(unittest.TestCase):
             return_value={"kernel_storage_limit_observed_locally": True})
         guard.start()
         self.addCleanup(guard.stop)
+        journal = mock.patch.object(
+            validation.journald_policy, "require_journald_declared_policy",
+            return_value={"status": "LOCAL_JOURNALD_DECLARED_POLICY_ONLY",
+                          "journal_kernel_quota_verified": False})
+        journal.start()
+        self.addCleanup(journal.stop)
+
+    def test_unsafe_journald_blocks_first_native_scope(self):
+        with (mock.patch.object(validation, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+              mock.patch.object(validation.journald_policy,
+                                "require_journald_declared_policy",
+                                side_effect=validation.journald_policy.JournaldPolicyError(
+                                    "unsafe")),
+              mock.patch.object(validation, "run_smoke") as scope):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "journald"):
+                self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+            scope.assert_not_called()
 
     def run_quota_acceptance(self, *args, **kwargs):
         kwargs.setdefault("work_quota_root", Path(tempfile.gettempdir()))
