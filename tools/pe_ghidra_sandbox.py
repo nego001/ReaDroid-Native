@@ -2,7 +2,7 @@
 
 No host home, project repositories, or network namespaces are exposed to the
 analyzer. Only read-only system runtime, a read-only verified Ghidra tree,
-and one private, writable work directory are mounted.
+one pinned read-only JDK, and one private, writable work directory are mounted.
 
 This is not a hardware VM or an absolute security guarantee. Requires
 unprivileged user namespaces supported by the Linux host. Fail closed when
@@ -18,6 +18,14 @@ import stat
 
 class SandboxUnavailable(RuntimeError):
     pass
+
+
+# PE-S2.07: actual kernel-enforced per-mount tmpfs ceilings, not an
+# aggregate quota on /work, host systemd logs, or other writable mounts.
+# Bwrap's --size BYTES applies to the immediately following --tmpfs.
+TMPFS_TMP_MAX_BYTES = 256 * 1024 * 1024
+TMPFS_HOME_MAX_BYTES = 16 * 1024 * 1024
+
 
 def build_command(ghidra_home: Path, working: Path,
                   timeout_seconds: int, *, bwrap_path: str | None = None,
@@ -71,19 +79,38 @@ def build_command(ghidra_home: Path, working: Path,
 
     argv += ["--dir", "/opt", "--ro-bind", str(root), "/opt/negresco-ghidra",
              "--dir", "/work", "--bind", str(workspace), "/work",
-             "--dir", "/etc", "--tmpfs", "/tmp", "--tmpfs", "/home",
+             "--dir", "/etc",
+             "--size", str(TMPFS_TMP_MAX_BYTES), "--tmpfs", "/tmp",
+             "--size", str(TMPFS_HOME_MAX_BYTES), "--tmpfs", "/home",
              "--proc", "/proc", "--dev", "/dev",
              "--setenv", "HOME", "/work",
              "--setenv", "XDG_CACHE_HOME", "/work",
              "--setenv", "TMPDIR", "/tmp",
-             "--setenv", "PATH", "/usr/bin:/bin",
+             "--setenv", "GHIDRA_HEADLESS_MAXMEM", "2G",
              "--setenv", "LANG", "C.UTF-8"]
-    # JDK installed through pacman usually lives under /usr/lib/jvm.
+
+    # Arch typically installs the JDK under /usr/lib/jvm, whereas GitHub
+    # setup-java installs it beneath /opt/hostedtoolcache. Only the single
+    # configured, verified JDK directory may cross the isolation boundary.
+    # This never exposes the runner's home or all of /opt.
     java_home = os.environ.get("JAVA_HOME", "")
+    path_inside = "/usr/bin:/bin"
     if java_home:
-        resolved = Path(java_home).resolve(strict=False)
-        if resolved == Path("/usr") or Path("/usr") in resolved.parents:
-            argv += ["--setenv", "JAVA_HOME", str(resolved)]
+        java_root = Path(java_home).resolve(strict=True)
+        java_exe = java_root / "bin" / "java"
+        if (not java_root.is_dir() or not java_exe.is_file()
+                or not os.access(java_exe, os.X_OK)):
+            raise SandboxUnavailable("JAVA_HOME não aponta para um JDK executável")
+        if java_root == Path("/usr") or Path("/usr") in java_root.parents:
+            inside_java = str(java_root)
+        else:
+            if java_root == root or java_root in root.parents or root in java_root.parents:
+                raise SandboxUnavailable("JAVA_HOME e GHIDRA_HOME não podem se sobrepor")
+            inside_java = "/opt/negresco-jdk"
+            argv += ["--ro-bind", str(java_root), inside_java]
+        argv += ["--setenv", "JAVA_HOME", inside_java]
+        path_inside = inside_java + "/bin:" + path_inside
+    argv += ["--setenv", "PATH", path_inside]
     argv += [
         "--chdir", "/work", "--",
         "/opt/negresco-ghidra/support/analyzeHeadless",
@@ -94,7 +121,10 @@ def build_command(ghidra_home: Path, working: Path,
         "/work/ghidra-functions.json",
         "-analysisTimeoutPerFile", str(max(1, timeout_seconds - 30)),
         "-max-cpu", "2", "-readOnly", "-deleteProject",
-        "-log", "/work/ghidra.log",
+        # Keep Ghidra's own verbose log on the kernel-sized /tmp tmpfs
+        # rather than letting this log fill the host-backed /work tree.
+        # This log is diagnostic only; source receipts stay in /work.
+        "-log", "/tmp/ghidra.log",
     ]
     if deep_preview:
         before = argv.index("-analysisTimeoutPerFile")
