@@ -27,6 +27,7 @@ import sys
 sys.dont_write_bytecode = True
 
 import pe_arch_vm_s1_63_external_observer as external
+import pe_arch_vm_s2_13_runtime_log_chain as runtime_chain
 import pe_arch_vm_evidence as evidence
 import pe_arch_vm_receipt_verify as receipts
 import pe_arch_vm_witness_trust_review as trust
@@ -257,6 +258,30 @@ def prepare_observer_manifest(
             or checked["release_authorized"] is not False):
         raise ObserverPreparationError("PE-S1.73 reported unexpected gate state")
 
+    # PE-S2.13: reject generic free-text for the two remaining logs.
+    # This only compares self-reported text, not independent host/kernel proof.
+    try:
+        runtime_raw = _read_file(
+            owner, external.OBS_FILES["host_seccomp_cgroups"])
+        cleanup_raw = _read_file(
+            owner, external.OBS_FILES["host_scope_cleanup"])
+        chained = runtime_chain.review_runtime_cleanup_text(
+            runtime_raw, cleanup_raw,
+            expected_source_commit=expected_source_commit,
+            expected_challenge=expected_challenge,
+            expected_domain=expected_domain,
+            expected_domain_uuid=expected_domain_uuid,
+            expected_host_sha256=expected_host_sha256,
+            expected_guest_sha256=expected_guest_sha256)
+    except runtime_chain.RuntimeTextReviewError as exc:
+        raise ObserverPreparationError(
+            "S2.13 runtime/cleanup records are not one coherent session") from exc
+    if (chained["status"] !=
+            "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD"
+            or chained["independent_vm_attestation"] is not False
+            or chained["release_authorized"] is not False):
+        raise ObserverPreparationError("S2.13 text contract contradicted HOLD")
+
     readings = {}
     for label, filename in external.OBS_FILES.items():
         data = _read_file(owner, filename)
@@ -267,6 +292,12 @@ def prepare_observer_manifest(
             "filename": filename,
             "sha256": hashlib.sha256(data).hexdigest(),
         }
+    if (readings["host_seccomp_cgroups"]["sha256"] !=
+            hashlib.sha256(runtime_raw).hexdigest()
+            or readings["host_scope_cleanup"]["sha256"] !=
+               hashlib.sha256(cleanup_raw).hexdigest()):
+        raise ObserverPreparationError(
+            "S2.13 runtime/cleanup text changed before manifest assembly")
     # Ensure the very bytes just checked remain the ones entering the
     # unsigned manifest. PE-S1.63 separately rereads all four later.
     if (readings["host_vm_launch"]["sha256"] != expected_host_sha256

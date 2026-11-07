@@ -75,6 +75,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_63_external_observer.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_64_external_correlation_hold.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_65_observer_prepare.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_13_runtime_log_chain.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_66_native_reviewer_launcher.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_67_receipt_binding.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_68_json_git_repin.py' -v
@@ -918,6 +919,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_63_external_observer.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_64_external_correlation_hold.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_65_observer_prepare.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_13_runtime_log_chain.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_66_native_reviewer_launcher.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_67_receipt_binding.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s1_68_json_git_repin.py' -v

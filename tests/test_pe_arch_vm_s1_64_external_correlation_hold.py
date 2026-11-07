@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_64_external_correlation_hold as final
 import pe_arch_vm_s1_63_external_observer as external
 import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
+from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture
 import pe_arch_vm_handoff_review as handoff
 from test_pe_arch_vm_s1_62_signed_runtime_hold import (
     SignedRuntimeCombinedReviewTests,
@@ -99,6 +100,21 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
                 hashlib.sha256(raw).hexdigest())
         self.external_host_pin = host_sha
         self.external_guest_pin = hashlib.sha256(second).hexdigest()
+        # Keep Ed25519 test signatures REAL while all input logs are
+        # explicitly synthetic and carry no host authentication.
+        runtime, cleanup = make_fixture(
+            commit=self.case.commit,
+            challenge=self.case.challenge,
+            domain=semantic_fixtures.DOMAIN,
+            uuid=semantic_fixtures.UUID, host=host_sha,
+            guest=self.external_guest_pin)
+        for label, raw in (("host_seccomp_cgroups", runtime),
+                           ("host_scope_cleanup", cleanup)):
+            file = self.observer_dir / external.OBS_FILES[label]
+            file.write_bytes(raw)
+            file.chmod(0o600)
+            self.manifest["observations"][label]["sha256"] = (
+                hashlib.sha256(raw).hexdigest())
 
         self.manifest_file = self.observer_dir / external.MANIFEST_FILE
         self.signature_file = self.observer_dir / external.SIGNATURE_FILE
@@ -158,6 +174,21 @@ class ThreeKeySignedHostReviewTests(unittest.TestCase):
         self.assertFalse(result["independent_vm_attestation"])
         self.assertFalse(result["release_authorized"])
         self.assertFalse(result["apk_or_ota_publication_authorized"])
+
+    def test_resigned_generic_runtime_text_refused_post_signature(self):
+        path = self.observer_dir / external.OBS_FILES["host_seccomp_cgroups"]
+        text = b"PASS: seccomp was enabled\\n"
+        path.write_bytes(text)
+        self.manifest["observations"]["host_seccomp_cgroups"]["sha256"] = (
+            hashlib.sha256(text).hexdigest())
+        self.resign()
+        with self.assertRaises(final.ThreeWayReviewError):
+            self.run_review(**{
+                "expected_observer_manifest_sha256":
+                    hashlib.sha256(self.manifest_file.read_bytes()).hexdigest(),
+                "expected_observer_signature_sha256":
+                    hashlib.sha256(self.signature_file.read_bytes()).hexdigest(),
+            })
 
     def reseal_guest(self, raw: bytes):
         """Re-sign new guest log with the real disposable test key."""

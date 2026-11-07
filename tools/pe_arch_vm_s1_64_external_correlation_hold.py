@@ -20,6 +20,7 @@ sys.dont_write_bytecode = True
 import pe_arch_vm_s1_62_signed_runtime_hold as local
 import pe_arch_vm_s1_63_external_observer as external
 import pe_arch_vm_s1_73_two_record_review as semantic
+import pe_arch_vm_s2_13_runtime_log_chain as runtime_chain
 import pe_arch_vm_receipt_verify as receipts
 import pe_arch_vm_s1_57_release_guard as release
 
@@ -227,6 +228,42 @@ def review_three_signed_packages(
                 or semantic_result["release_authorized"] is not False):
             raise ThreeWayReviewError("Post-signature semantic HOLD gate invalid")
 
+        # S2.13 is deliberately AFTER detached signature verification:
+        # it checks last two observer texts' structure and session coherence
+        # but NEVER authenticates their kernel/host provenance.
+        runtime_raw = receipts._read_private_receipt(
+            observed / external.OBS_FILES["host_seccomp_cgroups"])
+        cleanup_raw = receipts._read_private_receipt(
+            observed / external.OBS_FILES["host_scope_cleanup"])
+        chained = runtime_chain.review_runtime_cleanup_text(
+            runtime_raw, cleanup_raw,
+            expected_source_commit=expected_source_commit,
+            expected_challenge=expected_challenge,
+            expected_domain=expected_domain,
+            expected_domain_uuid=expected_domain_uuid,
+            expected_host_sha256=expected_host_sha256,
+            expected_guest_sha256=expected_guest_sha256)
+        if (chained["status"] !=
+                "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD"
+                or chained["independent_vm_attestation"] is not False
+                or chained["release_authorized"] is not False):
+            raise ThreeWayReviewError("S2.13 unsigned kernel claim refused")
+        signed_raw = receipts._read_private_receipt(
+            observed / external.MANIFEST_FILE)
+        if hashlib.sha256(signed_raw).hexdigest() != expected_observer_manifest_sha256:
+            raise ThreeWayReviewError("S2.13 manifest changed after signature review")
+        signed = json.loads(
+            signed_raw.decode("utf-8"),
+            object_pairs_hook=receipts._no_duplicate_keys)
+        for label, original in (
+                ("host_seccomp_cgroups", runtime_raw),
+                ("host_scope_cleanup", cleanup_raw)):
+            if (hashlib.sha256(original).hexdigest() !=
+                    signed["observations"][label]["sha256"]
+                    or receipts._read_private_receipt(
+                        observed / external.OBS_FILES[label]) != original):
+                raise ThreeWayReviewError(
+                    "S2.13 observed log differs from signed manifest")
         for name, original in before.items():
             if receipts._read_private_receipt(private / name) != original:
                 raise ThreeWayReviewError(
@@ -238,7 +275,8 @@ def review_three_signed_packages(
             OverflowError, RecursionError, receipts.ReceiptReviewError,
             local.SignedRuntimeReviewError,
             external.ExternalObserverError,
-            semantic.TwoRecordReviewError) as exc:
+            semantic.TwoRecordReviewError,
+            runtime_chain.RuntimeTextReviewError) as exc:
         raise ThreeWayReviewError(
             "Three-way signed evidence package unavailable, altered or unsafe") from exc
 

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_65_observer_prepare as prep
 import pe_arch_vm_s1_63_external_observer as external
 import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
+from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture
 from test_pe_arch_vm_s1_63_external_observer import (
     ExternalObserverSigningTests,
 )
@@ -55,6 +56,19 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
             target = self.owner / external.OBS_FILES[label]
             target.write_bytes(raw)
             target.chmod(0o600)
+        # The remaining texts are synthetic, but MUST now be structurally
+        # chained to the two pinned S1.70/S1.71 snapshots.
+        runtime, cleanup = make_fixture(
+            commit=self.pin["expected_source_commit"],
+            challenge=self.pin["expected_challenge"],
+            domain=semantic_fixtures.DOMAIN,
+            uuid=semantic_fixtures.UUID,
+            host=host_pin, guest=hashlib.sha256(raw_guest).hexdigest())
+        for label, raw in (("host_seccomp_cgroups", runtime),
+                           ("host_scope_cleanup", cleanup)):
+            location = self.owner / external.OBS_FILES[label]
+            location.write_bytes(raw)
+            location.chmod(0o600)
         self.pin.update({
             "expected_domain": semantic_fixtures.DOMAIN,
             "expected_domain_uuid": semantic_fixtures.UUID,
@@ -115,6 +129,19 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
             self.prepare(expected_host_sha256=hashlib.sha256(
                 first.read_bytes()).hexdigest())
         self.assertFalse(self.manifest.exists())
+
+    def test_old_generic_runtime_or_cleanup_text_refused_even_if_hashed(self):
+        for label in ("host_seccomp_cgroups", "host_scope_cleanup"):
+            with self.subTest(label=label):
+                target = self.owner / external.OBS_FILES[label]
+                original = target.read_bytes()
+                try:
+                    target.write_bytes(b"PASS: host was secure\\n")
+                    with self.assertRaises(prep.ObserverPreparationError):
+                        self.prepare()
+                    self.assertFalse(self.manifest.exists())
+                finally:
+                    target.write_bytes(original)
 
     def test_wrong_pinned_domain_and_uuid_block_manifest(self):
         for key, value in (
