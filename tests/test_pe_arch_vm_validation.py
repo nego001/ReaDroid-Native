@@ -67,6 +67,24 @@ class ArchVmAcceptanceTests(unittest.TestCase):
                           "journal_kernel_quota_verified": False})
         journal.start()
         self.addCleanup(journal.stop)
+        live = mock.patch.object(
+            validation.journald_runtime, "observe_live_journald",
+            return_value={"status": "LOCAL_JOURNALD_SERVICE_CGROUP_OBSERVED_ONLY"})
+        live.start()
+        self.addCleanup(live.stop)
+
+    def test_journald_runtime_unavailable_blocks_first_native_scope(self):
+        with (mock.patch.object(validation, "verify_arch_vm",
+                                return_value={"status": "ARCH_VM_PREFLIGHT_PASSED"}),
+              mock.patch.object(validation.journald_runtime,
+                                "observe_live_journald",
+                                side_effect=validation.journald_runtime.JournaldRuntimeError(
+                                    "mismatch")),
+              mock.patch.object(validation, "run_smoke") as scope):
+            with self.assertRaisesRegex(
+                    validation.ArchVmValidationError, "service/cgroup"):
+                self.run_quota_acceptance(Path("/sample/ghidra"), Path("/sample/zip"))
+            scope.assert_not_called()
 
     def test_unsafe_journald_blocks_first_native_scope(self):
         with (mock.patch.object(validation, "verify_arch_vm",

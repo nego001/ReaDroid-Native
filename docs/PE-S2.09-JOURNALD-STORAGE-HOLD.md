@@ -19,4 +19,10 @@ Apenas na **VM Arch descartável e administrada pelo revisor**, não no computad
 3. Em outra máquina, validar SHA Git, integridade do Ghidra, cotas do cgroup v2, filtros seccomp efetivos e encerramento de processos descendentes. O revisor deve testemunhar o comportamento do journal e da montagem durante uma análise **apenas de PE sintético como dados**, com limites físicos de VM pré-configurados.
 4. Para prova de limite rígido do `/work`, realizar ensaio controlado de `ENOSPC` exclusivamente sobre o `tmpfs` descartável, verificando que gravações fora da montagem são recusadas. Não usar o disco real do host, não encher `/`, e não deixar o journal do host sem espaço.
 
+### PE-S2.09.1 | Verificação local da instância ativa
+
+Novo `tools/pe_journald_runtime.py` consulta exclusivamente `systemctl --system show systemd-journald.service` (estado loaded/active/running, PID e cgroup) e compara a associação efetiva de `/proc/<PID>/cgroup` no kernel cgroup v2. Refaz a leitura e recusa alterações de PID/estado durante a observação. Não executa restart, vacuum, kill nem coleta conteúdo de logs. As entradas nativas e o launcher de revisor recusam a operação ANTES do primeiro escopo caso a instância ativa não seja observada. Testes no CI são mockados.
+
+O resultado `LOCAL_JOURNALD_SERVICE_CGROUP_OBSERVED_ONLY` afirma SOMENTE que o processo ativo local corresponde ao serviço/cgroup no instante das leituras. Ele marca `effective_journald_configuration_verified=false`, `journal_storage_kernel_quota_verified=false`, `independent_vm_attested=false` e `release_authorized=false`. O revisor independente ainda deve acompanhar espaço/uso real, montagem de armazenamento, comportamento sob carga, e condição final da VM Arch.
+
 **Pendências reais:** configuração carregada pelo daemon, consumo efetivo do journal, retenção e possível crescimento transitório, soma de outros destinos graváveis, prova de `ENOSPC` do `/work` na VM, resistência a remount privilegiado e evidência independente de hipervisor/kernel/cgroups/seccomp. Mesmo que o teste de configuração passe, **não liberar produção**.

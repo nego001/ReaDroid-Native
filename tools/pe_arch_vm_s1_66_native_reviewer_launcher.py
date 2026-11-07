@@ -40,6 +40,7 @@ import pe_arch_vm_s1_67_receipt_binding as binding
 import pe_arch_vm_s1_69_bounded_native_child as bounded
 import pe_native_workspace_budget as storage
 import pe_journald_policy as journald_policy
+import pe_journald_runtime as journald_runtime
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = SOURCE_ROOT / "tools/pe_arch_vm_validation.py"
@@ -176,6 +177,13 @@ def review_native_acceptance(
     except journald_policy.JournaldPolicyError as exc:
         raise ReviewerLaunchError(
             "Reviewer VM journald declared policy missing or unsafe") from exc
+    # S2.09.1: additionally observe active systemd service and /proc cgroup;
+    # not a journal storage quota or independent guest attestation.
+    try:
+        journald_runtime.observe_live_journald()
+    except journald_runtime.JournaldRuntimeError as exc:
+        raise ReviewerLaunchError(
+            "Reviewer VM active journald service/cgroup not observed") from exc
     try:
         # S1.58: real VM/container/user-bus + pinned source/Ghidra preflight.
         # It is repeated *inside* S1.5's --reviewer-pinned-checkout flow.

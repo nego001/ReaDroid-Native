@@ -47,6 +47,11 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
             return_value={"status": "LOCAL_JOURNALD_DECLARED_POLICY_ONLY"})
         journal.start()
         self.addCleanup(journal.stop)
+        live = mock.patch.object(
+            launcher.journald_runtime, "observe_live_journald",
+            return_value={"status": "LOCAL_JOURNALD_SERVICE_CGROUP_OBSERVED_ONLY"})
+        live.start()
+        self.addCleanup(live.stop)
         self.ready = {
             "status": launcher.preflight.STATUS,
             "source_commit": COMMIT,
@@ -139,6 +144,19 @@ class ReviewerNativeLauncherContracts(unittest.TestCase):
                     execute_synthetic_native_acceptance=True,
                     native_work_quota_root=None)
             vm.assert_not_called()
+            run.assert_not_called()
+
+    def test_inactive_journal_refuses_before_native_preflight(self):
+        with (mock.patch.object(launcher.journald_runtime,
+                                "observe_live_journald",
+                                side_effect=launcher.journald_runtime.JournaldRuntimeError(
+                                    "inactive")),
+              mock.patch.object(launcher.preflight, "native_readiness") as pre,
+              mock.patch.object(launcher.bounded, "run_bounded_native") as run):
+            with self.assertRaisesRegex(
+                    launcher.ReviewerLaunchError, "service/cgroup"):
+                self.call(execute_synthetic_native_acceptance=True)
+            pre.assert_not_called()
             run.assert_not_called()
 
     def test_unsafe_journal_refuses_before_native_preflight(self):

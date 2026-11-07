@@ -29,6 +29,7 @@ import tempfile
 from pe_arch_vm_gate import verify_arch_vm, ArchVmUnavailable
 import pe_native_workspace_budget as storage
 import pe_journald_policy as journald_policy
+import pe_journald_runtime as journald_runtime
 from pe_arch_vm_checkout_pin import (verify_source_checkout_pin,
                                      CheckoutPinError)
 import pe_arch_vm_evidence as evidence
@@ -294,6 +295,11 @@ def run_acceptance(ghidra_home: Path, release_zip: Path, *,
     except journald_policy.JournaldPolicyError as exc:
         raise ArchVmValidationError(
             "Native journald declared policy is absent or unsafe") from exc
+    try:
+        journald_runtime.observe_live_journald()
+    except journald_runtime.JournaldRuntimeError as exc:
+        raise ArchVmValidationError(
+            "Native journald service/cgroup observation unavailable") from exc
     quotas = run_smoke()
     # Refuse before starting the SIGTERM-resistant descendant experiment if
     # the harmless initial scope lacked private quotas or final kernel cleanup.
