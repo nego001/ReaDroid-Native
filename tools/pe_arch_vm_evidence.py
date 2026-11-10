@@ -63,6 +63,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s2_15_readonly_host_domstats.py",
     "tools/pe_arch_vm_s2_16_signed_domstats_extension.py",
     "tools/pe_arch_vm_s2_17_host_two_phase.py",
+    "tools/pe_arch_vm_s2_18_signed_host_pair.py",
     "tools/pe_arch_vm_s2_13_runtime_log_chain.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
