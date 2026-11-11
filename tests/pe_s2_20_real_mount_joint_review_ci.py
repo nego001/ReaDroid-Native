@@ -177,6 +177,7 @@ def _host(ghidra_home: Path) -> int:
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root / "tools"))
     sys.path.insert(0, str(root / "tests"))
+    import pe_arch_vm_s2_23_external_gap_register as gaps
 
     from pe_ghidra_sandbox import build_command
     import pe_arch_vm_evidence as evidence
