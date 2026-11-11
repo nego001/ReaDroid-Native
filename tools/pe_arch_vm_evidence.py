@@ -68,6 +68,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s2_21_reviewer_host_readiness.py",
     "tools/pe_arch_vm_s2_22_external_reviewer_pins.py",
     "tools/pe_arch_vm_s2_23_external_gap_register.py",
+    "tools/pe_arch_vm_s2_25_pid_kernel_snapshot.py",
     "tools/pe_arch_vm_s2_13_runtime_log_chain.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
