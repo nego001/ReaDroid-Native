@@ -128,9 +128,13 @@ def _filesystem_size(target: Path) -> int:
         info = os.statvfs(target)
     except OSError as exc:
         raise JournalMountError("Kernel filesystem capacity unavailable") from exc
-    for key in ("f_frsize", "f_blocks", "f_bfree", "f_bavail"):
+    for key in ("f_frsize", "f_blocks", "f_bfree", "f_bavail", "f_flag"):
         if type(getattr(info, key, None)) is not int:
-            raise JournalMountError("Invalid filesystem capacity field")
+            raise JournalMountError("Invalid filesystem capacity/flags field")
+    # Require the actual VFS statvfs view to agree with rw mountinfo;
+    # /proc flags alone are not sufficient to rule out read-only storage.
+    if info.f_flag < 0 or info.f_flag & os.ST_RDONLY:
+        raise JournalMountError("Kernel reports journal filesystem readonly")
     capacity = info.f_blocks * info.f_frsize
     if (not 0 < capacity <= MAX_JOURNAL_USE
             or not 0 <= info.f_bavail <= info.f_bfree <= info.f_blocks):
