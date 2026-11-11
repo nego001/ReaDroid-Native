@@ -89,6 +89,35 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_17_host_two_phase.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_18_signed_host_pair.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_19_reviewer_session_handoff.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_21_reviewer_host_readiness.py' -v
+          # PE-S2.21: actual CI Ubuntu host must reject an attempted
+          # "independent host" preflight BEFORE any virsh read.
+          # This is a real negative control, never evidence of host origin.
+          mkdir -m 700 -p "$RUNNER_TEMP/pe-s2-21-private"
+          rc=0
+          python3 -B tools/pe_arch_vm_s2_21_reviewer_host_readiness.py \
+            --observer-dir "$RUNNER_TEMP/pe-s2-21-private" \
+            --domain reviewer-native-arch-01 \
+            --expected-domain-uuid 12345678-abcd-4ef0-8123-123456789abc \
+            --expected-source-commit "$GITHUB_SHA" \
+            --reviewer-challenge 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            --reviewer-session-id fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
+            --probe-reviewer-host \
+            > "$RUNNER_TEMP/pe-s2-21-stdout" \
+            2> "$RUNNER_TEMP/pe-s2-21-rejection.json" || rc=$?
+          test "$rc" -eq 2
+          test ! -s "$RUNNER_TEMP/pe-s2-21-stdout"
+          test -z "$(find "$RUNNER_TEMP/pe-s2-21-private" -mindepth 1 -print -quit)"
+          python3 - "$RUNNER_TEMP/pe-s2-21-rejection.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          verdict = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+          assert verdict["status"] == "REJECTED_PE_S2_21_REVIEWER_HOST_NOT_PROVEN"
+          assert verdict["independent_host_control_attested"] is False
+          assert verdict["independent_vm_attestation"] is False
+          assert verdict["release_authorized"] is False
+          print("PE-S2.21 Ubuntu CI rejected as external reviewer host: PASS")
+          PY
           # PE-S1.60: real os.urandom-backed challenge and private request
           # on the Ubuntu host; this does NOT demonstrate external reviewer
           # control or native Arch VM provenance.
@@ -979,6 +1008,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_17_host_two_phase.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_18_signed_host_pair.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_19_reviewer_session_handoff.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_21_reviewer_host_readiness.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
           private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
