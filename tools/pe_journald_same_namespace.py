@@ -18,7 +18,9 @@ import sys
 sys.dont_write_bytecode = True
 import pe_journald_runtime as runtime
 import pe_journald_mount_capacity as mount
-from pe_arch_vm_s2_25_pid_kernel_snapshot import _start_ticks, _read_bounded
+from pe_arch_vm_s2_25_pid_kernel_snapshot import (
+    _start_ticks, _read_bounded, PidSnapshotError,
+)
 
 PLAN = "PE_S2_27_JOURNALD_PROCESS_MOUNT_VIEW_NOT_STARTED"
 OBSERVED = "LOCAL_PE_S2_27_JOURNALD_SAME_MOUNT_VIEW_HOLD"
@@ -160,8 +162,8 @@ def main(argv: list[str] | None = None) -> int:
         result = observe_live_process_mount()
         print(json.dumps(result, sort_keys=True))
     except (JournalProcessMountError, mount.JournalMountError,
-            runtime.JournaldRuntimeError, OSError, ValueError,
-            TypeError) as exc:
+            runtime.JournaldRuntimeError, PidSnapshotError,
+            OSError, ValueError, TypeError) as exc:
         print(json.dumps({
             "status": REJECTED, "reason": str(exc),
             "independent_vm_attestation": False,
