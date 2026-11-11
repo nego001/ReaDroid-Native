@@ -175,11 +175,11 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
             show.assert_not_called()
 
     def test_systemctl_command_is_read_only_and_bounded(self):
-        process = SimpleNamespace(returncode=0, stdout=VALID, stderr=b"")
         binary = SimpleNamespace(st_mode=0o100755, st_uid=0)
         with (mock.patch.object(Path, "lstat", return_value=binary),
               mock.patch.object(live.os, "access", return_value=True),
-              mock.patch.object(live.subprocess, "run", return_value=process) as run):
+              mock.patch.object(live, "_run_systemctl_bounded",
+                                return_value=(VALID, b"", 0)) as run):
             self.assertEqual(live._systemctl_show()["pid"], 321)
         argv = run.call_args.args[0]
         self.assertEqual(argv[:4], ["/usr/bin/systemctl", "--system", "show",
@@ -190,10 +190,48 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
         self.assertNotIn("stop", argv)
         self.assertNotIn("start", argv)
 
+    def test_bounded_systemctl_stdout_and_stderr_overflow_rejected(self):
+        # Commands here are synthetic CPython fixtures, never journal/PE.
+        for stream, size in (("stdout", live.MAX_SHOW_BYTES + 1),
+                             ("stderr", 4097)):
+            snippet = (f"import sys; sys.{stream}.buffer.write(b'x'*{size});"
+                       f"sys.{stream}.flush()")
+            with self.subTest(stream=stream):
+                with self.assertRaises(live.JournaldRuntimeError):
+                    live._run_systemctl_bounded(
+                        [sys.executable, "-B", "-c", snippet], timeout=3)
+
+    def test_bounded_systemctl_accepts_small_output_and_exit_status(self):
+        out, err, code = live._run_systemctl_bounded(
+            [sys.executable, "-B", "-c",
+             "import sys; sys.stdout.write('ok'); sys.stderr.write('e'); sys.exit(3)"],
+            timeout=3)
+        self.assertEqual((out, err, code), (b"ok", b"e", 3))
+
+    def test_bounded_systemctl_timeout_kills_child(self):
+        # Verify timeout rejects without waiting for a long-running producer.
+        with self.assertRaises(live.JournaldRuntimeError):
+            live._run_systemctl_bounded(
+                [sys.executable, "-B", "-c", "import time; time.sleep(3)"],
+                timeout=0.15)
+
+    def test_nonzero_systemctl_status_and_oversized_mock_output_fail_closed(self):
+        binary = SimpleNamespace(st_mode=0o100755, st_uid=0)
+        with (mock.patch.object(Path, "lstat", return_value=binary),
+              mock.patch.object(live.os, "access", return_value=True)):
+            for reply in ((VALID, b"", 1), (VALID + b"x" * 9000, b"", 0),
+                          (VALID, b"x" * 4097, 0)):
+                with self.subTest(reply=tuple(len(x) if isinstance(x, bytes)
+                                              else x for x in reply)):
+                    with (mock.patch.object(live, "_run_systemctl_bounded",
+                                            return_value=reply),
+                          self.assertRaises(live.JournaldRuntimeError)):
+                        live._systemctl_show()
+
     def test_untrusted_systemctl_binary_is_rejected(self):
         binary = SimpleNamespace(st_mode=0o100777, st_uid=1000)
         with (mock.patch.object(Path, "lstat", return_value=binary),
-              mock.patch.object(live.subprocess, "run") as run):
+              mock.patch.object(live, "_run_systemctl_bounded") as run):
             with self.assertRaises(live.JournaldRuntimeError):
                 live._systemctl_show()
             run.assert_not_called()
@@ -202,9 +240,8 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
         binary = SimpleNamespace(st_mode=0o100755, st_uid=0)
         with (mock.patch.object(Path, "lstat", return_value=binary),
               mock.patch.object(live.os, "access", return_value=True),
-              mock.patch.object(live.subprocess, "run",
-                                return_value=SimpleNamespace(
-                                    returncode=1, stdout=b"", stderr=b"bad"))):
+              mock.patch.object(live, "_run_systemctl_bounded",
+                                return_value=(b"", b"bad", 1))):
             with self.assertRaises(live.JournaldRuntimeError):
                 live._systemctl_show()
 
