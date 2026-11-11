@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import selectors
+import time
 
 SYSTEMCTL = Path("/usr/bin/systemctl")
 UNIT = "systemd-journald.service"
@@ -59,28 +61,82 @@ def parse_systemctl_show(raw: bytes) -> dict:
     return {"pid": pid, "control_group": fields["ControlGroup"]}
 
 
+def _run_systemctl_bounded(command: list[str], *, timeout: float = 8) -> tuple[bytes, bytes, int]:
+    """Capture a fixed read-only systemctl command without unbounded PIPE data.
+
+    stdout and stderr must reach EOF within the deadline and hard byte caps.
+    A too-chatty, blocked or failed child is terminated and never trusted.
+    Tests may supply a benign synthetic command; production fixes argv.
+    """
+    deadline = time.monotonic() + timeout
+    process = None
+    try:
+        process = subprocess.Popen(
+            command, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
+            close_fds=True,
+        )
+        if process.stdout is None or process.stderr is None:
+            raise JournaldRuntimeError("Cannot capture systemctl output streams")
+        buffers = {"stdout": bytearray(), "stderr": bytearray()}
+        limits = {"stdout": MAX_SHOW_BYTES, "stderr": 4096}
+        with selectors.DefaultSelector() as poller:
+            poller.register(process.stdout, selectors.EVENT_READ, "stdout")
+            poller.register(process.stderr, selectors.EVENT_READ, "stderr")
+            while poller.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise JournaldRuntimeError("Timed out reading systemctl")
+                events = poller.select(remaining)
+                if not events:
+                    raise JournaldRuntimeError("Timed out reading systemctl")
+                for key, _ in events:
+                    name = key.data
+                    allowed = limits[name] + 1 - len(buffers[name])
+                    if allowed <= 0:
+                        raise JournaldRuntimeError("Oversized systemctl output")
+                    chunk = os.read(key.fileobj.fileno(), min(4096, allowed))
+                    if not chunk:
+                        poller.unregister(key.fileobj)
+                    else:
+                        buffers[name].extend(chunk)
+                        if len(buffers[name]) > limits[name]:
+                            raise JournaldRuntimeError("Oversized systemctl output")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise JournaldRuntimeError("Timed out waiting for systemctl")
+        code = process.wait(timeout=remaining)
+        return bytes(buffers["stdout"]), bytes(buffers["stderr"]), code
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise JournaldRuntimeError("Bounded systemctl observation unavailable") from exc
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+
+
 def _systemctl_show() -> dict:
     try:
         info = SYSTEMCTL.lstat()
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
                 or info.st_mode & 0o022 or not os.access(SYSTEMCTL, os.X_OK)):
             raise JournaldRuntimeError("Untrusted systemctl executable")
-        result = subprocess.run(
+        stdout, stderr, code = _run_systemctl_bounded(
             [str(SYSTEMCTL), "--system", "show", UNIT,
-             *[f"--property={key}" for key in PROPERTIES], "--no-pager"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, timeout=8, check=False,
-            env={"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin"},
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+             *[f"--property={key}" for key in PROPERTIES], "--no-pager"])
+    except OSError as exc:
         raise JournaldRuntimeError("Journald service state query unavailable") from exc
-    if (result.returncode != 0
-            or not isinstance(result.stdout, bytes)
-            or len(result.stdout) > MAX_SHOW_BYTES
-            or not isinstance(result.stderr, bytes)
-            or len(result.stderr) > 4096):
+    if (code != 0 or not isinstance(stdout, bytes)
+            or not isinstance(stderr, bytes)
+            or len(stdout) > MAX_SHOW_BYTES or len(stderr) > 4096):
         raise JournaldRuntimeError("Journald service state query failed")
-    return parse_systemctl_show(result.stdout)
+    return parse_systemctl_show(stdout)
 
 
 def _read_proc_cgroup_bounded(pid: int, *,
