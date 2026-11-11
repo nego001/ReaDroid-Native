@@ -59,9 +59,18 @@ def _child(mode: str) -> int:
         result = handoff.verify_reviewer_session(
             Path("/audit/observer"), Path("/audit/custody"),
             Path("/audit/custody/acceptance.json"), root, **data)
-    except handoff.SessionHandoffError:
+    except handoff.SessionHandoffError as exc:
         if mode == "readonly":
-            raise
+            # CI-only diagnostic for synthetic test data. Never leak raw
+            # signatures or a user's actual host evidence into logs.
+            chain = []
+            cause = exc
+            while cause is not None and len(chain) < 10:
+                chain.append(type(cause).__name__ + ": " + str(cause)[:240])
+                cause = cause.__cause__
+            raise AssertionError(
+                "S2.20 genuine readonly review rejected: " + " | ".join(chain)
+            ) from exc
     else:
         if mode != "readonly":
             raise AssertionError("Unsafe joint host/guest package was accepted")
@@ -298,7 +307,7 @@ def _host(ghidra_home: Path) -> int:
             if result.returncode != 0:
                 raise RuntimeError(
                     f"Real Bubblewrap S2.20 {mode}: rc={result.returncode} "
-                    f"stderr={result.stderr[-1800:]!r}, "
+                    f"stderr={result.stderr[-6000:]!r}, "
                     f"stdout={result.stdout[-1800:]!r}")
             observed = json.loads(result.stdout.strip())
             if (observed.get("status") != CASES[mode]
