@@ -35,6 +35,7 @@ def _child(mode: str, pin_sha256: str) -> int:
     import pe_arch_vm_evidence as evidence
     import pe_arch_vm_s2_19_reviewer_session_handoff as handoff
     import pe_arch_vm_s2_22_external_reviewer_pins as reviewed_pins
+    import pe_arch_vm_s2_23_external_gap_register as gaps
 
     root = Path("/audit/source")
     # No host /etc/passwd or SSH config crosses the boundary. OpenSSH
@@ -108,6 +109,23 @@ def _child(mode: str, pin_sha256: str) -> int:
                 or result.get("independent_vm_attestation") is not False
                 or result.get("release_authorized") is not False):
             raise AssertionError("Joint reviewer pin review contradicted HOLD")
+        # Run the NEW S2.23 register with actual, UNMOCKED signature, receipt,
+        # readonly Git and external pin verifiers inside this sandbox.
+        pending = gaps.audit_external_review(
+            Path("/audit/pins/reviewer-held-pins.json"),
+            Path("/audit/observer"), Path("/audit/custody"),
+            Path("/audit/custody/acceptance.json"), root,
+            expected_pin_bundle_sha256=pin_sha256)
+        if (pending.get("status") != gaps.PENDING
+                or pending.get("external_evidence_requirement_count") != 7
+                or len(pending.get("external_evidence", [])) != 7
+                or any(x.get("state") != gaps.MISSING
+                       for x in pending["external_evidence"])
+                or pending.get("local_signed_package_correlated") is not True
+                or pending.get("independent_vm_attestation") is not False
+                or pending.get("release_authorized") is not False):
+            raise AssertionError(
+                "S2.23 incorrectly accepted locally signed evidence as external VM")
     print(json.dumps({
         "status": CASES[mode], "actual_readonly_mount": mount_ro,
         "actual_readonly_source_files": bool(files_ro),
@@ -118,6 +136,8 @@ def _child(mode: str, pin_sha256: str) -> int:
         "minimal_review_code_mount_without_git": minimal_modules,
         "external_pin_bundle_review_unmocked": True,
         "external_pin_bundle_independently_attested": False,
+        "external_gap_register_unmocked_on_valid_sample": mode == "readonly",
+        "external_requirements_still_pending": len(gaps.REVIEW),
         "external_native_arch_vm_attested": False,
         "release_authorized": False, "windows_pe_executed": False,
     }, sort_keys=True))
@@ -417,6 +437,8 @@ def _host(ghidra_home: Path) -> int:
             "real_bubblewrap_readonly": True,
             "real_unmocked_git_receipt_and_signatures": True,
             "real_unmocked_external_review_pin_bundle": True,
+            "real_unmocked_external_gap_register": True,
+            "external_requirements_still_pending": len(gaps.REVIEW),
             "only_libvirt_and_native_execution_mocked": True,
             "native_arch_vm_independently_attested": False,
             "release_authorized": False,
