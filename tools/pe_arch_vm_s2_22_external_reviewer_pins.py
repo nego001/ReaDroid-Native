@@ -19,6 +19,8 @@ sys.dont_write_bytecode = True
 
 import pe_arch_vm_receipt_verify as receipt
 import pe_arch_vm_s1_65_observer_prepare as directory
+import pe_arch_vm_s1_70_readonly_libvirt_host_capture as libvirt
+from pe_arch_vm_checkout_pin import COMMIT_SHA
 import pe_arch_vm_s2_18_signed_host_pair as v3
 import pe_arch_vm_s2_19_reviewer_session_handoff as handoff
 
@@ -129,6 +131,15 @@ def _read_pins(path: Path, expected_hash: str) -> tuple[dict, bytes]:
         value = pins[key]
         if type(value) is not str or receipt.HEX64.fullmatch(value) is None:
             raise ReviewerPinsError("Invalid reviewer-held SHA256: " + key)
+    # A signature verifier would eventually refuse this, but external
+    # reviewer-provided identity must be checked BEFORE any signed review.
+    if (COMMIT_SHA.fullmatch(pins["expected_source_commit"]) is None
+            or pins["expected_source_commit"] == "0" * 40
+            or libvirt.DOMAIN.fullmatch(pins["expected_domain"]) is None
+            or libvirt.UUID.fullmatch(pins["expected_domain_uuid"]) is None
+            or pins["expected_domain_uuid"] ==
+               "00000000-0000-0000-0000-000000000000"):
+        raise ReviewerPinsError("Malformed reviewer-pinned commit/domain/UUID")
     if pins["expected_native_receipt_sha256"] != pins["expected_receipt_sha256"]:
         raise ReviewerPinsError("Unsigned native receipt differs from signed V1 pin")
     return pins, raw
