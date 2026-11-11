@@ -1,0 +1,172 @@
+"""PE-S2.25 local read-only PID snapshot contracts, no native Arch VM."""
+from __future__ import annotations
+
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+import pe_arch_vm_s2_25_pid_kernel_snapshot as diag
+
+PID = 2468
+SCOPE = "negresco-pe-" + "a1" * 12 + ".scope"
+GROUP = "/user.slice/user-1000.slice/user@1000.service/app.slice/" + SCOPE
+
+
+class PidKernelSnapshotContracts(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="pe-s2-25-")
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.proc = root / "proc"
+        self.cg = root / "sys" / "fs" / "cgroup"
+        self.process = self.proc / str(PID)
+        self.scope = self.cg / GROUP.lstrip("/")
+        self.process.mkdir(parents=True)
+        self.scope.mkdir(parents=True)
+        self.write_kernel()
+
+    def write_kernel(self, *, seccomp=2, filters=1, uid=1000,
+                     memory="4294967296\n", tasks="128\n",
+                     cpu="200000 100000\n", start=123456,
+                     group=GROUP):
+        # /proc/PID/stat: fields 3.., where starttime (field 22) is index 19.
+        fields = ["S"] + ["0"] * 18 + [str(start)] + ["0"] * 24
+        (self.process / "stat").write_text(
+            f"{PID} (java headless) " + " ".join(fields) + "\n", encoding="ascii")
+        (self.process / "status").write_text(
+            f"Name:\tjava\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n"
+            f"Seccomp:\t{seccomp}\nSeccomp_filters:\t{filters}\n",
+            encoding="ascii")
+        (self.process / "cgroup").write_text("0::" + group + "\n",
+                                              encoding="ascii")
+        (self.scope / "memory.max").write_text(memory, encoding="ascii")
+        (self.scope / "pids.max").write_text(tasks, encoding="ascii")
+        (self.scope / "cpu.max").write_text(cpu, encoding="ascii")
+
+    def snap(self, **kwargs):
+        return diag.snapshot_pid(
+            PID, SCOPE, proc_root=self.proc, cgroup_root=self.cg,
+            expected_uid=1000, **kwargs)
+
+    def test_consistent_local_kernel_values_never_attest_vm(self):
+        x = self.snap()
+        self.assertEqual(x["status"], diag.OBSERVED)
+        self.assertEqual(x["security_classification"], diag.UNTRUSTED)
+        self.assertEqual(x["proc_start_ticks"], 123456)
+        self.assertEqual(x["seccomp_mode"], 2)
+        self.assertEqual(x["seccomp_filters"], 1)
+        self.assertEqual(x["memory_max_bytes"], 4294967296)
+        self.assertEqual(x["tasks_max"], 128)
+        self.assertEqual(x["cpu_quota_us"], 200000)
+        self.assertTrue(x["same_pid_local_kernel_snapshot"])
+        for key in ("ghidra_process_identity_independently_verified",
+                    "native_arch_kernel_provenance_verified",
+                    "independent_vm_attestation", "release_authorized",
+                    "apk_or_ota_publication_authorized",
+                    "unknown_windows_pe_execution_authorized"):
+            self.assertIs(x[key], False, key)
+
+    def test_wrong_process_or_scope_rejected_before_files(self):
+        for pid, scope in ((0, SCOPE), (1, SCOPE), (True, SCOPE),
+                           (PID, "other.scope"), (PID, "../" + SCOPE),
+                           (PID, "negresco-pe-" + "f" * 23 + ".scope")):
+            with self.subTest(pid=pid, scope=scope):
+                with (mock.patch.object(diag, "_read_bounded") as read,
+                      self.assertRaises(diag.PidSnapshotError)):
+                    diag.snapshot_pid(pid, scope, proc_root=self.proc,
+                                      cgroup_root=self.cg, expected_uid=1000)
+                read.assert_not_called()
+
+    def test_seccomp_absent_or_filtered_wrong_uid_rejected(self):
+        for values in ({"seccomp": 0}, {"seccomp": 1}, {"filters": 0},
+                       {"uid": 999}):
+            with self.subTest(values=values):
+                self.write_kernel(**values)
+                with self.assertRaises(diag.PidSnapshotError):
+                    self.snap()
+
+    def test_quota_values_must_be_finite_and_bounded(self):
+        for values in ({"memory": "max\n"}, {"memory": "4294967297\n"},
+                       {"memory": "0\n"}, {"tasks": "max\n"},
+                       {"tasks": "129\n"}, {"cpu": "max 100000\n"},
+                       {"cpu": "300000 100000\n"},
+                       {"cpu": "0 100000\n"}, {"cpu": "200000 0\n"},
+                       {"cpu": "100000 100000 extra\n"}):
+            with self.subTest(values=values):
+                self.write_kernel(**values)
+                with self.assertRaises(diag.PidSnapshotError):
+                    self.snap()
+
+    def test_cgroup_v1_or_path_traversal_and_wrong_unit_rejected(self):
+        for group in ("2:cpu:/a\n3:memory:/b", "/wrong.scope",
+                      "/user.slice/../" + SCOPE,
+                      "/user.slice//" + SCOPE):
+            with self.subTest(group=group):
+                self.write_kernel(group=group)
+                with self.assertRaises(diag.PidSnapshotError):
+                    self.snap()
+
+    def test_pid_reuse_during_snapshot_rejected(self):
+        original = diag._read_bounded
+        reads = [0]
+        def change(path):
+            value = original(path)
+            if path.name == "stat":
+                reads[0] += 1
+                if reads[0] == 2:
+                    return value.replace("123456", "999999")
+            return value
+        with (mock.patch.object(diag, "_read_bounded", side_effect=change),
+              self.assertRaisesRegex(diag.PidSnapshotError, "reused")):
+            self.snap()
+        self.assertEqual(reads[0], 2)
+
+    def test_duplicate_status_field_rejected(self):
+        status = self.process / "status"
+        status.write_text(status.read_text("ascii") + "Seccomp:\t2\n",
+                          encoding="ascii")
+        with self.assertRaises(diag.PidSnapshotError):
+            self.snap()
+
+    def test_symlink_quota_refused(self):
+        (self.scope / "memory.max").unlink()
+        (self.scope / "memory.max").symlink_to(self.scope / "pids.max")
+        with self.assertRaises(diag.PidSnapshotError):
+            self.snap()
+
+    def test_plan_mode_does_not_read_any_process_or_write_files(self):
+        output = StringIO()
+        with (mock.patch.object(diag, "_read_bounded") as read,
+              mock.patch.object(diag, "snapshot_pid") as snapshot,
+              redirect_stdout(output)):
+            code = diag.main(["--pid", str(PID),
+                              "--expected-scope", SCOPE])
+        self.assertEqual(code, 0)
+        read.assert_not_called()
+        snapshot.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())["status"], diag.PLAN)
+        self.assertEqual(json.loads(output.getvalue())["kernel_files_read"], False)
+
+    def test_active_cli_rejects_root_or_wrong_kernel_without_release(self):
+        output, err = StringIO(), StringIO()
+        with (mock.patch.object(diag.os, "geteuid", return_value=0),
+              redirect_stdout(output), redirect_stderr(err)):
+            code = diag.main(["--pid", str(PID),
+                              "--expected-scope", SCOPE,
+                              "--snapshot-local-pid"])
+        self.assertEqual(code, 2)
+        self.assertFalse(output.getvalue())
+        result = json.loads(err.getvalue())
+        self.assertEqual(result["status"], diag.REJECTED)
+        self.assertIs(result["release_authorized"], False)
+        self.assertIs(result["independent_vm_attestation"], False)
+
+
+if __name__ == "__main__":
+    unittest.main()
