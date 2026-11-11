@@ -58,6 +58,10 @@ A [observação local de PID/cgroup v2/seccomp PE-S2.25](PE-S2.25-READONLY-GUEST
 
 O diagnóstico [PE-S2.26](PE-S2.26-JOURNALD-KERNEL-MOUNT-CAP-HOLD.md) inspeciona a capacidade do filesystem de uma montagem **tmpfs dedicada** em `/run/log/journal` (máximo 32 MiB) com leitura somente local. Ele **não valida** sozinho a política efetivamente carregada pelo serviço ou que o daemon gravou ali. A prova externa da lacuna de journald exige correlação humana de montagem real, daemon em execução e destino efetivo dos logs durante a sessão; a CI não tem essa VM. Um resultado local `HOLD` não conclui a homologação.
 
+## Complemento PE-S2.27: namespace do processo journald
+
+A PE-S2.26 observa `/proc/self/mountinfo`, o que não determina automaticamente a visão de montagem do daemon. O diagnóstico [PE-S2.27](PE-S2.27-JOURNALD-LIVE-MOUNT-NAMESPACE-HOLD.md) compara **o PID vivo do journald**, identidade do mount namespace, raiz e a montagem dedicada com o observador, com releitura para detectar trocas. Mesmo um resultado local consistente continua `HOLD`: não comprova escrita efetiva no tmpfs nem custódia independente do host/guest. O revisor deve testemunhar a sessão e confrontar a saída com logs e políticas efetivos, sem expor dados privados.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
