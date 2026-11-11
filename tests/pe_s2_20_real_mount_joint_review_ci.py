@@ -52,12 +52,12 @@ def _child(mode: str) -> int:
     # The verifier sees only the audited Python module copies, never the
     # checkout's .git/config (which could hold a CI credential).
     minimal_modules = (
-        Path("/audit/code").is_dir()
-        and bool(os.statvfs("/audit/code").f_flag & os.ST_RDONLY)
-        and not Path("/audit/code/.git").exists()
-        and not Path("/audit/code/.github").exists()
-        and not Path("/audit/code/tests").exists()
-        and Path("/audit/code/pe_arch_vm_s2_19_reviewer_session_handoff.py").is_file()
+        Path("/reviewer/tools").is_dir()
+        and bool(os.statvfs("/reviewer/tools").f_flag & os.ST_RDONLY)
+        and not Path("/reviewer/tools/.git").exists()
+        and not Path("/reviewer/tools/.github").exists()
+        and not Path("/reviewer/tools/tests").exists()
+        and Path("/reviewer/tools/pe_arch_vm_s2_19_reviewer_session_handoff.py").is_file()
     )
     if not minimal_modules:
         raise AssertionError("Unnecessary source checkout or tokens exposed to reviewer")
@@ -339,14 +339,14 @@ def _host(ghidra_home: Path) -> int:
             selected_source = tampered if mode == "tampered" else source
             mount = "--bind" if mode == "writable" else "--ro-bind"
             mounts = [
-                "--dir", "/audit",
+                "--dir", "/audit", "--dir", "/reviewer",
                 "--ro-bind", str(passwd_fixture), "/etc/passwd",
                 "--ro-bind", str(group_fixture), "/etc/group",
-                "--ro-bind", str(reviewer_code), "/audit/code",
+                "--ro-bind", str(reviewer_code), "/reviewer/tools",
                 mount, str(selected_source), "/audit/source",
                 "--ro-bind", str(observer), "/audit/observer",
                 "--ro-bind", str(custody), "/audit/custody",
-                "--setenv", "PYTHONPATH", "/audit/code",
+                "--setenv", "PYTHONPATH", "/reviewer/tools",
                 "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
             ]
             command = base[:boundary] + mounts + [
