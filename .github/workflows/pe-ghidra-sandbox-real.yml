@@ -538,6 +538,45 @@ jobs:
           assert rows[-1]["native_arch_vm_attestation"] is False
           print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
           PY
+      - name: PE-S2.20 full signed host V3 and real Git/readonly native receipt (synthetic only)
+        run: |
+          set -euo pipefail
+          python3 -B tests/pe_s2_20_real_mount_joint_review_ci.py \
+            --ghidra-home "$RUNNER_TEMP/ghidra_12.2_PUBLIC" \
+            > "$RUNNER_TEMP/pe-s2-20-actual-readonly.jsonl"
+          python3 - "$RUNNER_TEMP/pe-s2-20-actual-readonly.jsonl" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          rows = [json.loads(line) for line in
+                  Path(sys.argv[1]).read_text("utf-8").splitlines() if line.strip()]
+          expected = [
+              "PASS_PE_S2_20_REAL_READONLY_JOINT_HANDOFF_HOLD",
+              "REJECT_PE_S2_20_REAL_WRITABLE_SOURCE",
+              "REJECT_PE_S2_20_REAL_TAMPERED_SOURCE",
+              "REJECT_PE_S2_20_WRONG_SIGNED_V3_PIN",
+              "PASS_PE_S2_20_REAL_OFFLINE_JOINT_CHAIN_HOLD",
+          ]
+          assert [r["status"] for r in rows] == expected
+          for index, row in enumerate(rows[:4]):
+              assert row["actual_readonly_mount"] is (index != 1)
+              assert row["actual_readonly_source_files"] is (index != 1)
+              assert row["actual_git_and_local_receipt_validators_mocked"] is False
+              assert row["actual_ed25519_verifiers_mocked"] is False
+              assert row["libvirt_capture_mocked"] is True
+              assert row["native_acceptance_report_synthetic"] is True
+              assert row["external_native_arch_vm_attested"] is False
+              assert row["release_authorized"] is False
+              assert row["windows_pe_executed"] is False
+          final = rows[-1]
+          assert final["cases"] == 4
+          assert final["real_bubblewrap_readonly"] is True
+          assert final["real_unmocked_git_receipt_and_signatures"] is True
+          assert final["only_libvirt_and_native_execution_mocked"] is True
+          assert final["native_arch_vm_independently_attested"] is False
+          assert final["release_authorized"] is False
+          print("PE-S2.20: real readonly V1/V2/V3 + real Git/receipt integration PASS; native Arch VM HOLD")
+          PY
       - name: PE-S1.55-57 real readonly signed review and mandatory release HOLD
         run: |
           set -euo pipefail
