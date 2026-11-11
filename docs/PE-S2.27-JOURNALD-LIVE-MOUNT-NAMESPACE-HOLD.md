@@ -32,7 +32,7 @@ python3 -B tools/pe_journald_same_namespace.py --inspect-live-journald-mount
 
 ## Reforço PE-S2.28: leitura delimitada de `/proc/PID/cgroup`
 
-O observador S2.09.1, utilizado por esta etapa, deixou de usar `Path.read_bytes()` (que pode carregar um arquivo inteiro antes de checar tamanho) e passou a abrir `/proc/<PID>/cgroup` com `O_RDONLY|O_CLOEXEC|O_NOFOLLOW`, ler **no máximo 8193 bytes** e rejeitar conteúdo vazio, NUL, maior que 8192 bytes, symlink final, PID inválido e registros que não coincidam exatamente com o cgroup unificado esperado. O descritor é fechado inclusive quando a leitura falha.
+O observador S2.09.1, utilizado por esta etapa, deixou de usar `Path.read_bytes()` (que pode carregar um arquivo inteiro antes de checar tamanho) e passou a abrir `/proc/<PID>/cgroup` com `O_RDONLY|O_CLOEXEC|O_NOFOLLOW`, ler **no máximo 8193 bytes**, repetindo leituras curtas até EOF dentro desse teto, e rejeitar conteúdo vazio, NUL, maior que 8192 bytes, symlink final, PID inválido e registros que não coincidam exatamente com o cgroup unificado esperado. A leitura até EOF evita que um prefixo aparentemente correto esconda entradas adicionais contraditórias. O descritor é fechado inclusive quando a leitura falha.
 
 `tests/test_pe_journald_runtime.py` acrescenta verificações negativas de symlink, arquivo superdimensionado, byte NUL, PID incorreto e limite da chamada `os.read`. A implementação não eleva privilégios, não executa serviços nem amplia o escopo de coleta. Permissões insuficientes ou dados inconsistentes continuam sendo **recusa**, sem interpretação como homologação externa.
 
