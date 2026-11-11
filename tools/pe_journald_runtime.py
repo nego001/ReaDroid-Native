@@ -96,7 +96,16 @@ def _read_proc_cgroup_bounded(pid: int, *,
         fd = os.open(proc_root / str(pid) / "cgroup",
                      os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
         try:
-            record = os.read(fd, MAX_PROC_BYTES + 1)
+            chunks = bytearray()
+            # A procfs read may return fewer bytes than requested. Reading
+            # only once could accept a valid-looking prefix of a longer,
+            # contradictory cgroup entry. Require EOF within the budget.
+            while len(chunks) <= MAX_PROC_BYTES:
+                part = os.read(fd, MAX_PROC_BYTES + 1 - len(chunks))
+                if not part:
+                    break
+                chunks.extend(part)
+            record = bytes(chunks)
         finally:
             os.close(fd)
     except OSError as exc:
