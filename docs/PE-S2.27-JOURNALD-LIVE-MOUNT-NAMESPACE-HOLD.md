@@ -30,6 +30,12 @@ python3 -B tools/pe_journald_same_namespace.py --inspect-live-journald-mount
 
 **Não usar somente o exit code**: observação e recusa têm ambos código 2.
 
+## Reforço PE-S2.28: leitura delimitada de `/proc/PID/cgroup`
+
+O observador S2.09.1, utilizado por esta etapa, deixou de usar `Path.read_bytes()` (que pode carregar um arquivo inteiro antes de checar tamanho) e passou a abrir `/proc/<PID>/cgroup` com `O_RDONLY|O_CLOEXEC|O_NOFOLLOW`, ler **no máximo 8193 bytes** e rejeitar conteúdo vazio, NUL, maior que 8192 bytes, symlink final, PID inválido e registros que não coincidam exatamente com o cgroup unificado esperado. O descritor é fechado inclusive quando a leitura falha.
+
+`tests/test_pe_journald_runtime.py` acrescenta verificações negativas de symlink, arquivo superdimensionado, byte NUL, PID incorreto e limite da chamada `os.read`. A implementação não eleva privilégios, não executa serviços nem amplia o escopo de coleta. Permissões insuficientes ou dados inconsistentes continuam sendo **recusa**, sem interpretação como homologação externa.
+
 ## Limites do resultado
 
 Mesmo que a observação local consiga correlacionar mount namespace, raiz e capacidade do filesystem, **ela não prova** que o journald gravou de fato em `/run/log/journal`, que carregou a política declarada, que não encaminhou logs por outro destino, ou que o host/kernel são confiáveis. Um host desonesto pode falsificar suas próprias observações. Permanecem explicitamente falsos todos os campos de atestação independente e autorização de release.
