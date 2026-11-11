@@ -93,6 +93,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_22_external_reviewer_pins.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_23_external_gap_register.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_25_pid_kernel_snapshot.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_journald_mount_capacity.py' -v
           # PE-S2.21: actual CI Ubuntu host must reject an attempted
           # "independent host" preflight BEFORE any virsh read.
           # This is a real negative control, never evidence of host origin.
@@ -1023,6 +1024,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_22_external_reviewer_pins.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_23_external_gap_register.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_25_pid_kernel_snapshot.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_journald_mount_capacity.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
           private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"
