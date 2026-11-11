@@ -50,6 +50,10 @@ python3 -B tools/pe_arch_vm_s2_23_external_gap_register.py --pin-file /private/r
 
 Mesmo em revisão local integralmente válida, o status é `HOLD_PE_S2_23_SIGNED_CUSTODY_VALID_EXTERNAL_VM_PROOFS_PENDING`, **exit 2**, e as sete classes continuam pendentes no software. `REJECTED_PE_S2_23_LOCAL_PACKAGE_INVALID_EXTERNAL_VM_HOLD` também retorna 2 e não deve ser confundido com HOLD de pacote válido.
 
+## Complemento PE-S2.25: leitura do PID vivo durante Ghidra
+
+A [observação local de PID/cgroup v2/seccomp PE-S2.25](PE-S2.25-READONLY-GUEST-PID-SNAPSHOT-HOLD.md) oferece uma leitura **opt-in e somente leitura** de um mesmo PID, antes/depois de consultar as quotas do kernel. Um revisor pode testemunhar esse diagnóstico **durante** a execução sintética, mas a saída permanece `HOLD`: não autentica que o processo é Ghidra, nem a VM, host, cronologia ou identidade do revisor. Não executar essa ferramenta depois que o processo terminou nem aceitá-la como evidência de journald ou cleanup. A issue #48 continua o bloqueio externo.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
