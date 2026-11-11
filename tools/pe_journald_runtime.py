@@ -101,7 +101,7 @@ def _read_proc_cgroup_bounded(pid: int, *,
             os.close(fd)
     except OSError as exc:
         raise JournaldRuntimeError("Cannot read journald kernel cgroup membership") from exc
-    if not record or len(record) > MAX_PROC_BYTES or b"\\x00" in record:
+    if not record or len(record) > MAX_PROC_BYTES or b"\x00" in record:
         raise JournaldRuntimeError("Missing, oversized or binary journald cgroup record")
     return record
 
