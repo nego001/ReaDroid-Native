@@ -37,7 +37,16 @@ def _read_bounded(path: Path) -> str:
         flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
         fd = os.open(path, flags)
         try:
-            raw = os.read(fd, MAX_BYTES + 1)
+            chunks = bytearray()
+            # procfs/cgroupfs may return short reads. A valid-looking first
+            # chunk must not conceal contradictory data after that prefix.
+            # Include one overflow byte and demand EOF within the cap.
+            while len(chunks) <= MAX_BYTES:
+                part = os.read(fd, MAX_BYTES + 1 - len(chunks))
+                if not part:
+                    break
+                chunks.extend(part)
+            raw = bytes(chunks)
         finally:
             os.close(fd)
         if not raw or len(raw) > MAX_BYTES or b"\x00" in raw:
