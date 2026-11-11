@@ -51,6 +51,10 @@ O revisor deve correlacionar **na mesma sessão e fora do controle do operador**
 
 **Limite conceitual:** `RuntimeMaxUse=32M` é uma política de retenção do daemon; uma montagem `tmpfs` de 32 MiB põe teto no espaço **total desse filesystem**, caso o serviço escreva lá. Um ou outro isoladamente não autentica a execução no kernel Arch, nem comprova retenção do journald, nem garante resistência a um guest malicioso.
 
+## Reforço PE-S2.29: leitura completa da montagem
+
+A leitura de `/proc/self/mountinfo` agora repete `os.read` até **EOF**, dentro de um teto de **1 MiB + 1 byte**. Antes, uma única leitura curta podia deixar de fora entradas posteriores de montagem, incluindo submontagens que deveriam causar `REJECTED`. O descritor usa `O_NOFOLLOW` e é fechado mesmo em caso de erro; resultados vazios, binários ou acima do limite são recusados. Isso permanece um diagnóstico **local**, não comprova a escrita efetiva do journald ou a procedência de uma VM externa.
+
 ## Testes
 
 `tests/test_pe_journald_mount_capacity.py` usa mountinfo e statvfs **sintéticos**, sem montagem real, para testar limites, ausência de montagem, tipo errado, submount, troca de identidade/inode, bytes inválidos, modo PLAN sem I/O, recusa root e proibição de sinais de aprovação. Esses testes rodam na CI Ubuntu e Arch userspace em contêiner. **Nenhuma CI deste projeto demonstra a configuração real de armazenamento em VM Arch nativa independente**.
