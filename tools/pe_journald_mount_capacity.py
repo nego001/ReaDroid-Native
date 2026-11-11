@@ -88,6 +88,7 @@ def _journal_mount(raw: bytes, target: Path) -> dict:
             "mount_options": fields[5].split(","),
             "filesystem": fs[0],
             "source": fs[1],
+            "super_options": fs[2].split(","),
         })
     if nested or len(exact) != 1:
         raise JournalMountError(
@@ -96,6 +97,10 @@ def _journal_mount(raw: bytes, target: Path) -> dict:
     if (item["root"] != "/" or item["filesystem"] != "tmpfs"
             or "rw" not in item["mount_options"]
             or "ro" in item["mount_options"]
+            # The VFS mount can advertise rw while the superblock is ro.
+            # Both layers must allow writes for an effective journal store.
+            or "rw" not in item["super_options"]
+            or "ro" in item["super_options"]
             or not item["mount_id"].isascii()
             or not item["mount_id"].isdecimal()):
         raise JournalMountError("Journal storage is not a dedicated writable tmpfs")
