@@ -21,9 +21,10 @@ VALID = (b"99 1 0:2 / /run rw,nosuid,nodev - tmpfs tmpfs rw\n"
 NESTED = b"102 101 0:21 / /run/log/journal/other rw - tmpfs tmpfs rw\n"
 
 
-def fs(blocks=8192, frsize=4096, free=8000, avail=7800):
+def fs(blocks=8192, frsize=4096, free=8000, avail=7800,
+       flags=0):
     return SimpleNamespace(f_blocks=blocks, f_frsize=frsize,
-                           f_bfree=free, f_bavail=avail)
+                           f_bfree=free, f_bavail=avail, f_flag=flags)
 
 
 class JournalMountContracts(unittest.TestCase):
@@ -65,10 +66,23 @@ class JournalMountContracts(unittest.TestCase):
             self.assertEqual(mod._filesystem_size(mod.TARGET), 32 * 1024 * 1024)
         bad = (fs(blocks=8193), fs(blocks=0),
                fs(avail=9000), fs(free=9000, avail=9500),
-               fs(frsize=0), fs(blocks=-1))
+               fs(frsize=0), fs(blocks=-1),
+               fs(flags=os.ST_RDONLY), fs(flags=-1),
+               fs(flags=True))
         for value in bad:
             with self.subTest(value=value):
                 with (mock.patch.object(mod.os, "statvfs", return_value=value),
+                      self.assertRaises(mod.JournalMountError)):
+                    mod._filesystem_size(mod.TARGET)
+
+    def test_statvfs_rejects_missing_flags_or_mismatched_readonly_state(self):
+        # A writeable mountinfo line is not enough if statvfs reports ro.
+        candidates = (SimpleNamespace(
+            f_blocks=8192, f_frsize=4096, f_bfree=8000, f_bavail=7800),
+            fs(flags=os.ST_RDONLY))
+        for record in candidates:
+            with self.subTest(record=record):
+                with (mock.patch.object(mod.os, "statvfs", return_value=record),
                       self.assertRaises(mod.JournalMountError)):
                     mod._filesystem_size(mod.TARGET)
 
