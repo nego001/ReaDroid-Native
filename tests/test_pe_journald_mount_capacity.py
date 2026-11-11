@@ -5,6 +5,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 import json
 import os
+import tempfile
 from pathlib import Path
 import stat
 import sys
@@ -28,6 +29,56 @@ def fs(blocks=8192, frsize=4096, free=8000, avail=7800,
 
 
 class JournalMountContracts(unittest.TestCase):
+    def test_short_kernel_reads_include_later_hidden_nested_mount(self):
+        # A first read alone looks valid; only EOF reveals nested mount.
+        with (mock.patch.object(mod.os, "open", return_value=42) as opened,
+              mock.patch.object(mod.os, "read",
+                                side_effect=[VALID, NESTED, b""]) as read,
+              mock.patch.object(mod.os, "close") as closed):
+            result = mod._read_mountinfo_bounded(mod.MOUNTINFO)
+        self.assertEqual(result, VALID + NESTED)
+        self.assertEqual(read.call_count, 3)
+        closed.assert_called_once_with(42)
+        self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
+        with self.assertRaises(mod.JournalMountError):
+            mod._journal_mount(result, mod.TARGET)
+
+    def test_mountinfo_reader_refuses_oversize_even_after_short_chunks(self):
+        with (mock.patch.object(mod.os, "open", return_value=43),
+              mock.patch.object(mod.os, "read",
+                                side_effect=[b"a" * mod.MAX_MOUNTINFO, b"b"]) as read,
+              mock.patch.object(mod.os, "close") as close,
+              self.assertRaises(mod.JournalMountError)):
+            mod._read_mountinfo_bounded(mod.MOUNTINFO)
+        self.assertEqual(read.call_args.args, (43, 1))
+        close.assert_called_once_with(43)
+
+    def test_mountinfo_reader_closes_fd_on_read_error(self):
+        with (mock.patch.object(mod.os, "open", return_value=44),
+              mock.patch.object(mod.os, "read",
+                                side_effect=OSError("synthetic read failure")),
+              mock.patch.object(mod.os, "close") as close,
+              self.assertRaises(mod.JournalMountError)):
+            mod._read_mountinfo_bounded(mod.MOUNTINFO)
+        close.assert_called_once_with(44)
+
+    def test_mountinfo_reader_rejects_symlink_empty_and_nul(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s2-29-") as tmp:
+            root = Path(tmp)
+            record = root / "mountinfo"
+            for bad in (b"", b"x" + bytes([0]) + b"y"):
+                with self.subTest(bad=bad):
+                    record.write_bytes(bad)
+                    with self.assertRaises(mod.JournalMountError):
+                        mod._read_mountinfo_bounded(record)
+            target = root / "target"
+            target.write_bytes(VALID)
+            record.unlink()
+            record.symlink_to(target)
+            with self.assertRaises(mod.JournalMountError):
+                mod._read_mountinfo_bounded(record)
+            self.assertEqual(target.read_bytes(), VALID)
+
     def test_dedicated_volatitle_tmpfs_parsed(self):
         observed = mod._journal_mount(VALID, mod.TARGET)
         self.assertEqual(observed["mount_id"], "101")
