@@ -75,7 +75,7 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
                 live._proc_cgroup(321)
 
     def test_kernel_file_read_is_bounded_nonfollowing_and_closes_fd(self):
-        good = (f"0::{live.EXPECTED_CGROUP}\\n").encode("ascii")
+        good = (f"0::{live.EXPECTED_CGROUP}\n").encode("ascii")
         with tempfile.TemporaryDirectory(prefix="pe-s2-28-") as tmp:
             root = Path(tmp)
             proc = root / "321"
