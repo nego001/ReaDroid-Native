@@ -33,18 +33,33 @@ class JournalMountError(RuntimeError):
     """A bounded dedicated volatile journal storage mount was not proved."""
 
 
-def _kernel_mountinfo() -> bytes:
+def _read_mountinfo_bounded(path: Path) -> bytes:
+    """Require procfs EOF within 1 MiB, even when reads return short chunks.
+
+    A single short read may appear to show a valid dedicated mount but omit
+    a later nested or overmount record. Refuse symlinked final components.
+    """
     try:
-        fd = os.open(MOUNTINFO, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
         try:
-            raw = os.read(fd, MAX_MOUNTINFO + 1)
+            chunks = bytearray()
+            while len(chunks) <= MAX_MOUNTINFO:
+                part = os.read(fd, MAX_MOUNTINFO + 1 - len(chunks))
+                if not part:
+                    break
+                chunks.extend(part)
+            raw = bytes(chunks)
         finally:
             os.close(fd)
     except OSError as exc:
         raise JournalMountError("Cannot read kernel mountinfo") from exc
     if not raw or len(raw) > MAX_MOUNTINFO or b"\x00" in raw:
-        raise JournalMountError("Kernel mountinfo is missing or oversized")
+        raise JournalMountError("Kernel mountinfo is missing, binary or oversized")
     return raw
+
+
+def _kernel_mountinfo() -> bytes:
+    return _read_mountinfo_bounded(MOUNTINFO)
 
 
 def _unescape_mount_field(raw: str) -> str:
