@@ -35,6 +35,20 @@ def _child(mode: str) -> int:
     import pe_arch_vm_s2_19_reviewer_session_handoff as handoff
 
     root = Path("/audit/source")
+    # No host /etc/passwd or SSH config crosses the boundary. OpenSSH
+    # needs getpwuid(), so only a synthetic local identity is exposed.
+    import pwd
+    passwd_file = Path("/etc/passwd")
+    synthetic_identity = (
+        pwd.getpwuid(os.geteuid()).pw_name == "ci-reviewer"
+        and passwd_file.read_text("ascii").count("\n") == 1
+        and passwd_file.read_text("ascii").startswith("ci-reviewer:x:")
+        and bool(os.statvfs(passwd_file).f_flag & os.ST_RDONLY)
+        and not Path("/etc/shadow").exists()
+        and not Path("/etc/ssh").exists()
+    )
+    if not synthetic_identity:
+        raise AssertionError("Host account data leaked or synthetic SSH identity absent")
     mount_ro = bool(os.statvfs(root).f_flag & os.ST_RDONLY)
     files_ro = all(
         os.statvfs(root / name).f_flag & os.ST_RDONLY
@@ -89,6 +103,7 @@ def _child(mode: str) -> int:
         "actual_git_and_local_receipt_validators_mocked": False,
         "actual_ed25519_verifiers_mocked": False,
         "libvirt_capture_mocked": True, "native_acceptance_report_synthetic": True,
+        "host_passwd_synthetic_and_readonly": synthetic_identity,
         "external_native_arch_vm_attested": False,
         "release_authorized": False, "windows_pe_executed": False,
     }, sort_keys=True))
@@ -285,11 +300,24 @@ def _host(ghidra_home: Path) -> int:
         shutil.copyfile(__file__, work / "s2_20_real_mount.py")
         base = build_command(ghidra_home, work, 160)
         boundary = base.index("--")
+        # Never mount the runner's real login database. ssh-keygen -Y
+        # verify may require a working getpwuid() even for offline checks.
+        passwd_fixture = old.f.root / "synthetic-passwd"
+        group_fixture = old.f.root / "synthetic-group"
+        passwd_fixture.write_text(
+            f"ci-reviewer:x:{os.geteuid()}:{os.getegid()}:"
+            "Synthetic CI Reviewer:/work:/usr/bin/false\n", encoding="ascii")
+        group_fixture.write_text(
+            f"ci-reviewer:x:{os.getegid()}:\n", encoding="ascii")
+        passwd_fixture.chmod(0o600)
+        group_fixture.chmod(0o600)
         for mode in CASES:
             selected_source = tampered if mode == "tampered" else source
             mount = "--bind" if mode == "writable" else "--ro-bind"
             mounts = [
                 "--dir", "/audit",
+                "--ro-bind", str(passwd_fixture), "/etc/passwd",
+                "--ro-bind", str(group_fixture), "/etc/group",
                 "--ro-bind", str(root), "/audit/code",
                 mount, str(selected_source), "/audit/source",
                 "--ro-bind", str(observer), "/audit/observer",
@@ -316,6 +344,7 @@ def _host(ghidra_home: Path) -> int:
                     or observed.get("actual_git_and_local_receipt_validators_mocked")
                        is not False
                     or observed.get("actual_ed25519_verifiers_mocked") is not False
+                    or observed.get("host_passwd_synthetic_and_readonly") is not True
                     or observed.get("external_native_arch_vm_attested") is not False
                     or observed.get("release_authorized") is not False):
                 raise RuntimeError("Real readonly review result inconsistent")
