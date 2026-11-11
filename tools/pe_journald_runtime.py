@@ -83,17 +83,34 @@ def _systemctl_show() -> dict:
     return parse_systemctl_show(result.stdout)
 
 
-def _proc_cgroup(pid: int) -> str:
+def _read_proc_cgroup_bounded(pid: int, *,
+                              proc_root: Path = Path("/proc")) -> bytes:
+    """Read at most MAX_PROC_BYTES+1 from the exact PID's procfs entry.
+
+    proc_root is test-only injection, never exposed by any CLI. Refuse a
+    final-component symlink; no writable file, process, or service is touched.
+    """
     if type(pid) is not int or not 2 <= pid <= MAX_PID:
         raise JournaldRuntimeError("Invalid journald PID for /proc")
     try:
-        record = (Path("/proc") / str(pid) / "cgroup").read_bytes()
+        fd = os.open(proc_root / str(pid) / "cgroup",
+                     os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            record = os.read(fd, MAX_PROC_BYTES + 1)
+        finally:
+            os.close(fd)
     except OSError as exc:
         raise JournaldRuntimeError("Cannot read journald kernel cgroup membership") from exc
-    if (len(record) > MAX_PROC_BYTES or
-            record not in (
-                (f"0::{EXPECTED_CGROUP}\n").encode("ascii"),
-                (f"0::{EXPECTED_CGROUP}").encode("ascii"))):
+    if not record or len(record) > MAX_PROC_BYTES or b"\\x00" in record:
+        raise JournaldRuntimeError("Missing, oversized or binary journald cgroup record")
+    return record
+
+
+def _proc_cgroup(pid: int) -> str:
+    record = _read_proc_cgroup_bounded(pid)
+    if record not in (
+            (f"0::{EXPECTED_CGROUP}\n").encode("ascii"),
+            (f"0::{EXPECTED_CGROUP}").encode("ascii")):
         raise JournaldRuntimeError("Journald /proc cgroup contradicts systemctl")
     return EXPECTED_CGROUP
 
