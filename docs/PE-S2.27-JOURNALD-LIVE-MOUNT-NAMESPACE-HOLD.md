@@ -36,6 +36,10 @@ O observador S2.09.1, utilizado por esta etapa, deixou de usar `Path.read_bytes(
 
 `tests/test_pe_journald_runtime.py` acrescenta verificações negativas de symlink, arquivo superdimensionado, byte NUL, PID incorreto e limite da chamada `os.read`. A implementação não eleva privilégios, não executa serviços nem amplia o escopo de coleta. Permissões insuficientes ou dados inconsistentes continuam sendo **recusa**, sem interpretação como homologação externa.
 
+## Reforço PE-S2.29: evitar prefixos incompletos de mountinfo
+
+A observação tanto do `/proc/self/mountinfo` quanto de `/proc/<PID>/mountinfo` agora usa a mesma leitura **delimitada a 1 MiB**, seguindo leituras curtas até EOF. Isso reduz o risco de aceitar um prefixo aparentemente válido enquanto outra linha posterior descreve montagem aninhada, sobreposta ou divergente. A API não acompanha symlinks finais, recusa conteúdo binário/superdimensionado e fecha os descritores. Os testes sintéticos exercitam essas condições sem executar journald ou qualquer PE. **Uma visão local completa ainda não é atestação independente**.
+
 ## Limites do resultado
 
 Mesmo que a observação local consiga correlacionar mount namespace, raiz e capacidade do filesystem, **ela não prova** que o journald gravou de fato em `/run/log/journal`, que carregou a política declarada, que não encaminhou logs por outro destino, ou que o host/kernel são confiáveis. Um host desonesto pode falsificar suas próprias observações. Permanecem explicitamente falsos todos os campos de atestação independente e autorização de release.
