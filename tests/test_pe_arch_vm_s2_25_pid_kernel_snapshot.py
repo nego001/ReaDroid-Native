@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -53,6 +54,65 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         return diag.snapshot_pid(
             PID, SCOPE, proc_root=self.proc, cgroup_root=self.cg,
             expected_uid=1000, **kwargs)
+
+    def test_short_kernel_reads_cannot_hide_contradictory_cgroup_tail(self):
+        prefix = ("0::" + GROUP + "\n").encode("ascii")
+        extra = b"1:cpu:/hostile\n"
+        with (mock.patch.object(diag.os, "open", return_value=41) as opened,
+              mock.patch.object(diag.os, "read",
+                                side_effect=[prefix, extra, b""]) as read,
+              mock.patch.object(diag.os, "close") as closed):
+            complete = diag._read_bounded(self.process / "cgroup")
+        self.assertEqual(complete, (prefix + extra).decode("ascii"))
+        self.assertEqual(read.call_count, 3)
+        closed.assert_called_once_with(41)
+        self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
+        with self.assertRaises(diag.PidSnapshotError):
+            diag._cgroup_path(complete, SCOPE)
+
+    def test_short_quota_read_cannot_hide_relaxed_tail(self):
+        with (mock.patch.object(diag.os, "open", return_value=42),
+              mock.patch.object(diag.os, "read",
+                                side_effect=[b"128\n", b"999\n", b""]),
+              mock.patch.object(diag.os, "close") as closed):
+            result = diag._read_bounded(self.scope / "pids.max")
+        self.assertEqual(result, "128\n999\n")
+        with self.assertRaises(diag.PidSnapshotError):
+            diag._finite_number(result, 128)
+        closed.assert_called_once_with(42)
+
+    def test_kernel_reader_enforces_cap_even_when_data_is_chunked(self):
+        with (mock.patch.object(diag.os, "open", return_value=43),
+              mock.patch.object(diag.os, "read",
+                                side_effect=[b"x" * diag.MAX_BYTES, b"y"]) as read,
+              mock.patch.object(diag.os, "close") as closed,
+              self.assertRaises(diag.PidSnapshotError)):
+            diag._read_bounded(self.process / "status")
+        self.assertEqual(read.call_args.args, (43, 1))
+        closed.assert_called_once_with(43)
+
+    def test_kernel_reader_closes_fd_after_read_failure(self):
+        with (mock.patch.object(diag.os, "open", return_value=44),
+              mock.patch.object(diag.os, "read",
+                                side_effect=OSError("simulated procfs failure")),
+              mock.patch.object(diag.os, "close") as closed,
+              self.assertRaises(diag.PidSnapshotError)):
+            diag._read_bounded(self.process / "stat")
+        closed.assert_called_once_with(44)
+
+    def test_kernel_reader_rejects_final_symlink_and_nul(self):
+        path = self.process / "stat"
+        old = path.read_bytes()
+        path.write_bytes(old + bytes([0]))
+        with self.assertRaises(diag.PidSnapshotError):
+            diag._read_bounded(path)
+        path.unlink()
+        target = self.process / "outside-stat"
+        target.write_bytes(old)
+        path.symlink_to(target)
+        with self.assertRaises(diag.PidSnapshotError):
+            diag._read_bounded(path)
+        self.assertEqual(target.read_bytes(), old)
 
     def test_consistent_local_kernel_values_never_attest_vm(self):
         x = self.snap()
