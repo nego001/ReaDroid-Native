@@ -62,6 +62,10 @@ O diagnóstico [PE-S2.26](PE-S2.26-JOURNALD-KERNEL-MOUNT-CAP-HOLD.md) inspeciona
 
 A PE-S2.26 observa `/proc/self/mountinfo`, o que não determina automaticamente a visão de montagem do daemon. O diagnóstico [PE-S2.27](PE-S2.27-JOURNALD-LIVE-MOUNT-NAMESPACE-HOLD.md) compara **o PID vivo do journald**, identidade do mount namespace, raiz e a montagem dedicada com o observador, com releitura para detectar trocas. Mesmo um resultado local consistente continua `HOLD`: não comprova escrita efetiva no tmpfs nem custódia independente do host/guest. O revisor deve testemunhar a sessão e confrontar a saída com logs e políticas efetivos, sem expor dados privados.
 
+## Complemento PE-S2.31: leituras inteiras de PID e cotas
+
+O observador local [PE-S2.25, reforçado pela PE-S2.31](PE-S2.31-PID-CGROUP-PROCFS-EOF-HOLD.md) exige EOF nas leituras limitadas de `/proc/PID/stat`, `status`, `cgroup` e de `memory.max`/`pids.max`/`cpu.max` para evitar prefixos aparentemente válidos que escondam dados contraditórios. **Esse diagnóstico local não prova origem da VM nem vínculo independente do PID com Ghidra**: o revisor deve testemunhar e correlacionar o processo real, cgroup e seccomp na mesma sessão sob custódia externa.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
