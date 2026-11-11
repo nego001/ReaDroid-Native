@@ -132,6 +132,73 @@ class PidKernelSnapshotContracts(unittest.TestCase):
                     "unknown_windows_pe_execution_authorized"):
             self.assertIs(x[key], False, key)
 
+    def test_unchanged_kernel_quotas_are_observed_twice(self):
+        real = diag._read_bounded
+        touched = []
+        def measure(path):
+            touched.append(path.name)
+            return real(path)
+        with mock.patch.object(diag, "_read_bounded", side_effect=measure):
+            report = self.snap()
+        self.assertEqual(report["status"], diag.OBSERVED)
+        for name in ("memory.max", "pids.max", "cpu.max"):
+            self.assertEqual(touched.count(name), 2, name)
+
+    def test_bounded_quota_drift_during_pid_snapshot_rejected(self):
+        cases = (
+            ("memory.max", "2147483648\n"),
+            ("pids.max", "64\n"),
+            ("cpu.max", "100000 100000\n"),
+        )
+        for target, updated in cases:
+            with self.subTest(target=target):
+                self.write_kernel()
+                old = diag._read_bounded
+                count = [0]
+                def change_on_second_quota_read(path):
+                    if path.name == target:
+                        count[0] += 1
+                        if count[0] == 2:
+                            (self.scope / target).write_text(updated, encoding="ascii")
+                    return old(path)
+                with (mock.patch.object(diag, "_read_bounded",
+                                        side_effect=change_on_second_quota_read),
+                      self.assertRaisesRegex(diag.PidSnapshotError,
+                                             "quotas changed")):
+                    self.snap()
+                self.assertEqual(count[0], 2)
+
+    def test_relaxed_quota_on_second_read_rejected(self):
+        self.write_kernel()
+        old = diag._read_bounded
+        count = [0]
+        def relax_memory(path):
+            if path.name == "memory.max":
+                count[0] += 1
+                if count[0] == 2:
+                    (self.scope / "memory.max").write_text("max\n", encoding="ascii")
+            return old(path)
+        with (mock.patch.object(diag, "_read_bounded", side_effect=relax_memory),
+              self.assertRaisesRegex(diag.PidSnapshotError,
+                                     "Unbounded or relaxed kernel quota")):
+            self.snap()
+        self.assertEqual(count[0], 2)
+
+    def test_process_change_rejects_before_second_quota_pass(self):
+        old = diag._read_bounded
+        count = []
+        def mutate_stat(path):
+            count.append(path.name)
+            value = old(path)
+            if path.name == "stat" and count.count("stat") == 2:
+                return value.replace("123456", "123457")
+            return value
+        with (mock.patch.object(diag, "_read_bounded", side_effect=mutate_stat),
+              self.assertRaisesRegex(diag.PidSnapshotError, "reused")):
+            self.snap()
+        for name in ("memory.max", "pids.max", "cpu.max"):
+            self.assertEqual(count.count(name), 1, name)
+
     def test_wrong_process_or_scope_rejected_before_files(self):
         for pid, scope in ((0, SCOPE), (1, SCOPE), (True, SCOPE),
                            (PID, "other.scope"), (PID, "../" + SCOPE),
