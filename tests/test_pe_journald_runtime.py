@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 import sys
 import unittest
@@ -56,11 +57,11 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
 
     def test_pid_cgroup_membership_requires_exact_unified_v2_path(self):
         good = (f"0::{live.EXPECTED_CGROUP}\n").encode("ascii")
-        with mock.patch.object(Path, "read_bytes", return_value=good):
+        with mock.patch.object(live, "_read_proc_cgroup_bounded", return_value=good):
             self.assertEqual(live._proc_cgroup(321), live.EXPECTED_CGROUP)
         for content in (b"0::/user.slice/other\n", b"1:cpu:/system.slice\n",
                         good+b"1:cpu:/other\n", b"", good*1000):
-            with mock.patch.object(Path, "read_bytes", return_value=content):
+            with mock.patch.object(live, "_read_proc_cgroup_bounded", return_value=content):
                 with self.assertRaises(live.JournaldRuntimeError):
                     live._proc_cgroup(321)
 
@@ -68,9 +69,61 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
         for pid in (0, -2, 4194305, "321"):
             with self.assertRaises(live.JournaldRuntimeError):
                 live._proc_cgroup(pid)
-        with mock.patch.object(Path, "read_bytes", side_effect=PermissionError):
+        with mock.patch.object(live, "_read_proc_cgroup_bounded",
+                               side_effect=live.JournaldRuntimeError("permission denied")):
             with self.assertRaises(live.JournaldRuntimeError):
                 live._proc_cgroup(321)
+
+    def test_kernel_file_read_is_bounded_nonfollowing_and_closes_fd(self):
+        good = (f"0::{live.EXPECTED_CGROUP}\\n").encode("ascii")
+        with tempfile.TemporaryDirectory(prefix="pe-s2-28-") as tmp:
+            root = Path(tmp)
+            proc = root / "321"
+            proc.mkdir()
+            record = proc / "cgroup"
+            record.write_bytes(good)
+            self.assertEqual(
+                live._read_proc_cgroup_bounded(321, proc_root=root), good)
+            record.write_bytes(good * (live.MAX_PROC_BYTES // len(good) + 5))
+            with self.assertRaises(live.JournaldRuntimeError):
+                live._read_proc_cgroup_bounded(321, proc_root=root)
+            # Open the file with O_NOFOLLOW: a hostile symlink is rejected.
+            record.unlink()
+            target = root / "other"
+            target.write_bytes(good)
+            record.symlink_to(target)
+            with self.assertRaises(live.JournaldRuntimeError):
+                live._read_proc_cgroup_bounded(321, proc_root=root)
+            self.assertEqual(target.read_bytes(), good)
+
+    def test_kernel_record_refuses_empty_nul_and_invalid_pid(self):
+        with tempfile.TemporaryDirectory(prefix="pe-s2-28-") as tmp:
+            root = Path(tmp)
+            proc = root / "321"
+            proc.mkdir()
+            file = proc / "cgroup"
+            for raw in (b"", b"0::/a" + bytes([0]) + b"b"):
+                with self.subTest(raw=raw):
+                    file.write_bytes(raw)
+                    with self.assertRaises(live.JournaldRuntimeError):
+                        live._read_proc_cgroup_bounded(321, proc_root=root)
+            for pid in (True, 0, 1, 4194305, "321"):
+                with self.subTest(pid=pid):
+                    with self.assertRaises(live.JournaldRuntimeError):
+                        live._read_proc_cgroup_bounded(pid, proc_root=root)
+
+    def test_proc_reader_caps_single_kernel_read_size(self):
+        # A synthetic kernel file larger than the contract cannot trigger
+        # an unbounded read; the OS reader receives only MAX_PROC_BYTES + 1.
+        with (mock.patch.object(live.os, "open", return_value=32) as opened,
+              mock.patch.object(live.os, "read",
+                                return_value=b"a" * (live.MAX_PROC_BYTES + 1)) as rd,
+              mock.patch.object(live.os, "close") as close,
+              self.assertRaises(live.JournaldRuntimeError)):
+            live._read_proc_cgroup_bounded(321)
+        self.assertEqual(rd.call_args.args, (32, live.MAX_PROC_BYTES + 1))
+        self.assertEqual(close.call_args.args, (32,))
+        self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
 
     def test_live_observation_has_explicit_false_attestation(self):
         observed = {"pid": 321, "control_group": live.EXPECTED_CGROUP}
