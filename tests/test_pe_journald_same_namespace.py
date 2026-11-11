@@ -46,6 +46,18 @@ class SameNamespaceContracts(unittest.TestCase):
         stack.enter_context(mock.patch.object(mod.os, "geteuid", return_value=1000))
         return stack
 
+    def test_pid_mountinfo_reader_uses_same_complete_bounded_api(self):
+        expected = Path("/proc") / str(PID) / "mountinfo"
+        with mock.patch.object(mod.mount, "_read_mountinfo_bounded",
+                               return_value=b"mountinfo") as read:
+            self.assertEqual(mod._pid_mountinfo(PID), b"mountinfo")
+        read.assert_called_once_with(expected)
+        with (mock.patch.object(mod.mount, "_read_mountinfo_bounded",
+                                side_effect=mod.mount.JournalMountError("partial")),
+              self.assertRaisesRegex(mod.JournalProcessMountError,
+                                     "complete journald")):
+            mod._pid_mountinfo(PID)
+
     def test_consistent_kernel_local_view_never_homologates(self):
         self.enter()
         r = mod.observe_live_process_mount()
