@@ -101,7 +101,7 @@ def observe_live_process_mount() -> dict:
         raise JournalProcessMountError("Journald has distinct mount namespace/root")
     # The S2.26 observer validates directory modes and kernel capacity,
     # but /proc/self/mountinfo alone could describe a DIFFERENT namespace.
-    mount._secure_root_owned_path(mount.TARGET)
+    first_store_identity = mount._secure_root_owned_path(mount.TARGET)
     observer_mount = mount._journal_mount(mount._kernel_mountinfo(), mount.TARGET)
     journal_mount = mount._journal_mount(_pid_mountinfo(pid), mount.TARGET)
     if observer_mount != journal_mount:
@@ -120,7 +120,8 @@ def observe_live_process_mount() -> dict:
                 _pid_mountinfo(pid), mount.TARGET)
             or capacity != mount._filesystem_size(mount.TARGET)):
         raise JournalProcessMountError("Process or mount changed during observation")
-    mount._secure_root_owned_path(mount.TARGET)
+    if first_store_identity != mount._secure_root_owned_path(mount.TARGET):
+        raise JournalProcessMountError("Journal store directory replaced during observation")
     return {
         "status": OBSERVED,
         "security_classification": CLASSIFICATION,
