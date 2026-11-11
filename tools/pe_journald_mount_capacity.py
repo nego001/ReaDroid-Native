@@ -48,8 +48,8 @@ def _kernel_mountinfo() -> bytes:
 
 
 def _unescape_mount_field(raw: str) -> str:
-    # Linux mountinfo escapes spaces, tabs, newlines and backslashes as octal.
-    if re.fullmatch(r"(?:[^\\]|\\[0-7]{3})*", raw) is None:
+    # Only Linux mountinfo's four standard pathname escapes are canonical.
+    if re.fullmatch(r"(?:[^\\]|\\(?:040|011|012|134))*", raw) is None:
         raise JournalMountError("Non-canonical mountinfo pathname escapes")
     decoded = re.sub(r"\\([0-7]{3})",
                      lambda m: chr(int(m.group(1), 8)), raw)
