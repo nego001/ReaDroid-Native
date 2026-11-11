@@ -180,7 +180,7 @@ class PidKernelSnapshotContracts(unittest.TestCase):
             return old(path)
         with (mock.patch.object(diag, "_read_bounded", side_effect=relax_memory),
               self.assertRaisesRegex(diag.PidSnapshotError,
-                                     "Unbounded or relaxed kernel quota")):
+                                     "Missing finite kernel quota")):
             self.snap()
         self.assertEqual(count[0], 2)
 
