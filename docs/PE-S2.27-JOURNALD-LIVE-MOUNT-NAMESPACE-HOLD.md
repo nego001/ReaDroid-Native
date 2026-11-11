@@ -40,6 +40,12 @@ O observador S2.09.1, utilizado por esta etapa, deixou de usar `Path.read_bytes(
 
 A observação tanto do `/proc/self/mountinfo` quanto de `/proc/<PID>/mountinfo` agora usa a mesma leitura **delimitada a 1 MiB**, seguindo leituras curtas até EOF. Isso reduz o risco de aceitar um prefixo aparentemente válido enquanto outra linha posterior descreve montagem aninhada, sobreposta ou divergente. A API não acompanha symlinks finais, recusa conteúdo binário/superdimensionado e fecha os descritores. Os testes sintéticos exercitam essas condições sem executar journald ou qualquer PE. **Uma visão local completa ainda não é atestação independente**.
 
+## Reforço PE-S2.30: saída do systemctl delimitada durante a coleta
+
+A S2.09.1 consulta o daemon por meio de `/usr/bin/systemctl --system show`. Antes, `subprocess.run(..., stdout=PIPE, stderr=PIPE)` acumulava a resposta inteira em memória e só então verificava o tamanho. O componente `tools/pe_journald_runtime.py` agora utiliza `subprocess.Popen` com leitura assíncrona dos dois canais por `selectors`, impondo **8 KiB para stdout e 4 KiB para stderr durante a própria leitura**, além do prazo total de **8 segundos**. Se algum canal exceder o teto, o processo não terminar dentro do prazo ou a consulta for incompatível, o observador recusa; o processo filho é encerrado sem conceder permissões extras. Os campos esperados do `systemctl` continuam verificados exatamente como antes.
+
+Os testes usam produtores **sintéticos em Python**, sem executar PE, e simulam saída excessiva em ambos os canais, prazo expirado, códigos de retorno inválidos e resposta normal limitada. Isso protege apenas a memória do processo observador; não comprova política efetiva do journald, procedência do guest ou atestação de VM independente. A PR #47 e a Issue #48 permanecem HOLD.
+
 ## Limites do resultado
 
 Mesmo que a observação local consiga correlacionar mount namespace, raiz e capacidade do filesystem, **ela não prova** que o journald gravou de fato em `/run/log/journal`, que carregou a política declarada, que não encaminhou logs por outro destino, ou que o host/kernel são confiáveis. Um host desonesto pode falsificar suas próprias observações. Permanecem explicitamente falsos todos os campos de atestação independente e autorização de release.
