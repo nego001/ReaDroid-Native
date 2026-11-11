@@ -57,6 +57,7 @@ SOURCE_FILES = (
     "tools/pe_native_work_enospc.py",
     "tools/pe_arch_vm_s2_12_session_continuity.py",
     "tools/pe_journald_policy.py",
+    "tools/pe_journald_mount_capacity.py",
     "tools/pe_journald_runtime.py",
     "tools/pe_arch_vm_s1_70_readonly_libvirt_host_capture.py",
     "tools/pe_arch_vm_s1_71_guestinfo_os_capture.py",
