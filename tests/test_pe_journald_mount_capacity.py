@@ -38,6 +38,11 @@ class JournalMountContracts(unittest.TestCase):
             VALID.replace(b" - tmpfs tmpfs ", b" - ext4 /dev/vda "),
             VALID.replace(b"/ /run/log/journal rw", b"/old /run/log/journal rw"),
             VALID.replace(b"journal rw,nosuid", b"journal ro,nosuid"),
+            # VFS rw does NOT guarantee a writable tmpfs superblock.
+            VALID.replace(b"- tmpfs tmpfs rw,size=33554432",
+                          b"- tmpfs tmpfs ro,size=33554432"),
+            VALID.replace(b"- tmpfs tmpfs rw,size=33554432",
+                          b"- tmpfs tmpfs size=33554432"),
             VALID.replace(b"/run/log/journal rw", b"/run/log/journal-extra rw"),
             VALID + NESTED,
             VALID + VALID.splitlines()[-1] + b"\n",
