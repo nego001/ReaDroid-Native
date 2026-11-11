@@ -54,6 +54,10 @@ Mesmo em revisão local integralmente válida, o status é `HOLD_PE_S2_23_SIGNED
 
 A [observação local de PID/cgroup v2/seccomp PE-S2.25](PE-S2.25-READONLY-GUEST-PID-SNAPSHOT-HOLD.md) oferece uma leitura **opt-in e somente leitura** de um mesmo PID, antes/depois de consultar as quotas do kernel. Um revisor pode testemunhar esse diagnóstico **durante** a execução sintética, mas a saída permanece `HOLD`: não autentica que o processo é Ghidra, nem a VM, host, cronologia ou identidade do revisor. Não executar essa ferramenta depois que o processo terminou nem aceitá-la como evidência de journald ou cleanup. A issue #48 continua o bloqueio externo.
 
+## Complemento PE-S2.26: armazenamento de journal sob limite real
+
+O diagnóstico [PE-S2.26](PE-S2.26-JOURNALD-KERNEL-MOUNT-CAP-HOLD.md) inspeciona a capacidade do filesystem de uma montagem **tmpfs dedicada** em `/run/log/journal` (máximo 32 MiB) com leitura somente local. Ele **não valida** sozinho a política efetivamente carregada pelo serviço ou que o daemon gravou ali. A prova externa da lacuna de journald exige correlação humana de montagem real, daemon em execução e destino efetivo dos logs durante a sessão; a CI não tem essa VM. Um resultado local `HOLD` não conclui a homologação.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
