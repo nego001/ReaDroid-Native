@@ -125,6 +125,24 @@ class JournaldNativeRuntimeContracts(unittest.TestCase):
         self.assertEqual(close.call_args.args, (32,))
         self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
 
+    def test_partial_procfs_read_never_accepts_a_valid_looking_prefix(self):
+        # A single short read can give a valid v2 line while hiding an
+        # additional contradictory record. The bounded reader needs EOF.
+        prefix = (f"0::{live.EXPECTED_CGROUP}\n").encode("ascii")
+        suffix = b"1:cpu:/unrelated\n"
+        with (mock.patch.object(live.os, "open", return_value=42),
+              mock.patch.object(live.os, "read",
+                                side_effect=[prefix, suffix, b""]) as rd,
+              mock.patch.object(live.os, "close") as close):
+            complete = live._read_proc_cgroup_bounded(321)
+        self.assertEqual(complete, prefix + suffix)
+        self.assertEqual(rd.call_count, 3)
+        close.assert_called_once_with(42)
+        with mock.patch.object(live, "_read_proc_cgroup_bounded",
+                               return_value=complete):
+            with self.assertRaises(live.JournaldRuntimeError):
+                live._proc_cgroup(321)
+
     def test_live_observation_has_explicit_false_attestation(self):
         observed = {"pid": 321, "control_group": live.EXPECTED_CGROUP}
         with (mock.patch.object(live.os, "geteuid", return_value=1000),
