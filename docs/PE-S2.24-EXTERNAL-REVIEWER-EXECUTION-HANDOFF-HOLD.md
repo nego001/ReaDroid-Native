@@ -66,6 +66,10 @@ A PE-S2.26 observa `/proc/self/mountinfo`, o que não determina automaticamente 
 
 O observador local [PE-S2.25, reforçado pela PE-S2.31](PE-S2.31-PID-CGROUP-PROCFS-EOF-HOLD.md) exige EOF nas leituras limitadas de `/proc/PID/stat`, `status`, `cgroup` e de `memory.max`/`pids.max`/`cpu.max` para evitar prefixos aparentemente válidos que escondam dados contraditórios. **Esse diagnóstico local não prova origem da VM nem vínculo independente do PID com Ghidra**: o revisor deve testemunhar e correlacionar o processo real, cgroup e seccomp na mesma sessão sob custódia externa.
 
+## Complemento PE-S2.32: consistência das cotas cgroup
+
+O [snapshot local do PID PE-S2.32](PE-S2.32-CGROUP-QUOTA-CONSISTENCY-HOLD.md) agora lê duas vezes `memory.max`, `pids.max` e `cpu.max`, rejeitando valores diferentes, relaxamento de cotas ou mudança da identidade do processo. **Duas leituras locais não atestam a política durante toda a execução**. O revisor independente ainda deve verificar o PID Ghidra e os limites cgroup v2/seccomp simultaneamente, com evidência externa do início ao fim da sessão.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
