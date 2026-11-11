@@ -27,12 +27,14 @@ CASES = {
     "writable": "REJECT_PE_S2_20_REAL_WRITABLE_SOURCE",
     "tampered": "REJECT_PE_S2_20_REAL_TAMPERED_SOURCE",
     "wrong-v3": "REJECT_PE_S2_20_WRONG_SIGNED_V3_PIN",
+    "wrong-bundle": "REJECT_PE_S2_22_WRONG_EXTERNAL_PIN_BUNDLE_SHA",
 }
 
 
-def _child(mode: str) -> int:
+def _child(mode: str, pin_sha256: str) -> int:
     import pe_arch_vm_evidence as evidence
     import pe_arch_vm_s2_19_reviewer_session_handoff as handoff
+    import pe_arch_vm_s2_22_external_reviewer_pins as reviewed_pins
 
     root = Path("/audit/source")
     # No host /etc/passwd or SSH config crosses the boundary. OpenSSH
@@ -58,6 +60,7 @@ def _child(mode: str) -> int:
         and not Path("/reviewer/tools/.github").exists()
         and not Path("/reviewer/tools/tests").exists()
         and Path("/reviewer/tools/pe_arch_vm_s2_19_reviewer_session_handoff.py").is_file()
+        and Path("/reviewer/tools/pe_arch_vm_s2_22_external_reviewer_pins.py").is_file()
     )
     if not minimal_modules:
         raise AssertionError("Unnecessary source checkout or tokens exposed to reviewer")
@@ -69,46 +72,42 @@ def _child(mode: str) -> int:
         raise AssertionError("Real source root mount flag differs from test case")
     if files_ro is not (mode != "writable"):
         raise AssertionError("Real source file mount flags differ from test case")
-    data = json.loads(Path("/audit/custody/pins.json").read_bytes())
-    if type(data) is not dict or set(data) != (
-            set(handoff.v3.PINS) | {
-                "expected_v3_manifest_sha256", "expected_v3_signature_sha256",
-                "expected_native_receipt_sha256"}):
-        raise AssertionError("Synthetic external pins do not have exact schema")
-    if mode == "wrong-v3":
-        data["expected_v3_signature_sha256"] = "f" * 64
-        if data["expected_v3_signature_sha256"] == json.loads(
-                Path("/audit/custody/pins.json").read_bytes())[
-                    "expected_v3_signature_sha256"]:
-            raise AssertionError("Bad V3 pin accidentally matched")
+    if (mode != "wrong-bundle" and
+            not bool(os.statvfs("/audit/pins").f_flag & os.ST_RDONLY)):
+        raise AssertionError("External reviewer pin folder not readonly")
+    if not Path("/audit/pins/reviewer-held-pins.json").is_file():
+        raise AssertionError("External reviewer pins unavailable")
     try:
-        result = handoff.verify_reviewer_session(
+        result = reviewed_pins.review_custody(
+            Path("/audit/pins/reviewer-held-pins.json"),
             Path("/audit/observer"), Path("/audit/custody"),
-            Path("/audit/custody/acceptance.json"), root, **data)
-    except handoff.SessionHandoffError as exc:
+            Path("/audit/custody/acceptance.json"), root,
+            expected_pin_bundle_sha256=pin_sha256)
+    except reviewed_pins.ReviewerPinsError as exc:
         if mode == "readonly":
-            # CI-only diagnostic for synthetic test data. Never leak raw
-            # signatures or a user's actual host evidence into logs.
+            # CI-only bounded diagnostics for SYNTHETIC data, never a
+            # real reviewer's raw private artifacts.
             chain = []
             cause = exc
             while cause is not None and len(chain) < 10:
                 chain.append(type(cause).__name__ + ": " + str(cause)[:240])
                 cause = cause.__cause__
             raise AssertionError(
-                "S2.20 genuine readonly review rejected: " + " | ".join(chain)
-            ) from exc
+                "S2.22 genuine readonly joint review rejected: " +
+                " | ".join(chain)) from exc
     else:
         if mode != "readonly":
-            raise AssertionError("Unsafe joint host/guest package was accepted")
-        if (result.get("status") != handoff.STATUS
-                or result.get("v1_v2_v3_detached_signatures_verified") is not True
-                or result.get("native_receipt_sha256_equals_v1_signed_receipt_pin")
+            raise AssertionError("Unsafe external reviewer pin package was accepted")
+        if (result.get("status") != reviewed_pins.VERIFIED
+                or result.get("v1_v2_v3_detached_signatures_locally_verified")
                    is not True
-                or result.get("source_commit_checkout_locally_rechecked")
+                or result.get("readonly_native_receipt_and_git_locally_verified")
+                   is not True
+                or result.get("canonical_out_of_band_pin_bundle_sha256_matched")
                    is not True
                 or result.get("independent_vm_attestation") is not False
                 or result.get("release_authorized") is not False):
-            raise AssertionError("Joint review returned inaccurate security status")
+            raise AssertionError("Joint reviewer pin review contradicted HOLD")
     print(json.dumps({
         "status": CASES[mode], "actual_readonly_mount": mount_ro,
         "actual_readonly_source_files": bool(files_ro),
@@ -117,6 +116,8 @@ def _child(mode: str) -> int:
         "libvirt_capture_mocked": True, "native_acceptance_report_synthetic": True,
         "host_passwd_synthetic_and_readonly": synthetic_identity,
         "minimal_review_code_mount_without_git": minimal_modules,
+        "external_pin_bundle_review_unmocked": True,
+        "external_pin_bundle_independently_attested": False,
         "external_native_arch_vm_attested": False,
         "release_authorized": False, "windows_pe_executed": False,
     }, sort_keys=True))
@@ -291,10 +292,37 @@ def _host(ghidra_home: Path) -> int:
                 fixture.sig.read_bytes()).hexdigest(),
             "expected_native_receipt_sha256": native_hash,
         }
-        pin_file = custody / "pins.json"
-        pin_file.write_bytes((json.dumps(pins, sort_keys=True,
-                                         separators=(",", ":")) + "\n").encode())
-        pin_file.chmod(0o600)
+        # Pin bundle is held in a THIRD private directory, distinct from
+        # signed observer files, unsigned guest receipt and source checkout.
+        # Hash comes into the child through a separately supplied argv value.
+        import pe_arch_vm_s2_22_external_reviewer_pins as reviewer_pins
+        pin_dir = old.f.root / "external-reviewer-pins"
+        pin_dir.mkdir(mode=0o700)
+        bundle_file = pin_dir / reviewer_pins.PIN_FILE_NAME
+        bundle = {
+            "schema": reviewer_pins.SCHEMA,
+            "security_classification": reviewer_pins.CLASSIFICATION,
+            "pins": pins,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+        }
+        blob = reviewer_pins._canonical(bundle)
+        bundle_file.write_bytes(blob)
+        bundle_file.chmod(0o600)
+        bundle_sha = hashlib.sha256(blob).hexdigest()
+
+        wrong_pin_dir = old.f.root / "external-reviewer-bad-v3"
+        wrong_pin_dir.mkdir(mode=0o700)
+        forged = json.loads(blob)
+        forged["pins"]["expected_v3_signature_sha256"] = "f"*64
+        if forged["pins"]["expected_v3_signature_sha256"] == pins[
+                "expected_v3_signature_sha256"]:
+            raise RuntimeError("Wrong V3 test unexpectedly matches actual signature")
+        wrong_blob = reviewer_pins._canonical(forged)
+        wrong_file = wrong_pin_dir / reviewer_pins.PIN_FILE_NAME
+        wrong_file.write_bytes(wrong_blob)
+        wrong_file.chmod(0o600)
+        wrong_v3_bundle_sha = hashlib.sha256(wrong_blob).hexdigest()
 
         tampered = old.f.root / "tampered-source"
         shutil.copytree(source, tampered)
@@ -337,6 +365,12 @@ def _host(ghidra_home: Path) -> int:
         group_fixture.chmod(0o600)
         for mode in CASES:
             selected_source = tampered if mode == "tampered" else source
+            selected_pins = wrong_pin_dir if mode == "wrong-v3" else pin_dir
+            expected_pins_sha = (wrong_v3_bundle_sha if mode == "wrong-v3"
+                                 else "f"*64 if mode == "wrong-bundle"
+                                 else bundle_sha)
+            if expected_pins_sha == bundle_sha and mode == "wrong-bundle":
+                raise RuntimeError("Wrong external hash matches real bundle")
             mount = "--bind" if mode == "writable" else "--ro-bind"
             mounts = [
                 "--dir", "/audit", "--dir", "/reviewer",
@@ -346,12 +380,13 @@ def _host(ghidra_home: Path) -> int:
                 mount, str(selected_source), "/audit/source",
                 "--ro-bind", str(observer), "/audit/observer",
                 "--ro-bind", str(custody), "/audit/custody",
+                "--ro-bind", str(selected_pins), "/audit/pins",
                 "--setenv", "PYTHONPATH", "/reviewer/tools",
                 "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
             ]
             command = base[:boundary] + mounts + [
                 "--", "/usr/bin/python3", "/work/s2_20_real_mount.py",
-                "--child", mode]
+                "--child", mode, "--pin-sha256", expected_pins_sha]
             result = subprocess.run(
                 command, capture_output=True, text=True,
                 stdin=subprocess.DEVNULL, timeout=160, check=False,
@@ -370,15 +405,18 @@ def _host(ghidra_home: Path) -> int:
                     or observed.get("actual_ed25519_verifiers_mocked") is not False
                     or observed.get("host_passwd_synthetic_and_readonly") is not True
                     or observed.get("minimal_review_code_mount_without_git") is not True
+                    or observed.get("external_pin_bundle_review_unmocked") is not True
+                    or observed.get("external_pin_bundle_independently_attested") is not False
                     or observed.get("external_native_arch_vm_attested") is not False
                     or observed.get("release_authorized") is not False):
                 raise RuntimeError("Real readonly review result inconsistent")
             print(json.dumps(observed, sort_keys=True), flush=True)
         print(json.dumps({
-            "status": "PASS_PE_S2_20_REAL_OFFLINE_JOINT_CHAIN_HOLD",
+            "status": "PASS_PE_S2_22_REAL_EXTERNAL_PINS_PLUS_JOINT_CHAIN_HOLD",
             "cases": len(CASES),
             "real_bubblewrap_readonly": True,
             "real_unmocked_git_receipt_and_signatures": True,
+            "real_unmocked_external_review_pin_bundle": True,
             "only_libvirt_and_native_execution_mocked": True,
             "native_arch_vm_independently_attested": False,
             "release_authorized": False,
@@ -392,9 +430,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ghidra-home", type=Path)
     parser.add_argument("--child", choices=tuple(CASES))
+    parser.add_argument("--pin-sha256", help="Reviewer retained external pin SHA for CI child")
     args = parser.parse_args()
     if args.child:
-        return _child(args.child)
+        if args.pin_sha256 is None:
+            parser.error("--pin-sha256 required for CI child")
+        return _child(args.child, args.pin_sha256)
     if args.ghidra_home is None:
         parser.error("--ghidra-home required for actual mount test")
     return _host(args.ghidra_home)

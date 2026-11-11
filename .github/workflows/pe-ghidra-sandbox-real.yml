@@ -90,6 +90,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_18_signed_host_pair.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_19_reviewer_session_handoff.py' -v
           python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_21_reviewer_host_readiness.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_22_external_reviewer_pins.py' -v
           # PE-S2.21: actual CI Ubuntu host must reject an attempted
           # "independent host" preflight BEFORE any virsh read.
           # This is a real negative control, never evidence of host origin.
@@ -567,7 +568,7 @@ jobs:
           assert rows[-1]["native_arch_vm_attestation"] is False
           print("PE-S1.53: real readonly structured observation correlation PASS; guest remains synthetic.")
           PY
-      - name: PE-S2.20 full signed host V3 and real Git/readonly native receipt (synthetic only)
+      - name: PE-S2.22 externally pinned V3 host/guest review with real Git/readonly mount (synthetic only)
         run: |
           set -euo pipefail
           python3 -B tests/pe_s2_20_real_mount_joint_review_ci.py \
@@ -584,29 +585,33 @@ jobs:
               "REJECT_PE_S2_20_REAL_WRITABLE_SOURCE",
               "REJECT_PE_S2_20_REAL_TAMPERED_SOURCE",
               "REJECT_PE_S2_20_WRONG_SIGNED_V3_PIN",
-              "PASS_PE_S2_20_REAL_OFFLINE_JOINT_CHAIN_HOLD",
+              "REJECT_PE_S2_22_WRONG_EXTERNAL_PIN_BUNDLE_SHA",
+              "PASS_PE_S2_22_REAL_EXTERNAL_PINS_PLUS_JOINT_CHAIN_HOLD",
           ]
           assert [r["status"] for r in rows] == expected
-          for index, row in enumerate(rows[:4]):
+          for index, row in enumerate(rows[:5]):
               assert row["actual_readonly_mount"] is (index != 1)
               assert row["actual_readonly_source_files"] is (index != 1)
               assert row["actual_git_and_local_receipt_validators_mocked"] is False
               assert row["actual_ed25519_verifiers_mocked"] is False
               assert row["host_passwd_synthetic_and_readonly"] is True
               assert row["minimal_review_code_mount_without_git"] is True
+              assert row["external_pin_bundle_review_unmocked"] is True
+              assert row["external_pin_bundle_independently_attested"] is False
               assert row["libvirt_capture_mocked"] is True
               assert row["native_acceptance_report_synthetic"] is True
               assert row["external_native_arch_vm_attested"] is False
               assert row["release_authorized"] is False
               assert row["windows_pe_executed"] is False
           final = rows[-1]
-          assert final["cases"] == 4
+          assert final["cases"] == 5
           assert final["real_bubblewrap_readonly"] is True
           assert final["real_unmocked_git_receipt_and_signatures"] is True
+          assert final["real_unmocked_external_review_pin_bundle"] is True
           assert final["only_libvirt_and_native_execution_mocked"] is True
           assert final["native_arch_vm_independently_attested"] is False
           assert final["release_authorized"] is False
-          print("PE-S2.20: real readonly V1/V2/V3 + real Git/receipt integration PASS; native Arch VM HOLD")
+          print("PE-S2.22: real readonly reviewer-held SHA bundle, V1/V2/V3 and Git/receipt PASS; native Arch VM HOLD")
           PY
       - name: PE-S1.55-57 real readonly signed review and mandatory release HOLD
         run: |
@@ -1009,6 +1014,7 @@ jobs:
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_18_signed_host_pair.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_19_reviewer_session_handoff.py' -v
           runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_21_reviewer_host_readiness.py' -v
+          runuser -u nobody -- python -B -m unittest discover -s tests -p 'test_pe_arch_vm_s2_22_external_reviewer_pins.py' -v
           # Arch Linux userspace in a container is NOT an independently
           # provisioned VM. Refusal must be a structured exit code 2.
           private="$(runuser -u nobody -- mktemp -d /tmp/negresco-pe-s1-58.XXXXXXXX)"

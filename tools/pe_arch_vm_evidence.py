@@ -66,6 +66,7 @@ SOURCE_FILES = (
     "tools/pe_arch_vm_s2_18_signed_host_pair.py",
     "tools/pe_arch_vm_s2_19_reviewer_session_handoff.py",
     "tools/pe_arch_vm_s2_21_reviewer_host_readiness.py",
+    "tools/pe_arch_vm_s2_22_external_reviewer_pins.py",
     "tools/pe_arch_vm_s2_13_runtime_log_chain.py",
     "tools/pe_arch_cgroup_smoke.py",
     "tools/pe_arch_descendant_smoke.py",
