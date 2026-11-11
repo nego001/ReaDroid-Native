@@ -46,3 +46,7 @@ Um revisor humano deve validar a documentação original, a proveniência do hos
 `tests/test_pe_arch_vm_s2_23_external_gap_register.py` usa assinaturas V1/V2/V3 Ed25519 de chaves descartáveis reais em nove testes de contrato, mas o recibo/Git local são **simulados nesses testes unitários**. O ensaio Ubuntu Bubblewrap, herdado da S2.20 e ampliado na S2.22, executa a S2.23 **sem mocks para SHA do pacote, assinaturas V1/V2/V3, recibo, Git, montagem readonly e verificação S2.22**, usando dados de libvirt **sintéticos** e relatório de aceitação **sintético**. A CI exige que todas as 7 classes permaneçam pendentes.
 
 **Próxima ação real:** um terceiro independente deve disponibilizar e operar host QEMU/libvirt e VM Arch nativa descartável, realizar o protocolo documentado em `PE-S1-NATIVE-ARCH-INDEPENDENT-REVIEW.md` e preservar provas originais. Nenhuma etapa desta CI demonstra que isso aconteceu. PR #47 Draft e release HOLD.
+
+## PE-S2.24 | Transferência operacional para revisor independente
+
+O passo seguinte está organizado em [PE-S2.24-EXTERNAL-REVIEWER-EXECUTION-HANDOFF-HOLD.md](PE-S2.24-EXTERNAL-REVIEWER-EXECUTION-HANDOFF-HOLD.md), com sequência host/guest/offline, as sete provas obrigatórias, condições de parada e a distinção entre `CANDIDATE_HOLD`, `REJECTED` e `HOLD` local. **Este documento é um roteiro, não prova de uma VM nativa**. Não há novo protocolo de assinatura, status de aprovação ou execução externa nesta alteração. A PR continua Draft e o release permanece bloqueado.
