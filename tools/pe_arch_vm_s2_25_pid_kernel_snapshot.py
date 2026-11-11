@@ -131,6 +131,15 @@ def _cpu_limit(raw: str) -> tuple[int, int]:
     return quota, period
 
 
+def _quota_snapshot(folder: Path) -> tuple[int, int, int, int]:
+    """Parse an entire local cgroup v2 quota set with strict finite bounds."""
+    memory = _finite_number(_read_bounded(folder / "memory.max"),
+                            MEMORY_MAX_BYTES)
+    tasks = _finite_number(_read_bounded(folder / "pids.max"), TASKS_MAX)
+    quota, period = _cpu_limit(_read_bounded(folder / "cpu.max"))
+    return memory, tasks, quota, period
+
+
 def snapshot_pid(pid: int, expected_scope: str, *,
                  proc_root: Path = Path("/proc"),
                  cgroup_root: Path = Path("/sys/fs/cgroup"),
@@ -157,15 +166,19 @@ def snapshot_pid(pid: int, expected_scope: str, *,
     if uid != expected_uid or mode != 2 or filters < 1:
         raise PidSnapshotError("Process UID or actual seccomp state invalid")
     folder = cgroup_root.joinpath(*group_start.strip("/").split("/"))
-    memory = _finite_number(_read_bounded(folder / "memory.max"),
-                            MEMORY_MAX_BYTES)
-    tasks = _finite_number(_read_bounded(folder / "pids.max"), TASKS_MAX)
-    quota, period = _cpu_limit(_read_bounded(folder / "cpu.max"))
+    first_quotas = _quota_snapshot(folder)
     stat_end = _start_ticks(_read_bounded(base / "stat"), pid)
     status_end = _status_fields(_read_bounded(base / "status"))
     group_end = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
     if stat_start != stat_end or status_start != status_end or group_start != group_end:
         raise PidSnapshotError("Process PID reused, exited or changed while observed")
+    # Read the actual kernel quota set again. A quota may be relaxed or
+    # tightened while we inspect /proc, so an earlier good value cannot
+    # justify a locally consistent result after the cgroup changes.
+    second_quotas = _quota_snapshot(folder)
+    if first_quotas != second_quotas:
+        raise PidSnapshotError("Kernel cgroup quotas changed during observation")
+    memory, tasks, quota, period = second_quotas
     return {
         "status": OBSERVED,
         "security_classification": UNTRUSTED,
