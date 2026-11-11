@@ -56,18 +56,12 @@ def _root_identity(pid: int) -> tuple[int, int]:
 
 
 def _pid_mountinfo(pid: int) -> bytes:
+    """The journald mount view must be read through EOF within the cap."""
     path = Path("/proc") / str(pid) / "mountinfo"
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
-        try:
-            data = os.read(fd, mount.MAX_MOUNTINFO + 1)
-        finally:
-            os.close(fd)
-    except OSError as exc:
-        raise JournalProcessMountError("Cannot read journald PID mountinfo") from exc
-    if not data or len(data) > mount.MAX_MOUNTINFO or b"\x00" in data:
-        raise JournalProcessMountError("Unbounded or binary journal mountinfo")
-    return data
+        return mount._read_mountinfo_bounded(path)
+    except mount.JournalMountError as exc:
+        raise JournalProcessMountError("Cannot read complete journald PID mountinfo") from exc
 
 
 def _service_pid() -> int:
