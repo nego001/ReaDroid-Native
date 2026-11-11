@@ -564,6 +564,7 @@ jobs:
               assert row["actual_git_and_local_receipt_validators_mocked"] is False
               assert row["actual_ed25519_verifiers_mocked"] is False
               assert row["host_passwd_synthetic_and_readonly"] is True
+              assert row["minimal_review_code_mount_without_git"] is True
               assert row["libvirt_capture_mocked"] is True
               assert row["native_acceptance_report_synthetic"] is True
               assert row["external_native_arch_vm_attested"] is False

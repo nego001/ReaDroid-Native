@@ -49,6 +49,18 @@ def _child(mode: str) -> int:
     )
     if not synthetic_identity:
         raise AssertionError("Host account data leaked or synthetic SSH identity absent")
+    # The verifier sees only the audited Python module copies, never the
+    # checkout's .git/config (which could hold a CI credential).
+    minimal_modules = (
+        Path("/audit/code").is_dir()
+        and bool(os.statvfs("/audit/code").f_flag & os.ST_RDONLY)
+        and not Path("/audit/code/.git").exists()
+        and not Path("/audit/code/.github").exists()
+        and not Path("/audit/code/tests").exists()
+        and Path("/audit/code/pe_arch_vm_s2_19_reviewer_session_handoff.py").is_file()
+    )
+    if not minimal_modules:
+        raise AssertionError("Unnecessary source checkout or tokens exposed to reviewer")
     mount_ro = bool(os.statvfs(root).f_flag & os.ST_RDONLY)
     files_ro = all(
         os.statvfs(root / name).f_flag & os.ST_RDONLY
@@ -104,6 +116,7 @@ def _child(mode: str) -> int:
         "actual_ed25519_verifiers_mocked": False,
         "libvirt_capture_mocked": True, "native_acceptance_report_synthetic": True,
         "host_passwd_synthetic_and_readonly": synthetic_identity,
+        "minimal_review_code_mount_without_git": minimal_modules,
         "external_native_arch_vm_attested": False,
         "release_authorized": False, "windows_pe_executed": False,
     }, sort_keys=True))
@@ -298,6 +311,17 @@ def _host(ghidra_home: Path) -> int:
             root / "tools/ghidra_scripts/NegrescoFunctionInventory.java",
             work / "scripts/NegrescoFunctionInventory.java")
         shutil.copyfile(__file__, work / "s2_20_real_mount.py")
+        # Bind only ordinary *.py modules. Never reveal full runner checkout,
+        # .git/config, GitHub credentials, test keys or SSH config.
+        reviewer_code = old.f.root / "review-code"
+        reviewer_code.mkdir(mode=0o700)
+        tool_files = sorted((root / "tools").glob("*.py"))
+        if not tool_files:
+            raise RuntimeError("Reviewed Python tool modules missing")
+        for file in tool_files:
+            if file.is_symlink() or not file.is_file():
+                raise RuntimeError("Unsafe executable source module type")
+            shutil.copyfile(file, reviewer_code / file.name)
         base = build_command(ghidra_home, work, 160)
         boundary = base.index("--")
         # Never mount the runner's real login database. ssh-keygen -Y
@@ -318,11 +342,11 @@ def _host(ghidra_home: Path) -> int:
                 "--dir", "/audit",
                 "--ro-bind", str(passwd_fixture), "/etc/passwd",
                 "--ro-bind", str(group_fixture), "/etc/group",
-                "--ro-bind", str(root), "/audit/code",
+                "--ro-bind", str(reviewer_code), "/audit/code",
                 mount, str(selected_source), "/audit/source",
                 "--ro-bind", str(observer), "/audit/observer",
                 "--ro-bind", str(custody), "/audit/custody",
-                "--setenv", "PYTHONPATH", "/audit/code/tools",
+                "--setenv", "PYTHONPATH", "/audit/code",
                 "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
             ]
             command = base[:boundary] + mounts + [
@@ -345,6 +369,7 @@ def _host(ghidra_home: Path) -> int:
                        is not False
                     or observed.get("actual_ed25519_verifiers_mocked") is not False
                     or observed.get("host_passwd_synthetic_and_readonly") is not True
+                    or observed.get("minimal_review_code_mount_without_git") is not True
                     or observed.get("external_native_arch_vm_attested") is not False
                     or observed.get("release_authorized") is not False):
                 raise RuntimeError("Real readonly review result inconsistent")
