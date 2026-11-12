@@ -74,6 +74,10 @@ O [snapshot local do PID PE-S2.32](PE-S2.32-CGROUP-QUOTA-CONSISTENCY-HOLD.md) ag
 
 As leituras S2.25 de PID, seccomp e cotas cgroup v2 passaram a usar uma [travessia ancorada em descritores PE-S2.33](PE-S2.33-PID-CGROUP-ANCESTOR-NOFOLLOW-HOLD.md) para recusar links simbólicos tanto no arquivo final quanto em **todos os diretórios ancestrais**. Isso reforça o diagnóstico local, sem substituir a verificação independente da VM Arch, do PID real Ghidra, das cotas e da custódia externa.
 
+## Complemento PE-S2.34: última identidade do PID após as cotas
+
+O diagnóstico [PE-S2.34](PE-S2.34-FINAL-PID-IDENTITY-AFTER-QUOTA-HOLD.md) relê PID/starttime, UID/seccomp e cgroup após a **segunda** observação de `memory.max`, `pids.max` e `cpu.max`, evitando um resultado local favorável caso a identidade tenha mudado durante a última passagem de cotas. **Não é prova de continuidade ao longo da análise**; o revisor independente ainda precisa correlacionar PID e limites efetivos durante o Ghidra real com evidências BEFORE → WORK → AFTER.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
