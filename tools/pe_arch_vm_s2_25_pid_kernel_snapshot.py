@@ -183,6 +183,16 @@ def snapshot_pid(pid: int, expected_scope: str, *,
     second_quotas = _quota_snapshot(folder)
     if first_quotas != second_quotas:
         raise PidSnapshotError("Kernel cgroup quotas changed during observation")
+    # The second quota read happens AFTER the existing final PID checks.
+    # A process could exit, change UID/seccomp, or change cgroup during this
+    # final quota pass. Re-read the same identity before claiming a coherent
+    # local snapshot. This is still only a point-in-time, guest-local check.
+    stat_final = _start_ticks(_read_bounded(base / "stat"), pid)
+    status_final = _status_fields(_read_bounded(base / "status"))
+    group_final = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
+    if (stat_final != stat_start or status_final != status_start
+            or group_final != group_start):
+        raise PidSnapshotError("Process changed during final quota verification")
     memory, tasks, quota, period = second_quotas
     return {
         "status": OBSERVED,
