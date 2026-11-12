@@ -78,6 +78,10 @@ As leituras S2.25 de PID, seccomp e cotas cgroup v2 passaram a usar uma [travess
 
 O diagnóstico [PE-S2.34](PE-S2.34-FINAL-PID-IDENTITY-AFTER-QUOTA-HOLD.md) relê PID/starttime, UID/seccomp e cgroup após a **segunda** observação de `memory.max`, `pids.max` e `cpu.max`, evitando um resultado local favorável caso a identidade tenha mudado durante a última passagem de cotas. **Não é prova de continuidade ao longo da análise**; o revisor independente ainda precisa correlacionar PID e limites efetivos durante o Ghidra real com evidências BEFORE → WORK → AFTER.
 
+## Complemento PE-S2.35: PID realmente vivo no momento observado
+
+O diagnóstico [PE-S2.35](PE-S2.35-LIVE-PID-STATE-HOLD.md) recusa `/proc/PID/stat` com estado zumbi (`Z`), morto (`X/x`), parado (`T/t`) ou estado inesperado em qualquer uma das três verificações. Apenas `R/S/D` são aceitos como observações locais de tarefa ativa ou dormindo. Isso **não prova** que o PID pertence a Ghidra ou continua ativo durante toda a análise. O revisor deve testemunhar a identidade/executável e o estado do PID em simultâneo com as cotas cgroup v2 e o seccomp dentro da VM nativa, preservando a cadeia BEFORE→WORK→AFTER.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
