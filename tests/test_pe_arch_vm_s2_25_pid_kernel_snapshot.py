@@ -180,6 +180,56 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         for name in ("memory.max", "pids.max", "cpu.max"):
             self.assertEqual(touched.count(name), 2, name)
 
+    def test_pid_identity_checked_after_second_quota_pass(self):
+        real = diag._read_bounded
+        touched = []
+        def observe(path):
+            touched.append(path.name)
+            return real(path)
+        with mock.patch.object(diag, "_read_bounded", side_effect=observe):
+            report = self.snap()
+        self.assertEqual(report["status"], diag.OBSERVED)
+        for name in ("stat", "status", "cgroup"):
+            self.assertEqual(touched.count(name), 3, name)
+        for name in ("memory.max", "pids.max", "cpu.max"):
+            self.assertEqual(touched.count(name), 2, name)
+        self.assertEqual(touched[-3:], ["stat", "status", "cgroup"])
+        self.assertIs(report["independent_vm_attestation"], False)
+        self.assertIs(report["release_authorized"], False)
+
+    def test_pid_or_seccomp_or_cgroup_change_during_final_quota_read_rejected(self):
+        # Each mutation occurs AFTER the earlier identity comparison and
+        # DURING the second quota pass, when old code stopped reading /proc.
+        for target in ("stat", "status", "cgroup"):
+            with self.subTest(target=target):
+                self.write_kernel()
+                original = diag._read_bounded
+                quota_reads = [0]
+                def mutate_after_last_quota(path):
+                    value = original(path)
+                    if path.name == "cpu.max":
+                        quota_reads[0] += 1
+                        if quota_reads[0] == 2:
+                            evidence = self.process / target
+                            old_text = evidence.read_text("ascii")
+                            if target == "stat":
+                                new_text = old_text.replace("123456", "123457")
+                            elif target == "status":
+                                new_text = old_text.replace(
+                                    "Seccomp:\t2\n", "Seccomp:\t0\n")
+                            else:
+                                new_text = old_text.replace(
+                                    "0::" + GROUP + "\n", "0::" + GROUP + "/child\n")
+                            self.assertNotEqual(new_text, old_text)
+                            evidence.write_text(new_text, encoding="ascii")
+                    return value
+                with (mock.patch.object(diag, "_read_bounded",
+                                        side_effect=mutate_after_last_quota),
+                      self.assertRaisesRegex(diag.PidSnapshotError,
+                                             "final quota verification")):
+                    self.snap()
+                self.assertEqual(quota_reads[0], 2)
+
     def test_bounded_quota_drift_during_pid_snapshot_rejected(self):
         cases = (
             ("memory.max", "2147483648\n"),
