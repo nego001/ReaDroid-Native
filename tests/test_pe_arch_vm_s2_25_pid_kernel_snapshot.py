@@ -180,6 +180,52 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         for name in ("memory.max", "pids.max", "cpu.max"):
             self.assertEqual(touched.count(name), 2, name)
 
+    def test_zombie_dead_stopped_and_unknown_stat_states_rejected(self):
+        stat = self.process / "stat"
+        for state in ("Z", "X", "x", "T", "t", "I", "W", "K", "P", "?", "ZZ"):
+            with self.subTest(state=state):
+                self.write_kernel()
+                original = stat.read_text("ascii")
+                changed = original.replace(") S ", f") {state} ", 1)
+                self.assertNotEqual(changed, original)
+                stat.write_text(changed, encoding="ascii")
+                with self.assertRaisesRegex(diag.PidSnapshotError,
+                                             "not live"):
+                    self.snap()
+
+    def test_runnable_and_sleeping_kernel_states_accepted_locally_only(self):
+        stat = self.process / "stat"
+        for state in ("R", "S", "D"):
+            with self.subTest(state=state):
+                self.write_kernel()
+                original = stat.read_text("ascii")
+                stat.write_text(original.replace(") S ", f") {state} ", 1),
+                                encoding="ascii")
+                result = self.snap()
+                self.assertEqual(result["proc_start_ticks"], 123456)
+                self.assertEqual(result["status"], diag.OBSERVED)
+                self.assertIs(result["independent_vm_attestation"], False)
+                self.assertIs(result["release_authorized"], False)
+
+    def test_process_zombifies_during_final_pid_check_rejected(self):
+        self.write_kernel()
+        original = diag._read_bounded
+        stat_reads = [0]
+        def zombify_during_final_read(path):
+            if path.name == "stat":
+                stat_reads[0] += 1
+                if stat_reads[0] == 3:
+                    stat = self.process / "stat"
+                    original_stat = stat.read_text("ascii")
+                    stat.write_text(original_stat.replace(") S ", ") Z ", 1),
+                                    encoding="ascii")
+            return original(path)
+        with (mock.patch.object(diag, "_read_bounded",
+                                side_effect=zombify_during_final_read),
+              self.assertRaisesRegex(diag.PidSnapshotError, "not live")):
+            self.snap()
+        self.assertEqual(stat_reads[0], 3)
+
     def test_pid_identity_checked_after_second_quota_pass(self):
         real = diag._read_bounded
         touched = []
