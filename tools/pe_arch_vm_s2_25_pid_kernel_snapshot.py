@@ -8,6 +8,7 @@ Never modifies files, starts processes, signs evidence or authorizes release.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import re
 import sys
 
 sys.dont_write_bytecode = True
+from pe_nofollow_paths import open_absolute_directory_nofollow
 from pe_resource_limits import (
     MEMORY_MAX_BYTES, TASKS_MAX, CPU_QUOTA_PERCENT,
     CPU_QUOTA_MIN_US, CPU_PERIOD_MIN_US, CPU_PERIOD_MAX_US, SCOPE_PATTERN,
@@ -32,27 +34,30 @@ class PidSnapshotError(RuntimeError):
 
 
 def _read_bounded(path: Path) -> str:
-    """Fixed kernel paths only; refuse final-component symlinks and large data."""
+    """Read complete kernel file with descriptor-pinned, no-symlink ancestors.
+
+    An O_NOFOLLOW flag on the last file alone cannot prevent an intermediate
+    /proc, PID or cgroup directory symlink from redirecting local evidence.
+    """
     try:
         flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-        fd = os.open(path, flags)
-        try:
+        with ExitStack() as stack:
+            parent_fd = open_absolute_directory_nofollow(path.parent, stack)
+            fd = os.open(path.name, flags, dir_fd=parent_fd)
+            stack.callback(os.close, fd)
             chunks = bytearray()
-            # procfs/cgroupfs may return short reads. A valid-looking first
-            # chunk must not conceal contradictory data after that prefix.
-            # Include one overflow byte and demand EOF within the cap.
+            # Require EOF within the byte budget; short reads may hide a
+            # contradictory quota or PID/cgroup record after a valid prefix.
             while len(chunks) <= MAX_BYTES:
                 part = os.read(fd, MAX_BYTES + 1 - len(chunks))
                 if not part:
                     break
                 chunks.extend(part)
             raw = bytes(chunks)
-        finally:
-            os.close(fd)
         if not raw or len(raw) > MAX_BYTES or b"\x00" in raw:
             raise PidSnapshotError("Empty, oversized or binary kernel evidence")
         return raw.decode("ascii")
-    except (OSError, UnicodeError) as exc:
+    except (OSError, UnicodeError, ValueError) as exc:
         raise PidSnapshotError("Kernel observation unavailable") from exc
 
 
