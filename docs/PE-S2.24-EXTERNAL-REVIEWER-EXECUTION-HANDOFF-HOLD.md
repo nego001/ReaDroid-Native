@@ -82,6 +82,10 @@ O diagnóstico [PE-S2.34](PE-S2.34-FINAL-PID-IDENTITY-AFTER-QUOTA-HOLD.md) relê
 
 O diagnóstico [PE-S2.35](PE-S2.35-LIVE-PID-STATE-HOLD.md) recusa `/proc/PID/stat` com estado zumbi (`Z`), morto (`X/x`), parado (`T/t`) ou estado inesperado em qualquer uma das três verificações. Apenas `R/S/D` são aceitos como observações locais de tarefa ativa ou dormindo. Isso **não prova** que o PID pertence a Ghidra ou continua ativo durante toda a análise. O revisor deve testemunhar a identidade/executável e o estado do PID em simultâneo com as cotas cgroup v2 e o seccomp dentro da VM nativa, preservando a cadeia BEFORE→WORK→AFTER.
 
+## Complemento PE-S2.36: identidade de processo fixada com pidfd
+
+O diagnóstico local [PE-S2.36](PE-S2.36-PIDFD-IDENTITY-GUARD-HOLD.md) mantém `pidfd_open` fixado durante todas as leituras `/proc` e cotas cgroup, recusando saída do processo ou falta de suporte do kernel. Isso reduz corridas de reutilização de PID, mas **não valida a identidade do executável Ghidra** nem prova imposição contínua das cotas/seccomp. O revisor independente ainda deve testemunhar o PID e o processo real em conjunto com os controles no guest Arch nativo durante toda a sessão, sob cadeia BEFORE→WORK→AFTER.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
