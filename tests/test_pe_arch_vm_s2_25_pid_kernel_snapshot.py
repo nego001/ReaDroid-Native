@@ -58,7 +58,9 @@ class PidKernelSnapshotContracts(unittest.TestCase):
     def test_short_kernel_reads_cannot_hide_contradictory_cgroup_tail(self):
         prefix = ("0::" + GROUP + "\n").encode("ascii")
         extra = b"1:cpu:/hostile\n"
-        with (mock.patch.object(diag.os, "open", return_value=41) as opened,
+        with (mock.patch.object(diag, "open_absolute_directory_nofollow",
+                                return_value=101) as parent,
+              mock.patch.object(diag.os, "open", return_value=41) as opened,
               mock.patch.object(diag.os, "read",
                                 side_effect=[prefix, extra, b""]) as read,
               mock.patch.object(diag.os, "close") as closed):
@@ -67,11 +69,15 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         self.assertEqual(read.call_count, 3)
         closed.assert_called_once_with(41)
         self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
+        self.assertEqual(opened.call_args.kwargs["dir_fd"], 101)
+        parent.assert_called_once()
         with self.assertRaises(diag.PidSnapshotError):
             diag._cgroup_path(complete, SCOPE)
 
     def test_short_quota_read_cannot_hide_relaxed_tail(self):
-        with (mock.patch.object(diag.os, "open", return_value=42),
+        with (mock.patch.object(diag, "open_absolute_directory_nofollow",
+                                return_value=101),
+              mock.patch.object(diag.os, "open", return_value=42),
               mock.patch.object(diag.os, "read",
                                 side_effect=[b"128\n", b"999\n", b""]),
               mock.patch.object(diag.os, "close") as closed):
@@ -82,7 +88,9 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         closed.assert_called_once_with(42)
 
     def test_kernel_reader_enforces_cap_even_when_data_is_chunked(self):
-        with (mock.patch.object(diag.os, "open", return_value=43),
+        with (mock.patch.object(diag, "open_absolute_directory_nofollow",
+                                return_value=101),
+              mock.patch.object(diag.os, "open", return_value=43),
               mock.patch.object(diag.os, "read",
                                 side_effect=[b"x" * diag.MAX_BYTES, b"y"]) as read,
               mock.patch.object(diag.os, "close") as closed,
@@ -92,7 +100,9 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         closed.assert_called_once_with(43)
 
     def test_kernel_reader_closes_fd_after_read_failure(self):
-        with (mock.patch.object(diag.os, "open", return_value=44),
+        with (mock.patch.object(diag, "open_absolute_directory_nofollow",
+                                return_value=101),
+              mock.patch.object(diag.os, "open", return_value=44),
               mock.patch.object(diag.os, "read",
                                 side_effect=OSError("simulated procfs failure")),
               mock.patch.object(diag.os, "close") as closed,
@@ -113,6 +123,32 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         with self.assertRaises(diag.PidSnapshotError):
             diag._read_bounded(path)
         self.assertEqual(target.read_bytes(), old)
+
+    def test_intermediate_symlink_in_pid_path_is_refused(self):
+        # O_NOFOLLOW on the final stat file alone does not protect /proc/PID.
+        real = self.proc / "real-process"
+        self.process.rename(real)
+        self.process.symlink_to(real, target_is_directory=True)
+        with self.assertRaises(diag.PidSnapshotError):
+            self.snap()
+        self.assertTrue((real / "stat").is_file())
+
+    def test_intermediate_symlink_in_cgroup_path_is_refused(self):
+        # Parent cgroup symlinks must not redirect quota observations.
+        user_slice = self.cg / "user.slice"
+        real = self.cg / "real-user.slice"
+        user_slice.rename(real)
+        user_slice.symlink_to(real, target_is_directory=True)
+        with self.assertRaises(diag.PidSnapshotError):
+            self.snap()
+        self.assertTrue((real / "user-1000.slice").is_dir())
+
+    def test_noncanonical_or_relative_kernel_paths_are_refused(self):
+        for bad in (Path("relative/status"),
+                    self.proc / ".." / str(PID) / "stat"):
+            with self.subTest(path=str(bad)):
+                with self.assertRaises(diag.PidSnapshotError):
+                    diag._read_bounded(bad)
 
     def test_consistent_local_kernel_values_never_attest_vm(self):
         x = self.snap()
