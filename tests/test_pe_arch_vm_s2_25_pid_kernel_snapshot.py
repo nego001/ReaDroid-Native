@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s2_25_pid_kernel_snapshot as diag
 
+REAL_PIDFD_OPEN = getattr(os, "pidfd_open", None)
 PID = 2468
 SCOPE = "negresco-pe-" + "a1" * 12 + ".scope"
 GROUP = "/user.slice/user-1000.slice/user@1000.service/app.slice/" + SCOPE
@@ -31,6 +32,18 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         self.process.mkdir(parents=True)
         self.scope.mkdir(parents=True)
         self.write_kernel()
+        # Synthetic procfs fixture has no real PID. Use an open pipe as a
+        # non-readable stand-in for a still-live pidfd. Production uses the
+        # real Linux pidfd_open syscall, never this injection.
+        read_fd, write_fd = os.pipe()
+        self.addCleanup(os.close, read_fd)
+        self.addCleanup(os.close, write_fd)
+        patcher = mock.patch.object(
+            diag.os, "pidfd_open",
+            side_effect=lambda pid, flags=0: os.dup(read_fd),
+            create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def write_kernel(self, *, seccomp=2, filters=1, uid=1000,
                      memory="4294967296\n", tasks="128\n",
@@ -225,6 +238,64 @@ class PidKernelSnapshotContracts(unittest.TestCase):
               self.assertRaisesRegex(diag.PidSnapshotError, "not live")):
             self.snap()
         self.assertEqual(stat_reads[0], 3)
+
+    def test_pin_pidfd_covers_entire_snapshot_and_closes_fd(self):
+        # The synthetic kernel file reads may succeed while the pinned PID
+        # becomes invalid. Check both entry and post-snapshot checkpoints.
+        result = self.snap()
+        self.assertEqual(result["status"], diag.OBSERVED)
+        self.assertIs(result["independent_vm_attestation"], False)
+        original = diag._assert_pidfd_not_exited
+        calls = []
+        def exit_after_read(fd):
+            calls.append(fd)
+            if len(calls) == 2:
+                raise diag.PidSnapshotError("Pinned PID exited during local observation")
+            return original(fd)
+        with (mock.patch.object(diag, "_assert_pidfd_not_exited",
+                                side_effect=exit_after_read),
+              self.assertRaisesRegex(diag.PidSnapshotError, "PID exited")):
+            self.snap()
+        self.assertEqual(len(calls), 2)
+        with self.assertRaises(OSError):
+            os.fstat(calls[-1])
+
+    def test_exited_and_invalid_pidfd_poll_events_are_rejected(self):
+        for event in (diag.select.POLLIN, diag.select.POLLHUP,
+                      diag.select.POLLERR, diag.select.POLLNVAL):
+            with self.subTest(event=event):
+                with (mock.patch.object(diag.select, "poll") as poll,
+                      self.assertRaisesRegex(diag.PidSnapshotError,
+                                             "Pinned PID exited")):
+                    poll.return_value.poll.return_value = [(55, event)]
+                    diag._assert_pidfd_not_exited(55)
+                poll.return_value.register.assert_called_once()
+
+    def test_pidfd_unavailable_or_open_fails_before_kernel_reads(self):
+        for opener in (None, OSError("pidfd permission denied")):
+            with self.subTest(opener=str(opener)):
+                if opener is None:
+                    patcher = mock.patch.object(diag.os, "pidfd_open", None)
+                else:
+                    patcher = mock.patch.object(
+                        diag.os, "pidfd_open", side_effect=opener)
+                with (patcher, mock.patch.object(diag, "_read_bounded") as read,
+                      self.assertRaises(diag.PidSnapshotError)):
+                    self.snap()
+                read.assert_not_called()
+
+    def test_linux_pidfd_syscall_tracks_current_process_without_signal(self):
+        # On CI Linux this is an actual pidfd for the test process itself,
+        # not a fabricated Arch guest, Ghidra identity or external attestation.
+        real_pidfd_open = REAL_PIDFD_OPEN
+        if real_pidfd_open is None or sys.platform != "linux":
+            self.skipTest("Linux pidfd_open not available in this interpreter")
+        with mock.patch.object(diag.os, "pidfd_open", real_pidfd_open):
+            with diag._pin_pidfd(os.getpid()) as fd:
+                self.assertIsNone(diag._assert_pidfd_not_exited(fd))
+                self.assertGreaterEqual(fd, 0)
+        with self.assertRaises(OSError):
+            os.fstat(fd)
 
     def test_pid_identity_checked_after_second_quota_pass(self):
         real = diag._read_bounded
