@@ -70,6 +70,10 @@ O observador local [PE-S2.25, reforçado pela PE-S2.31](PE-S2.31-PID-CGROUP-PROC
 
 O [snapshot local do PID PE-S2.32](PE-S2.32-CGROUP-QUOTA-CONSISTENCY-HOLD.md) agora lê duas vezes `memory.max`, `pids.max` e `cpu.max`, rejeitando valores diferentes, relaxamento de cotas ou mudança da identidade do processo. **Duas leituras locais não atestam a política durante toda a execução**. O revisor independente ainda deve verificar o PID Ghidra e os limites cgroup v2/seccomp simultaneamente, com evidência externa do início ao fim da sessão.
 
+## Complemento PE-S2.33: caminhos de evidência sem symlinks intermediários
+
+As leituras S2.25 de PID, seccomp e cotas cgroup v2 passaram a usar uma [travessia ancorada em descritores PE-S2.33](PE-S2.33-PID-CGROUP-ANCESTOR-NOFOLLOW-HOLD.md) para recusar links simbólicos tanto no arquivo final quanto em **todos os diretórios ancestrais**. Isso reforça o diagnóstico local, sem substituir a verificação independente da VM Arch, do PID real Ghidra, das cotas e da custódia externa.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
