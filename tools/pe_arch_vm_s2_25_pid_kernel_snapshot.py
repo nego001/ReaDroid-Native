@@ -8,11 +8,12 @@ Never modifies files, starts processes, signs evidence or authorizes release.
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import json
 import os
 from pathlib import Path
 import re
+import select
 import sys
 
 sys.dont_write_bytecode = True
@@ -31,6 +32,40 @@ UNTRUSTED = "UNATTESTED_GUEST_LOCAL_KERNEL_VIEW"
 
 class PidSnapshotError(RuntimeError):
     """Kernel process or quota observations could not be correlated safely."""
+
+
+def _assert_pidfd_not_exited(fd: int) -> None:
+    """Fail closed if the pinned process exited; no signal or wait is used."""
+    try:
+        watcher = select.poll()
+        watcher.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+        # A pidfd becomes readable when its task exits, and POLLHUP when
+        # reaped. Any event (including POLLNVAL) invalidates the snapshot.
+        if watcher.poll(0):
+            raise PidSnapshotError("Pinned PID exited during local observation")
+    except (OSError, ValueError) as exc:
+        raise PidSnapshotError("Cannot verify pinned PID liveness") from exc
+
+
+@contextmanager
+def _pin_pidfd(pid: int):
+    """Pin a Linux task identity for the complete read-only local snapshot.
+
+    No fallback to PID/starttime alone if the kernel lacks pidfd_open.
+    """
+    opener = getattr(os, "pidfd_open", None)
+    if sys.platform != "linux" or not callable(opener):
+        raise PidSnapshotError("Linux pidfd observation unavailable")
+    try:
+        fd = opener(pid, 0)
+    except OSError as exc:
+        raise PidSnapshotError("Cannot pin target process PID") from exc
+    try:
+        _assert_pidfd_not_exited(fd)
+        yield fd
+        _assert_pidfd_not_exited(fd)
+    finally:
+        os.close(fd)
 
 
 def _read_bounded(path: Path) -> str:
@@ -170,56 +205,57 @@ def snapshot_pid(pid: int, expected_scope: str, *,
         expected_uid = os.geteuid()
     if type(expected_uid) is not int or expected_uid <= 0:
         raise PidSnapshotError("Non-root effective UID required")
-    base = proc_root / str(pid)
-    stat_start = _start_ticks(_read_bounded(base / "stat"), pid)
-    status_start = _status_fields(_read_bounded(base / "status"))
-    group_start = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
-    uid, mode, filters = status_start
-    if uid != expected_uid or mode != 2 or filters < 1:
-        raise PidSnapshotError("Process UID or actual seccomp state invalid")
-    folder = cgroup_root.joinpath(*group_start.strip("/").split("/"))
-    first_quotas = _quota_snapshot(folder)
-    stat_end = _start_ticks(_read_bounded(base / "stat"), pid)
-    status_end = _status_fields(_read_bounded(base / "status"))
-    group_end = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
-    if stat_start != stat_end or status_start != status_end or group_start != group_end:
-        raise PidSnapshotError("Process PID reused, exited or changed while observed")
-    # Read the actual kernel quota set again. A quota may be relaxed or
-    # tightened while we inspect /proc, so an earlier good value cannot
-    # justify a locally consistent result after the cgroup changes.
-    second_quotas = _quota_snapshot(folder)
-    if first_quotas != second_quotas:
-        raise PidSnapshotError("Kernel cgroup quotas changed during observation")
-    # The second quota read happens AFTER the existing final PID checks.
-    # A process could exit, change UID/seccomp, or change cgroup during this
-    # final quota pass. Re-read the same identity before claiming a coherent
-    # local snapshot. This is still only a point-in-time, guest-local check.
-    stat_final = _start_ticks(_read_bounded(base / "stat"), pid)
-    status_final = _status_fields(_read_bounded(base / "status"))
-    group_final = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
-    if (stat_final != stat_start or status_final != status_start
-            or group_final != group_start):
-        raise PidSnapshotError("Process changed during final quota verification")
-    memory, tasks, quota, period = second_quotas
-    return {
-        "status": OBSERVED,
-        "security_classification": UNTRUSTED,
-        "pid": pid, "proc_start_ticks": stat_start,
-        "expected_scope": expected_scope,
-        "observed_cgroup_v2_path": group_start,
-        "local_uid": uid, "seccomp_mode": mode,
-        "seccomp_filters": filters,
-        "memory_max_bytes": memory, "tasks_max": tasks,
-        "cpu_quota_us": quota, "cpu_period_us": period,
-        "same_pid_local_kernel_snapshot": True,
-        "ghidra_process_identity_independently_verified": False,
-        "native_arch_kernel_provenance_verified": False,
-        "independent_vm_attestation": False,
-        "release_authorized": False,
-        "apk_or_ota_publication_authorized": False,
-        "unknown_windows_pe_execution_authorized": False,
-    }
-
+    with _pin_pidfd(pid):
+        base = proc_root / str(pid)
+        stat_start = _start_ticks(_read_bounded(base / "stat"), pid)
+        status_start = _status_fields(_read_bounded(base / "status"))
+        group_start = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
+        uid, mode, filters = status_start
+        if uid != expected_uid or mode != 2 or filters < 1:
+            raise PidSnapshotError("Process UID or actual seccomp state invalid")
+        folder = cgroup_root.joinpath(*group_start.strip("/").split("/"))
+        first_quotas = _quota_snapshot(folder)
+        stat_end = _start_ticks(_read_bounded(base / "stat"), pid)
+        status_end = _status_fields(_read_bounded(base / "status"))
+        group_end = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
+        if stat_start != stat_end or status_start != status_end or group_start != group_end:
+            raise PidSnapshotError("Process PID reused, exited or changed while observed")
+        # Read the actual kernel quota set again. A quota may be relaxed or
+        # tightened while we inspect /proc, so an earlier good value cannot
+        # justify a locally consistent result after the cgroup changes.
+        second_quotas = _quota_snapshot(folder)
+        if first_quotas != second_quotas:
+            raise PidSnapshotError("Kernel cgroup quotas changed during observation")
+        # The second quota read happens AFTER the existing final PID checks.
+        # A process could exit, change UID/seccomp, or change cgroup during this
+        # final quota pass. Re-read the same identity before claiming a coherent
+        # local snapshot. This is still only a point-in-time, guest-local check.
+        stat_final = _start_ticks(_read_bounded(base / "stat"), pid)
+        status_final = _status_fields(_read_bounded(base / "status"))
+        group_final = _cgroup_path(_read_bounded(base / "cgroup"), expected_scope)
+        if (stat_final != stat_start or status_final != status_start
+                or group_final != group_start):
+            raise PidSnapshotError("Process changed during final quota verification")
+        memory, tasks, quota, period = second_quotas
+        return {
+            "status": OBSERVED,
+            "security_classification": UNTRUSTED,
+            "pid": pid, "proc_start_ticks": stat_start,
+            "expected_scope": expected_scope,
+            "observed_cgroup_v2_path": group_start,
+            "local_uid": uid, "seccomp_mode": mode,
+            "seccomp_filters": filters,
+            "memory_max_bytes": memory, "tasks_max": tasks,
+            "cpu_quota_us": quota, "cpu_period_us": period,
+            "same_pid_local_kernel_snapshot": True,
+            "ghidra_process_identity_independently_verified": False,
+            "native_arch_kernel_provenance_verified": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+            "unknown_windows_pe_execution_authorized": False,
+        }
+    
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
