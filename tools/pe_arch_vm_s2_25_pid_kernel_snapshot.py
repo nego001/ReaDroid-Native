@@ -73,6 +73,13 @@ def _start_ticks(stat_text: str, pid: int) -> int:
     parts = stat_text[end + 2:].split()
     if len(parts) < 20:
         raise PidSnapshotError("Incomplete process stat")
+    # /proc/PID/stat field 3 is task state. A zombie/dead/stopped PID
+    # retains a readable /proc entry (and even its original start ticks),
+    # but cannot demonstrate a currently executing Ghidra process.
+    # Allow ordinary runnable/sleeping states; reject all other states,
+    # including unknown values, before trusting the local observation.
+    if parts[0] not in ("R", "S", "D"):
+        raise PidSnapshotError("PID not live and runnable or sleeping")
     try:
         ticks = int(parts[19])
     except ValueError as exc:
