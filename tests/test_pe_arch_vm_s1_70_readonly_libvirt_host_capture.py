@@ -114,6 +114,63 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         self.assertEqual(len(result["required_other_host_records_not_created"]), 3)
         self.assertEqual(set(os.listdir(self.owner)), {self.target.name})
 
+    # PE-S2.46: a captured host log must already be acceptable to the
+    # subsequent S1.71 parser; hashing unsafe data is not enough.
+    def test_s2_46_capture_matches_downstream_host_snapshot_policy(self):
+        import pe_arch_vm_s1_71_guestinfo_os_capture as guest
+        report, _, _ = self.capture()
+        guest._check_snapshot(
+            self.target.read_bytes(), commit=COMMIT,
+            challenge=CHALLENGE, domain=DOMAIN, uuid=UUID)
+        self.assertEqual(report["status"], capture.CAPTURED)
+        self.assertIs(guest.host.DOMINFO_RESERVED_PREFIXES,
+                      capture.DOMINFO_RESERVED_PREFIXES)
+
+    def test_s2_46_reserved_host_envelope_markers_block_publication(self):
+        for injected in (
+            b"release_authorized=true",
+            b"independent_vm_attestation=true",
+            b"source_commit=" + b"f" * 40,
+            b"domain_name=other-vm",
+            b"initial_domstate:",
+            b"uri=qemu:///session",
+        ):
+            with self.subTest(injected=injected):
+                def forged(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-2] != "dominfo":
+                        return original
+                    raw = original.stdout + injected + b"\n"
+                    return subprocess.CompletedProcess(argv, 0, raw, b"")
+                with self.assertRaises(capture.HostCaptureError):
+                    self.capture(fake=forged)
+                self.assertFalse(self.target.exists())
+
+    def test_s2_46_empty_dominfo_line_is_never_published(self):
+        def extra_blank(argv, **kw):
+            original = self.fake(argv, **kw)
+            if argv[-2] != "dominfo":
+                return original
+            raw = original.stdout.replace(b"State: running\n",
+                                          b"State: running\n\n")
+            return subprocess.CompletedProcess(argv, 0, raw, b"")
+        with self.assertRaises(capture.HostCaptureError):
+            self.capture(fake=extra_blank)
+        self.assertFalse(self.target.exists())
+
+    def test_s2_46_noncanonical_cr_tab_del_control_bytes_rejected(self):
+        for control in (b"\r", b"\t", b"\x7f"):
+            with self.subTest(control=control):
+                def malformed(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-2] != "dominfo":
+                        return original
+                    raw = original.stdout.replace(b"Id: 5", b"Id: 5"+control)
+                    return subprocess.CompletedProcess(argv, 0, raw, b"")
+                with self.assertRaises(capture.HostCaptureError):
+                    self.capture(fake=malformed)
+                self.assertFalse(self.target.exists())
+
     def test_second_capture_refuses_no_overwrite_and_no_new_commands(self):
         self.capture()
         first = self.target.read_bytes()
