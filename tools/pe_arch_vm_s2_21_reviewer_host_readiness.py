@@ -9,6 +9,7 @@ A local success is a candidate host, not independently controlled host proof.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,9 @@ HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 CI_MARKERS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI",
               "TF_BUILD", "BUILD_BUILDID", "RUNNER_OS", "JENKINS_URL")
 CONTAINER_MARKERS = ("/.dockerenv", "/run/.containerenv")
+# linux/kvm.h: _IO(0xAE, 0x00); stable KVM system API version 12.
+KVM_GET_API_VERSION = 0xAE00
+KVM_API_VERSION = 12
 
 
 class ReviewerHostReadinessError(RuntimeError):
@@ -48,24 +52,49 @@ def _has_known_container_marker() -> bool:
     return any(Path(name).exists() for name in CONTAINER_MARKERS)
 
 
-def _require_kvm_device() -> None:
-    """Require the actual Linux KVM misc device, never a followed symlink.
+def _is_expected_kvm_char(node: os.stat_result) -> bool:
+    return (stat.S_ISCHR(node.st_mode)
+            and os.major(node.st_rdev) == 10
+            and os.minor(node.st_rdev) == 232)
 
-    The kernel allocates misc char major=10, minor=232 to /dev/kvm.
-    Device-number checks are a LOCAL prerequisite, not host authenticity.
+
+def _require_kvm_device() -> None:
+    """Check an opened, pinned KVM system FD; never claim host provenance.
+
+    S2.38's lstat 10:232 check alone can accept a fabricated device node,
+    or race with another inode before this preflight uses the path. Here
+    KVM_GET_API_VERSION is a query-only ioctl, not KVM_CREATE_VM.
     """
+    path = "/dev/kvm"
     try:
-        # stat() follows a final symlink, e.g. /dev/kvm -> /dev/null.
-        # lstat() refuses that substitution instead of legitimizing it.
-        status = os.lstat("/dev/kvm")
+        before = os.lstat(path)
     except OSError as exc:
         raise ReviewerHostReadinessError(
             "Real KVM character device unavailable") from exc
-    if (not stat.S_ISCHR(status.st_mode)
-            or os.major(status.st_rdev) != 10
-            or os.minor(status.st_rdev) != 232):
+    if not _is_expected_kvm_char(before):
         raise ReviewerHostReadinessError(
             "KVM must be an unmapped character device 10:232")
+    # Pin the inode without following a final symlink, even if /dev/kvm is
+    # replaced between lstat and open; never open read/write or create a VM.
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(path, flags)
+        try:
+            current = os.fstat(fd)
+            if (not _is_expected_kvm_char(current)
+                    or before.st_dev != current.st_dev
+                    or before.st_ino != current.st_ino):
+                raise ReviewerHostReadinessError(
+                    "KVM descriptor replaced or inconsistent with path")
+            api_version = fcntl.ioctl(fd, KVM_GET_API_VERSION)
+            if type(api_version) is not int or api_version != KVM_API_VERSION:
+                raise ReviewerHostReadinessError(
+                    "KVM system API version is not 12")
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise ReviewerHostReadinessError(
+            "Cannot query read-only KVM system API") from exc
 
 
 def _host_prerequisites(owner: Path) -> str:
