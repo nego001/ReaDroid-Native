@@ -153,11 +153,29 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
 
     def test_true_kvm_major_minor_candidate_only(self):
         device = mock.Mock(st_mode=stat.S_IFCHR | 0o660,
-                           st_rdev=os.makedev(10, 232))
-        with mock.patch.object(readiness.os, "lstat",
-                               return_value=device) as looked:
+                           st_rdev=os.makedev(10, 232),
+                           st_dev=8, st_ino=1234)
+        with (mock.patch.object(readiness.os, "lstat",
+                                return_value=device) as looked,
+              mock.patch.object(readiness.os, "open",
+                                return_value=87) as opened,
+              mock.patch.object(readiness.os, "fstat",
+                                return_value=device) as inspected,
+              mock.patch.object(readiness.fcntl, "ioctl",
+                                return_value=12) as query,
+              mock.patch.object(readiness.os, "close") as closed):
             self.assertIsNone(readiness._require_kvm_device())
         looked.assert_called_once_with("/dev/kvm")
+        opened.assert_called_once()
+        self.assertEqual(opened.call_args.args[0], "/dev/kvm")
+        flags = opened.call_args.args[1]
+        for required in (os.O_RDONLY, os.O_CLOEXEC, os.O_NOFOLLOW, os.O_NONBLOCK):
+            self.assertEqual(flags & required, required)
+        self.assertFalse(flags & os.O_RDWR)
+        self.assertFalse(flags & os.O_CREAT)
+        inspected.assert_called_once_with(87)
+        query.assert_called_once_with(87, readiness.KVM_GET_API_VERSION)
+        closed.assert_called_once_with(87)
 
     def test_symlink_and_other_character_devices_are_not_kvm(self):
         examples = (
@@ -187,6 +205,110 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
                           readiness.ReviewerHostReadinessError,
                           "unavailable")):
                     readiness._require_kvm_device()
+
+    def test_swapped_opened_inode_rejected_before_ioctl(self):
+        before = mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                           st_rdev=os.makedev(10, 232),
+                           st_dev=8, st_ino=1234)
+        variants = (
+            mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                      st_rdev=os.makedev(10, 232),
+                      st_dev=8, st_ino=9999),
+            mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                      st_rdev=os.makedev(10, 232),
+                      st_dev=9, st_ino=1234),
+            mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                      st_rdev=os.makedev(1, 3),
+                      st_dev=8, st_ino=1234),
+            mock.Mock(st_mode=stat.S_IFREG | 0o600,
+                      st_rdev=os.makedev(10, 232),
+                      st_dev=8, st_ino=1234),
+        )
+        for changed in variants:
+            with self.subTest(changed=changed):
+                with (mock.patch.object(readiness.os, "lstat",
+                                        return_value=before),
+                      mock.patch.object(readiness.os, "open",
+                                        return_value=87),
+                      mock.patch.object(readiness.os, "fstat",
+                                        return_value=changed),
+                      mock.patch.object(readiness.fcntl, "ioctl") as query,
+                      mock.patch.object(readiness.os, "close") as closed,
+                      self.assertRaisesRegex(
+                          readiness.ReviewerHostReadinessError, "replaced")):
+                    readiness._require_kvm_device()
+                query.assert_not_called()
+                closed.assert_called_once_with(87)
+
+    def test_unknown_or_malformed_kvm_api_version_rejected(self):
+        node = mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                         st_rdev=os.makedev(10, 232),
+                         st_dev=8, st_ino=1234)
+        for answer in (0, 11, 13, True, 12.0, None):
+            with self.subTest(answer=answer):
+                with (mock.patch.object(readiness.os, "lstat",
+                                        return_value=node),
+                      mock.patch.object(readiness.os, "open",
+                                        return_value=87),
+                      mock.patch.object(readiness.os, "fstat",
+                                        return_value=node),
+                      mock.patch.object(readiness.fcntl, "ioctl",
+                                        return_value=answer) as query,
+                      mock.patch.object(readiness.os, "close") as closed,
+                      self.assertRaisesRegex(
+                          readiness.ReviewerHostReadinessError, "not 12")):
+                    readiness._require_kvm_device()
+                query.assert_called_once_with(87, readiness.KVM_GET_API_VERSION)
+                closed.assert_called_once_with(87)
+
+    def test_kvm_open_fstat_and_ioctl_failures_close_when_open(self):
+        node = mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                         st_rdev=os.makedev(10, 232),
+                         st_dev=8, st_ino=1234)
+        failures = ("open", "fstat", "ioctl")
+        for failed in failures:
+            with self.subTest(failed=failed):
+                opener = dict(side_effect=PermissionError("denied")) if failed == "open" else dict(return_value=87)
+                metadata = dict(side_effect=OSError("bad fstat")) if failed == "fstat" else dict(return_value=node)
+                ioctl = dict(side_effect=OSError("not a KVM API")) if failed == "ioctl" else dict(return_value=12)
+                with (mock.patch.object(readiness.os, "lstat",
+                                        return_value=node),
+                      mock.patch.object(readiness.os, "open", **opener),
+                      mock.patch.object(readiness.os, "fstat", **metadata),
+                      mock.patch.object(readiness.fcntl, "ioctl", **ioctl),
+                      mock.patch.object(readiness.os, "close") as closed,
+                      self.assertRaisesRegex(
+                          readiness.ReviewerHostReadinessError,
+                          "Cannot query read-only KVM")):
+                    readiness._require_kvm_device()
+                if failed == "open":
+                    closed.assert_not_called()
+                else:
+                    closed.assert_called_once_with(87)
+
+    def test_bad_kvm_api_cannot_reach_virsh(self):
+        node = mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                         st_rdev=os.makedev(10, 232),
+                         st_dev=8, st_ino=1234)
+        with (mock.patch.object(readiness.os, "geteuid", return_value=1000),
+              mock.patch.dict(os.environ, {}, clear=True),
+              mock.patch.object(readiness, "_has_known_container_marker",
+                                return_value=False),
+              mock.patch.object(readiness.os, "lstat",
+                                return_value=node),
+              mock.patch.object(readiness.os, "open",
+                                return_value=87),
+              mock.patch.object(readiness.os, "fstat",
+                                return_value=node),
+              mock.patch.object(readiness.fcntl, "ioctl",
+                                return_value=11),
+              mock.patch.object(readiness.os, "close") as closed,
+              mock.patch.object(readiness.gate, "_trusted_vm_tool") as virsh,
+              self.assertRaisesRegex(
+                  readiness.ReviewerHostReadinessError, "not 12")):
+            readiness._host_prerequisites(self.owner)
+        virsh.assert_not_called()
+        closed.assert_called_once_with(87)
 
     def test_missing_kvm_is_hard_rejection(self):
         with (mock.patch.dict(os.environ, {}, clear=True),
