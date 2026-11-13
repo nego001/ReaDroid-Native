@@ -49,14 +49,23 @@ def _has_known_container_marker() -> bool:
 
 
 def _require_kvm_device() -> None:
+    """Require the actual Linux KVM misc device, never a followed symlink.
+
+    The kernel allocates misc char major=10, minor=232 to /dev/kvm.
+    Device-number checks are a LOCAL prerequisite, not host authenticity.
+    """
     try:
-        status = os.stat("/dev/kvm")
+        # stat() follows a final symlink, e.g. /dev/kvm -> /dev/null.
+        # lstat() refuses that substitution instead of legitimizing it.
+        status = os.lstat("/dev/kvm")
     except OSError as exc:
         raise ReviewerHostReadinessError(
             "Real KVM character device unavailable") from exc
-    if not stat.S_ISCHR(status.st_mode):
+    if (not stat.S_ISCHR(status.st_mode)
+            or os.major(status.st_rdev) != 10
+            or os.minor(status.st_rdev) != 232):
         raise ReviewerHostReadinessError(
-            "KVM path is not a character device")
+            "KVM must be an unmapped character device 10:232")
 
 
 def _host_prerequisites(owner: Path) -> str:
