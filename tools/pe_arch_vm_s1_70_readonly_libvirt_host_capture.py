@@ -41,6 +41,15 @@ UUID = re.compile(
 TARGET = external.OBS_FILES["host_vm_launch"]
 VIRSH_COMMANDS = ("domuuid", "domstate", "dominfo")
 MAX_COMMAND_BYTES = 8192
+# PE-S2.46: observation-envelope markers cannot be injected by dominfo.
+# S1.71 reuses these exact prefixes for its prior-snapshot verification.
+DOMINFO_RESERVED_PREFIXES = (
+    "source_commit=", "reviewer_challenge=", "domain_name=",
+    "expected_domain_uuid=", "initial_domuuid:", "initial_domstate:",
+    "final_domstate:", "final_domuuid:", "independent_vm_attestation=",
+    "release_authorized=", "observation_type=", "classification=",
+    "uri=", "connection=", "dominfo:",
+)
 
 
 class HostCaptureError(RuntimeError):
@@ -79,7 +88,8 @@ def _checked_text(data: bytes, label: str) -> str:
         result = data.decode("utf-8")
     except UnicodeError as exc:
         raise HostCaptureError("Invalid UTF-8 from libvirt: " + label) from exc
-    if any(ord(c) < 32 and c not in "\n\r\t" for c in result):
+    # Keep capture output compatible with the S1.71/S1.73 LF-only parser.
+    if any((ord(c) < 32 and c != "\n") or ord(c) == 127 for c in result):
         raise HostCaptureError("Control character in libvirt result: " + label)
     stripped = result.strip()
     if not stripped:
@@ -154,6 +164,13 @@ def capture_host_domain(
     info = _virsh_read(executable, "dominfo", domain)
     final_state = _virsh_read(executable, "domstate", domain)
     final_uuid = _virsh_read(executable, "domuuid", domain)
+    # Deny a second, forged source identity or release claim inside
+    # a valid-looking dominfo query, before any private log is written.
+    info_lines = info.split("\n")
+    if (any(not line for line in info_lines)
+            or any(line.startswith(DOMINFO_RESERVED_PREFIXES)
+                   for line in info_lines)):
+        raise HostCaptureError("Dominfo contains reserved or empty record lines")
     # Cross-check dominfo fields against separate libvirt queries. This
     # prevents a mid-capture name rebind being quietly accepted.
     info_uuid = re.findall(r"^UUID:\s*(\S+)\s*$", info, flags=re.MULTILINE)
