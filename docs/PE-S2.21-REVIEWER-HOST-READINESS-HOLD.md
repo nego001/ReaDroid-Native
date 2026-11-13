@@ -2,6 +2,10 @@
 
 **Estado:** procedimento e testes automatizados preparados; **nenhum host QEMU/libvirt independente ou VM Arch nativa foi acessado nesta CI**. PR #47 permanece Draft, sem merge, APK, OTA ou release.
 
+## Complemento PE-S2.38: /dev/kvm precisa ser o dispositivo KVM
+
+O [preflight endurecido PE-S2.38](PE-S2.38-KVM-DEVICE-IDENTITY-HOLD.md) exige um inode de caráter real de `/dev/kvm` com major `10` e minor `232` e não segue links simbólicos na última componente. Outros dispositivos de caráter, como `/dev/null`, não constituem evidência do KVM. **Essa conferência local não prova controle independente do host.**
+
 ## O problema prático que esta etapa resolve
 
 A PE-S2.20 já executa a revisão offline real das assinaturas V1/V2/V3, do recibo sintético e do Git sobre montagens realmente somente leitura. Isso **não identifica nem autentica a máquina que criou os registros**. Antes da primeira coleta real, era necessário garantir ao menos que o ambiente local não é um runner conhecido, contêiner, shell root, libvirt errado ou pasta com amostras anteriores.
