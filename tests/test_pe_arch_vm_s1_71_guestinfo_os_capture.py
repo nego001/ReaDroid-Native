@@ -160,6 +160,42 @@ class GuestKernelCaptureContracts(unittest.TestCase):
                     self.assertEqual(state_index[0], 2)
                     self.assertFalse(self.target.exists())
 
+    def test_s2_49_hidden_guestinfo_unicode_separators_block_capture(self):
+        original = GUESTINFO.decode("ascii")
+        bad_payloads = (
+            original.replace("\n", "\u0085", 1),
+            original.replace("\n", "\u2028", 1),
+            original.replace("\n", "\u2029", 1),
+            original.replace(": arch", ":\u00a0arch", 1),
+        )
+        for bad in bad_payloads:
+            with self.subTest(repr=repr(bad)):
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    guest._parse_guest_os(bad)
+                def poisoned(argv, **kw):
+                    result = self.fake(argv, **kw)
+                    if argv[-1] == "--os":
+                        return subprocess.CompletedProcess(
+                            argv, 0, bad.encode("utf-8"), b"")
+                    return result
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    self.capture(fake=poisoned)
+                self.assertFalse(self.target.exists())
+
+    def test_s2_49_ascii_lf_parser_accepts_valid_and_rejects_malformed(self):
+        original = GUESTINFO.decode("ascii")
+        self.assertEqual(guest._parse_guest_os(original)["os.id"], "arch")
+        self.assertEqual(
+            guest._parse_guest_os(original.rstrip("\n"))["os.id"], "arch")
+        for bad in (None, b"os.id : arch", "", "\n",
+                    original.replace("\n", "\n\n", 1),
+                    original.replace(": arch", ":\tarch", 1),
+                    original.replace("\n", "\r\n", 1),
+                    original + "A" * (host.MAX_COMMAND_BYTES + 1)):
+            with self.subTest(bad=repr(bad)[:100]):
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    guest._parse_guest_os(bad)
+
     def test_second_capture_rejected_before_all_virsh(self):
         self.capture()
         original = self.target.read_bytes()

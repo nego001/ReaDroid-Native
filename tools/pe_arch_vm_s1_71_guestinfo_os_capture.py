@@ -143,8 +143,23 @@ def _read_guestinfo(executable: str, domain: str) -> str:
 def _parse_guest_os(text: str) -> dict[str, str]:
     # Do not trust a benign-looking substring; require one entry per field
     # in the libvirt key:value output, including strictly bounded values.
+    # PE-S2.49: splitlines() treats NEL, U+2028 and U+2029 as line breaks.
+    # Those characters can hide a second record inside one LF-delimited
+    # evidence line. Accept only printable ASCII and literal LF, matching
+    # the framing retained by the S1.73 offline reviewer.
+    if (type(text) is not str or not text
+            or len(text) > host.MAX_COMMAND_BYTES
+            or any(char != "\n" and not (" " <= char <= "~")
+                   for char in text)):
+        raise GuestKernelObservationError(
+            "Guestinfo OS text contains noncanonical bytes or separators")
+    records = text.split("\n")
+    if records[-1] == "":
+        records.pop()  # Permit only one final LF in direct parser inputs.
+    if not records or any(not record for record in records):
+        raise GuestKernelObservationError("Empty or repeated guestinfo OS line")
     fields = {}
-    for line in text.splitlines():
+    for line in records:
         match = re.fullmatch(
             r"\s*(os\.[a-z][a-z-]{0,30})\s*:\s*(.*?)\s*", line)
         if match is None:

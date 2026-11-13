@@ -245,6 +245,26 @@ class TwoRecordReviewContracts(unittest.TestCase):
                         expected_guest_sha256=hashlib.sha256(
                             new_guest).hexdigest())
 
+    def test_s2_49_repinned_unicode_guestinfo_separator_rejected_offline(self):
+        # A rehashed S1.71 log with a Unicode line separator previously
+        # passed splitlines() despite not containing literal LF boundaries.
+        original = second_record(self.pins["expected_host_sha256"])
+        needle = b"os.id : arch\nos.name : Arch Linux"
+        self.assertIn(needle, original)
+        for sep in ("\u0085", "\u2028", "\u2029"):
+            with self.subTest(sep=repr(sep)):
+                changed = original.replace(
+                    needle,
+                    b"os.id : arch" + sep.encode("utf-8")
+                    + b"os.name : Arch Linux")
+                self.second.write_bytes(changed)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "Invalid guest self-reported OS fields"):
+                    self.verify(expected_guest_sha256=hashlib.sha256(
+                        changed).hexdigest())
+
     def test_review_uses_shared_s1_71_snapshot_validator(self):
         # Guard against a later drift that silently drops the earlier
         # check while keeping a superficially equivalent local parser.
