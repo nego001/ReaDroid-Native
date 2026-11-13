@@ -105,6 +105,107 @@ class SignedHostPairV3Contracts(unittest.TestCase):
         return v3.verify_signed_domstats_extension(
             self.owner, self.custody, **opts)
 
+    @staticmethod
+    def _v2_result():
+        # Simulated *return value* of verified V2, not real host evidence.
+        return {
+            "status": v2.VERIFIED,
+            "v2_detached_ed25519_signature_verified": True,
+            "v2_namespace_distinct_from_v1": True,
+            "v1_detached_signature_rechecked": True,
+            "sidecar_sha256_bound_to_signed_v2_only": True,
+            "v1_four_observation_manifest_unchanged": True,
+            "host_hypervisor_independently_attested": False,
+            "guest_cgroups_seccomp_verified": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+        }
+
+    @staticmethod
+    def _pair_result():
+        return {
+            "status": pair.STATUS_REVIEWED,
+            "before_after_sha256_pins_matched": True,
+            "external_session_and_domain_correlated": True,
+            "host_cpu_time_increased_as_reported_by_libvirt": True,
+            "host_provenance_independently_attested": False,
+            "guest_process_or_seccomp_cgroup_verified": False,
+            "samples_signed_in_s1_63_or_s2_16": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+        }
+
+    def _upstream(self, signed=None, samples=None):
+        if signed is None:
+            signed = self._v2_result()
+        if samples is None:
+            samples = self._pair_result()
+        with (mock.patch.object(v3.v2, "verify_signed_domstats_extension",
+                                return_value=signed) as check_v2,
+              mock.patch.object(v3.pair, "review_pair",
+                                return_value=samples) as check_pair):
+            v3._verified_upstream(self.owner, self.custody, self.pins)
+        check_v2.assert_called_once()
+        check_pair.assert_called_once()
+
+    def test_upstream_v2_and_pair_exact_shapes_preserve_hold(self):
+        self.assertEqual(set(self._v2_result()), v3.V2_VERDICT_FIELDS)
+        self.assertEqual(set(self._pair_result()), v3.PAIR_VERDICT_FIELDS)
+        self._upstream()
+        self.assertFalse(self._v2_result()["independent_vm_attestation"])
+        self.assertFalse(self._pair_result()["release_authorized"])
+
+    def test_v2_extra_missing_and_changed_claims_fail_closed(self):
+        good = self._v2_result()
+        negative = (
+            dict(good, independent_reviewer_approved=True),
+            dict(good, independent_reviewer_approved=False),
+            {key: val for key, val in good.items()
+             if key != "v2_namespace_distinct_from_v1"},
+            dict(good, host_hypervisor_independently_attested=True),
+            dict(good, guest_cgroups_seccomp_verified=True),
+            dict(good, apk_or_ota_publication_authorized=True),
+            dict(good, sidecar_sha256_bound_to_signed_v2_only=1),
+        )
+        for bad in negative:
+            with self.subTest(changed=bad):
+                with self.assertRaises(v3.SignedDomstatsExtensionError):
+                    self._upstream(signed=bad)
+
+    def test_pair_extra_missing_and_false_provenance_claims_rejected(self):
+        good = self._pair_result()
+        negative = (
+            dict(good, guest_execution_verified=True),
+            dict(good, guest_execution_verified=False),
+            {key: val for key, val in good.items()
+             if key != "external_session_and_domain_correlated"},
+            dict(good, host_provenance_independently_attested=True),
+            dict(good, guest_process_or_seccomp_cgroup_verified=True),
+            dict(good, samples_signed_in_s1_63_or_s2_16=True),
+            dict(good, before_after_sha256_pins_matched=1),
+        )
+        for bad in negative:
+            with self.subTest(changed=bad):
+                with self.assertRaises(v3.SignedDomstatsExtensionError):
+                    self._upstream(samples=bad)
+
+    def test_non_dict_upstream_verdicts_cannot_pass(self):
+        for bad in (None, [], "", True, 1):
+            with self.subTest(value=bad):
+                with (mock.patch.object(v3.v2, "verify_signed_domstats_extension",
+                                        return_value=bad),
+                      mock.patch.object(v3.pair, "review_pair",
+                                        return_value=self._pair_result()),
+                      self.assertRaises(v3.SignedDomstatsExtensionError)):
+                    v3._verified_upstream(self.owner, self.custody, self.pins)
+                with (mock.patch.object(v3.v2, "verify_signed_domstats_extension",
+                                        return_value=self._v2_result()),
+                      mock.patch.object(v3.pair, "review_pair",
+                                        return_value=bad),
+                      self.assertRaises(v3.SignedDomstatsExtensionError)):
+                    v3._verified_upstream(self.owner, self.custody, self.pins)
+
     def test_three_valid_signatures_and_pair_still_hold(self):
         old_m = self.old.f.manifest_path.read_bytes()
         old_v2 = self.old.v2_manifest.read_bytes()
