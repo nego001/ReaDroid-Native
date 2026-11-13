@@ -102,6 +102,10 @@ O [preflight local PE-S2.39](PE-S2.39-READONLY-KVM-API-PROBE-HOLD.md) exige que 
 
 O [registro de lacunas PE-S2.40](PE-S2.40-EXTERNAL-REVIEW-SCHEMA-STRICT-HOLD.md) agora recusa alterações, omissões e acréscimos nas **13 chaves** do resultado S2.22. Um campo novo que declare revisão independente não vira prova, mesmo com assinaturas locais válidas. As sete classes ainda exigem originais e decisão humana sob custódia externa; não houve atestação automática.
 
+## Complemento PE-S2.41: saída S2.19 deve preservar HOLD integral
+
+A [PE-S2.41](PE-S2.41-S2-19-CLOSED-LOCAL-VERDICT-HOLD.md) fecha o contrato entre S2.19 e S2.22: são **14 campos obrigatórios**, com todas as alegações de host, guest, cronologia, journald e autorizações em `False`. Qualquer alegação extra, por mais convincente que pareça, é recusada. As sete classes de provas externas continuam pendentes e só o revisor independente pode produzir seus originais.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
