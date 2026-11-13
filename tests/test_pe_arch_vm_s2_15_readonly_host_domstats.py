@@ -162,7 +162,7 @@ class HostDomstatsContracts(unittest.TestCase):
                 telemetry.semantic.UNVERIFIED))),
             dict(good, guest_os_id_self_reported=""),
             dict(good, guest_os_id_self_reported=42),
-            dict(good, guest_kernel_release_self_reported="6.10\\nspoof"),
+            dict(good, guest_kernel_release_self_reported="6.10\nspoof"),
             dict(good, guest_kernel_release_self_reported="A" * 129),
         )
         for bad in bad_reports:
