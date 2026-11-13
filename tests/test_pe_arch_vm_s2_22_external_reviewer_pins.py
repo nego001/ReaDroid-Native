@@ -222,6 +222,13 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
                         self.f.receipt, self.f.checkout,
                         expected_pin_bundle_sha256=self.expected)
 
+    def review_with_mocked_upstream(self):
+        # Caller patches S2.19; don't install a second mock over it.
+        return custody_pins.review_custody(
+            self.file, self.f.observer, self.f.custody,
+            self.f.receipt, self.f.checkout,
+            expected_pin_bundle_sha256=self.expected)
+
     def test_exact_s2_19_schema_preserves_local_only_hold(self):
         expected = self.verified_local_result()
         self.assertEqual(set(expected), custody_pins.S2_19_RESULT_FIELDS)
@@ -244,7 +251,7 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
                         return_value=self.verified_local_result(**{key: value})),
                       self.assertRaisesRegex(custody_pins.ReviewerPinsError,
                                              "grant release")):
-                    self.examine(fake_local=True)
+                    self.review_with_mocked_upstream()
 
     def test_s2_19_missing_any_field_is_rejected(self):
         all_fields = self.verified_local_result()
@@ -255,7 +262,7 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
                         custody_pins.handoff, "verify_reviewer_session",
                         return_value=changed),
                       self.assertRaises(custody_pins.ReviewerPinsError)):
-                    self.examine(fake_local=True)
+                    self.review_with_mocked_upstream()
 
     def test_s2_19_independence_and_execution_claims_must_be_false(self):
         false_claims = (
@@ -274,7 +281,7 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
                         custody_pins.handoff, "verify_reviewer_session",
                         return_value=self.verified_local_result(**{claim: True})),
                       self.assertRaises(custody_pins.ReviewerPinsError)):
-                    self.examine(fake_local=True)
+                    self.review_with_mocked_upstream()
         for claim in (
             "v1_v2_v3_detached_signatures_verified",
             "v3_before_after_host_sha256_pins_correlated",
@@ -287,7 +294,7 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
                         custody_pins.handoff, "verify_reviewer_session",
                         return_value=self.verified_local_result(**{claim: 1})),
                       self.assertRaises(custody_pins.ReviewerPinsError)):
-                    self.examine(fake_local=True)
+                    self.review_with_mocked_upstream()
 
     def test_replaced_bundle_during_chain_detected(self):
         def mutate(*args, **kwargs):
