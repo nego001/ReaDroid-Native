@@ -40,6 +40,24 @@ MAX_BYTES = 8192
 PLAN = "PE_S2_22_REVIEWER_PIN_CUSTODY_NOT_STARTED"
 VERIFIED = "LOCAL_PE_S2_22_SEPARATE_PIN_BUNDLE_AND_SIGNED_CHAIN_REVIEWED_HOLD"
 REJECTED = "REJECTED_PE_S2_22_REVIEWER_HELD_PINS_OR_CHAIN"
+# Closed contract for the entire PE-S2.19 result. A future change to the
+# signed-session reviewer cannot add a claim of external attestation silently.
+S2_19_RESULT_FIELDS = frozenset((
+    "status",
+    "v1_v2_v3_detached_signatures_verified",
+    "v3_before_after_host_sha256_pins_correlated",
+    "native_receipt_sha256_equals_v1_signed_receipt_pin",
+    "guest_receipt_challenge_and_sources_rechecked",
+    "source_commit_checkout_locally_rechecked",
+    "independent_host_control_attested",
+    "guest_kernel_execution_independently_attested",
+    "session_chronology_independently_verified",
+    "journal_kernel_storage_quota_verified",
+    "independent_vm_attestation",
+    "release_authorized",
+    "unknown_windows_pe_execution_authorized",
+    "apk_or_ota_publication_authorized",
+))
 UNPROVEN = (
     "identity_and_independence_of_external_reviewer",
     "physical_or_administrative_control_of_hypervisor",
@@ -162,15 +180,23 @@ def review_custody(pin_file: Path, observer_dir: Path,
         raise ReviewerPinsError(
             "Signed V1/V2/V3 host and native receipt failed local review") from exc
     if (type(observed) is not dict
+            or set(observed) != S2_19_RESULT_FIELDS
             or observed.get("status") != handoff.STATUS
-            or observed.get("v1_v2_v3_detached_signatures_verified") is not True
-            or observed.get("v3_before_after_host_sha256_pins_correlated") is not True
-            or observed.get("native_receipt_sha256_equals_v1_signed_receipt_pin")
-               is not True
-            or observed.get("source_commit_checkout_locally_rechecked") is not True
-            or observed.get("independent_vm_attestation") is not False
-            or observed.get("release_authorized") is not False
-            or observed.get("apk_or_ota_publication_authorized") is not False):
+            or any(observed.get(key) is not True for key in (
+                "v1_v2_v3_detached_signatures_verified",
+                "v3_before_after_host_sha256_pins_correlated",
+                "native_receipt_sha256_equals_v1_signed_receipt_pin",
+                "guest_receipt_challenge_and_sources_rechecked",
+                "source_commit_checkout_locally_rechecked"))
+            or any(observed.get(key) is not False for key in (
+                "independent_host_control_attested",
+                "guest_kernel_execution_independently_attested",
+                "session_chronology_independently_verified",
+                "journal_kernel_storage_quota_verified",
+                "independent_vm_attestation",
+                "release_authorized",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized"))):
         raise ReviewerPinsError("Local joint review attempted to grant release")
     repeated, second_raw = _read_pins(pin_path, expected_pin_bundle_sha256)
     if repeated != pins or second_raw != raw:
