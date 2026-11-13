@@ -6,6 +6,10 @@
 
 O [preflight endurecido PE-S2.38](PE-S2.38-KVM-DEVICE-IDENTITY-HOLD.md) exige um inode de caráter real de `/dev/kvm` com major `10` e minor `232` e não segue links simbólicos na última componente. Outros dispositivos de caráter, como `/dev/null`, não constituem evidência do KVM. **Essa conferência local não prova controle independente do host.**
 
+## Complemento PE-S2.39: consulta à API KVM sem criar máquinas virtuais
+
+A [PE-S2.39](PE-S2.39-READONLY-KVM-API-PROBE-HOLD.md) acrescenta a verificação do próprio descritor de `/dev/kvm`: abrir somente leitura com `O_NOFOLLOW`, comparar `lstat` e `fstat` para recusar substituição do inode e consultar apenas `KVM_GET_API_VERSION` (resposta inteira 12). Qualquer erro de abertura, metadados ou ioctl impede a consulta ao libvirt. **Não autentica propriedade independente do host** e não chama `KVM_CREATE_VM`.
+
 ## O problema prático que esta etapa resolve
 
 A PE-S2.20 já executa a revisão offline real das assinaturas V1/V2/V3, do recibo sintético e do Git sobre montagens realmente somente leitura. Isso **não identifica nem autentica a máquina que criou os registros**. Antes da primeira coleta real, era necessário garantir ao menos que o ambiente local não é um runner conhecido, contêiner, shell root, libvirt errado ou pasta com amostras anteriores.
@@ -13,7 +17,7 @@ A PE-S2.20 já executa a revisão offline real das assinaturas V1/V2/V3, do reci
 `tools/pe_arch_vm_s2_21_reviewer_host_readiness.py` oferece uma **pré-verificação local, de leitura apenas e opt-in**, executável pelo revisor diretamente no seu próprio host QEMU/libvirt, **não dentro da VM Arch**.
 
 - Sem `--probe-reviewer-host`: valida somente parâmetros e diretório 0700; **não consulta KVM, executáveis ou libvirt**, não cria arquivos e devolve `PE_S2_21_INDEPENDENT_HOST_PREFLIGHT_NOT_STARTED` (código 0).
-- Com `--probe-reviewer-host`: exige Linux sem root; rejeita marcadores conhecidos de CI e contêiner; exige `/dev/kvm` como dispositivo de caractere; exige diretório do observador **vazio**, exclusivo e 0700; consulta `systemd-detect-virt --container --quiet` via binário confiável; exige um `virsh` de sistema confiável. Usa **somente** o `virsh --readonly --connect qemu:///system --no-pkttyagent` já restringido pela S1.70, com limites de tempo/bytes e comandos `domuuid`, `domstate`, `dominfo`, e repete UUID/estado depois.
+- Com `--probe-reviewer-host`: exige Linux sem root; rejeita marcadores conhecidos de CI e contêiner; exige `/dev/kvm` como dispositivo de caractere 10:232 com inode pinado e resposta da API KVM 12; exige diretório do observador **vazio**, exclusivo e 0700; consulta `systemd-detect-virt --container --quiet` via binário confiável; exige um `virsh` de sistema confiável. Usa **somente** o `virsh --readonly --connect qemu:///system --no-pkttyagent` já restringido pela S1.70, com limites de tempo/bytes e comandos `domuuid`, `domstate`, `dominfo`, e repete UUID/estado depois.
 - Exige commit Git completo, UUID, domínio simples, desafio e ID da sessão de 64 hex distintos e não obviamente placeholders. **Não confirma que são imprevisíveis**, tampouco a identidade, custódia ou independência do host. Marcadores de CI/contêiner são verificações locais passíveis de falsificação.
 - Se todos os testes locais passam: `LOCAL_PE_S2_21_READONLY_LIBVIRT_HOST_CANDIDATE_HOLD`, **código 2**. Isso significa *candidato apto para iniciar a coleta*, jamais homologado. Se falhar: `REJECTED_PE_S2_21_REVIEWER_HOST_NOT_PROVEN`, **código 2**, sem consulta ao guest nem escrita. A decisão depende do **campo status**, não somente do código.
 
