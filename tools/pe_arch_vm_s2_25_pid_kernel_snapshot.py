@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import select
+import stat
 import sys
 
 sys.dont_write_bytecode = True
@@ -75,11 +76,15 @@ def _read_bounded(path: Path) -> str:
     /proc, PID or cgroup directory symlink from redirecting local evidence.
     """
     try:
-        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+        # O_NONBLOCK prevents an unexpected FIFO from hanging at open().
+        # Verify the opened inode, not the path, before reading any bytes.
+        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
         with ExitStack() as stack:
             parent_fd = open_absolute_directory_nofollow(path.parent, stack)
             fd = os.open(path.name, flags, dir_fd=parent_fd)
             stack.callback(os.close, fd)
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise PidSnapshotError("Non-regular kernel evidence file")
             chunks = bytearray()
             # Require EOF within the byte budget; short reads may hide a
             # contradictory quota or PID/cgroup record after a valid prefix.
