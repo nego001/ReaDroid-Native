@@ -78,9 +78,15 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
             "v1_v2_v3_detached_signatures_verified": True,
             "v3_before_after_host_sha256_pins_correlated": True,
             "native_receipt_sha256_equals_v1_signed_receipt_pin": True,
+            "guest_receipt_challenge_and_sources_rechecked": True,
             "source_commit_checkout_locally_rechecked": True,
+            "independent_host_control_attested": False,
+            "guest_kernel_execution_independently_attested": False,
+            "session_chronology_independently_verified": False,
+            "journal_kernel_storage_quota_verified": False,
             "independent_vm_attestation": False,
             "release_authorized": False,
+            "unknown_windows_pe_execution_authorized": False,
             "apk_or_ota_publication_authorized": False,
             **change,
         }
@@ -215,6 +221,73 @@ class ReviewerHeldPinsContracts(unittest.TestCase):
                         self.file, self.f.observer, self.f.custody,
                         self.f.receipt, self.f.checkout,
                         expected_pin_bundle_sha256=self.expected)
+
+    def test_exact_s2_19_schema_preserves_local_only_hold(self):
+        expected = self.verified_local_result()
+        self.assertEqual(set(expected), custody_pins.S2_19_RESULT_FIELDS)
+        result, called = self.examine(fake_local=True)
+        called.assert_called_once()
+        self.assertEqual(result["status"], custody_pins.VERIFIED)
+        self.assertEqual(len(result["unverified_independent_requirements"]), 7)
+        self.assertIs(result["independent_vm_attestation"], False)
+        self.assertIs(result["release_authorized"], False)
+
+    def test_s2_19_extra_attestation_claim_always_rejected(self):
+        for key, value in (
+            ("external_vm_attestation_complete", True),
+            ("independent_kernel_proof", False),
+            ("signed_evidence_source", "operator"),
+        ):
+            with self.subTest(field=key):
+                with (mock.patch.object(
+                        custody_pins.handoff, "verify_reviewer_session",
+                        return_value=self.verified_local_result(**{key: value})),
+                      self.assertRaisesRegex(custody_pins.ReviewerPinsError,
+                                             "grant release")):
+                    self.examine(fake_local=True)
+
+    def test_s2_19_missing_any_field_is_rejected(self):
+        all_fields = self.verified_local_result()
+        for absent in sorted(custody_pins.S2_19_RESULT_FIELDS):
+            with self.subTest(absent=absent):
+                changed = {k: v for k, v in all_fields.items() if k != absent}
+                with (mock.patch.object(
+                        custody_pins.handoff, "verify_reviewer_session",
+                        return_value=changed),
+                      self.assertRaises(custody_pins.ReviewerPinsError)):
+                    self.examine(fake_local=True)
+
+    def test_s2_19_independence_and_execution_claims_must_be_false(self):
+        false_claims = (
+            "independent_host_control_attested",
+            "guest_kernel_execution_independently_attested",
+            "session_chronology_independently_verified",
+            "journal_kernel_storage_quota_verified",
+            "independent_vm_attestation",
+            "release_authorized",
+            "unknown_windows_pe_execution_authorized",
+            "apk_or_ota_publication_authorized",
+        )
+        for claim in false_claims:
+            with self.subTest(claim=claim):
+                with (mock.patch.object(
+                        custody_pins.handoff, "verify_reviewer_session",
+                        return_value=self.verified_local_result(**{claim: True})),
+                      self.assertRaises(custody_pins.ReviewerPinsError)):
+                    self.examine(fake_local=True)
+        for claim in (
+            "v1_v2_v3_detached_signatures_verified",
+            "v3_before_after_host_sha256_pins_correlated",
+            "native_receipt_sha256_equals_v1_signed_receipt_pin",
+            "guest_receipt_challenge_and_sources_rechecked",
+            "source_commit_checkout_locally_rechecked",
+        ):
+            with self.subTest(claim=claim):
+                with (mock.patch.object(
+                        custody_pins.handoff, "verify_reviewer_session",
+                        return_value=self.verified_local_result(**{claim: 1})),
+                      self.assertRaises(custody_pins.ReviewerPinsError)):
+                    self.examine(fake_local=True)
 
     def test_replaced_bundle_during_chain_detected(self):
         def mutate(*args, **kwargs):
