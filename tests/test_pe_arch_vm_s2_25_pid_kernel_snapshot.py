@@ -5,6 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 import os
+import stat
 from pathlib import Path
 import sys
 import tempfile
@@ -73,6 +74,8 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         extra = b"1:cpu:/hostile\n"
         with (mock.patch.object(diag, "open_absolute_directory_nofollow",
                                 return_value=101) as parent,
+              mock.patch.object(diag.os, "fstat",
+                                return_value=mock.Mock(st_mode=stat.S_IFREG)),
               mock.patch.object(diag.os, "open", return_value=41) as opened,
               mock.patch.object(diag.os, "read",
                                 side_effect=[prefix, extra, b""]) as read,
@@ -82,6 +85,7 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         self.assertEqual(read.call_count, 3)
         closed.assert_called_once_with(41)
         self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
+        self.assertTrue(opened.call_args.args[1] & os.O_NONBLOCK)
         self.assertEqual(opened.call_args.kwargs["dir_fd"], 101)
         parent.assert_called_once()
         with self.assertRaises(diag.PidSnapshotError):
@@ -90,6 +94,8 @@ class PidKernelSnapshotContracts(unittest.TestCase):
     def test_short_quota_read_cannot_hide_relaxed_tail(self):
         with (mock.patch.object(diag, "open_absolute_directory_nofollow",
                                 return_value=101),
+              mock.patch.object(diag.os, "fstat",
+                                return_value=mock.Mock(st_mode=stat.S_IFREG)),
               mock.patch.object(diag.os, "open", return_value=42),
               mock.patch.object(diag.os, "read",
                                 side_effect=[b"128\n", b"999\n", b""]),
@@ -103,6 +109,8 @@ class PidKernelSnapshotContracts(unittest.TestCase):
     def test_kernel_reader_enforces_cap_even_when_data_is_chunked(self):
         with (mock.patch.object(diag, "open_absolute_directory_nofollow",
                                 return_value=101),
+              mock.patch.object(diag.os, "fstat",
+                                return_value=mock.Mock(st_mode=stat.S_IFREG)),
               mock.patch.object(diag.os, "open", return_value=43),
               mock.patch.object(diag.os, "read",
                                 side_effect=[b"x" * diag.MAX_BYTES, b"y"]) as read,
@@ -115,6 +123,8 @@ class PidKernelSnapshotContracts(unittest.TestCase):
     def test_kernel_reader_closes_fd_after_read_failure(self):
         with (mock.patch.object(diag, "open_absolute_directory_nofollow",
                                 return_value=101),
+              mock.patch.object(diag.os, "fstat",
+                                return_value=mock.Mock(st_mode=stat.S_IFREG)),
               mock.patch.object(diag.os, "open", return_value=44),
               mock.patch.object(diag.os, "read",
                                 side_effect=OSError("simulated procfs failure")),
@@ -136,6 +146,37 @@ class PidKernelSnapshotContracts(unittest.TestCase):
         with self.assertRaises(diag.PidSnapshotError):
             diag._read_bounded(path)
         self.assertEqual(target.read_bytes(), old)
+
+    def test_fifo_source_cannot_block_and_is_rejected(self):
+        fifo = self.process / "unexpected-fifo"
+        os.mkfifo(fifo)
+        # No writer. Opening without O_NONBLOCK would hang indefinitely.
+        # A failed type check must happen before any os.read().
+        with (mock.patch.object(diag.os, "read",
+                                side_effect=AssertionError("must not read FIFO")) as read,
+              self.assertRaisesRegex(diag.PidSnapshotError, "Non-regular")):
+            diag._read_bounded(fifo)
+        read.assert_not_called()
+
+    def test_directory_source_is_not_accepted_as_kernel_evidence(self):
+        with self.assertRaisesRegex(diag.PidSnapshotError, "Non-regular"):
+            diag._read_bounded(self.process)
+
+    def test_fstat_error_fails_closed_with_descriptor_cleanup(self):
+        with (mock.patch.object(diag.os, "fstat",
+                                side_effect=OSError("synthetic fstat failure")),
+              mock.patch.object(diag.os, "read") as read,
+              self.assertRaisesRegex(diag.PidSnapshotError,
+                                     "Kernel observation unavailable")):
+            diag._read_bounded(self.process / "status")
+        read.assert_not_called()
+
+    def test_real_procfs_stat_file_is_regular_on_linux(self):
+        if sys.platform != "linux":
+            self.skipTest("procfs is Linux-only")
+        real_stat = Path("/proc") / str(os.getpid()) / "stat"
+        text = diag._read_bounded(real_stat)
+        self.assertTrue(text.startswith(str(os.getpid()) + " ("))
 
     def test_intermediate_symlink_in_pid_path_is_refused(self):
         # O_NOFOLLOW on the final stat file alone does not protect /proc/PID.
