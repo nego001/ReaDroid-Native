@@ -217,9 +217,11 @@ def capture_guest_kernel_observation(
         after_uuid = host._virsh_read(executable, "domuuid", domain)
     except host.HostCaptureError as exc:
         raise GuestKernelObservationError("Host domain query failed") from exc
+    # PE-S2.48: do not accept mixed-case states that the S1.73
+    # offline consumer would later reject after a capture succeeded.
     if (before_uuid != expected_domain_uuid or after_uuid != expected_domain_uuid
-            or before_state.casefold() != "running"
-            or after_state.casefold() != "running"):
+            or before_state != "running"
+            or after_state != "running"):
         raise GuestKernelObservationError(
             "Domain UUID or running state changed around guest agent query")
     parsed = _parse_guest_os(guestinfo)
