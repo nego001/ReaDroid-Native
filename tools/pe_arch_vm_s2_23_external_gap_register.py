@@ -27,6 +27,25 @@ FIELDS = frozenset((
     "independent_vm_attestation", "release_authorized",
     "apk_or_ota_publication_authorized", "unknown_windows_pe_execution_authorized",
 ))
+# Pin the COMPLETE upstream S2.22 result shape. Otherwise an upstream
+# change can inject a new asserted "external proof verified" field that the
+# S2.23 gap report silently discards while treating the package as coherent.
+# Schema evolution requires deliberate independent review, not .get() defaulting.
+S2_22_RESULT_FIELDS = frozenset((
+    "status",
+    "canonical_out_of_band_pin_bundle_sha256_matched",
+    "reviewer_pins_private_directory_disjoint",
+    "v1_v2_v3_detached_signatures_locally_verified",
+    "readonly_native_receipt_and_git_locally_verified",
+    "unverified_independent_requirements",
+    "reviewer_identity_independently_attested",
+    "hypervisor_independence_attested",
+    "native_vm_kernel_attested",
+    "independent_vm_attestation",
+    "release_authorized",
+    "apk_or_ota_publication_authorized",
+    "unknown_windows_pe_execution_authorized",
+))
 # These are HUMAN reviewer proof requests, not files whose presence or hashes
 # would establish authentic provenance.
 REVIEW = (
@@ -96,6 +115,7 @@ def audit_external_review(pin_file: Path, observer_dir: Path,
             KeyError, RecursionError) as exc:
         raise ExternalGapError("Local S2.22 signed package is not safe") from exc
     if (type(signed) is not dict
+            or set(signed) != S2_22_RESULT_FIELDS
             or signed.get("status") != pins.VERIFIED
             or signed.get("canonical_out_of_band_pin_bundle_sha256_matched")
                is not True
