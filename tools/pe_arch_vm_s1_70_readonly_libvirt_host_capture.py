@@ -202,13 +202,15 @@ def capture_host_domain(
     info_uuid = re.findall(r"^UUID:\s*(\S+)\s*$", info, flags=re.MULTILINE)
     info_name = re.findall(r"^Name:\s*(\S+)\s*$", info, flags=re.MULTILINE)
     info_state = re.findall(r"^State:\s*(\S+)\s*$", info, flags=re.MULTILINE)
+    # PE-S2.48: preserve and require the canonical lowercase running
+    # spelling already mandated by the S1.71/S1.73 offline parsers.
     if (initial_uuid != expected_domain_uuid
             or final_uuid != expected_domain_uuid
-            or first_state.casefold() != "running"
-            or final_state.casefold() != "running"
+            or first_state != "running"
+            or final_state != "running"
             or info_uuid != [expected_domain_uuid]
             or info_name != [domain]
-            or [state.casefold() for state in info_state] != ["running"]):
+            or info_state != ["running"]):
         raise HostCaptureError(
             "Host domain identity/state changed or dominfo is inconsistent")
     # This file records the actual virsh stdout, never a PASS boolean or
