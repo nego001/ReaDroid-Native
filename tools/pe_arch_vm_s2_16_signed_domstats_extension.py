@@ -54,6 +54,30 @@ PINS = (
 )
 MAX_EXTENSION_BYTES = 4096
 MAX_SIGNATURE_BYTES = 4096
+# PE-S2.44: consume the COMPLETE V1 and readonly-sidecar verdict schemas.
+# A new or absent upstream field must be reviewed, not silently discarded.
+V1_VERDICT_FIELDS = frozenset((
+    "status", "source_commit", "reviewer_challenge_correlated",
+    "request_custody_receipt_pins_correlated",
+    "external_observer_manifest_sha256", "external_observer_id",
+    "distinct_observer_reviewer_witness_ssh_keys_verified",
+    "external_observer_detached_signature_verified",
+    "host_observation_file_hashes_matched", "host_observation_file_count",
+    "observer_clock_independently_verified",
+    "observer_host_independently_authenticated",
+    "native_arch_kernel_independently_verified", "independent_vm_attestation",
+    "unknown_windows_pe_execution_authorized",
+    "apk_or_ota_publication_authorized",
+))
+SIDECAR_VERDICT_FIELDS = frozenset((
+    "status", "record_sha256_matched",
+    "prior_signed_host_guest_record_hashes_correlated",
+    "reviewer_selected_session_id_correlated",
+    "cpu_time_ns_as_reported_by_host",
+    "actual_hypervisor_independently_authenticated",
+    "guest_cgroups_seccomp_independently_verified",
+    "independent_vm_attestation", "release_authorized",
+))
 
 
 class SignedDomstatsExtensionError(RuntimeError):
@@ -166,15 +190,43 @@ def _verified_upstream(owner: Path, operator: Path, p: dict) -> None:
             OSError, ValueError, TypeError) as exc:
         raise SignedDomstatsExtensionError(
             "Pinned signed v1 package or readonly host sidecar failed review") from exc
-    if (existing["status"] != external.STATUS
-            or existing["external_observer_detached_signature_verified"] is not True
-            or existing["independent_vm_attestation"] is not False
-            or sidecar["status"] != domstats.REVIEWED
-            or sidecar["record_sha256_matched"] is not True
-            or sidecar["independent_vm_attestation"] is not False
-            or sidecar["release_authorized"] is not False):
+    if (type(existing) is not dict
+            or set(existing) != V1_VERDICT_FIELDS
+            or existing.get("status") != external.STATUS
+            or existing.get("source_commit") != p["expected_source_commit"]
+            or existing.get("external_observer_manifest_sha256")
+               != p["expected_v1_manifest_sha256"]
+            or existing.get("external_observer_id") != p["expected_observer_id"]
+            or type(existing.get("host_observation_file_count")) is not int
+            or existing["host_observation_file_count"] != len(external.OBS_FILES)
+            or any(existing.get(key) is not True for key in (
+                "reviewer_challenge_correlated",
+                "request_custody_receipt_pins_correlated",
+                "distinct_observer_reviewer_witness_ssh_keys_verified",
+                "external_observer_detached_signature_verified",
+                "host_observation_file_hashes_matched"))
+            or any(existing.get(key) is not False for key in (
+                "observer_clock_independently_verified",
+                "observer_host_independently_authenticated",
+                "native_arch_kernel_independently_verified",
+                "independent_vm_attestation",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized"))
+            or type(sidecar) is not dict
+            or set(sidecar) != SIDECAR_VERDICT_FIELDS
+            or sidecar.get("status") != domstats.REVIEWED
+            or type(sidecar.get("cpu_time_ns_as_reported_by_host")) is not int
+            or not 0 < sidecar["cpu_time_ns_as_reported_by_host"] < 2**64
+            or any(sidecar.get(key) is not True for key in (
+                "record_sha256_matched",
+                "prior_signed_host_guest_record_hashes_correlated",
+                "reviewer_selected_session_id_correlated"))
+            or any(sidecar.get(key) is not False for key in (
+                "actual_hypervisor_independently_authenticated",
+                "guest_cgroups_seccomp_independently_verified",
+                "independent_vm_attestation", "release_authorized"))):
         raise SignedDomstatsExtensionError(
-            "Untrusted upstream review attempted to grant attestation")
+            "V1 or libvirt sidecar verdict contradicts the exact HOLD contract")
 
 
 def _publish(owner: Path, raw: bytes) -> None:
