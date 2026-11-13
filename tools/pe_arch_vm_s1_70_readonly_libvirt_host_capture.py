@@ -79,7 +79,8 @@ def _validate_dominfo_shape(info: str) -> None:
         label, value = line.split(":", 1)
         folded = label.casefold()
         if (DOMINFO_LABEL.fullmatch(label) is None
-                or not value.strip() or folded in labels
+                or label != label.strip() or not value.strip()
+                or folded in labels
                 or line.startswith(DOMINFO_RESERVED_PREFIXES)):
             raise HostCaptureError("Invalid, repeated or reserved dominfo field")
         labels.add(folded)
