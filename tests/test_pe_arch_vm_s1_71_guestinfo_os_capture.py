@@ -140,6 +140,26 @@ class GuestKernelCaptureContracts(unittest.TestCase):
         self.assertEqual(set(os.listdir(self.owner)),
                          {guest.TARGET, guest.PRIOR})
 
+    # PE-S2.48: S1.73's signed offline layout demands literal running.
+    # Capturing case-insensitively created records that could never review.
+    def test_s2_48_guest_mixed_case_domstate_refused_without_record(self):
+        for ordinal in (1, 2):
+            for spelling in (b"RUNNING\n", b"Running\n"):
+                with self.subTest(ordinal=ordinal, spelling=spelling):
+                    state_index = [0]
+                    def changed(argv, **kw):
+                        original = self.fake(argv, **kw)
+                        if argv[-2] == "domstate":
+                            state_index[0] += 1
+                            if state_index[0] == ordinal:
+                                return subprocess.CompletedProcess(
+                                    argv, 0, spelling, b"")
+                        return original
+                    with self.assertRaises(guest.GuestKernelObservationError):
+                        self.capture(fake=changed)
+                    self.assertEqual(state_index[0], 2)
+                    self.assertFalse(self.target.exists())
+
     def test_second_capture_rejected_before_all_virsh(self):
         self.capture()
         original = self.target.read_bytes()
