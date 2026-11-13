@@ -76,6 +76,7 @@ class JointSessionHandoffContracts(unittest.TestCase):
         return {
             "status": "LOCAL_RECEIPT_CONSISTENCY_VALIDATED",
             "security_classification": "UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION",
+            "report_sha256": "a" * 64,  # Synthetic verdict; parsed receipt mocked
             "receipt_sha256": self.digest,
             "source_files_rechecked": len(evidence.SOURCE_FILES),
             "external_receipt_sha256_pin_matched": True,
@@ -129,6 +130,82 @@ class JointSessionHandoffContracts(unittest.TestCase):
         git.assert_called_once_with(
             self.checkout, self.pins["expected_source_commit"],
             evidence.SOURCE_FILES)
+
+    @staticmethod
+    def valid_v3_result():
+        # Simulated verifier return. The real V1/V2/V3 signature test is
+        # separate and continues running in the same suite.
+        return {
+            "status": v3.VERIFIED,
+            "v3_detached_ed25519_signature_verified": True,
+            "v3_namespace_distinct_from_v1_and_v2": True,
+            "v2_detached_signature_rechecked": True,
+            "v1_detached_signature_rechecked": True,
+            "two_phase_hashes_bound_to_signed_v3_only": True,
+            "v1_v2_signed_manifests_unchanged": True,
+            "host_hypervisor_independently_attested": False,
+            "guest_cgroups_seccomp_verified": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+        }
+
+    def test_s2_19_upstream_shapes_match_current_producers(self):
+        self.assertEqual(set(self.valid_v3_result()),
+                         handoff.V3_VERDICT_FIELDS)
+        self.assertEqual(set(self.local_result()),
+                         handoff.RECEIPT_VERDICT_FIELDS)
+        self.assertEqual(set(self.git_result()),
+                         handoff.GIT_VERDICT_FIELDS)
+        output, _, _ = self.verify()  # Real disposable V1/V2/V3 signatures.
+        self.assertEqual(output["status"], handoff.STATUS)
+        self.assertFalse(output["independent_vm_attestation"])
+        self.assertFalse(output["release_authorized"])
+
+    def test_s2_19_v3_schema_drift_and_external_claims_rejected(self):
+        valid = self.valid_v3_result()
+        examples = (
+            dict(valid, operator_vm_attested=False),
+            dict(valid, host_hypervisor_independently_attested=True),
+            dict(valid, guest_cgroups_seccomp_verified=True),
+            dict(valid, apk_or_ota_publication_authorized=True),
+            dict(valid, v3_namespace_distinct_from_v1_and_v2=1),
+            {k: v for k, v in valid.items()
+             if k != "v1_v2_signed_manifests_unchanged"},
+        )
+        for bad in examples:
+            with self.subTest(value=str(bad)[-100:]):
+                with (mock.patch.object(
+                        handoff.v3, "verify_signed_domstats_extension",
+                        return_value=bad),
+                      self.assertRaises(handoff.SessionHandoffError)):
+                    self.verify()
+
+    def test_s2_19_receipt_schema_drift_and_digest_rejected(self):
+        valid = self.local_result()
+        for bad in (
+            dict(valid, independent_journald_verified=False),
+            dict(valid, report_sha256="not-a-sha"),
+            dict(valid, native_kernel_execution_independently_verified=True),
+            dict(valid, reviewer_challenge_correlated=1),
+            {k: v for k, v in valid.items() if k != "report_sha256"},
+        ):
+            with self.subTest(value=str(bad)[-100:]):
+                with self.assertRaises(handoff.SessionHandoffError):
+                    self.verify(local=bad)
+
+    def test_s2_19_git_verdict_schema_drift_and_claims_rejected(self):
+        valid = self.git_result()
+        for bad in (
+            dict(valid, vcs_independent_attestation=False),
+            dict(valid, native_vm_or_kernel_verified=True),
+            dict(valid, git_authorship_or_signature_verified=True),
+            dict(valid, worktree_status_clean=1),
+            {k: v for k, v in valid.items() if k != "expected_commit"},
+        ):
+            with self.subTest(value=str(bad)[-100:]):
+                with self.assertRaises(handoff.SessionHandoffError):
+                    self.verify(git=bad)
 
     def test_receipt_digest_from_unsigned_input_cannot_override_signed_v1(self):
         with (mock.patch.object(handoff.v3,
