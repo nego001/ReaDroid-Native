@@ -106,6 +106,10 @@ O [registro de lacunas PE-S2.40](PE-S2.40-EXTERNAL-REVIEW-SCHEMA-STRICT-HOLD.md)
 
 A [PE-S2.41](PE-S2.41-S2-19-CLOSED-LOCAL-VERDICT-HOLD.md) fecha o contrato entre S2.19 e S2.22: são **14 campos obrigatórios**, com todas as alegações de host, guest, cronologia, journald e autorizações em `False`. Qualquer alegação extra, por mais convincente que pareça, é recusada. As sete classes de provas externas continuam pendentes e só o revisor independente pode produzir seus originais.
 
+## Complemento PE-S2.42: vereditos V3, recibo e checkout Git exigem esquema completo
+
+A [PE-S2.42](PE-S2.42-V3-RECEIPT-GIT-VERDICT-CONTRACTS-HOLD.md) fixa os contratos das três respostas consumidas por S2.19: **12 chaves V3, 11 chaves de recibo e 6 chaves Git**. Campos extras, omissões e alegações indevidas de host/guest, cgroup, publicação ou atestação são recusados mesmo se as assinaturas descartáveis da CI local forem consistentes. A revisão externa precisa continuar fornecendo os originais de host e VM, com custódia humana e cronologia real; nenhuma automação pode marcar as sete classes como comprovadas.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
