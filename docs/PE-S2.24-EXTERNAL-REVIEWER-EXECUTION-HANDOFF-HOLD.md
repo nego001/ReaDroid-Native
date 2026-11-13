@@ -86,6 +86,10 @@ O diagnóstico [PE-S2.35](PE-S2.35-LIVE-PID-STATE-HOLD.md) recusa `/proc/PID/sta
 
 O diagnóstico local [PE-S2.36](PE-S2.36-PIDFD-IDENTITY-GUARD-HOLD.md) mantém `pidfd_open` fixado durante todas as leituras `/proc` e cotas cgroup, recusando saída do processo ou falta de suporte do kernel. Isso reduz corridas de reutilização de PID, mas **não valida a identidade do executável Ghidra** nem prova imposição contínua das cotas/seccomp. O revisor independente ainda deve testemunhar o PID e o processo real em conjunto com os controles no guest Arch nativo durante toda a sessão, sob cadeia BEFORE→WORK→AFTER.
 
+## Complemento PE-S2.37: tipo do arquivo de evidência
+
+O [diagnóstico local PE-S2.37](PE-S2.37-KERNEL-EVIDENCE-FILE-TYPE-HOLD.md) abre os arquivos de `/proc` e cotas cgroup com `O_NONBLOCK` e exige `fstat(...)` de **arquivo regular** antes da primeira leitura. A medida recusa FIFOs potencialmente bloqueantes e inodes inesperados. Isso **não autentica** o kernel/guest, o executável Ghidra ou a permanência do isolamento; a verificação independente de host/VM e execução correlacionada continua obrigatória.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
