@@ -90,6 +90,10 @@ O diagnóstico local [PE-S2.36](PE-S2.36-PIDFD-IDENTITY-GUARD-HOLD.md) mantém `
 
 O [diagnóstico local PE-S2.37](PE-S2.37-KERNEL-EVIDENCE-FILE-TYPE-HOLD.md) abre os arquivos de `/proc` e cotas cgroup com `O_NONBLOCK` e exige `fstat(...)` de **arquivo regular** antes da primeira leitura. A medida recusa FIFOs potencialmente bloqueantes e inodes inesperados. Isso **não autentica** o kernel/guest, o executável Ghidra ou a permanência do isolamento; a verificação independente de host/VM e execução correlacionada continua obrigatória.
 
+## Complemento PE-S2.38: identidade do dispositivo KVM do host
+
+O [preflight S2.21 endurecido PE-S2.38](PE-S2.38-KVM-DEVICE-IDENTITY-HOLD.md) recusa symlink no `/dev/kvm` e exige dispositivo de caractere major `10`, minor `232`. Esse teste negativo de falsos dispositivos é **apenas requisito local**, incapaz de comprovar propriedade do host, guest nativo, hipervisor real independente ou custódia do revisor.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
