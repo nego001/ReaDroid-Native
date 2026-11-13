@@ -220,6 +220,40 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                 with self.assertRaises(capture.HostCaptureError):
                     capture._validate_dominfo_shape(value)
 
+    # PE-S2.48: S1.71/S1.73 require exact lowercase running in
+    # initial/final domstate and in the embedded dominfo field.
+    def test_s2_48_host_mixed_case_domstate_refused_before_publication(self):
+        for ordinal in (1, 2):
+            for spelling in (b"RUNNING\n", b"Running\n"):
+                with self.subTest(ordinal=ordinal, spelling=spelling):
+                    state_index = [0]
+                    def changed(argv, **kw):
+                        original = self.fake(argv, **kw)
+                        if argv[-2] == "domstate":
+                            state_index[0] += 1
+                            if state_index[0] == ordinal:
+                                return subprocess.CompletedProcess(
+                                    argv, 0, spelling, b"")
+                        return original
+                    with self.assertRaises(capture.HostCaptureError):
+                        self.capture(fake=changed)
+                    self.assertEqual(state_index[0], 2)
+                    self.assertFalse(self.target.exists())
+
+    def test_s2_48_host_mixed_case_dominfo_refused_before_publication(self):
+        for spelling in (b"RUNNING", b"Running"):
+            with self.subTest(spelling=spelling):
+                def changed(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-2] != "dominfo":
+                        return original
+                    raw = original.stdout.replace(
+                        b"State: running", b"State: " + spelling)
+                    return subprocess.CompletedProcess(argv, 0, raw, b"")
+                with self.assertRaises(capture.HostCaptureError):
+                    self.capture(fake=changed)
+                self.assertFalse(self.target.exists())
+
     def test_second_capture_refuses_no_overwrite_and_no_new_commands(self):
         self.capture()
         first = self.target.read_bytes()
