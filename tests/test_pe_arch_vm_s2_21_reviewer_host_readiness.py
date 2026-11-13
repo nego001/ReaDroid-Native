@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import stat
 import sys
 import tempfile
 import unittest
@@ -149,6 +150,43 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
                   readiness.ReviewerHostReadinessError, "container marker")):
             self.evaluate(probe_reviewer_host=True)
         kvm.assert_not_called()
+
+    def test_true_kvm_major_minor_candidate_only(self):
+        device = mock.Mock(st_mode=stat.S_IFCHR | 0o660,
+                           st_rdev=os.makedev(10, 232))
+        with mock.patch.object(readiness.os, "lstat",
+                               return_value=device) as looked:
+            self.assertIsNone(readiness._require_kvm_device())
+        looked.assert_called_once_with("/dev/kvm")
+
+    def test_symlink_and_other_character_devices_are_not_kvm(self):
+        examples = (
+            ("symlink_to_char", stat.S_IFLNK, os.makedev(10, 232)),
+            ("null_char", stat.S_IFCHR, os.makedev(1, 3)),
+            ("wrong_kvm_minor", stat.S_IFCHR, os.makedev(10, 231)),
+            ("wrong_major", stat.S_IFCHR, os.makedev(12, 232)),
+            ("ordinary_file", stat.S_IFREG, os.makedev(10, 232)),
+            ("directory", stat.S_IFDIR, os.makedev(10, 232)),
+        )
+        for label, mode, dev in examples:
+            with self.subTest(label=label):
+                result = mock.Mock(st_mode=mode | 0o600, st_rdev=dev)
+                with (mock.patch.object(readiness.os, "lstat",
+                                        return_value=result),
+                      self.assertRaisesRegex(
+                          readiness.ReviewerHostReadinessError,
+                          "10:232")):
+                    readiness._require_kvm_device()
+
+    def test_unreadable_or_missing_kvm_device_fails_closed(self):
+        for exc in (FileNotFoundError("missing"), PermissionError("denied")):
+            with self.subTest(error=type(exc).__name__):
+                with (mock.patch.object(readiness.os, "lstat",
+                                        side_effect=exc),
+                      self.assertRaisesRegex(
+                          readiness.ReviewerHostReadinessError,
+                          "unavailable")):
+                    readiness._require_kvm_device()
 
     def test_missing_kvm_is_hard_rejection(self):
         with (mock.patch.dict(os.environ, {}, clear=True),
