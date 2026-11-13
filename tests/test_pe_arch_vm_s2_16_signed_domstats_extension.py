@@ -123,6 +123,115 @@ class SignedSidecarV2Contracts(unittest.TestCase):
         return extension.verify_signed_domstats_extension(
             self.owner, self.operator, **{**self.pins, **options, **changed})
 
+    # PE-S2.44 regression contracts: return values are mocked to inject
+    # schema drift, NOT to simulate independent physical host evidence.
+    def _observer_verdict(self):
+        return {
+            "status": v1.STATUS,
+            "source_commit": self.pins["expected_source_commit"],
+            "reviewer_challenge_correlated": True,
+            "request_custody_receipt_pins_correlated": True,
+            "external_observer_manifest_sha256":
+                self.pins["expected_v1_manifest_sha256"],
+            "external_observer_id": self.pins["expected_observer_id"],
+            "distinct_observer_reviewer_witness_ssh_keys_verified": True,
+            "external_observer_detached_signature_verified": True,
+            "host_observation_file_hashes_matched": True,
+            "host_observation_file_count": len(v1.OBS_FILES),
+            "observer_clock_independently_verified": False,
+            "observer_host_independently_authenticated": False,
+            "native_arch_kernel_independently_verified": False,
+            "independent_vm_attestation": False,
+            "unknown_windows_pe_execution_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+        }
+
+    @staticmethod
+    def _sidecar_verdict():
+        return {
+            "status": domstats.REVIEWED,
+            "record_sha256_matched": True,
+            "prior_signed_host_guest_record_hashes_correlated": True,
+            "reviewer_selected_session_id_correlated": True,
+            "cpu_time_ns_as_reported_by_host": 100000000,
+            "actual_hypervisor_independently_authenticated": False,
+            "guest_cgroups_seccomp_independently_verified": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+        }
+
+    def _upstream_verdicts(self, observer=..., sidecar=...):
+        if observer is ...:
+            observer = self._observer_verdict()
+        if sidecar is ...:
+            sidecar = self._sidecar_verdict()
+        with (mock.patch.object(extension.external, "verify_external_observer",
+                                return_value=observer) as first,
+              mock.patch.object(extension.domstats, "review_host_domstats",
+                                return_value=sidecar) as second):
+            extension._verified_upstream(self.owner, self.operator, self.pins)
+        first.assert_called_once()
+        second.assert_called_once()
+
+    def test_s2_44_exact_v1_and_domstats_upstream_hold_contract(self):
+        self.assertEqual(set(self._observer_verdict()),
+                         extension.V1_VERDICT_FIELDS)
+        self.assertEqual(set(self._sidecar_verdict()),
+                         extension.SIDECAR_VERDICT_FIELDS)
+        self._upstream_verdicts()
+        self.assertFalse(self._observer_verdict()["independent_vm_attestation"])
+        self.assertFalse(self._sidecar_verdict()["release_authorized"])
+
+    def test_s2_44_v1_verdict_extra_missing_and_false_attestation_rejected(self):
+        good = self._observer_verdict()
+        bad_results = (
+            dict(good, host_independence_verified=True),
+            dict(good, host_independence_verified=False),
+            {k: v for k, v in good.items()
+             if k != "request_custody_receipt_pins_correlated"},
+            dict(good, native_arch_kernel_independently_verified=True),
+            dict(good, apk_or_ota_publication_authorized=True),
+            dict(good, reviewer_challenge_correlated=1),
+            dict(good, host_observation_file_count=True),
+            dict(good, host_observation_file_count=3),
+            dict(good, source_commit="0"*40),
+            dict(good, external_observer_manifest_sha256="f"*64),
+            dict(good, external_observer_id="someone-else"),
+        )
+        for bad in bad_results:
+            with self.subTest(verdict=bad), self.assertRaises(
+                    extension.SignedDomstatsExtensionError):
+                self._upstream_verdicts(observer=bad)
+
+    def test_s2_44_domstats_verdict_extra_missing_and_claims_rejected(self):
+        good = self._sidecar_verdict()
+        bad_results = (
+            dict(good, independently_verified_host=True),
+            dict(good, independently_verified_host=False),
+            {k: v for k, v in good.items()
+             if k != "prior_signed_host_guest_record_hashes_correlated"},
+            dict(good, actual_hypervisor_independently_authenticated=True),
+            dict(good, guest_cgroups_seccomp_independently_verified=True),
+            dict(good, release_authorized=True),
+            dict(good, record_sha256_matched=1),
+            dict(good, cpu_time_ns_as_reported_by_host=True),
+            dict(good, cpu_time_ns_as_reported_by_host=0),
+            dict(good, cpu_time_ns_as_reported_by_host=2**64),
+            dict(good, cpu_time_ns_as_reported_by_host="100"),
+        )
+        for bad in bad_results:
+            with self.subTest(verdict=bad), self.assertRaises(
+                    extension.SignedDomstatsExtensionError):
+                self._upstream_verdicts(sidecar=bad)
+
+    def test_s2_44_upstream_verdict_wrong_types_rejected(self):
+        for bad in (None, [], "", True, 1):
+            with self.subTest(value=bad):
+                with self.assertRaises(extension.SignedDomstatsExtensionError):
+                    self._upstream_verdicts(observer=bad)
+                with self.assertRaises(extension.SignedDomstatsExtensionError):
+                    self._upstream_verdicts(sidecar=bad)
+
     def test_two_real_valid_signatures_and_hold_without_release(self):
         first = self.prepare()
         self.assertEqual(first["status"], extension.PREPARED)
