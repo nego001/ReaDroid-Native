@@ -95,14 +95,9 @@ def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
         raise GuestKernelObservationError("Prior host time is not UTC") from exc
 
     info = lines[14:-6]
-    reserved = (
-        "source_commit=", "reviewer_challenge=", "domain_name=",
-        "expected_domain_uuid=", "initial_domuuid:", "initial_domstate:",
-        "final_domstate:", "final_domuuid:", "independent_vm_attestation=",
-        "release_authorized=", "observation_type=", "classification=",
-        "uri=", "connection=", "dominfo:",
-    )
-    if not info or any(line.startswith(reserved) for line in info):
+    # PE-S2.46: consume the same reserved-marker policy as S1.70.
+    if not info or any(
+            line.startswith(host.DOMINFO_RESERVED_PREFIXES) for line in info):
         raise GuestKernelObservationError("Prior dominfo contains forged markers")
     for field, expected in (
         ("Name:", domain), ("UUID:", uuid), ("State:", "running")
