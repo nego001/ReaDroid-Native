@@ -44,7 +44,7 @@ MAX_COMMAND_BYTES = 8192
 # PE-S2.47: virsh dominfo uses printable "Label: value" records. A free-form
 # line can disguise a second domain identity or a forged authority claim.
 # This stays an ordinary text-format check, NEVER hypervisor authentication.
-DOMINFO_LABEL = re.compile(r"[A-Za-z][A-Za-z0-9 ()/_.+-]{0,63}\\Z")
+DOMINFO_LABEL = re.compile(r"[A-Za-z][A-Za-z0-9 ()/_.+-]{0,63}\Z")
 # PE-S2.46: observation-envelope markers cannot be injected by dominfo.
 # S1.71 reuses these exact prefixes for its prior-snapshot verification.
 DOMINFO_RESERVED_PREFIXES = (
@@ -70,7 +70,7 @@ def _validate_dominfo_shape(info: str) -> None:
     if type(info) is not str or not 0 < len(info) <= MAX_COMMAND_BYTES:
         raise HostCaptureError("Missing or oversized host dominfo")
     labels = set()
-    for line in info.split("\\n"):
+    for line in info.split("\n"):
         if (not line or line[0].isspace() or "=" in line
                 or ":" not in line
                 or any(ord(char) < 32 or ord(char) == 127
