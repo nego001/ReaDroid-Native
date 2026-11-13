@@ -41,6 +41,22 @@ MAX_FIELDS = 96
 INT = re.compile(r"(?:0|[1-9][0-9]{0,19})\Z")
 KEY = re.compile(r"[a-z][a-z0-9._-]{0,79}\Z")
 
+# PE-S2.45: consume the COMPLETE upstream S1.73 verdict schema.
+# New fields of authority or omitted HOLD flags must never be discarded.
+S1_73_VERDICT_FIELDS = frozenset((
+    "status", "host_record_sha256_matched", "guest_record_sha256_matched",
+    "guest_record_bound_to_host_sha256", "domain_uuid_correlated",
+    "source_commit_correlated", "reviewer_challenge_correlated",
+    "guest_os_id_self_reported", "guest_kernel_release_self_reported",
+    "semantic_records_checked", "other_unverified_records",
+    "libvirt_queried", "independent_host_control_verified",
+    "guest_kernel_independently_verified",
+    "seccomp_cgroups_independently_verified",
+    "scope_cleanup_independently_verified", "independent_vm_attestation",
+    "release_authorized", "unknown_windows_pe_execution_authorized",
+    "apk_or_ota_publication_authorized",
+))
+
 
 class HostDomstatsError(RuntimeError):
     """Unable to safely capture/review a host libvirt counter snapshot."""
@@ -125,11 +141,34 @@ def _offline_pins(directory: Path, *, domain: str, uuid: str, commit: str,
             expected_host_sha256=host_sha, expected_guest_sha256=guest_sha)
     except semantic.TwoRecordReviewError as exc:
         raise HostDomstatsError("Prior host and guest pinned records invalid") from exc
-    if (result["status"] != semantic.STATUS
+    if (type(result) is not dict
+            or set(result) != S1_73_VERDICT_FIELDS
+            or result.get("status") != semantic.STATUS
+            or type(result.get("semantic_records_checked")) is not int
             or result["semantic_records_checked"] != 2
-            or result["independent_vm_attestation"] is not False
-            or result["release_authorized"] is not False):
-        raise HostDomstatsError("Prior host/guest review contradicted HOLD")
+            or type(result.get("other_unverified_records")) is not list
+            or result["other_unverified_records"] != list(semantic.UNVERIFIED)
+            or any(type(result.get(name)) is not str
+                   or not 1 <= len(result[name]) <= 128
+                   or any(ord(c) < 32 or ord(c) == 127
+                          for c in result[name])
+                   for name in ("guest_os_id_self_reported",
+                                "guest_kernel_release_self_reported"))
+            or any(result.get(key) is not True for key in (
+                "host_record_sha256_matched",
+                "guest_record_sha256_matched",
+                "guest_record_bound_to_host_sha256",
+                "domain_uuid_correlated", "source_commit_correlated",
+                "reviewer_challenge_correlated"))
+            or any(result.get(key) is not False for key in (
+                "libvirt_queried", "independent_host_control_verified",
+                "guest_kernel_independently_verified",
+                "seccomp_cgroups_independently_verified",
+                "scope_cleanup_independently_verified",
+                "independent_vm_attestation", "release_authorized",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized"))):
+        raise HostDomstatsError("S1.73 upstream verdict contradicts exact HOLD contract")
 
 
 def capture_host_domstats(
