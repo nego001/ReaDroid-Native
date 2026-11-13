@@ -94,6 +94,10 @@ O [diagnóstico local PE-S2.37](PE-S2.37-KERNEL-EVIDENCE-FILE-TYPE-HOLD.md) abre
 
 O [preflight S2.21 endurecido PE-S2.38](PE-S2.38-KVM-DEVICE-IDENTITY-HOLD.md) recusa symlink no `/dev/kvm` e exige dispositivo de caractere major `10`, minor `232`. Esse teste negativo de falsos dispositivos é **apenas requisito local**, incapaz de comprovar propriedade do host, guest nativo, hipervisor real independente ou custódia do revisor.
 
+## Complemento PE-S2.39: consulta não mutável à API KVM
+
+O [preflight local PE-S2.39](PE-S2.39-READONLY-KVM-API-PROBE-HOLD.md) exige que o FD aberto para `/dev/kvm` em modo somente leitura seja o mesmo inode sem symlink previamente observado e responda `KVM_GET_API_VERSION == 12`. Falha de abertura, ioctl, metadados ou substituição do inode interrompe o preflight **antes do virsh**. A consulta não cria VM e **não prova controle administrativo independente** do host ou as sete classes de evidência externa. O revisor deve autenticar essas condições fora do software.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
