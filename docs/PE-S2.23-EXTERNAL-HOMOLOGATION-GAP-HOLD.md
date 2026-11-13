@@ -41,6 +41,10 @@ As sete linhas sempre aparecem no relatório com `state=PENDING_INDEPENDENT_REVI
 
 Um revisor humano deve validar a documentação original, a proveniência do host e a observação do kernel. Qualquer exigência não comprovada deve permanecer `HOLD`; uma revisão humana posterior deve ter sua própria política formal de aprovação e não converter o resultado desse script em `independent_vm_attestation=true`.
 
+## Complemento PE-S2.40: contrato de chaves fechado
+
+A [PE-S2.40](PE-S2.40-EXTERNAL-REVIEW-SCHEMA-STRICT-HOLD.md) fixa o conjunto completo de **13 campos** da saída local S2.22 antes de a S2.23 produzir seu registro de sete lacunas. Qualquer campo novo (inclusive uma alegação falsa de aprovação), faltante ou rebatizado é recusado, assim como valores de controle divergentes. Isso impede a aceitação silenciosa de mudanças de esquema, **não autentica revisor, host ou VM** e não reduz nenhuma lacuna externa.
+
 ## 4. Testes e limites
 
 `tests/test_pe_arch_vm_s2_23_external_gap_register.py` usa assinaturas V1/V2/V3 Ed25519 de chaves descartáveis reais em nove testes de contrato, mas o recibo/Git local são **simulados nesses testes unitários**. O ensaio Ubuntu Bubblewrap, herdado da S2.20 e ampliado na S2.22, executa a S2.23 **sem mocks para SHA do pacote, assinaturas V1/V2/V3, recibo, Git, montagem readonly e verificação S2.22**, usando dados de libvirt **sintéticos** e relatório de aceitação **sintético**. A CI exige que todas as 7 classes permaneçam pendentes.
