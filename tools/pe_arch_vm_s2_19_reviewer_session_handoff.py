@@ -25,6 +25,32 @@ import pe_arch_vm_s1_65_observer_prepare as dirs
 STATUS = "LOCAL_PE_S2_19_SIGNED_HOST_PAIR_AND_NATIVE_RECEIPT_CORRELATED_HOLD"
 REJECTED = "REJECTED_PE_S2_19_NATIVE_HOST_SESSION_CUSTODY"
 MAX_RECEIPT_BYTES = receipt.MAX_RECEIPT_BYTES
+# Exact upstream verdict contracts. No omitted/additional claims may be
+# silently ignored by this offline handoff after a producer changes schema.
+V3_VERDICT_FIELDS = frozenset((
+    "status", "v3_detached_ed25519_signature_verified",
+    "v3_namespace_distinct_from_v1_and_v2",
+    "v2_detached_signature_rechecked", "v1_detached_signature_rechecked",
+    "two_phase_hashes_bound_to_signed_v3_only",
+    "v1_v2_signed_manifests_unchanged",
+    "host_hypervisor_independently_attested",
+    "guest_cgroups_seccomp_verified",
+    "independent_vm_attestation", "release_authorized",
+    "apk_or_ota_publication_authorized",
+))
+RECEIPT_VERDICT_FIELDS = frozenset((
+    "status", "security_classification", "source_files_rechecked",
+    "report_sha256", "receipt_sha256",
+    "external_receipt_sha256_pin_matched", "readonly_source_view_verified",
+    "native_kernel_execution_independently_verified",
+    "windows_binary_executed_by_reviewer", "reviewer_challenge_correlated",
+    "independent_vm_attestation",
+))
+GIT_VERDICT_FIELDS = frozenset((
+    "status", "expected_commit", "checked_manifest_entries",
+    "worktree_status_clean", "git_authorship_or_signature_verified",
+    "native_vm_or_kernel_verified",
+))
 
 
 class SessionHandoffError(RuntimeError):
@@ -87,23 +113,35 @@ def verify_reviewer_session(observer_dir: Path, custody_dir: Path,
             expected_extension_manifest_sha256=expected_v3_manifest_sha256,
             expected_extension_signature_sha256=expected_v3_signature_sha256,
             **pins)
-        if (type(signed) is not dict or signed.get("status") != v3.VERIFIED
-                or signed.get("v3_detached_ed25519_signature_verified") is not True
-                or signed.get("v2_detached_signature_rechecked") is not True
-                or signed.get("v1_detached_signature_rechecked") is not True
-                or signed.get("two_phase_hashes_bound_to_signed_v3_only") is not True
-                or signed.get("independent_vm_attestation") is not False
-                or signed.get("release_authorized") is not False):
+        if (type(signed) is not dict
+                or set(signed) != V3_VERDICT_FIELDS
+                or signed.get("status") != v3.VERIFIED
+                or any(signed.get(key) is not True for key in (
+                    "v3_detached_ed25519_signature_verified",
+                    "v3_namespace_distinct_from_v1_and_v2",
+                    "v2_detached_signature_rechecked",
+                    "v1_detached_signature_rechecked",
+                    "two_phase_hashes_bound_to_signed_v3_only",
+                    "v1_v2_signed_manifests_unchanged"))
+                or any(signed.get(key) is not False for key in (
+                    "host_hypervisor_independently_attested",
+                    "guest_cgroups_seccomp_verified",
+                    "independent_vm_attestation", "release_authorized",
+                    "apk_or_ota_publication_authorized"))):
             raise SessionHandoffError("V1/V2/V3 signatures failed closed")
         checked = receipt.verify_local_receipt(
             path, source, expected_challenge=pins["expected_challenge"],
             expected_receipt_sha256=expected_native_receipt_sha256,
             require_readonly_source_view=True)
         if (type(checked) is not dict
+                or set(checked) != RECEIPT_VERDICT_FIELDS
                 or checked.get("status") != "LOCAL_RECEIPT_CONSISTENCY_VALIDATED"
                 or checked.get("security_classification") !=
                    "UNSIGNED_NOT_INDEPENDENT_VM_ATTESTATION"
                 or checked.get("receipt_sha256") != expected_native_receipt_sha256
+                or type(checked.get("report_sha256")) is not str
+                or receipt.HEX64.fullmatch(checked["report_sha256"]) is None
+                or type(checked.get("source_files_rechecked")) is not int
                 or checked.get("source_files_rechecked") != len(evidence.SOURCE_FILES)
                 or checked.get("external_receipt_sha256_pin_matched") is not True
                 or checked.get("readonly_source_view_verified") is not True
@@ -115,8 +153,10 @@ def verify_reviewer_session(observer_dir: Path, custody_dir: Path,
         git = checkout.verify_source_checkout_pin(
             source, pins["expected_source_commit"], evidence.SOURCE_FILES)
         if (type(git) is not dict or
-                git.get("status") != "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
+                set(git) != GIT_VERDICT_FIELDS
+                or git.get("status") != "LOCAL_GIT_CHECKOUT_PIN_MATCHED"
                 or git.get("expected_commit") != pins["expected_source_commit"]
+                or type(git.get("checked_manifest_entries")) is not int
                 or git.get("checked_manifest_entries") != len(evidence.SOURCE_FILES)
                 or git.get("worktree_status_clean") is not True
                 or git.get("git_authorship_or_signature_verified") is not False
