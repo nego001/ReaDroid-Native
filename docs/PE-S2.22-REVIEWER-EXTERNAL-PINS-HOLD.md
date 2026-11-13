@@ -2,6 +2,10 @@
 
 **Estado:** Implementação e ensaio de CI com registros sintéticos. **Não existe homologação independente da VM Arch nem captura real de um host QEMU/libvirt externo neste commit.** PR #47 permanece Draft, sem merge, APK, OTA, execução de PE desconhecido ou autorização de lançamento.
 
+## Complemento PE-S2.41: veredito local S2.19 com esquema fechado
+
+A [PE-S2.41](PE-S2.41-S2-19-CLOSED-LOCAL-VERDICT-HOLD.md) passou a exigir as **14 chaves exatas** no retorno da S2.19, verificando inclusive todos os campos de host, guest, cronologia, journald, execução PE e autorização de release como falsos. Campos extras, omissões ou tipos ambíguos agora provocam recusa. Isso melhora o contrato entre módulos, **sem transformar assinaturas locais em homologação independente**.
+
 ## Qual problema resolve
 
 A PE-S2.19 aceita hashes separados por parâmetros. Mesmo quando as assinaturas V1/V2/V3 e o recibo local são consistentes, alguém pode preencher os parâmetros diretamente com hashes fornecidos pelo operador da VM. Isso **não comprova que o revisor reteve os valores fora do ambiente do operador**.
