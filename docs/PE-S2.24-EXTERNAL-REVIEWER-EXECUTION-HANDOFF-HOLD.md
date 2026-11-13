@@ -110,6 +110,10 @@ A [PE-S2.41](PE-S2.41-S2-19-CLOSED-LOCAL-VERDICT-HOLD.md) fecha o contrato entre
 
 A [PE-S2.42](PE-S2.42-V3-RECEIPT-GIT-VERDICT-CONTRACTS-HOLD.md) fixa os contratos das três respostas consumidas por S2.19: **12 chaves V3, 11 chaves de recibo e 6 chaves Git**. Campos extras, omissões e alegações indevidas de host/guest, cgroup, publicação ou atestação são recusados mesmo se as assinaturas descartáveis da CI local forem consistentes. A revisão externa precisa continuar fornecendo os originais de host e VM, com custódia humana e cronologia real; nenhuma automação pode marcar as sete classes como comprovadas.
 
+## Complemento PE-S2.43: duas fontes anteriores da V3 exigem esquema completo
+
+A [PE-S2.43](PE-S2.43-V2-TWO-PHASE-STRICT-VERDICTS-HOLD.md) fixa os resultados de entrada V2 (**11 campos**) e das amostras do host BEFORE/AFTER (**9 campos**). Qualquer resposta extra, incompleta ou com afirmação contraditória de independência da VM é recusada antes do relatório local da V3, ainda que os hashes e assinaturas locais sejam consistentes. O contador de CPU informado pelo libvirt não prova cronologia de execução do Ghidra: o revisor humano deve guardar os registros reais BEFORE → WORK → AFTER e comprovar os sete requisitos da Issue #48.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
