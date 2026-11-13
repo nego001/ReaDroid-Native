@@ -26,8 +26,9 @@ CHALLENGE = "0123456789abcdef" * 4
 SESSION = "fedcba9876543210" * 4
 UUID = "12345678-abcd-4ef0-8123-123456789abc"
 DOMAIN = "reviewer-native-arch-01"
+# Simulate S1.70's _virsh_read() result, which strips terminal LF.
 INFO = (f"Id: 7\nName: {DOMAIN}\nUUID: {UUID}\n"
-        "OS Type: hvm\nState: running\n")
+        "OS Type: hvm\nState: running")
 
 
 class ReviewerHostReadinessContracts(unittest.TestCase):
@@ -104,6 +105,60 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
             with self.subTest(info=info):
                 with self.assertRaises(readiness.ReviewerHostReadinessError):
                     self.probe([UUID, "running", info, "running", UUID])
+
+    # PE-S2.50: preflight must not return CANDIDATE for text the
+    # subsequent S1.70 producer rejects before recording evidence.
+    def test_s2_50_disguised_or_duplicate_dominfo_rejected_as_candidate(self):
+        forged = (
+            INFO + "\nrelease_authorized=true",
+            INFO + "\n release_authorized=true",
+            INFO + "\nname: other-host",
+            INFO + "\nId: 8",
+            INFO + "\nName : other-host",
+            INFO + "\nUnlabelled report",
+            INFO.replace("State: running", "State: RUNNING"),
+            INFO.replace("OS Type: hvm", "OS Type: hvm\n\n"),
+        )
+        for info in forged:
+            with self.subTest(info=info):
+                with self.assertRaises(readiness.ReviewerHostReadinessError):
+                    self.probe([UUID, "running", info, "running", UUID])
+                self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_50_initial_or_final_mixed_case_state_blocks_candidate(self):
+        for index in (1, 3):
+            for spelling in ("RUNNING", "Running"):
+                with self.subTest(index=index, spelling=spelling):
+                    answers = [UUID, "running", INFO, "running", UUID]
+                    answers[index] = spelling
+                    with self.assertRaises(readiness.ReviewerHostReadinessError):
+                        self.probe(answers)
+                    self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_50_extended_canonical_dominfo_remains_candidate_hold(self):
+        info = INFO + ("\nCPU(s): 2\nCPU time: 3.2s"
+                       "\nMax memory: 2097152 KiB\nPersistent: yes")
+        result, _, _ = self.probe([UUID, "running", info, "running", UUID])
+        self.assertEqual(result["status"], readiness.CANDIDATE)
+        self.assertFalse(result["independent_vm_attestation"])
+        self.assertFalse(result["release_authorized"])
+        self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_50_preflight_reuses_s1_70_validator(self):
+        with mock.patch.object(
+                readiness.host, "_validate_dominfo_shape",
+                side_effect=readiness.host.HostCaptureError(
+                    "synthetic strict policy refusal")) as validator:
+            with self.assertRaises(readiness.ReviewerHostReadinessError):
+                self.probe()
+        validator.assert_called_once_with(INFO)
+        self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_50_nonstring_dominfo_never_claims_candidate(self):
+        for value in (None, True, [], b"Name: host", ""):
+            with self.subTest(value=value):
+                with self.assertRaises(readiness.ReviewerHostReadinessError):
+                    self.probe([UUID, "running", value, "running", UUID])
 
     def test_weak_replayed_or_invalid_reviewer_session_is_blocked(self):
         for values in (

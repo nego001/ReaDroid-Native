@@ -145,10 +145,14 @@ def _host_prerequisites(owner: Path) -> str:
 
 
 def _info_matches(text: str, *, domain: str, uuid: str) -> bool:
-    # Never trust a grep/substring match inside unrelated dominfo fields.
-    if type(text) is not str:
+    # PE-S2.50: require the same canonical dominfo framing as S1.70 before
+    # advertising a candidate host. No whitespace-stripping of whole lines:
+    # that hid disguised field names and duplicate aliases in preflight.
+    try:
+        host._validate_dominfo_shape(text)
+    except host.HostCaptureError:
         return False
-    rows = [line.strip() for line in text.splitlines()]
+    rows = text.split("\n")
     expected = (("Name:", domain), ("UUID:", uuid), ("State:", "running"))
     for field, value in expected:
         matches = [s[len(field):].strip() for s in rows
@@ -201,8 +205,10 @@ def reviewer_host_readiness(observer_dir: Path, *, domain: str,
             "Bounded readonly libvirt host query failed") from exc
     if (actual_uuid != expected_domain_uuid
             or after_uuid != expected_domain_uuid
-            or state.casefold() != "running"
-            or after_state.casefold() != "running"
+            # PE-S2.50: S1.70/71 and offline S1.73 require literal
+            # lowercase running; a misleading preflight must not accept more.
+            or state != "running"
+            or after_state != "running"
             or not _info_matches(info, domain=domain, uuid=expected_domain_uuid)):
         raise ReviewerHostReadinessError(
             "Domain UUID or running state changed/contradicted libvirt")
