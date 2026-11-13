@@ -58,6 +58,28 @@ PINS = (
 )
 MAX_EXTENSION_BYTES = 6144
 MAX_SIGNATURE_BYTES = 4096
+# The V3 reader must not discard added upstream claims of independent
+# verification, nor accept a partially populated V2/pair result as proof.
+V2_VERDICT_FIELDS = frozenset((
+    "status", "v2_detached_ed25519_signature_verified",
+    "v2_namespace_distinct_from_v1",
+    "v1_detached_signature_rechecked",
+    "sidecar_sha256_bound_to_signed_v2_only",
+    "v1_four_observation_manifest_unchanged",
+    "host_hypervisor_independently_attested",
+    "guest_cgroups_seccomp_verified",
+    "independent_vm_attestation", "release_authorized",
+    "apk_or_ota_publication_authorized",
+))
+PAIR_VERDICT_FIELDS = frozenset((
+    "status", "before_after_sha256_pins_matched",
+    "external_session_and_domain_correlated",
+    "host_cpu_time_increased_as_reported_by_libvirt",
+    "host_provenance_independently_attested",
+    "guest_process_or_seccomp_cgroup_verified",
+    "samples_signed_in_s1_63_or_s2_16",
+    "independent_vm_attestation", "release_authorized",
+))
 
 
 class SignedDomstatsExtensionError(RuntimeError):
@@ -171,16 +193,32 @@ def _verified_upstream(owner: Path, operator: Path, p: dict) -> None:
             TypeError, KeyError) as exc:
         raise SignedDomstatsExtensionError(
             "V1/V2 signatures or both host session measurements unverified") from exc
-    if (signed["status"] != v2.VERIFIED
-            or signed["v2_detached_ed25519_signature_verified"] is not True
-            or signed["v1_detached_signature_rechecked"] is not True
-            or signed["independent_vm_attestation"] is not False
-            or signed["release_authorized"] is not False
-            or samples["status"] != pair.STATUS_REVIEWED
-            or samples["before_after_sha256_pins_matched"] is not True
-            or samples["host_cpu_time_increased_as_reported_by_libvirt"] is not True
-            or samples["independent_vm_attestation"] is not False
-            or samples["release_authorized"] is not False):
+    if (type(signed) is not dict
+            or set(signed) != V2_VERDICT_FIELDS
+            or signed.get("status") != v2.VERIFIED
+            or any(signed.get(field) is not True for field in (
+                "v2_detached_ed25519_signature_verified",
+                "v2_namespace_distinct_from_v1",
+                "v1_detached_signature_rechecked",
+                "sidecar_sha256_bound_to_signed_v2_only",
+                "v1_four_observation_manifest_unchanged"))
+            or any(signed.get(field) is not False for field in (
+                "host_hypervisor_independently_attested",
+                "guest_cgroups_seccomp_verified",
+                "independent_vm_attestation", "release_authorized",
+                "apk_or_ota_publication_authorized"))
+            or type(samples) is not dict
+            or set(samples) != PAIR_VERDICT_FIELDS
+            or samples.get("status") != pair.STATUS_REVIEWED
+            or any(samples.get(field) is not True for field in (
+                "before_after_sha256_pins_matched",
+                "external_session_and_domain_correlated",
+                "host_cpu_time_increased_as_reported_by_libvirt"))
+            or any(samples.get(field) is not False for field in (
+                "host_provenance_independently_attested",
+                "guest_process_or_seccomp_cgroup_verified",
+                "samples_signed_in_s1_63_or_s2_16",
+                "independent_vm_attestation", "release_authorized"))):
         raise SignedDomstatsExtensionError("Source signatures/counters contradict HOLD")
 
 
