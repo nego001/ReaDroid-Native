@@ -41,6 +41,10 @@ UUID = re.compile(
 TARGET = external.OBS_FILES["host_vm_launch"]
 VIRSH_COMMANDS = ("domuuid", "domstate", "dominfo")
 MAX_COMMAND_BYTES = 8192
+# PE-S2.47: virsh dominfo uses printable "Label: value" records. A free-form
+# line can disguise a second domain identity or a forged authority claim.
+# This stays an ordinary text-format check, NEVER hypervisor authentication.
+DOMINFO_LABEL = re.compile(r"[A-Za-z][A-Za-z0-9 ()/_.+-]{0,63}\\Z")
 # PE-S2.46: observation-envelope markers cannot be injected by dominfo.
 # S1.71 reuses these exact prefixes for its prior-snapshot verification.
 DOMINFO_RESERVED_PREFIXES = (
@@ -54,6 +58,31 @@ DOMINFO_RESERVED_PREFIXES = (
 
 class HostCaptureError(RuntimeError):
     """External libvirt snapshot could not be safely recorded."""
+
+
+
+def _validate_dominfo_shape(info: str) -> None:
+    """Reject hidden assignments and ambiguous/duplicate virsh labels.
+
+    Reused by S1.71 for independently re-pinned S1.70 file bytes.
+    This validates the *format* of text, not the truth of host reports.
+    """
+    if type(info) is not str or not 0 < len(info) <= MAX_COMMAND_BYTES:
+        raise HostCaptureError("Missing or oversized host dominfo")
+    labels = set()
+    for line in info.split("\\n"):
+        if (not line or line[0].isspace() or "=" in line
+                or ":" not in line
+                or any(ord(char) < 32 or ord(char) == 127
+                       for char in line)):
+            raise HostCaptureError("Noncanonical host dominfo line")
+        label, value = line.split(":", 1)
+        folded = label.casefold()
+        if (DOMINFO_LABEL.fullmatch(label) is None
+                or not value.strip() or folded in labels
+                or line.startswith(DOMINFO_RESERVED_PREFIXES)):
+            raise HostCaptureError("Invalid, repeated or reserved dominfo field")
+        labels.add(folded)
 
 
 def _check(domain: str, expected_uuid: str, commit: str,
@@ -166,11 +195,7 @@ def capture_host_domain(
     final_uuid = _virsh_read(executable, "domuuid", domain)
     # Deny a second, forged source identity or release claim inside
     # a valid-looking dominfo query, before any private log is written.
-    info_lines = info.split("\n")
-    if (any(not line for line in info_lines)
-            or any(line.startswith(DOMINFO_RESERVED_PREFIXES)
-                   for line in info_lines)):
-        raise HostCaptureError("Dominfo contains reserved or empty record lines")
+    _validate_dominfo_shape(info)
     # Cross-check dominfo fields against separate libvirt queries. This
     # prevents a mid-capture name rebind being quietly accepted.
     info_uuid = re.findall(r"^UUID:\s*(\S+)\s*$", info, flags=re.MULTILINE)
