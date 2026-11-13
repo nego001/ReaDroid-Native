@@ -98,7 +98,7 @@ def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
     # PE-S2.47: the prior snapshot must satisfy the exact same canonical
     # dominfo policy as live S1.70 (even when its hashes were re-pinned).
     try:
-        host._validate_dominfo_shape("\\n".join(info))
+        host._validate_dominfo_shape("\n".join(info))
     except host.HostCaptureError as exc:
         raise GuestKernelObservationError(
             "Prior dominfo contains hidden or ambiguous fields") from exc
