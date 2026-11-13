@@ -224,7 +224,7 @@ class TwoRecordReviewContracts(unittest.TestCase):
             b"Release_Authorized=true",
             b"name: other-domain",
             b"Name : other-domain",
-            b"Id: 99",
+            b"State: paused",
             b"unlabelled",
         ):
             with self.subTest(extra=extra):
