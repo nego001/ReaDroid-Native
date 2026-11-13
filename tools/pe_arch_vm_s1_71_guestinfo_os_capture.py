@@ -95,10 +95,13 @@ def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
         raise GuestKernelObservationError("Prior host time is not UTC") from exc
 
     info = lines[14:-6]
-    # PE-S2.46: consume the same reserved-marker policy as S1.70.
-    if not info or any(
-            line.startswith(host.DOMINFO_RESERVED_PREFIXES) for line in info):
-        raise GuestKernelObservationError("Prior dominfo contains forged markers")
+    # PE-S2.47: the prior snapshot must satisfy the exact same canonical
+    # dominfo policy as live S1.70 (even when its hashes were re-pinned).
+    try:
+        host._validate_dominfo_shape("\\n".join(info))
+    except host.HostCaptureError as exc:
+        raise GuestKernelObservationError(
+            "Prior dominfo contains hidden or ambiguous fields") from exc
     for field, expected in (
         ("Name:", domain), ("UUID:", uuid), ("State:", "running")
     ):
