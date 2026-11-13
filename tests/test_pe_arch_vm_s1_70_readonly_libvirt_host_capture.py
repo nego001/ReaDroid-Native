@@ -171,6 +171,55 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                     self.capture(fake=malformed)
                 self.assertFalse(self.target.exists())
 
+    # PE-S2.47: reject misleading variations that the earlier exact
+    # startswith() policy did not see, before issuing a publication.
+    def test_s2_47_disguised_authority_and_duplicate_dominfo_fields_refused(self):
+        bad_lines = (
+            b" release_authorized=true",
+            b"ReLeAsE_AuThOrIzEd=true",
+            b"release_authorized = true",
+            b"Name : alternative",
+            b"name: alternative",
+            b"NAME: alternative",
+            b"Id: 99",
+            b"State: running=verified",
+            b"unlabelled text",
+        )
+        for extra in bad_lines:
+            with self.subTest(extra=extra):
+                def forged(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-2] != "dominfo":
+                        return original
+                    return subprocess.CompletedProcess(
+                        argv, 0, original.stdout + extra + b"\n", b"")
+                with self.assertRaises(capture.HostCaptureError):
+                    self.capture(fake=forged)
+                self.assertFalse(self.target.exists())
+
+    def test_s2_47_valid_standard_extended_dominfo_still_accepted(self):
+        def extended(argv, **kw):
+            original = self.fake(argv, **kw)
+            if argv[-2] != "dominfo":
+                return original
+            lines = (b"CPU(s): 2\nCPU time: 3.2s\n"
+                     b"Max memory: 2097152 KiB\n"
+                     b"Persistent: yes\nAutostart: disable\n"
+                     b"Security model: none\n")
+            return subprocess.CompletedProcess(
+                argv, 0, original.stdout + lines, b"")
+        result, _, _ = self.capture(fake=extended)
+        self.assertEqual(result["status"], capture.CAPTURED)
+        import pe_arch_vm_s1_71_guestinfo_os_capture as guest
+        guest._check_snapshot(self.target.read_bytes(), commit=COMMIT,
+                              challenge=CHALLENGE, domain=DOMAIN, uuid=UUID)
+
+    def test_s2_47_shared_dominfo_parser_rejects_non_string_input(self):
+        for value in (None, [], True, b"Name: fake", ""):
+            with self.subTest(value=value):
+                with self.assertRaises(capture.HostCaptureError):
+                    capture._validate_dominfo_shape(value)
+
     def test_second_capture_refuses_no_overwrite_and_no_new_commands(self):
         self.capture()
         first = self.target.read_bytes()
