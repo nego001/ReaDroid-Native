@@ -216,6 +216,35 @@ class TwoRecordReviewContracts(unittest.TestCase):
                         expected_guest_sha256=hashlib.sha256(
                             new_guest).hexdigest())
 
+    def test_s2_47_rehashed_hidden_dominfo_authority_or_alias_refused(self):
+        # A new SHA256 of forged host text plus a matching re-pinned guest
+        # must not bypass the capture-format policy during offline review.
+        for extra in (
+            b" release_authorized=true",
+            b"Release_Authorized=true",
+            b"name: other-domain",
+            b"Name : other-domain",
+            b"Id: 99",
+            b"unlabelled",
+        ):
+            with self.subTest(extra=extra):
+                new_host = first_record().replace(
+                    b"State: running\n",
+                    b"State: running\n" + extra + b"\n")
+                self.first.write_bytes(new_host)
+                self.first.chmod(0o600)
+                host_sha = hashlib.sha256(new_host).hexdigest()
+                new_guest = second_record(host_sha)
+                self.second.write_bytes(new_guest)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "strict pre-guestinfo policy"):
+                    self.verify(
+                        expected_host_sha256=host_sha,
+                        expected_guest_sha256=hashlib.sha256(
+                            new_guest).hexdigest())
+
     def test_review_uses_shared_s1_71_snapshot_validator(self):
         # Guard against a later drift that silently drops the earlier
         # check while keeping a superficially equivalent local parser.
