@@ -147,6 +147,73 @@ class ExternalGapRegisterContracts(unittest.TestCase):
                       self.assertRaises(gap.ExternalGapError)):
                     gap.audit_external_review(**self.args())
 
+    @staticmethod
+    def _valid_upstream_shape():
+        # Synthetic S2.22 return structure, not evidence of a real VM.
+        return {
+            "status": pins.VERIFIED,
+            "canonical_out_of_band_pin_bundle_sha256_matched": True,
+            "reviewer_pins_private_directory_disjoint": True,
+            "v1_v2_v3_detached_signatures_locally_verified": True,
+            "readonly_native_receipt_and_git_locally_verified": True,
+            "unverified_independent_requirements": list(pins.UNPROVEN),
+            "reviewer_identity_independently_attested": False,
+            "hypervisor_independence_attested": False,
+            "native_vm_kernel_attested": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+            "unknown_windows_pe_execution_authorized": False,
+        }
+
+    def test_pinned_upstream_schema_matches_current_s2_22(self):
+        sample = self._valid_upstream_shape()
+        self.assertEqual(set(sample), gap.S2_22_RESULT_FIELDS)
+        with mock.patch.object(gap.pins, "review_custody", return_value=sample):
+            result = gap.audit_external_review(**self.args())
+        self.assertEqual(result["status"], gap.PENDING)
+        self.assertEqual([x["state"] for x in result["external_evidence"]],
+                         [gap.MISSING] * 7)
+        self.assertIs(result["independent_vm_attestation"], False)
+        self.assertIs(result["release_authorized"], False)
+
+    def test_unexpected_s2_22_fields_even_false_claims_fail_closed(self):
+        sample = self._valid_upstream_shape()
+        for name, value in (
+            ("external_vm_review_approved", True),
+            ("reviewer_evidence_received", False),
+            ("native_arch_kernel_verified", "yes"),
+            ("evidence_raw_private", "/tmp/secret"),
+        ):
+            with self.subTest(name=name):
+                with (mock.patch.object(gap.pins, "review_custody",
+                                        return_value={**sample, name: value}),
+                      self.assertRaisesRegex(gap.ExternalGapError,
+                                             "HOLD boundary")):
+                    gap.audit_external_review(**self.args())
+
+    def test_missing_any_s2_22_field_is_not_silently_defaulted(self):
+        sample = self._valid_upstream_shape()
+        for missing in sorted(gap.S2_22_RESULT_FIELDS):
+            with self.subTest(missing=missing):
+                changed = {k: v for k, v in sample.items() if k != missing}
+                with (mock.patch.object(gap.pins, "review_custody",
+                                        return_value=changed),
+                      self.assertRaisesRegex(gap.ExternalGapError,
+                                             "HOLD boundary")):
+                    gap.audit_external_review(**self.args())
+
+    def test_spoofed_proof_order_and_container_type_rejected(self):
+        sample = self._valid_upstream_shape()
+        altered = dict(sample)
+        altered["unverified_independent_requirements"] = list(reversed(pins.UNPROVEN))
+        for bad in (altered, [], dict(sample, release_authorized=1)):
+            with self.subTest(kind=str(type(bad)), value=str(bad)[:50]):
+                with (mock.patch.object(gap.pins, "review_custody",
+                                        return_value=bad),
+                      self.assertRaises(gap.ExternalGapError)):
+                    gap.audit_external_review(**self.args())
+
     def test_success_cli_always_returns_hold_code_two(self):
         out=StringIO()
         argv = ["--pin-file", str(self.o.file),
