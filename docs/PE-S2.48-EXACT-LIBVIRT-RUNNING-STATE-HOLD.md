@@ -15,7 +15,7 @@ Consequência: a captura poderia ser relatada como bem-sucedida, possuir SHA-256
 
 ## Regressões
 
-Três métodos novos cobrem oito adulterações de estado em saída `virsh` simulada (duas grafias × estados inicial/final de S1.70, duas grafias no campo `State:` de `dominfo`, e duas grafias × estados inicial/final de S1.71):
+Três métodos novos cobrem dez adulterações de estado em saída `virsh` simulada (duas grafias × estados inicial/final de S1.70, duas grafias no campo `State:` de `dominfo`, e duas grafias × estados inicial/final de S1.71):
 
 1. `test_s2_48_host_mixed_case_domstate_refused_before_publication`
 2. `test_s2_48_host_mixed_case_dominfo_refused_before_publication`
