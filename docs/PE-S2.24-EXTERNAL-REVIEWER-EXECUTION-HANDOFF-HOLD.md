@@ -98,6 +98,10 @@ O [preflight S2.21 endurecido PE-S2.38](PE-S2.38-KVM-DEVICE-IDENTITY-HOLD.md) re
 
 O [preflight local PE-S2.39](PE-S2.39-READONLY-KVM-API-PROBE-HOLD.md) exige que o FD aberto para `/dev/kvm` em modo somente leitura seja o mesmo inode sem symlink previamente observado e responda `KVM_GET_API_VERSION == 12`. Falha de abertura, ioctl, metadados ou substituição do inode interrompe o preflight **antes do virsh**. A consulta não cria VM e **não prova controle administrativo independente** do host ou as sete classes de evidência externa. O revisor deve autenticar essas condições fora do software.
 
+## Complemento PE-S2.40: saída S2.22 precisa ter esquema exato
+
+O [registro de lacunas PE-S2.40](PE-S2.40-EXTERNAL-REVIEW-SCHEMA-STRICT-HOLD.md) agora recusa alterações, omissões e acréscimos nas **13 chaves** do resultado S2.22. Um campo novo que declare revisão independente não vira prova, mesmo com assinaturas locais válidas. As sete classes ainda exigem originais e decisão humana sob custódia externa; não houve atestação automática.
+
 ## Matriz de entrega externa (todos os itens devem ter provas originais)
 
 1. **Revisor independente:** autorização/identidade e custódia estabelecidas em canal distinto do operador, sem expor dados pessoais no repositório.
