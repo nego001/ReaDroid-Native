@@ -270,6 +270,24 @@ class SignedHostPairV3Contracts(unittest.TestCase):
         with self.assertRaises(v3.SignedDomstatsExtensionError):
             self.verify(expected_after_sha256=hashlib.sha256(raw).hexdigest())
 
+    def test_s2_63_v3_cannot_package_rehashed_backward_clock(self):
+        before = json.loads((self.owner / pair.BEFORE).read_bytes())
+        after_path = self.owner / pair.AFTER
+        after = json.loads(after_path.read_bytes())
+        forged = pair._canonical({
+            **after,
+            "host_time_utc_untrusted": before["host_time_utc_untrusted"]})
+        after_path.write_bytes(forged)
+        changed_pin = hashlib.sha256(forged).hexdigest()
+        self.assertNotEqual(
+            changed_pin, self.pins["expected_after_sha256"])
+        with self.assertRaisesRegex(
+                v3.SignedDomstatsExtensionError,
+                "V1/V2 signatures or both host session measurements"):
+            self.prepare(expected_after_sha256=changed_pin)
+        self.assertFalse(self.file.exists())
+        self.assertFalse(self.sig.exists())
+
     def test_v2_manifest_tamper_refused_and_v3_cannot_repin(self):
         self.prepare()
         self.sign()

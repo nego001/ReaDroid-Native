@@ -146,6 +146,20 @@ def _decode(raw: bytes, *, phase: str, expected_before_sha256: str | None,
     return record
 
 
+def _check_reported_chronology(before: dict, after: dict) -> None:
+    """Fail closed on *self-reported* reversed/equal UTC, not host attestation.
+
+    Call only AFTER each sample has passed _decode's canonical UTC and
+    pinned identity checks. Clocks can lie or step; positive order alone
+    never proves when work actually ran or who controlled the host.
+    """
+    first = datetime.fromisoformat(before["host_time_utc_untrusted"])
+    last = datetime.fromisoformat(after["host_time_utc_untrusted"])
+    if last <= first:
+        raise HostTwoPhaseError(
+            "Nonincreasing untrusted host clock in BEFORE/AFTER session")
+
+
 def _read_private(owner: Path, phase: str, *, expected_sha256: str,
                   common: dict) -> dict:
     if (type(expected_sha256) is not str
@@ -267,8 +281,12 @@ def capture_phase(observer_dir: Path, *, phase: str, domain: str,
         "release_authorized": False, "windows_binary_executed": False,
     }
     raw = _canonical(record)
+    # Validate every reported field before enforcing the chronological
+    # consistency of the two *untrusted* local wall-clock observations.
     _decode(raw, phase=phase, expected_before_sha256=expected_before_sha256,
             **{k:v for k,v in common.items() if k!="expected_before_sha256"})
+    if first is not None:
+        _check_reported_chronology(first, record)
     if len(raw) > MAX_FILE:
         raise HostTwoPhaseError("Host phase sample exceeds byte budget")
     try:
@@ -311,6 +329,10 @@ def review_pair(observer_dir: Path, *, expected_before_sha256: str,
                           common=common)
     if after["cpu_time_ns"] <= before["cpu_time_ns"]:
         raise HostTwoPhaseError("No monotonic host CPU time across session")
+    # CPU use may increase even if an actor re-pins an AFTER file with a
+    # self-reported UTC time at/before BEFORE. Require both monotonicities
+    # while explicitly refusing to treat either as external chronology.
+    _check_reported_chronology(before, after)
     # Guard against lasting replacements during the full two-record review.
     _read_private(owner, "before", expected_sha256=expected_before_sha256,
                   common=common)

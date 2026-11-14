@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stdout, redirect_stderr
+from datetime import datetime, timedelta
 import hashlib
 from io import StringIO
 import json
@@ -220,6 +221,52 @@ class TwoPhaseHostCaptureContracts(unittest.TestCase):
                         "before",
                         read_states=[UUID, "running", state, UUID])
                 self.assertFalse((self.owner / stage.BEFORE).exists())
+
+    def test_s2_63_capture_after_reversed_or_equal_clock_fails_before_write(self):
+        first = self.capture("before")
+        first_record = json.loads((self.owner / stage.BEFORE).read_bytes())
+        stamp = datetime.fromisoformat(
+            first_record["host_time_utc_untrusted"])
+        for value in (stamp, stamp - timedelta(seconds=1)):
+            with self.subTest(utc=value.isoformat()):
+                # Only the local *untrusted* clock is simulated here;
+                # no libvirt request or guest command is executed.
+                with (mock.patch.object(stage, "datetime") as clock,
+                      self.assertRaisesRegex(
+                          stage.HostTwoPhaseError,
+                          "Nonincreasing untrusted host clock")):
+                    clock.now.return_value = value
+                    self.capture(
+                        "after", text=SECOND, prior=first["sample_sha256"])
+                self.assertFalse((self.owner / stage.AFTER).exists())
+
+    def test_s2_63_offline_rehashed_after_clock_not_increasing_rejected(self):
+        first, second = self.pair()
+        path = self.owner / stage.AFTER
+        original = path.read_bytes()
+        before = json.loads((self.owner / stage.BEFORE).read_bytes())
+        after = json.loads(original)
+        first_time = datetime.fromisoformat(
+            before["host_time_utc_untrusted"])
+        for altered in (first_time, first_time - timedelta(seconds=1)):
+            with self.subTest(clock=altered.isoformat()):
+                forged = stage._canonical({
+                    **after,
+                    "host_time_utc_untrusted": altered.isoformat()})
+                path.write_bytes(forged)
+                with self.assertRaisesRegex(
+                        stage.HostTwoPhaseError,
+                        "Nonincreasing untrusted host clock"):
+                    stage.review_pair(
+                        self.owner, expected_before_sha256=first["sample_sha256"],
+                        expected_after_sha256=hashlib.sha256(forged).hexdigest(),
+                        **self.common)
+        path.write_bytes(original)
+        valid = stage.review_pair(
+            self.owner, expected_before_sha256=first["sample_sha256"],
+            expected_after_sha256=second["sample_sha256"], **self.common)
+        self.assertEqual(valid["status"], stage.STATUS_REVIEWED)
+        self.assertFalse(valid["independent_vm_attestation"])
 
     def test_after_requires_external_before_hash_before_host_query(self):
         with (mock.patch.object(stage.shutil, "which") as which,
