@@ -86,8 +86,15 @@ class RuntimeTextChainContracts(unittest.TestCase):
         # relying on an old digest mismatch.
         for separator in (b"\x0b", b"\x0c", b"\x1c", b"\x1d", b"\x1e"):
             with self.subTest(separator=separator.hex()):
-                bad, linked = repin(self.r, self.c, b"\n", separator)
+                # Change an interior boundary only, keeping the
+                # required terminal LF so the test exercises the
+                # separator check rather than the end-marker check.
+                bad = self.r.replace(b"\n", separator, 1)
+                linked = self.c.replace(
+                    hashlib.sha256(self.r).hexdigest().encode("ascii"),
+                    hashlib.sha256(bad).hexdigest().encode("ascii"))
                 self.assertNotEqual(bad, self.r)
+                self.assertTrue(bad.endswith(b"\n"))
                 self.assertIn(
                     hashlib.sha256(bad).hexdigest().encode("ascii"), linked)
                 with self.assertRaisesRegex(
