@@ -399,6 +399,43 @@ class GuestKernelCaptureContracts(unittest.TestCase):
                 self.capture(fake=failed)
             self.assertFalse(self.target.exists())
 
+    def test_s2_53_guestinfo_raw_framing_rejected_before_publication(self):
+        for bad_kind in ("leading_lf", "double_final_lf", "leading_space",
+                         "trailing_space", "interior_blank"):
+            with self.subTest(bad_kind=bad_kind):
+                def malformed(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-1] != "--os":
+                        return original
+                    raw = original.stdout
+                    if bad_kind == "leading_lf":
+                        raw = b"\n" + raw
+                    elif bad_kind == "double_final_lf":
+                        raw = raw + b"\n"
+                    elif bad_kind == "leading_space":
+                        raw = b" " + raw
+                    elif bad_kind == "trailing_space":
+                        raw = raw.rstrip(b"\n") + b" \n"
+                    else:
+                        raw = raw.replace(b"\n", b"\n\n", 1)
+                    return subprocess.CompletedProcess(argv, 0, raw, b"")
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    self.capture(fake=malformed)
+                self.assertFalse(self.target.exists())
+
+    def test_s2_53_whitespace_only_guestinfo_stderr_refused(self):
+        for stderr in (b" ", b"\n", b"\t", b" \n"):
+            with self.subTest(stderr=stderr):
+                def warned(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-1] == "--os":
+                        return subprocess.CompletedProcess(
+                            argv, 0, original.stdout, stderr)
+                    return original
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    self.capture(fake=warned)
+                self.assertFalse(self.target.exists())
+
     def test_guestinfo_timeout_rejected(self):
         def failed(argv, **kw):
             if argv[-1] == "--os":

@@ -361,6 +361,58 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         with self.assertRaises(capture.HostCaptureError):
             self.capture(fake=stop)
 
+    def test_s2_53_noncanonical_raw_virsh_envelope_not_silently_stripped(self):
+        # The old strip() accepted these malformed raw stdout responses
+        # before any downstream host identity or dominfo checks.
+        for command in ("domuuid", "domstate", "dominfo"):
+            for bad_kind in ("leading_lf", "double_final_lf", "leading_space",
+                             "trailing_space", "interior_blank"):
+                with self.subTest(command=command, bad_kind=bad_kind):
+                    def malformed(argv, **kw):
+                        original = self.fake(argv, **kw)
+                        if argv[-2] != command:
+                            return original
+                        raw = original.stdout
+                        if bad_kind == "leading_lf":
+                            raw = b"\n" + raw
+                        elif bad_kind == "double_final_lf":
+                            raw = raw + b"\n"
+                        elif bad_kind == "leading_space":
+                            raw = b" " + raw
+                        elif bad_kind == "trailing_space":
+                            raw = raw.rstrip(b"\n") + b" \n"
+                        else:
+                            raw = raw.replace(b"\n", b"\n\n", 1)
+                        return subprocess.CompletedProcess(argv, 0, raw, b"")
+                    with self.assertRaises(capture.HostCaptureError):
+                        self.capture(fake=malformed)
+                    self.assertFalse(self.target.exists())
+
+    def test_s2_53_whitespace_only_stderr_is_host_query_failure(self):
+        for command in ("domuuid", "domstate", "dominfo"):
+            for stderr in (b" ", b"\n", b"\t", b" \n"):
+                with self.subTest(command=command, stderr=stderr):
+                    def warned(argv, **kw):
+                        original = self.fake(argv, **kw)
+                        if argv[-2] == command:
+                            return subprocess.CompletedProcess(
+                                argv, 0, original.stdout, stderr)
+                        return original
+                    with self.assertRaises(capture.HostCaptureError):
+                        self.capture(fake=warned)
+                    self.assertFalse(self.target.exists())
+
+    def test_s2_53_exact_single_lf_or_none_yields_same_canonical_value(self):
+        for data in (b"running", b"running\n"):
+            with self.subTest(data=data):
+                self.assertEqual(
+                    capture._checked_text(data, "domstate"), "running")
+        for data in (b"running\n\n", b"\nrunning", b" running\n",
+                     b"running \n", b"running\n\nother\n"):
+            with self.subTest(data=data):
+                with self.assertRaises(capture.HostCaptureError):
+                    capture._checked_text(data, "domstate")
+
     def test_virsh_missing_fails_without_files(self):
         with self.assertRaises(capture.HostCaptureError):
             self.capture(found=None)

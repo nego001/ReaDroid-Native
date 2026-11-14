@@ -141,15 +141,18 @@ def _checked_text(data: bytes, label: str) -> str:
         result = data.decode("utf-8")
     except UnicodeError as exc:
         raise HostCaptureError("Invalid UTF-8 from libvirt: " + label) from exc
-    # PE-S2.51: only LF separates evidence records. Ban Unicode line
-    # separators, zero-width/bidi controls, and other non-ASCII text before
-    # strip() can silently discard or reshape an untrusted virsh response.
+    # PE-S2.53: preserve stdout framing. strip() used to conceal extra
+    # blank lines and leading/trailing padding before the evidence was
+    # captured. Only one protocol terminal LF may be removed; no other
+    # whitespace is normalized. Non-ASCII/control characters remain banned.
     if any(c != "\n" and not (" " <= c <= "~") for c in result):
         raise HostCaptureError("Noncanonical virsh output: " + label)
-    stripped = result.strip()
-    if not stripped:
-        raise HostCaptureError("Empty libvirt query response: " + label)
-    return stripped
+    value = result[:-1] if result.endswith("\n") else result
+    if (not value or any(not line for line in value.split("\n"))
+            or value.startswith(" ") or value.endswith(" ")):
+        raise HostCaptureError(
+            "Empty, padded or multiply delimited virsh output: " + label)
+    return value
 
 
 def _virsh_read(executable: str, verb: str, domain: str) -> str:
@@ -173,7 +176,8 @@ def _virsh_read(executable: str, verb: str, domain: str) -> str:
             max_stdout=MAX_COMMAND_BYTES, max_stderr=2048)
     except bounded.BoundedNativeChildError as exc:
         raise HostCaptureError("No bounded read-only libvirt observation") from exc
-    if run.returncode != 0 or run.stderr.strip():
+    # PE-S2.53: whitespace-only stderr is still stderr, not success.
+    if run.returncode != 0 or run.stderr != b"":
         raise HostCaptureError("Read-only libvirt command failed or emitted stderr")
     return _checked_text(run.stdout, verb)
 

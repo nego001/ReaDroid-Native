@@ -133,7 +133,8 @@ def _read_guestinfo(executable: str, domain: str) -> str:
     except bounded.BoundedNativeChildError as exc:
         raise GuestKernelObservationError(
             "Bounded guestinfo read-only query unavailable") from exc
-    if result.returncode != 0 or result.stderr.strip():
+    # PE-S2.53: a newline or spaces on stderr must fail closed too.
+    if result.returncode != 0 or result.stderr != b"":
         raise GuestKernelObservationError(
             "Read-only guestinfo command failed or emitted stderr")
     try:
