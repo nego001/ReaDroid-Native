@@ -88,6 +88,27 @@ def _validate_dominfo_shape(info: str) -> None:
         labels.add(folded)
 
 
+def _validate_untrusted_utc_isoformat(value: str) -> None:
+    """Require producer-canonical UTC text; never attest clock accuracy.
+
+    Both S1.70 and S1.71 create this field with
+    datetime.now(timezone.utc).isoformat(). datetime.fromisoformat() alone
+    accepts ISO week dates, spaces, Z and shortened fractional seconds;
+    an externally re-pinned record must not silently add such aliases.
+    """
+    if type(value) is not str or not value or len(value) > 50:
+        raise HostCaptureError("Missing or oversized untrusted UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HostCaptureError("Invalid untrusted UTC timestamp") from exc
+    if (parsed.tzinfo is None
+            or parsed.utcoffset() != timezone.utc.utcoffset(None)
+            or parsed.isoformat() != value):
+        raise HostCaptureError(
+            "Untrusted UTC timestamp is not producer-canonical")
+
+
 def _check(domain: str, expected_uuid: str, commit: str,
            challenge: str, directory: Path) -> Path:
     if not isinstance(domain, str) or DOMAIN.fullmatch(domain) is None:

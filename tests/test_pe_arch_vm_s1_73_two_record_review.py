@@ -286,6 +286,54 @@ class TwoRecordReviewContracts(unittest.TestCase):
                         expected_guest_sha256=hashlib.sha256(
                             raw_guest).hexdigest())
 
+    def test_s2_52_repinned_host_and_guest_reject_clock_aliases(self):
+        # Rehash both records and update the second record's host pointer:
+        # SHA consistency must not make an alternate ISO time canonical.
+        for forged_clock in (
+                "2026-11-02 16:00:00+00:00",
+                "2026-11-02T16:00:00Z",
+                "2026-W45-1T16:00:00+00:00",
+                "2026-11-02T16:00:00.000000+00:00"):
+            with self.subTest(forged_clock=forged_clock):
+                first = first_record().replace(
+                    CLOCK.encode(), forged_clock.encode())
+                host_pin = hashlib.sha256(first).hexdigest()
+                second = second_record(host_pin)
+                self.first.write_bytes(first)
+                self.second.write_bytes(second)
+                self.first.chmod(0o600)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "strict pre-guestinfo policy"):
+                    self.verify(
+                        expected_host_sha256=host_pin,
+                        expected_guest_sha256=hashlib.sha256(
+                            second).hexdigest())
+
+    def test_s2_52_repinned_guest_clock_alias_rejected(self):
+        original_host = first_record()
+        pin = hashlib.sha256(original_host).hexdigest()
+        self.first.write_bytes(original_host)
+        self.first.chmod(0o600)
+        for forged_clock in (
+                "2026-11-02T16:00:00Z",
+                "2026-W45-1T16:00:00+00:00",
+                "2026-11-02 16:00:00+00:00",
+                "2026-11-02T16:00:00.123+00:00"):
+            with self.subTest(forged_clock=forged_clock):
+                second = second_record(pin).replace(
+                    CLOCK.encode(), forged_clock.encode())
+                self.second.write_bytes(second)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "producer-canonical"):
+                    self.verify(
+                        expected_host_sha256=pin,
+                        expected_guest_sha256=hashlib.sha256(
+                            second).hexdigest())
+
     def test_review_uses_shared_s1_71_snapshot_validator(self):
         # Guard against a later drift that silently drops the earlier
         # check while keeping a superficially equivalent local parser.

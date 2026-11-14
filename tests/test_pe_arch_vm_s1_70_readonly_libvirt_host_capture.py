@@ -69,6 +69,24 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                                **changes})
             return result, which, child
 
+    def test_s2_52_canonical_host_time_validator_accepts_only_producer_format(self):
+        for stamp in ("2026-11-02T16:00:00+00:00",
+                      "2026-11-02T16:00:00.123456+00:00"):
+            with self.subTest(stamp=stamp):
+                self.assertIsNone(
+                    capture._validate_untrusted_utc_isoformat(stamp))
+        for bad in (None, b"2026-11-02T16:00:00+00:00", "",
+                    "2026-11-02 16:00:00+00:00",
+                    "2026-11-02T16:00:00Z",
+                    "2026-W45-1T16:00:00+00:00",
+                    "20261102T160000+00:00",
+                    "2026-11-02T16:00:00.123+00:00",
+                    "2026-11-02T16:00:00.000000+00:00",
+                    "2026-11-02T16:00:00-03:00"):
+            with self.subTest(bad=repr(bad)):
+                with self.assertRaises(capture.HostCaptureError):
+                    capture._validate_untrusted_utc_isoformat(bad)
+
     def test_dry_run_never_executes_virsh_or_writes_log(self):
         with (
             mock.patch.object(capture.shutil, "which") as which,

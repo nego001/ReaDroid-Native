@@ -87,12 +87,14 @@ def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
     stamp = lines[4]
     if not stamp.startswith("observed_utc_untrusted=") or len(stamp) > 100:
         raise GuestKernelObservationError("Prior host time field missing")
+    # PE-S2.52: S1.70 producer uses datetime.isoformat() in UTC. A
+    # re-pinned snapshot must have the exact same encoding, not merely a
+    # parseable alias such as Z, a week date or an alternate separator.
     try:
-        observed = datetime.fromisoformat(stamp.split("=", 1)[1])
-        if observed.tzinfo is None or observed.utcoffset() != timezone.utc.utcoffset(None):
-            raise ValueError("not UTC")
-    except (ValueError, TypeError) as exc:
-        raise GuestKernelObservationError("Prior host time is not UTC") from exc
+        host._validate_untrusted_utc_isoformat(stamp.split("=", 1)[1])
+    except host.HostCaptureError as exc:
+        raise GuestKernelObservationError(
+            "Prior host UTC time is not producer-canonical") from exc
 
     info = lines[14:-6]
     # PE-S2.47: the prior snapshot must satisfy the exact same canonical

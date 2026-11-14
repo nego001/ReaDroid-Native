@@ -285,6 +285,33 @@ class GuestKernelCaptureContracts(unittest.TestCase):
                 self.assertFalse(self.target.exists())
         self.prior.write_bytes(self.record)
 
+    def test_s2_52_rehashed_noncanonical_host_utc_refused_before_queries(self):
+        original = self.record
+        timestamp = b"2026-11-03T01:23:45+00:00"
+        variants = (
+            b"2026-11-03 01:23:45+00:00",
+            b"2026-11-03T01:23:45Z",
+            b"2026-W45-2T01:23:45+00:00",
+            b"20261103T012345+00:00",
+            b"2026-11-03T01:23:45.000000+00:00",
+            b"2026-11-03T01:23:45.123+00:00",
+        )
+        for value in variants:
+            with self.subTest(value=value):
+                forged = original.replace(timestamp, value)
+                self.prior.write_bytes(forged)
+                self.prior.chmod(0o600)
+                self.calls.clear()
+                with self.assertRaisesRegex(
+                        guest.GuestKernelObservationError,
+                        "producer-canonical"):
+                    self.capture(
+                        expected_prior_host_sha256=hashlib.sha256(
+                            forged).hexdigest())
+                self.assertFalse(self.calls)
+                self.assertFalse(self.target.exists())
+        self.prior.write_bytes(original)
+
     def test_prior_host_snapshot_symlink_rejected(self):
         other = self.owner / "copy"
         self.prior.rename(other)

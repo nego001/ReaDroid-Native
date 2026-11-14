@@ -8,7 +8,6 @@ remaining two observations, contacts libvirt, signs, or authorizes release.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -55,12 +54,13 @@ def _clock(line: str) -> None:
     prefix = "observed_utc_untrusted="
     if not line.startswith(prefix) or len(line) > 100:
         raise TwoRecordReviewError("Untrusted local time field missing")
+    # PE-S2.52: share the same producer-format rule as the S1.71 gate.
+    # Matching an independent SHA pin does not justify alternate timestamps.
     try:
-        value = datetime.fromisoformat(line[len(prefix):])
-    except ValueError as exc:
-        raise TwoRecordReviewError("Malformed local time") from exc
-    if value.tzinfo is None or value.utcoffset().total_seconds() != 0:
-        raise TwoRecordReviewError("Local time field must be UTC, not attested")
+        host._validate_untrusted_utc_isoformat(line[len(prefix):])
+    except host.HostCaptureError as exc:
+        raise TwoRecordReviewError(
+            "Local untrusted UTC time is not producer-canonical") from exc
 
 
 def _review_host(lines: list[str], *, commit: str, challenge: str,
