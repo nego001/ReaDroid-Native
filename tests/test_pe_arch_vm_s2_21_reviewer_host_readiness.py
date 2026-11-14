@@ -133,6 +133,61 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
         self.assertEqual(list(original.iterdir()), [])
         self.assertEqual(list(self.owner.iterdir()), [])
 
+    def test_s2_66_pinned_observer_fd_lives_through_queries_and_closes(self):
+        original_open = readiness.open_absolute_directory_nofollow
+        observer_fds = []
+        replies = iter([UUID, "running", INFO, "running", UUID])
+
+        def track_open(path, stack):
+            fd = original_open(path, stack)
+            if path == self.owner:
+                observer_fds.append(fd)
+            return fd
+
+        def probe_while_pinned(executable, verb, domain):
+            self.assertTrue(observer_fds)
+            self.assertTrue(stat.S_ISDIR(os.fstat(observer_fds[0]).st_mode))
+            return next(replies)
+
+        with (mock.patch.object(readiness, "open_absolute_directory_nofollow",
+                                side_effect=track_open),
+              mock.patch.object(readiness, "_host_prerequisites",
+                                return_value="/usr/bin/virsh"),
+              mock.patch.object(readiness.host, "_virsh_read",
+                                side_effect=probe_while_pinned) as queried):
+            result = self.evaluate(probe_reviewer_host=True)
+        self.assertEqual(queried.call_count, 5)
+        self.assertEqual(result["status"], readiness.CANDIDATE)
+        self.assertFalse(result["independent_vm_attestation"])
+        # ExitStack must release the original directory descriptor.
+        with self.assertRaises(OSError):
+            os.fstat(observer_fds[0])
+
+    def test_s2_66_pinned_observer_fd_closed_on_libvirt_failure(self):
+        original_open = readiness.open_absolute_directory_nofollow
+        observer_fds = []
+
+        def track_open(path, stack):
+            fd = original_open(path, stack)
+            if path == self.owner:
+                observer_fds.append(fd)
+            return fd
+
+        with (mock.patch.object(readiness, "open_absolute_directory_nofollow",
+                                side_effect=track_open),
+              mock.patch.object(readiness, "_host_prerequisites",
+                                return_value="/usr/bin/virsh"),
+              mock.patch.object(readiness.host, "_virsh_read",
+                                side_effect=readiness.host.HostCaptureError(
+                                    "synthetic libvirt error")),
+              self.assertRaisesRegex(readiness.ReviewerHostReadinessError,
+                                     "Bounded readonly libvirt host query failed")):
+            self.evaluate(probe_reviewer_host=True)
+        self.assertTrue(observer_fds)
+        with self.assertRaises(OSError):
+            os.fstat(observer_fds[0])
+        self.assertEqual(list(self.owner.iterdir()), [])
+
     def test_changed_domain_uuid_and_state_are_rejected(self):
         for replies in (
                 ["ffffffff-ffff-4fff-8fff-ffffffffffff", "running",
