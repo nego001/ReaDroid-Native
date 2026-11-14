@@ -99,30 +99,29 @@ def _require_kvm_device() -> None:
             "Cannot query read-only KVM system API") from exc
 
 
-def _fresh_observer_inode(owner: Path) -> tuple[int, int]:
-    """Bounded freshness check on an open directory, not a followed path.
+def _inspect_observer_fd(fd: int) -> tuple[int, int]:
+    """Check a still-open, nofollow observer directory by its pinned FD."""
+    node = os.fstat(fd)
+    if (not stat.S_ISDIR(node.st_mode)
+            or node.st_uid != os.getuid()
+            or stat.S_IMODE(node.st_mode) != 0o700):
+        raise ReviewerHostReadinessError(
+            "Reviewer evidence directory not caller-owned private 0700")
+    if os.listdir(fd):
+        raise ReviewerHostReadinessError(
+            "Reviewer evidence directory must start empty")
+    return node.st_dev, node.st_ino
 
-    Keep directory identity across preflight to catch replacement with
-    another empty directory or a symlink during libvirt queries. This
-    detects local path replacement, NOT reviewer/host independence.
-    """
+
+def _fresh_observer_inode(owner: Path) -> tuple[int, int]:
+    """Check nofollow pathname against the still-pinned host preflight FD."""
     try:
         with ExitStack() as stack:
             fd = open_absolute_directory_nofollow(owner, stack)
-            node = os.fstat(fd)
-            if (not stat.S_ISDIR(node.st_mode)
-                    or node.st_uid != os.getuid()
-                    or stat.S_IMODE(node.st_mode) != 0o700):
-                raise ReviewerHostReadinessError(
-                    "Reviewer evidence directory not caller-owned private 0700")
-            if os.listdir(fd):
-                raise ReviewerHostReadinessError(
-                    "Reviewer evidence directory must start empty")
-            return node.st_dev, node.st_ino
+            return _inspect_observer_fd(fd)
     except (OSError, ValueError) as exc:
         raise ReviewerHostReadinessError(
             "Reviewer evidence directory replaced or unsafe") from exc
-
 
 def _host_prerequisites(owner: Path) -> str:
     # These markers are UNSPOOFABLE neither positively nor negatively;
@@ -219,50 +218,63 @@ def reviewer_host_readiness(observer_dir: Path, *, domain: str,
             "independent_vm_attestation": False,
             "release_authorized": False,
         }
-    original_inode = _fresh_observer_inode(owner)
-    virsh = _host_prerequisites(owner)
-    if _fresh_observer_inode(owner) != original_inode:
-        raise ReviewerHostReadinessError(
-            "Reviewer evidence directory changed during host preflight")
-    try:
-        actual_uuid = host._virsh_read(virsh, "domuuid", domain)
-        state = host._virsh_read(virsh, "domstate", domain)
-        info = host._virsh_read(virsh, "dominfo", domain)
-        # Check the identity a second time to detect stable replacements.
-        after_state = host._virsh_read(virsh, "domstate", domain)
-        after_uuid = host._virsh_read(virsh, "domuuid", domain)
-    except (host.HostCaptureError, OSError) as exc:
-        raise ReviewerHostReadinessError(
-            "Bounded readonly libvirt host query failed") from exc
-    if (actual_uuid != expected_domain_uuid
-            or after_uuid != expected_domain_uuid
-            # PE-S2.50: S1.70/71 and offline S1.73 require literal
-            # lowercase running; a misleading preflight must not accept more.
-            or state != "running"
-            or after_state != "running"
-            or not _info_matches(info, domain=domain, uuid=expected_domain_uuid)):
-        raise ReviewerHostReadinessError(
-            "Domain UUID or running state changed/contradicted libvirt")
-    if _fresh_observer_inode(owner) != original_inode:
-        raise ReviewerHostReadinessError(
-            "Reviewer evidence directory changed during host preflight")
-    return {
-        "status": CANDIDATE,
-        "libvirt_readonly_uri": "qemu:///system",
-        "libvirt_queried": True,
-        "domain_uuid_and_state_locally_consistent": True,
-        "known_ci_container_markers_rejected": True,
-        "kvm_char_device_locally_seen": True,
-        "fresh_private_observer_directory": True,
-        "session_files_created": False,
-        "independent_host_control_attested": False,
-        "guest_kernel_independently_attested": False,
-        "native_cgroup_seccomp_journald_verified": False,
-        "independent_vm_attestation": False,
-        "release_authorized": False,
-        "unknown_windows_pe_execution_authorized": False,
-        "apk_or_ota_publication_authorized": False,
-    }
+    # PE-S2.66: keep the original inode open throughout the entire
+    # sequence so the filesystem cannot recycle it after unlinked/replaced.
+    # We still validate the pathname separately; this is NOT a continuous
+    # witness against same-UID swap-and-restore or host provenance forgery.
+    with ExitStack() as pinned_observer:
+        try:
+            pinned_fd = open_absolute_directory_nofollow(
+                owner, pinned_observer)
+        except (OSError, ValueError) as exc:
+            raise ReviewerHostReadinessError(
+                "Reviewer evidence directory replaced or unsafe") from exc
+        original_inode = _inspect_observer_fd(pinned_fd)
+        virsh = _host_prerequisites(owner)
+        if (_inspect_observer_fd(pinned_fd) != original_inode
+                or _fresh_observer_inode(owner) != original_inode):
+            raise ReviewerHostReadinessError(
+                "Reviewer evidence directory changed during host preflight")
+        try:
+            actual_uuid = host._virsh_read(virsh, "domuuid", domain)
+            state = host._virsh_read(virsh, "domstate", domain)
+            info = host._virsh_read(virsh, "dominfo", domain)
+            # Check the identity a second time to detect stable replacements.
+            after_state = host._virsh_read(virsh, "domstate", domain)
+            after_uuid = host._virsh_read(virsh, "domuuid", domain)
+        except (host.HostCaptureError, OSError) as exc:
+            raise ReviewerHostReadinessError(
+                "Bounded readonly libvirt host query failed") from exc
+        if (actual_uuid != expected_domain_uuid
+                or after_uuid != expected_domain_uuid
+                # PE-S2.50: S1.70/71 and offline S1.73 require literal
+                # lowercase running; a misleading preflight must not accept more.
+                or state != "running"
+                or after_state != "running"
+                or not _info_matches(info, domain=domain, uuid=expected_domain_uuid)):
+            raise ReviewerHostReadinessError(
+                "Domain UUID or running state changed/contradicted libvirt")
+        if (_inspect_observer_fd(pinned_fd) != original_inode
+                or _fresh_observer_inode(owner) != original_inode):
+            raise ReviewerHostReadinessError(
+                "Reviewer evidence directory changed during host preflight")
+        return {
+            "status": CANDIDATE,
+            "libvirt_readonly_uri": "qemu:///system",
+            "libvirt_queried": True,
+            "domain_uuid_and_state_locally_consistent": True,
+            "known_ci_container_markers_rejected": True,
+            "kvm_char_device_locally_seen": True,
+            "fresh_private_observer_directory": True,
+            "session_files_created": False,
+            "independent_host_control_attested": False,
+            "guest_kernel_independently_attested": False,
+            "native_cgroup_seccomp_journald_verified": False,
+            "independent_vm_attestation": False,
+            "release_authorized": False,
+            "unknown_windows_pe_execution_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+        }
 
 
 def main(argv: list[str] | None = None) -> int:
