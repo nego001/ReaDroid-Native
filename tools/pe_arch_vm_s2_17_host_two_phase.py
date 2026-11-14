@@ -165,9 +165,13 @@ def _read_private(owner: Path, phase: str, *, expected_sha256: str,
 
 
 def _live_sample(domain: str, expected_uuid: str) -> tuple[str, int]:
-    executable = shutil.which("virsh", path="/usr/bin:/bin")
-    if not executable or not os.path.isabs(executable):
-        raise HostTwoPhaseError("Read-only host libvirt unavailable")
+    # PE-S2.60: the signed BEFORE/AFTER chain may only use the same
+    # metadata-verified system executable as the host snapshot producers.
+    try:
+        executable = host._trusted_virsh_executable()
+    except host.HostCaptureError as exc:
+        raise HostTwoPhaseError(
+            "Trusted system virsh required for two-phase samples") from exc
     try:
         before_uuid = host._virsh_read(executable, "domuuid", domain)
         before_state = host._virsh_read(executable, "domstate", domain)

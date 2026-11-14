@@ -35,6 +35,13 @@ class HostDomstatsContracts(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.owner = Path(temporary.name) / "reviewer-owned"
         self.owner.mkdir(mode=0o700)
+        # This class uses synthetic virsh responses. Model trusted system
+        # metadata separately so the real fail-closed resolver stays active.
+        trust = mock.patch.object(
+            telemetry.host, "_trusted_discovered_systemd_binary",
+            return_value=True)
+        trust.start()
+        self.addCleanup(trust.stop)
         first = first_record()
         self.first_sha = hashlib.sha256(first).hexdigest()
         guest = second_record(self.first_sha)
@@ -195,6 +202,66 @@ class HostDomstatsContracts(unittest.TestCase):
         self.assertFalse((self.owner / telemetry.TARGET).exists())
         lookup.assert_not_called()
         child.assert_not_called()
+
+    def test_s2_60_reject_untrusted_virsh_before_any_domstats_query(self):
+        for path, trusted in (
+                ("/tmp/virsh", True),
+                ("/usr/local/bin/virsh", True),
+                ("/usr/bin/virsh", False),
+                ("/bin/virsh", False),
+                (None, False)):
+            with self.subTest(path=path, trusted=trusted):
+                with (mock.patch.object(telemetry.shutil, "which",
+                                        return_value=path),
+                      mock.patch.object(
+                          telemetry.host, "_trusted_discovered_systemd_binary",
+                          return_value=trusted) as verifier,
+                      mock.patch.object(
+                          telemetry.host, "_virsh_read") as virsh_read,
+                      mock.patch.object(
+                          telemetry.bounded, "run_bounded_native") as bounded,
+                      self.assertRaisesRegex(
+                          telemetry.HostDomstatsError,
+                          "Trusted system virsh required")):
+                    telemetry.capture_host_domstats(
+                        self.owner, capture_from_independent_host=True,
+                        **self.args)
+                virsh_read.assert_not_called()
+                bounded.assert_not_called()
+                if path in ("/usr/bin/virsh", "/bin/virsh"):
+                    verifier.assert_called_once_with(path)
+                else:
+                    verifier.assert_not_called()
+                self.assertFalse((self.owner / telemetry.TARGET).exists())
+
+    def test_s2_60_domstats_stderr_whitespace_is_not_success(self):
+        for stderr in (b" ", b"\n", b" \t\n"):
+            with self.subTest(stderr=stderr):
+                with self.assertRaisesRegex(
+                        telemetry.HostDomstatsError,
+                        "libvirt domstats command failed"):
+                    self.fake_capture(query_result=SimpleNamespace(
+                        returncode=0, stdout=STATS, stderr=stderr))
+                self.assertFalse((self.owner / telemetry.TARGET).exists())
+
+    def test_s2_60_domstats_never_inherits_operator_home(self):
+        with mock.patch.dict(os.environ, {"HOME": "/tmp/operator-config"}):
+            # Synthetic subprocess makes no real OS or VM changes.
+            with (mock.patch.object(
+                      telemetry.shutil, "which", return_value="/usr/bin/virsh"),
+                  mock.patch.object(
+                      telemetry.host, "_virsh_read",
+                      side_effect=[UUID, "running", "running", UUID]),
+                  mock.patch.object(telemetry.bounded, "run_bounded_native",
+                                    return_value=SimpleNamespace(
+                                        returncode=0, stdout=STATS, stderr=b""))
+                                    as runner):
+                report = telemetry.capture_host_domstats(
+                    self.owner, capture_from_independent_host=True,
+                    **self.args)
+        self.assertEqual(report["status"], telemetry.CAPTURED)
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.kwargs["env"]["HOME"], "/nonexistent")
 
     def test_actual_readonly_virsh_contract_publishes_one_private_sidecar(self):
         output = self.fake_capture()

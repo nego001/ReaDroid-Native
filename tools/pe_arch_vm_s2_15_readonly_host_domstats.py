@@ -117,14 +117,17 @@ def _read_live(executable: str, domain: str) -> str:
     argv = [executable, "--readonly", "--connect", "qemu:///system",
             "--no-pkttyagent", "domstats", "--raw", "--state",
             "--cpu-total", domain]
+    # PE-S2.60: match S1.70's minimal, non-operator-controlled libvirt
+    # environment. No per-user config from the reviewer's HOME is inherited.
     env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LANG": "C",
-           "HOME": os.environ.get("HOME", "/nonexistent")}
+           "HOME": "/nonexistent"}
     try:
         child = bounded.run_bounded_native(
             argv, env=env, timeout=15, max_stdout=MAX_STATS, max_stderr=2048)
     except bounded.BoundedNativeChildError as exc:
         raise HostDomstatsError("Read-only libvirt domain stats unavailable") from exc
-    if child.returncode != 0 or child.stderr.strip():
+    # Whitespace-only stderr remains stderr. Never normalize it away.
+    if child.returncode != 0 or child.stderr != b"":
         raise HostDomstatsError("libvirt domstats command failed")
     try:
         return host._checked_text(child.stdout, "domstats")
@@ -203,9 +206,14 @@ def capture_host_domstats(
         owner, domain=domain, uuid=expected_domain_uuid,
         commit=expected_source_commit, challenge=reviewer_challenge,
         host_sha=expected_host_sha256, guest_sha=expected_guest_sha256)
-    executable = shutil.which("virsh", path="/usr/bin:/bin")
-    if not executable or not os.path.isabs(executable):
-        raise HostDomstatsError("Read-only virsh binary unavailable")
+    # PE-S2.60: a safe directory lookup alone does not authenticate the
+    # executable. Use the exact same root-owned, no-symlink system virsh
+    # resolver as S1.70/S1.71 and S2.21 before launching any query.
+    try:
+        executable = host._trusted_virsh_executable()
+    except host.HostCaptureError as exc:
+        raise HostDomstatsError(
+            "Trusted system virsh required for readonly domstats") from exc
     try:
         initial_uuid = host._virsh_read(executable, "domuuid", domain)
         initial_state = host._virsh_read(executable, "domstate", domain)

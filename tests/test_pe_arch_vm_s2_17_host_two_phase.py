@@ -29,6 +29,13 @@ class TwoPhaseHostCaptureContracts(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.owner = Path(temporary.name) / "reviewer"
         self.owner.mkdir(mode=0o700)
+        # Test-only trust metadata for a synthetic readonly virsh path.
+        # Negative S2.60 regressions override this and fail before queries.
+        trust = mock.patch.object(
+            stage.host, "_trusted_discovered_systemd_binary",
+            return_value=True)
+        trust.start()
+        self.addCleanup(trust.stop)
         host_data = first_record()
         guest_data = second_record(hashlib.sha256(host_data).hexdigest())
         for label, raw in (("host_vm_launch", host_data),
@@ -76,6 +83,35 @@ class TwoPhaseHostCaptureContracts(unittest.TestCase):
         live.assert_not_called()
         self.assertEqual(report["status"], stage.STATUS_PLAN)
         self.assertFalse((self.owner / stage.BEFORE).exists())
+
+    def test_s2_60_two_phase_rejects_untrusted_virsh_before_any_query(self):
+        for path, trusted in (
+                ("/tmp/virsh", True),
+                ("/usr/local/bin/virsh", True),
+                ("/usr/bin/virsh", False),
+                ("/bin/virsh", False),
+                (None, False)):
+            with self.subTest(path=path, trusted=trusted):
+                with (mock.patch.object(stage.shutil, "which",
+                                        return_value=path),
+                      mock.patch.object(
+                          stage.host, "_trusted_discovered_systemd_binary",
+                          return_value=trusted) as verifier,
+                      mock.patch.object(stage.host, "_virsh_read") as queried,
+                      mock.patch.object(stage.domstats, "_read_live") as live,
+                      self.assertRaisesRegex(
+                          stage.HostTwoPhaseError,
+                          "Trusted system virsh required")):
+                    stage.capture_phase(
+                        self.owner, phase="before",
+                        capture_from_independent_host=True, **self.common)
+                queried.assert_not_called()
+                live.assert_not_called()
+                if path in ("/usr/bin/virsh", "/bin/virsh"):
+                    verifier.assert_called_once_with(path)
+                else:
+                    verifier.assert_not_called()
+                self.assertFalse((self.owner / stage.BEFORE).exists())
 
     def test_two_realistic_bounded_samples_and_offline_hold(self):
         before, after = self.pair()

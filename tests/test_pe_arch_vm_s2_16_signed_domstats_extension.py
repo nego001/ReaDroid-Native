@@ -57,6 +57,9 @@ class SignedSidecarV2Contracts(unittest.TestCase):
                 hashlib.sha256(data).hexdigest())
         with (mock.patch.object(domstats.shutil, "which",
                                 return_value="/usr/bin/virsh"),
+              mock.patch.object(
+                  domstats.host, "_trusted_discovered_systemd_binary",
+                  return_value=True),
               mock.patch.object(domstats.host, "_virsh_read",
                                 side_effect=[UUID, "running", "running", UUID]),
               mock.patch.object(domstats.bounded, "run_bounded_native",
