@@ -231,11 +231,17 @@ class TwoPhaseHostCaptureContracts(unittest.TestCase):
             with self.subTest(utc=value.isoformat()):
                 # Only the local *untrusted* clock is simulated here;
                 # no libvirt request or guest command is executed.
-                with (mock.patch.object(stage, "datetime") as clock,
+                class LocalFrozenClock(datetime):
+                    @classmethod
+                    def now(cls, tz=None):
+                        return value
+
+                # Keep the genuine datetime.fromisoformat parser available
+                # in the same module while overriding only production now().
+                with (mock.patch.object(stage, "datetime", LocalFrozenClock),
                       self.assertRaisesRegex(
                           stage.HostTwoPhaseError,
                           "Nonincreasing untrusted host clock")):
-                    clock.now.return_value = value
                     self.capture(
                         "after", text=SECOND, prior=first["sample_sha256"])
                 self.assertFalse((self.owner / stage.AFTER).exists())
