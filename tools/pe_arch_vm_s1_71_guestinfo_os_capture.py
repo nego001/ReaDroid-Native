@@ -130,7 +130,8 @@ def _read_guestinfo(executable: str, domain: str) -> str:
     ]
     env = {
         "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
-        "HOME": os.environ.get("HOME", "/nonexistent"),
+        # Only the pinned readonly system URI may affect guestinfo.
+        "HOME": "/nonexistent",
     }
     try:
         result = bounded.run_bounded_native(
@@ -229,9 +230,13 @@ def capture_guest_kernel_observation(
         snapshot, commit=expected_source_commit,
         challenge=reviewer_challenge, domain=domain,
         uuid=expected_domain_uuid)
-    executable = shutil.which("virsh", path="/usr/bin:/bin")
-    if not executable or not os.path.isabs(executable):
-        raise GuestKernelObservationError("Host virsh unavailable")
+    # PE-S2.55: match S1.70 trusted system executable policy before the
+    # first guest kernel/OS query. Never downgrade on an unsafe binary.
+    try:
+        executable = host._trusted_virsh_executable()
+    except host.HostCaptureError as exc:
+        raise GuestKernelObservationError(
+            "Trusted host virsh unavailable for guest query") from exc
     try:
         before_uuid = host._virsh_read(executable, "domuuid", domain)
         before_state = host._virsh_read(executable, "domstate", domain)

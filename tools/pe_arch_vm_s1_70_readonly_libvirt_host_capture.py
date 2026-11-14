@@ -30,6 +30,7 @@ import pe_arch_vm_evidence as evidence
 import pe_arch_vm_s1_63_external_observer as external
 import pe_arch_vm_s1_65_observer_prepare as prepare
 import pe_arch_vm_s1_69_bounded_native_child as bounded
+from pe_resource_limits import _trusted_discovered_systemd_binary
 from pe_arch_vm_checkout_pin import COMMIT_SHA
 
 PLAN = "PE_S1_70_HOST_CAPTURE_NOT_STARTED"
@@ -155,6 +156,23 @@ def _checked_text(data: bytes, label: str) -> str:
     return value
 
 
+def _trusted_virsh_executable() -> str:
+    """PE-S2.55: match the readonly host preflight's trusted-tool boundary.
+
+    A restricted search PATH alone only selects a filename. Require the
+    actual executable and every ancestor directory to be root-owned,
+    non-writable by group/others, non-symlinked and executable. This is
+    a local prerequisite, NEVER proof of reviewer or hypervisor control.
+    """
+    executable = shutil.which("virsh", path="/usr/bin:/bin")
+    if (type(executable) is not str
+            or executable not in ("/usr/bin/virsh", "/bin/virsh")
+            or not _trusted_discovered_systemd_binary(executable)):
+        raise HostCaptureError(
+            "Trusted root-owned system virsh unavailable; no host query")
+    return executable
+
+
 def _virsh_read(executable: str, verb: str, domain: str) -> str:
     if verb not in VIRSH_COMMANDS:
         raise HostCaptureError("Host capture only permits three read-only commands")
@@ -168,7 +186,8 @@ def _virsh_read(executable: str, verb: str, domain: str) -> str:
         "PATH": "/usr/bin:/bin",
         "LC_ALL": "C",
         "LANG": "C",
-        "HOME": os.environ.get("HOME", "/nonexistent"),
+        # Do not inherit an operator-controlled per-user libvirt config.
+        "HOME": "/nonexistent",
     }
     try:
         run = bounded.run_bounded_native(
@@ -213,9 +232,9 @@ def capture_host_domain(
             or (owner / external.SIGNATURE_FILE).exists()
             or (owner / external.SIGNATURE_FILE).is_symlink()):
         raise HostCaptureError("Existing host record or signed package: refuse overwrite")
-    executable = shutil.which("virsh", path="/usr/bin:/bin")
-    if not executable or not os.path.isabs(executable):
-        raise HostCaptureError("Local virsh executable missing; no host data captured")
+    # A trusted preflight is not a guarantee that a later binary is still
+    # trusted. Revalidate the actual system executable at capture time.
+    executable = _trusted_virsh_executable()
     # Re-observe UUID and state both before and after the information read.
     # A persistent name rebind or stopped VM invalidates the snapshot.
     initial_uuid = _virsh_read(executable, "domuuid", domain)

@@ -88,6 +88,9 @@ class GuestKernelCaptureContracts(unittest.TestCase):
         with (
             mock.patch.object(guest.shutil, "which", return_value=found),
             mock.patch.object(
+                guest.host, "_trusted_discovered_systemd_binary",
+                return_value=True),
+            mock.patch.object(
                 guest.bounded, "run_bounded_native",
                 side_effect=self.fake if fake is None else fake) as child,
         ):
@@ -467,6 +470,39 @@ class GuestKernelCaptureContracts(unittest.TestCase):
                 with self.assertRaises(guest.GuestKernelObservationError):
                     self.capture(fake=warned)
                 self.assertFalse(self.target.exists())
+
+    def test_s2_55_guest_refuses_untrusted_virsh_before_virsh_calls(self):
+        for found in ("/tmp/virsh", "/usr/local/bin/virsh",
+                      "/usr/bin/virsh", None):
+            with self.subTest(found=found):
+                self.calls.clear()
+                with (mock.patch.object(guest.shutil, "which",
+                                        return_value=found),
+                      mock.patch.object(
+                          guest.host, "_trusted_discovered_systemd_binary",
+                          return_value=False) as metadata,
+                      mock.patch.object(
+                          guest.bounded, "run_bounded_native") as child,
+                      self.assertRaisesRegex(
+                          guest.GuestKernelObservationError,
+                          "Trusted host virsh unavailable")):
+                    guest.capture_guest_kernel_observation(
+                        self.owner, **{**self.kw,
+                            "capture_from_independent_host": True})
+                if found == "/usr/bin/virsh":
+                    metadata.assert_called_once_with(found)
+                else:
+                    metadata.assert_not_called()
+                child.assert_not_called()
+                self.assertFalse(self.target.exists())
+
+    def test_s2_55_guestinfo_sanitizes_home_without_mutation(self):
+        with mock.patch.dict(os.environ, {"HOME": "/tmp/poisoned-home"}):
+            result, _ = self.capture()
+        self.assertEqual(result["status"], guest.CAPTURED)
+        self.assertEqual(len(self.calls), 5)
+        self.assertTrue(all(
+            kw["env"]["HOME"] == "/nonexistent" for _, kw in self.calls))
 
     def test_guestinfo_timeout_rejected(self):
         def failed(argv, **kw):

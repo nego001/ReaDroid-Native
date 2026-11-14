@@ -60,6 +60,9 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
             mock.patch.object(
                 capture.shutil, "which", return_value=found) as which,
             mock.patch.object(
+                capture, "_trusted_discovered_systemd_binary",
+                return_value=True),
+            mock.patch.object(
                 capture.bounded, "run_bounded_native",
                 side_effect=self.fake if fake is None else fake) as child,
         ):
@@ -412,6 +415,52 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
             with self.subTest(data=data):
                 with self.assertRaises(capture.HostCaptureError):
                     capture._checked_text(data, "domstate")
+
+    def test_s2_55_untrusted_system_virsh_rejected_before_first_query(self):
+        for found in ("/tmp/virsh", "/home/test/virsh",
+                      "/usr/local/bin/virsh", "/usr/bin/other", None,
+                      "virsh", "/usr/bin/../bin/virsh", "/usr/bin/virsh"):
+            with self.subTest(found=found):
+                # Even a nominally allowed /usr/bin/virsh is rejected if
+                # metadata is not verified by the shared system tool gate.
+                self.calls.clear()
+                with (mock.patch.object(capture.shutil, "which",
+                                        return_value=found) as which,
+                      mock.patch.object(
+                          capture, "_trusted_discovered_systemd_binary",
+                          return_value=False) as trusted,
+                      mock.patch.object(capture.bounded, "run_bounded_native")
+                      as child,
+                      self.assertRaisesRegex(
+                          capture.HostCaptureError, "Trusted root-owned")):
+                    capture.capture_host_domain(
+                        self.owner, **{**self.opts,
+                          "capture_from_independent_host": True})
+                which.assert_called_once_with(
+                    "virsh", path="/usr/bin:/bin")
+                if found in ("/usr/bin/virsh", "/bin/virsh"):
+                    trusted.assert_called_once_with(found)
+                else:
+                    trusted.assert_not_called()
+                child.assert_not_called()
+                self.assertFalse(self.target.exists())
+
+    def test_s2_55_trusted_system_path_only_and_sanitized_home(self):
+        for path in ("/usr/bin/virsh", "/bin/virsh"):
+            with self.subTest(path=path):
+                with (mock.patch.object(capture.shutil, "which",
+                                        return_value=path),
+                      mock.patch.object(
+                          capture, "_trusted_discovered_systemd_binary",
+                          return_value=True) as trusted):
+                    self.assertEqual(capture._trusted_virsh_executable(), path)
+                trusted.assert_called_once_with(path)
+        with mock.patch.dict(os.environ, {"HOME": "/tmp/poisoned-home"}):
+            result, _, _ = self.capture()
+        self.assertEqual(result["status"], capture.CAPTURED)
+        self.assertTrue(self.calls)
+        self.assertTrue(all(
+            kw["env"]["HOME"] == "/nonexistent" for _, kw in self.calls))
 
     def test_virsh_missing_fails_without_files(self):
         with self.assertRaises(capture.HostCaptureError):
