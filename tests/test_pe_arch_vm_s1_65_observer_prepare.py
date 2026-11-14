@@ -11,9 +11,12 @@ import shutil
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pe_arch_vm_s1_65_observer_prepare as prep
+import pe_arch_vm_s1_73_two_record_review as semantic
+import pe_arch_vm_s2_13_runtime_log_chain as runtime_chain
 import pe_arch_vm_s1_63_external_observer as external
 import test_pe_arch_vm_s1_73_two_record_review as semantic_fixtures
 from test_pe_arch_vm_s2_13_runtime_log_chain import make_fixture, SESSION
@@ -144,6 +147,70 @@ class ExternalHostPackPreparationTests(unittest.TestCase):
                     self.assertFalse(self.manifest.exists())
                 finally:
                     target.write_bytes(original)
+
+    def test_s2_59_s1_73_upstream_authority_or_schema_change_blocks_manifest(self):
+        original = semantic.review_two_records
+        cases = (
+            lambda result: result.update(independent_host_control_verified=True),
+            lambda result: result.update(unknown_windows_pe_execution_authorized=True),
+            lambda result: result.update(guest_kernel_independently_verified=True),
+            lambda result: result.update(libvirt_queried=True),
+            lambda result: result.update(other_unverified_records=[]),
+            lambda result: result.update(guest_record_sha256_matched=False),
+            lambda result: result.update(semantic_records_checked=True),
+            lambda result: result.update(release_authorized="false"),
+            lambda result: result.update(forged_new_authority=True),
+            lambda result: result.pop("guest_record_bound_to_host_sha256"),
+        )
+        for i, mutation in enumerate(cases):
+            with self.subTest(case=i):
+                def forged(*args, **kwargs):
+                    outcome = original(*args, **kwargs)
+                    mutation(outcome)
+                    return outcome
+                with (mock.patch.object(semantic, "review_two_records",
+                                        side_effect=forged),
+                      self.assertRaisesRegex(
+                          prep.ObserverPreparationError,
+                          "S1.73 exact upstream HOLD")):
+                    self.prepare()
+                self.assertFalse(self.manifest.exists())
+                self.assertFalse(self.signature.exists())
+
+    def test_s2_59_s2_13_upstream_authority_or_schema_change_blocks_manifest(self):
+        original = runtime_chain.review_runtime_cleanup_text
+        cases = (
+            lambda result: result.update(kernel_or_hypervisor_authenticated=True),
+            lambda result: result.update(seccomp_cgroups_independently_verified=True),
+            lambda result: result.update(scope_cleanup_independently_verified=True),
+            lambda result: result.update(runtime_cleanup_session_and_digest_chain_agree=False),
+            lambda result: result.update(records_structurally_checked=True),
+            lambda result: result.update(independent_vm_attestation="false"),
+            lambda result: result.update(added_release_approval=True),
+            lambda result: result.pop("scope_cleanup_independently_verified"),
+        )
+        for i, mutation in enumerate(cases):
+            with self.subTest(case=i):
+                def forged(*args, **kwargs):
+                    outcome = original(*args, **kwargs)
+                    mutation(outcome)
+                    return outcome
+                with (mock.patch.object(runtime_chain, "review_runtime_cleanup_text",
+                                        side_effect=forged),
+                      self.assertRaisesRegex(
+                          prep.ObserverPreparationError,
+                          "S2.13 exact upstream HOLD")):
+                    self.prepare()
+                self.assertFalse(self.manifest.exists())
+                self.assertFalse(self.signature.exists())
+
+    def test_s2_59_valid_full_semantic_and_runtime_verdicts_prepare_only(self):
+        reviewed = self.prepare()
+        self.assertEqual(reviewed["status"], prep.STATUS)
+        self.assertTrue(reviewed["two_host_records_semantically_checked"])
+        self.assertFalse(reviewed["independent_vm_attestation"])
+        self.assertFalse(reviewed["signature_created"])
+        self.assertFalse(self.signature.exists())
 
     def test_wrong_session_pin_blocks_unsigned_manifest(self):
         for bad in ("f"*64, "0"*64, "F"*64, "a"*63):

@@ -52,6 +52,34 @@ PINS = (
 )
 
 
+# PE-S2.59: only complete, explicitly HOLD upstream verdicts may lead to
+# an unsigned manifest. An upstream API must not add, omit, or silently
+# contradict an external attestation/release claim.
+S1_73_RESULT_FIELDS = frozenset((
+    "status", "host_record_sha256_matched",
+    "guest_record_sha256_matched", "guest_record_bound_to_host_sha256",
+    "domain_uuid_correlated", "source_commit_correlated",
+    "reviewer_challenge_correlated", "guest_os_id_self_reported",
+    "guest_kernel_release_self_reported", "semantic_records_checked",
+    "other_unverified_records", "libvirt_queried",
+    "independent_host_control_verified",
+    "guest_kernel_independently_verified",
+    "seccomp_cgroups_independently_verified",
+    "scope_cleanup_independently_verified",
+    "independent_vm_attestation", "release_authorized",
+    "unknown_windows_pe_execution_authorized",
+    "apk_or_ota_publication_authorized",
+))
+S2_13_RESULT_FIELDS = frozenset((
+    "status", "records_structurally_checked",
+    "runtime_cleanup_session_and_digest_chain_agree",
+    "kernel_or_hypervisor_authenticated",
+    "seccomp_cgroups_independently_verified",
+    "scope_cleanup_independently_verified",
+    "independent_vm_attestation", "release_authorized",
+))
+
+
 class ObserverPreparationError(RuntimeError):
     """Reviewer-side source logs or an exclusive manifest are not safe."""
 
@@ -258,12 +286,33 @@ def prepare_observer_manifest(
         raise ObserverPreparationError(
             "Cannot prepare manifest: two externally pinned host logs "
             "are not semantically coherent") from exc
-    if (checked["status"] != semantic.STATUS
+    if (type(checked) is not dict
+            or set(checked) != S1_73_RESULT_FIELDS
+            or checked.get("status") != semantic.STATUS
+            or type(checked.get("semantic_records_checked")) is not int
             or checked["semantic_records_checked"] != 2
-            or checked["libvirt_queried"] is not False
-            or checked["independent_vm_attestation"] is not False
-            or checked["release_authorized"] is not False):
-        raise ObserverPreparationError("PE-S1.73 reported unexpected gate state")
+            or checked.get("guest_os_id_self_reported") != "arch"
+            or type(checked.get("guest_kernel_release_self_reported")) is not str
+            or semantic.guest.RELEASE.fullmatch(
+                checked["guest_kernel_release_self_reported"]) is None
+            or checked.get("other_unverified_records") != list(semantic.UNVERIFIED)
+            or any(checked.get(key) is not True for key in (
+                "host_record_sha256_matched",
+                "guest_record_sha256_matched",
+                "guest_record_bound_to_host_sha256",
+                "domain_uuid_correlated",
+                "source_commit_correlated",
+                "reviewer_challenge_correlated"))
+            or any(checked.get(key) is not False for key in (
+                "libvirt_queried", "independent_host_control_verified",
+                "guest_kernel_independently_verified",
+                "seccomp_cgroups_independently_verified",
+                "scope_cleanup_independently_verified",
+                "independent_vm_attestation", "release_authorized",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized"))):
+        raise ObserverPreparationError(
+            "PE-S1.73 exact upstream HOLD verdict invalid")
 
     # PE-S2.13: reject generic free-text for the two remaining logs.
     # This only compares self-reported text, not independent host/kernel proof.
@@ -284,11 +333,21 @@ def prepare_observer_manifest(
     except runtime_chain.RuntimeTextReviewError as exc:
         raise ObserverPreparationError(
             "S2.13 runtime/cleanup records are not one coherent session") from exc
-    if (chained["status"] !=
-            "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD"
-            or chained["independent_vm_attestation"] is not False
-            or chained["release_authorized"] is not False):
-        raise ObserverPreparationError("S2.13 text contract contradicted HOLD")
+    if (type(chained) is not dict
+            or set(chained) != S2_13_RESULT_FIELDS
+            or chained.get("status") !=
+               "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD"
+            or type(chained.get("records_structurally_checked")) is not int
+            or chained["records_structurally_checked"] != 2
+            or chained.get("runtime_cleanup_session_and_digest_chain_agree")
+               is not True
+            or any(chained.get(key) is not False for key in (
+                "kernel_or_hypervisor_authenticated",
+                "seccomp_cgroups_independently_verified",
+                "scope_cleanup_independently_verified",
+                "independent_vm_attestation", "release_authorized"))):
+        raise ObserverPreparationError(
+            "S2.13 exact upstream HOLD verdict invalid")
 
     readings = {}
     for label, filename in external.OBS_FILES.items():
