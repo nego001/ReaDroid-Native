@@ -344,6 +344,49 @@ class HostDomstatsContracts(unittest.TestCase):
                         **self.args)
         target.write_bytes(canonical)
 
+    def test_s2_62_domstats_refuses_ambiguous_field_indentation(self):
+        canonical = STATS.decode("ascii").removesuffix("\n")
+        for before, after in (
+                (" state.state=1", "  state.state=1"),
+                (" state.state=1", " state.state=1 "),
+                (" state.state=1", " state.state =1"),
+                (" state.state=1", " state.state= 1"),
+                (" state.state=1", "state.state=1"),
+                (" cpu.time=100000000", " cpu.time=100000000 "),
+        ):
+            with self.subTest(before=before, after=after):
+                forged = canonical.replace(before, after, 1)
+                self.assertNotEqual(forged, canonical)
+                with self.assertRaises(telemetry.HostDomstatsError):
+                    telemetry._stats(forged, DOMAIN)
+        self.assertEqual(telemetry._stats(canonical, DOMAIN)["cpu.time"],
+                         100000000)
+
+    def test_s2_62_repinned_sidecar_padded_fields_fail_review(self):
+        proof = self.fake_capture()
+        target = self.owner / telemetry.TARGET
+        original = target.read_bytes()
+        for before, after in (
+                (b" state.state=1", b"  state.state=1"),
+                (b" state.state=1", b" state.state=1 "),
+                (b" cpu.time=100000000", b" cpu.time=100000000 "),
+        ):
+            with self.subTest(after=after):
+                tampered = original.replace(before, after, 1)
+                self.assertNotEqual(tampered, original)
+                target.write_bytes(tampered)
+                with self.assertRaises(telemetry.HostDomstatsError):
+                    telemetry.review_host_domstats(
+                        self.owner,
+                        expected_record_sha256=hashlib.sha256(tampered).hexdigest(),
+                        **self.args)
+        target.write_bytes(original)
+        approved = telemetry.review_host_domstats(
+            self.owner, expected_record_sha256=proof["sidecar_sha256"],
+            **self.args)
+        self.assertEqual(approved["status"], telemetry.REVIEWED)
+        self.assertFalse(approved["independent_vm_attestation"])
+
     def test_host_counter_record_cannot_be_rewritten(self):
         self.fake_capture()
         with (mock.patch.object(telemetry.shutil, "which") as find,

@@ -100,9 +100,15 @@ def _stats(text: str, domain: str) -> dict:
         raise HostDomstatsError("libvirt returned different domain or extra domains")
     pairs = {}
     for line in lines[1:]:
-        if len(line) > 256 or not line.startswith(" "):
-            raise HostDomstatsError("Unexpected domstats line or multiple domains")
-        entry = line.strip()
+        # PE-S2.62: the capture records RAW C-locale " key=value"
+        # lines. Do not normalize excess spaces with .strip(): doing so
+        # lets re-pinned sidecars and V3 records reinterpret bytes that
+        # would never pass the strict single-field wire representation.
+        if (len(line) > 256 or not line.startswith(" ")
+                or line.startswith("  ") or line.endswith(" ")):
+            raise HostDomstatsError(
+                "Noncanonical raw domstats field indentation or padding")
+        entry = line[1:]
         if entry.count("=") != 1:
             raise HostDomstatsError("Unexpected domstats field")
         key, value = entry.split("=", 1)

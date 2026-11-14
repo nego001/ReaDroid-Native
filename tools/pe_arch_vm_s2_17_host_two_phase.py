@@ -184,9 +184,10 @@ def _live_sample(domain: str, expected_uuid: str) -> tuple[str, int]:
         after_uuid = host._virsh_read(executable, "domuuid", domain)
     except (host.HostCaptureError, domstats.HostDomstatsError) as exc:
         raise HostTwoPhaseError("Bounded readonly host queries failed") from exc
+    # All other readonly captures require the exact C-locale "running".
+    # Do not permit alternate case spellings in the two-phase producer.
     if (before_uuid != expected_uuid or after_uuid != expected_uuid
-            or before_state.casefold() != "running"
-            or after_state.casefold() != "running"):
+            or before_state != "running" or after_state != "running"):
         raise HostTwoPhaseError("Domain changed while sampling host counters")
     return text, parsed["cpu.time"]
 

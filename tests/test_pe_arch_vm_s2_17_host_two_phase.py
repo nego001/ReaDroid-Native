@@ -175,6 +175,52 @@ class TwoPhaseHostCaptureContracts(unittest.TestCase):
                         raw, phase="before", expected_before_sha256=None,
                         **self.common)
 
+    def test_s2_62_repinned_json_domstats_padding_refused(self):
+        before = self.capture("before")
+        target = self.owner / stage.BEFORE
+        original = target.read_bytes()
+        record = json.loads(original)
+        for original_field, padded in (
+                (" state.state=1", "  state.state=1"),
+                (" cpu.time=100000000", " cpu.time=100000000 "),
+                (" state.reason=0", " state.reason=0 "),
+        ):
+            with self.subTest(padded=padded):
+                forged_text = record["domstats_raw"].replace(
+                    original_field, padded, 1)
+                tampered = stage._canonical(
+                    {**record, "domstats_raw": forged_text})
+                target.write_bytes(tampered)
+                with self.assertRaisesRegex(
+                        stage.HostTwoPhaseError,
+                        "Host sample raw domstats malformed"):
+                    stage._read_private(
+                        self.owner, "before",
+                        expected_sha256=hashlib.sha256(tampered).hexdigest(),
+                        common={**self.common,
+                                "expected_before_sha256": None})
+        target.write_bytes(original)
+        self.assertEqual(hashlib.sha256(original).hexdigest(),
+                         before["sample_sha256"])
+
+    def test_s2_62_noncanonical_libvirt_state_fails_before_phase_write(self):
+        for state in ("RUNNING", "Running", "running ", "running\n"):
+            with self.subTest(state=repr(state)):
+                with self.assertRaisesRegex(
+                        stage.HostTwoPhaseError,
+                        "Domain changed while sampling"):
+                    self.capture(
+                        "before",
+                        read_states=[UUID, state, "running", UUID])
+                self.assertFalse((self.owner / stage.BEFORE).exists())
+                with self.assertRaisesRegex(
+                        stage.HostTwoPhaseError,
+                        "Domain changed while sampling"):
+                    self.capture(
+                        "before",
+                        read_states=[UUID, "running", state, UUID])
+                self.assertFalse((self.owner / stage.BEFORE).exists())
+
     def test_after_requires_external_before_hash_before_host_query(self):
         with (mock.patch.object(stage.shutil, "which") as which,
               self.assertRaises(stage.HostTwoPhaseError)):
