@@ -265,6 +265,27 @@ class TwoRecordReviewContracts(unittest.TestCase):
                     self.verify(expected_guest_sha256=hashlib.sha256(
                         changed).hexdigest())
 
+    def test_s2_51_unicode_host_and_rehashed_two_records_rejected_offline(self):
+        for character in ("\u0085", "\u2028", "\u200b", "\u202e"):
+            with self.subTest(character=repr(character)):
+                raw_host = first_record().replace(
+                    b"Name: " + DOMAIN.encode(),
+                    ("Id: 5" + character + "shadow\nName: " + DOMAIN)
+                    .encode("utf-8"))
+                self.first.write_bytes(raw_host)
+                self.first.chmod(0o600)
+                new_host_sha = hashlib.sha256(raw_host).hexdigest()
+                raw_guest = second_record(new_host_sha)
+                self.second.write_bytes(raw_guest)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "strict pre-guestinfo policy"):
+                    self.verify(
+                        expected_host_sha256=new_host_sha,
+                        expected_guest_sha256=hashlib.sha256(
+                            raw_guest).hexdigest())
+
     def test_review_uses_shared_s1_71_snapshot_validator(self):
         # Guard against a later drift that silently drops the earlier
         # check while keeping a superficially equivalent local parser.

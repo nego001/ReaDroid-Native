@@ -269,6 +269,22 @@ class GuestKernelCaptureContracts(unittest.TestCase):
                 self.assertFalse(self.target.exists())
         self.prior.write_bytes(self.record)
 
+    def test_s2_51_unicode_prior_host_rejected_before_guestinfo_even_rehashed(self):
+        # A matching SHA of hostile bytes cannot establish a safe host log.
+        for character in ("\u0085", "\u2028", "\u200b", "\u202e"):
+            with self.subTest(character=repr(character)):
+                changed = self.record.replace(
+                    b"Id: 5", ("Id: 5" + character + "shadow").encode("utf-8"))
+                self.prior.write_bytes(changed)
+                self.prior.chmod(0o600)
+                self.calls.clear()
+                with self.assertRaises(guest.GuestKernelObservationError):
+                    self.capture(expected_prior_host_sha256=hashlib.sha256(
+                        changed).hexdigest())
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.target.exists())
+        self.prior.write_bytes(self.record)
+
     def test_prior_host_snapshot_symlink_rejected(self):
         other = self.owner / "copy"
         self.prior.rename(other)

@@ -254,6 +254,37 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
                     self.capture(fake=changed)
                 self.assertFalse(self.target.exists())
 
+    # PE-S2.51: these Unicode characters make host evidence visually
+    # misleading even though they do not create literal LF records.
+    def test_s2_51_unicode_dominfo_never_published(self):
+        for character in ("\u0085", "\u2028", "\u2029", "\u200b", "\u202e", "\u00a0"):
+            with self.subTest(codepoint=hex(ord(character))):
+                def poisoned(argv, **kw):
+                    original = self.fake(argv, **kw)
+                    if argv[-2] != "dominfo":
+                        return original
+                    raw = original.stdout.replace(
+                        b"Id: 5", ("Id: 5" + character + "shadow").encode("utf-8"))
+                    return subprocess.CompletedProcess(argv, 0, raw, b"")
+                with self.assertRaises(capture.HostCaptureError):
+                    self.capture(fake=poisoned)
+                self.assertFalse(self.target.exists())
+
+    def test_s2_51_same_host_validator_rejects_unicode_in_repinned_logs(self):
+        for text in ("Id: 5\u2028fake", "Id: 5\u200bhidden", "Id: 5\u0085ghost"):
+            with self.subTest(text=text):
+                with self.assertRaises(capture.HostCaptureError):
+                    capture._validate_dominfo_shape(
+                        text + "\nName: " + DOMAIN + "\nUUID: " + UUID
+                        + "\nState: running")
+
+    def test_s2_51_valid_ascii_dominfo_unchanged(self):
+        data = ("Id: 5\nName: " + DOMAIN + "\nUUID: " + UUID
+                + "\nState: running\nCPU(s): 4\nOS Type: hvm")
+        capture._validate_dominfo_shape(data)
+        self.assertEqual(capture._checked_text(
+            (data + "\n").encode("ascii"), "dominfo"), data)
+
     def test_second_capture_refuses_no_overwrite_and_no_new_commands(self):
         self.capture()
         first = self.target.read_bytes()

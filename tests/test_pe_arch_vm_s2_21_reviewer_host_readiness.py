@@ -160,6 +160,14 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
                 with self.assertRaises(readiness.ReviewerHostReadinessError):
                     self.probe([UUID, "running", value, "running", UUID])
 
+    def test_s2_51_unicode_host_dominfo_never_marks_candidate(self):
+        for character in ("\u0085", "\u2028", "\u200b", "\u202e"):
+            with self.subTest(character=repr(character)):
+                info = INFO.replace("Id: 7", "Id: 7" + character + "shadow")
+                with self.assertRaises(readiness.ReviewerHostReadinessError):
+                    self.probe([UUID, "running", info, "running", UUID])
+                self.assertEqual(list(self.owner.iterdir()), [])
+
     def test_weak_replayed_or_invalid_reviewer_session_is_blocked(self):
         for values in (
             {"reviewer_challenge": "b" * 64},

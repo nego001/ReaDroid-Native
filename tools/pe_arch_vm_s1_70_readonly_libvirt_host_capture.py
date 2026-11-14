@@ -73,8 +73,10 @@ def _validate_dominfo_shape(info: str) -> None:
     for line in info.split("\n"):
         if (not line or line[0].isspace() or "=" in line
                 or ":" not in line
-                or any(ord(char) < 32 or ord(char) == 127
-                       for char in line)):
+                # LF has already been split into records. Non-ASCII
+                # whitespace, bidi controls and Unicode line separators
+                # can visually forge a second line without an LF byte.
+                or any(not (" " <= char <= "~") for char in line)):
             raise HostCaptureError("Noncanonical host dominfo line")
         label, value = line.split(":", 1)
         folded = label.casefold()
@@ -118,9 +120,11 @@ def _checked_text(data: bytes, label: str) -> str:
         result = data.decode("utf-8")
     except UnicodeError as exc:
         raise HostCaptureError("Invalid UTF-8 from libvirt: " + label) from exc
-    # Keep capture output compatible with the S1.71/S1.73 LF-only parser.
-    if any((ord(c) < 32 and c != "\n") or ord(c) == 127 for c in result):
-        raise HostCaptureError("Control character in libvirt result: " + label)
+    # PE-S2.51: only LF separates evidence records. Ban Unicode line
+    # separators, zero-width/bidi controls, and other non-ASCII text before
+    # strip() can silently discard or reshape an untrusted virsh response.
+    if any(c != "\n" and not (" " <= c <= "~") for c in result):
+        raise HostCaptureError("Noncanonical virsh output: " + label)
     stripped = result.strip()
     if not stripped:
         raise HostCaptureError("Empty libvirt query response: " + label)
