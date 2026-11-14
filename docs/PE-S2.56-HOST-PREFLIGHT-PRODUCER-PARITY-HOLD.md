@@ -17,6 +17,10 @@ Além disso, `_info_matches()` consultava apenas a estrutura `dominfo` (`_valida
 
 Três novos métodos adversariais no preflight S2.21 confirmam que falha de confiança do produtor bloqueia todos os comandos libvirt, respostas `dominfo` com framing bruto inválido não geram `CANDIDATE` e o sanitizador compartilhado continua obrigatório. O teste positivo de pré-requisitos foi atualizado para requerer o novo resolvedor, sem simular uma VM real.
 
+## Ajuste da regressão do Ubuntu
+
+Na primeira execução, o teste `test_s2_56_alias_or_untrusted_virsh_never_yields_candidate` falhou porque o mock de `os.geteuid()` (módulo compartilhado) interferia na verificação anterior de propriedade da pasta privada. A asserção foi restrita a `_host_prerequisites()`, que é o componente responsável por verificar o executável depois dos pré-requisitos simulados. A captura S1.70/S1.71 e a rotina de produção S2.21 permanecem inalteradas; o teste continua provando bloqueio antes de consulta a `virsh`.
+
 ## HOLD externo
 
 [PR #47](https://github.com/nego001/ReaDroid-Native/pull/47) permanece Draft/unmerged; [Issue #48](https://github.com/nego001/ReaDroid-Native/issues/48) permanece OPEN. A CI não equivale a provas humanas do host QEMU/libvirt independente, VM Arch nativa, PID do Ghidra, cgroup v2/seccomp conjuntos, journald, cleanup e BEFORE → WORK → AFTER. Nenhuma execução de Windows PE desconhecido, merge, APK, OTA ou release está autorizada.

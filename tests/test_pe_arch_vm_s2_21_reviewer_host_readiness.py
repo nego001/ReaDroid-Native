@@ -450,8 +450,9 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
         self.assertEqual(list(self.owner.iterdir()), [])
 
     def test_s2_56_alias_or_untrusted_virsh_never_yields_candidate(self):
-        # After a valid KVM and container check, a user-rooted alias
-        # accepted by a generic tool gate must not be accepted here.
+        # Validate the preflight helper after its trusted KVM/container
+        # checks. Do not patch global os.geteuid() while calling the
+        # separate private-directory checker, which shares the os module.
         for error in (
                 "Trusted root-owned system virsh unavailable",
                 "Synthetic same-directory root-owned symlink alias refused",
@@ -477,7 +478,7 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
                       self.assertRaisesRegex(
                           readiness.ReviewerHostReadinessError,
                           "producer-compatible")):
-                    self.evaluate(probe_reviewer_host=True)
+                    readiness._host_prerequisites(self.owner)
                 detect.assert_called_once_with("systemd-detect-virt")
                 producer_virsh.assert_called_once_with()
                 query.assert_not_called()
