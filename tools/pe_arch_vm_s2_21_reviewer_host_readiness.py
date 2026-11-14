@@ -9,6 +9,7 @@ A local success is a candidate host, not independently controlled host proof.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import fcntl
 import json
 import os
@@ -23,6 +24,7 @@ sys.dont_write_bytecode = True
 
 import pe_arch_vm_gate as gate
 import pe_arch_vm_s1_70_readonly_libvirt_host_capture as host
+from pe_nofollow_paths import open_absolute_directory_nofollow
 
 PLAN = "PE_S2_21_INDEPENDENT_HOST_PREFLIGHT_NOT_STARTED"
 CANDIDATE = "LOCAL_PE_S2_21_READONLY_LIBVIRT_HOST_CANDIDATE_HOLD"
@@ -97,6 +99,31 @@ def _require_kvm_device() -> None:
             "Cannot query read-only KVM system API") from exc
 
 
+def _fresh_observer_inode(owner: Path) -> tuple[int, int]:
+    """Bounded freshness check on an open directory, not a followed path.
+
+    Keep directory identity across preflight to catch replacement with
+    another empty directory or a symlink during libvirt queries. This
+    detects local path replacement, NOT reviewer/host independence.
+    """
+    try:
+        with ExitStack() as stack:
+            fd = open_absolute_directory_nofollow(owner, stack)
+            node = os.fstat(fd)
+            if (not stat.S_ISDIR(node.st_mode)
+                    or node.st_uid != os.getuid()
+                    or stat.S_IMODE(node.st_mode) != 0o700):
+                raise ReviewerHostReadinessError(
+                    "Reviewer evidence directory not caller-owned private 0700")
+            if os.listdir(fd):
+                raise ReviewerHostReadinessError(
+                    "Reviewer evidence directory must start empty")
+            return node.st_dev, node.st_ino
+    except (OSError, ValueError) as exc:
+        raise ReviewerHostReadinessError(
+            "Reviewer evidence directory replaced or unsafe") from exc
+
+
 def _host_prerequisites(owner: Path) -> str:
     # These markers are UNSPOOFABLE neither positively nor negatively;
     # rejecting known automation is necessary but cannot prove ownership.
@@ -110,14 +137,9 @@ def _host_prerequisites(owner: Path) -> str:
         raise ReviewerHostReadinessError(
             "Known container marker: not an independent host")
     _require_kvm_device()
-    # Require a new empty folder: cannot replay a finished session as fresh.
-    try:
-        if os.listdir(owner):
-            raise ReviewerHostReadinessError(
-                "Reviewer evidence directory must start empty")
-    except OSError as exc:
-        raise ReviewerHostReadinessError(
-            "Cannot safely enumerate reviewer evidence directory") from exc
+    # PE-S2.65: refuse symlinks/ancestor swaps and count entries by
+    # directory FD, not os.listdir(owner) following a replaced pathname.
+    _fresh_observer_inode(owner)
     try:
         detect = gate._trusted_vm_tool("systemd-detect-virt")
         probe = subprocess.run(
@@ -197,7 +219,11 @@ def reviewer_host_readiness(observer_dir: Path, *, domain: str,
             "independent_vm_attestation": False,
             "release_authorized": False,
         }
+    original_inode = _fresh_observer_inode(owner)
     virsh = _host_prerequisites(owner)
+    if _fresh_observer_inode(owner) != original_inode:
+        raise ReviewerHostReadinessError(
+            "Reviewer evidence directory changed during host preflight")
     try:
         actual_uuid = host._virsh_read(virsh, "domuuid", domain)
         state = host._virsh_read(virsh, "domstate", domain)
@@ -217,13 +243,9 @@ def reviewer_host_readiness(observer_dir: Path, *, domain: str,
             or not _info_matches(info, domain=domain, uuid=expected_domain_uuid)):
         raise ReviewerHostReadinessError(
             "Domain UUID or running state changed/contradicted libvirt")
-    try:
-        if os.listdir(owner):
-            raise ReviewerHostReadinessError(
-                "Observer directory changed during host preflight")
-    except OSError as exc:
+    if _fresh_observer_inode(owner) != original_inode:
         raise ReviewerHostReadinessError(
-            "Cannot recheck private observer directory") from exc
+            "Reviewer evidence directory changed during host preflight")
     return {
         "status": CANDIDATE,
         "libvirt_readonly_uri": "qemu:///system",
