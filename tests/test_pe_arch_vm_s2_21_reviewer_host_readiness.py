@@ -84,6 +84,55 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
         ])
         self.assertEqual(list(self.owner.iterdir()), [])
 
+    def test_s2_65_symlink_swap_before_libvirt_queries_is_rejected(self):
+        # The first check observed a real empty 0700 directory. A
+        # substituted symlink also leads to an empty 0700 directory,
+        # but must not be accepted as the same reviewer-owned observer.
+        original = self.owner.parent / "original-observer"
+        destination = self.owner.parent / "other-empty"
+        destination.mkdir(mode=0o700)
+
+        def replace_path(_owner):
+            self.owner.rename(original)
+            self.owner.symlink_to(destination, target_is_directory=True)
+            return "/usr/bin/virsh"
+
+        with (mock.patch.object(readiness, "_host_prerequisites",
+                                side_effect=replace_path),
+              mock.patch.object(readiness.host, "_virsh_read") as queried,
+              self.assertRaisesRegex(
+                  readiness.ReviewerHostReadinessError,
+                  "replaced or unsafe")):
+            self.evaluate(probe_reviewer_host=True)
+        queried.assert_not_called()
+        self.assertEqual(list(original.iterdir()), [])
+        self.assertEqual(list(destination.iterdir()), [])
+
+    def test_s2_65_swapped_empty_inode_during_libvirt_is_rejected(self):
+        # Replacing the directory with a new *real* empty directory
+        # bypasses a mere os.listdir(owner) check. Inode identity must
+        # still match the originally opened observer directory.
+        original = self.owner.parent / "original-observer"
+        replies = iter([UUID, "running", INFO, "running", UUID])
+
+        def swapped_during_query(executable, verb, domain):
+            if verb == "dominfo":
+                self.owner.rename(original)
+                self.owner.mkdir(mode=0o700)
+            return next(replies)
+
+        with (mock.patch.object(readiness, "_host_prerequisites",
+                                return_value="/usr/bin/virsh"),
+              mock.patch.object(readiness.host, "_virsh_read",
+                                side_effect=swapped_during_query) as queried,
+              self.assertRaisesRegex(
+                  readiness.ReviewerHostReadinessError,
+                  "changed during host preflight")):
+            self.evaluate(probe_reviewer_host=True)
+        self.assertEqual(queried.call_count, 5)
+        self.assertEqual(list(original.iterdir()), [])
+        self.assertEqual(list(self.owner.iterdir()), [])
+
     def test_changed_domain_uuid_and_state_are_rejected(self):
         for replies in (
                 ["ffffffff-ffff-4fff-8fff-ffffffffffff", "running",
