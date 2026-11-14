@@ -246,8 +246,9 @@ class TwoRecordReviewContracts(unittest.TestCase):
                             new_guest).hexdigest())
 
     def test_s2_49_repinned_unicode_guestinfo_separator_rejected_offline(self):
-        # A rehashed S1.71 log with a Unicode line separator previously
-        # passed splitlines() despite not containing literal LF boundaries.
+        # A rehashed S1.71 log with a Unicode separator must be rejected.
+        # PE-S2.54 now rejects earlier in the shared producer stdout gate,
+        # rather than in PE-S2.49's later guestinfo field parser.
         original = second_record(self.pins["expected_host_sha256"])
         needle = b"os.id : arch\nos.name : Arch Linux"
         self.assertIn(needle, original)
@@ -261,7 +262,7 @@ class TwoRecordReviewContracts(unittest.TestCase):
                 self.second.chmod(0o600)
                 with self.assertRaisesRegex(
                         review.TwoRecordReviewError,
-                        "Invalid guest self-reported OS fields"):
+                        "Noncanonical guest self-report stdout framing"):
                     self.verify(expected_guest_sha256=hashlib.sha256(
                         changed).hexdigest())
 

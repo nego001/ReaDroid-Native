@@ -14,6 +14,10 @@ A PE-S2.53 endureceu `host._checked_text()` para rejeitar stdout de `virsh` com 
 - S1.73 reconstrói as linhas do `guestinfo --os`, aplica **o mesmo sanitizador S1.70/S1.71** sem alterar os bytes e só então invoca `guest._parse_guest_os()`.
 - Linhas válidas com espaçamento interno em `Label: value` continuam aceitas. `independent_vm_attestation=false` e `release_authorized=false` são invariantes; não há escrita, execução de host, nova chave ou nova assinatura.
 
+## Ajuste da CI após a regressão histórica
+
+Na primeira execução, o job Ubuntu detectou três subcasos reprovados no teste histórico `test_s2_49_repinned_unicode_guestinfo_separator_rejected_offline`. A rejeição Unicode aconteceu corretamente, mas no novo sanitizador S2.54 (antes do parser S2.49), alterando a classe textual da mensagem esperada. O teste passou a exigir a mensagem do gate mais precoce. Não houve relaxamento de validação de dados, autorização ou alteração do código de produção na correção.
+
 ## Regressões
 
 Cinco novos testes: dois S1.71 (host re-hasheado malformado e compartilhamento do sanitizador), três S1.73 (re-pinar ambos os hashes após falsificação de `dominfo`, re-pinar guestinfo com espaços no início/fim e confirmar uso do mesmo sanitizador). A suíte existente mantém cenários legítimos de S1.70 e S1.71.
