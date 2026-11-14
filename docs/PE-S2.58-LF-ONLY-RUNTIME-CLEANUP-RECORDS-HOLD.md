@@ -16,6 +16,10 @@ Esse problema está na análise **offline** de texto autorreportado. Não repres
 
 Três novos testes S2.58: adulteração do runtime com **cinco separadores ASCII diferentes** seguida de recálculo da referência hash no cleanup; adulteração do cleanup sem modificar o runtime; controle positivo de dois arquivos exclusivamente LF ainda com resultado HOLD. As entradas são sintéticas, não derivadas de uma VM real.
 
+## Regresso de mensagens da primeira CI
+
+A primeira execução da CI rejeitou corretamente os bytes adulterados, mas antes do filtro de caracteres passou pelo teste de número de campos e produziu `Incomplete or extra runtime observation fields`. A rotina passou a **testar primeiro os caracteres de controle**, retornando `Noncanonical runtime observation line`. Não foi relaxada a aceitação de nenhuma linha. O teste continua verificando a classificação específica do byte de controle.
+
 ## Limites de homologação
 
 [PR #47](https://github.com/nego001/ReaDroid-Native/pull/47) Draft/unmerged. [Issue #48](https://github.com/nego001/ReaDroid-Native/issues/48) OPEN. A CI não mede host QEMU/libvirt independente, guest Arch nativo, PID de Ghidra, seccomp+cgroup v2 simultâneos, journald real, cleanup ou cadeia BEFORE → WORK → AFTER com testemunho externo. Não executar PE desconhecido, fazer merge ou publicar APK/OTA/release.

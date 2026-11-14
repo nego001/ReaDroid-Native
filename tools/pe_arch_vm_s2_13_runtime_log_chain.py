@@ -49,12 +49,17 @@ def _parse(raw: bytes, keys: frozenset[str]) -> dict[str, str]:
         lines = raw[:-1].decode("ascii").split("\n")
     except UnicodeError as exc:
         raise RuntimeTextReviewError("Runtime observation is not ASCII") from exc
+    # Report illegal controls *before* the line-count check. A VT, FF,
+    # FS, GS or RS must fail specifically as a forbidden byte, not just
+    # incidentally because the number of LF-delimited fields changed.
+    if any(any(ord(ch) < 33 or ord(ch) > 126 for ch in line)
+           for line in lines):
+        raise RuntimeTextReviewError("Noncanonical runtime observation line")
     if len(lines) != len(keys):
         raise RuntimeTextReviewError("Incomplete or extra runtime observation fields")
     data = {}
     for line in lines:
-        if (len(line) > 512 or line.count("=") != 1
-                or any(ord(ch) < 33 or ord(ch) > 126 for ch in line)):
+        if len(line) > 512 or line.count("=") != 1:
             raise RuntimeTextReviewError("Noncanonical runtime observation line")
         key, value = line.split("=", 1)
         if key not in keys or key in data or not value:
