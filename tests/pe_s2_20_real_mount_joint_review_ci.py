@@ -250,6 +250,12 @@ def _host(ghidra_home: Path) -> int:
 
         with (mock.patch.object(domstats.shutil, "which",
                                 return_value="/usr/bin/virsh"),
+              # PE-S2.60: only simulated virsh trust metadata. This is
+              # host-side synthetic fixture construction, NOT part of the
+              # unmocked readonly/Git/SSH verification inside Bubblewrap.
+              mock.patch.object(
+                  domstats.host, "_trusted_discovered_systemd_binary",
+                  return_value=True),
               mock.patch.object(domstats.host, "_virsh_read",
                                 side_effect=[UUID, "running", "running", UUID]),
               mock.patch.object(domstats.bounded, "run_bounded_native",

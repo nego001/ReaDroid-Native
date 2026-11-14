@@ -22,6 +22,12 @@ Além disso, `S2.15._read_live()` tolerava `stderr` com apenas espaços/quebras 
 
 Quatro novos testes: (1) S2.15 rejeita caminhos suspeitos/metadados reprovados antes de qualquer chamada, (2) falha com `stderr` contendo apenas whitespace, (3) impede a herança de `HOME`, e (4) S2.17 rejeita o mesmo `virsh` inseguro antes do primeiro sample. Fixtures antigas de S2.15/S2.16/S2.17 simulam apenas os metadados necessários para testar as demais condições, preservando a regra ativa na produção.
 
+## CI de integração com montagem somente-leitura
+
+Na primeira execução de Ubuntu, o laboratório de contrato Arch e todos os quatro workflows auxiliares passaram, mas o script de integração `tests/pe_s2_20_real_mount_joint_review_ci.py` ainda simulava somente o retorno de `shutil.which`, sem simular os metadados exigidos na PE-S2.60. A falha `Trusted system virsh required for readonly domstats` ocorreu na **construção do sidecar sintético**, antes de entrar no revisor real.
+
+O script agora simula **somente** a propriedade/permissões do `virsh` fictício durante a montagem do fixture. O resolvedor de produção continua sendo exercitado, e o componente dentro do Bubblewrap segue executando verificações reais de assinaturas Ed25519, Git, recibos, proteção de leitura dos arquivos e pins externos. Nenhuma simulação foi adicionada a essas verificações finais.
+
 ## Limite externo
 
 PR #47 Draft/unmerged; Issue #48 OPEN. Nada aqui atesta host QEMU/libvirt independente, guest Arch nativo, PID Ghidra, seccomp+cgroup v2 simultâneos, quotas journald, cleanup ou cronologia testemunhada BEFORE → WORK → AFTER. Nenhuma liberação de merge, PE Windows desconhecido, APK, OTA ou release é autorizada.
