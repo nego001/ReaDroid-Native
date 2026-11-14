@@ -93,8 +93,9 @@ class ExternalObserverSigningTests(unittest.TestCase):
         self.sign()
         self.pins = self.options()
 
-    def sign(self, *, namespace=None):
+    def sign(self, *, namespace=None, raw=None):
         self.manifest_path.write_bytes(
+            raw if raw is not None else
             (json.dumps(self.record, sort_keys=True,
                         separators=(",", ":")) + "\n").encode("ascii"))
         self.manifest_path.chmod(0o600)
@@ -205,6 +206,64 @@ class ExternalObserverSigningTests(unittest.TestCase):
         self.sign()
         with self.assertRaises(observer.ExternalObserverError):
             self.verify(**self.options())
+
+    def test_s2_57_canonical_observer_clock_accepts_producer_variants(self):
+        for clock in ("2026-10-30T22:00:00+00:00",
+                      "2026-10-30T22:00:00.123456+00:00"):
+            with self.subTest(clock=clock):
+                self.record["observer_local_time_utc_not_attested"] = clock
+                self.sign()
+                result = self.verify(**self.options())
+                self.assertEqual(result["status"], observer.STATUS)
+                self.assertFalse(result["independent_vm_attestation"])
+
+    def test_s2_57_resigned_noncanonical_utc_clock_rejected_before_crypto(self):
+        for clock in (
+                "2026-10-30T22:00:00Z",
+                "2026-10-30 22:00:00+00:00",
+                "2026-W44-5T22:00:00+00:00",
+                "20261030T220000+00:00",
+                "2026-10-30T22:00:00.123+00:00",
+                "2026-10-30T22:00:00.000000+00:00",
+                "2026-10-30T19:00:00-03:00"):
+            with self.subTest(clock=clock):
+                self.record["observer_local_time_utc_not_attested"] = clock
+                self.sign()
+                with mock.patch.object(observer.witness, "_ssh_verify") as ssh:
+                    with self.assertRaises(observer.ExternalObserverError):
+                        self.verify(**self.options())
+                ssh.assert_not_called()
+
+    def test_s2_57_resigned_noncanonical_json_fails_before_crypto(self):
+        original = self.manifest_path.read_bytes()
+        variants = (
+            original + b"\n",
+            original.rstrip(b"\n"),
+            original.replace(b'":', b'": ', 1),
+            json.dumps(self.record, indent=2, sort_keys=True).encode() + b"\n",
+            json.dumps(self.record, sort_keys=False,
+                       separators=(",", ":")).encode() + b"\n",
+        )
+        for raw in variants:
+            with self.subTest(prefix=raw[:45], length=len(raw)):
+                self.sign(raw=raw)
+                with mock.patch.object(observer.witness, "_ssh_verify") as ssh:
+                    with self.assertRaisesRegex(
+                            observer.ExternalObserverError,
+                            "S1.65 canonical JSON"):
+                        self.verify(**self.options())
+                ssh.assert_not_called()
+
+    def test_s2_57_canonical_json_gate_reused_by_signed_consumer(self):
+        with mock.patch.object(
+                observer, "_canonical_manifest",
+                side_effect=observer.ExternalObserverError(
+                    "synthetic canonicalizer refusal")) as canonicalizer:
+            with self.assertRaisesRegex(
+                    observer.ExternalObserverError,
+                    "synthetic canonicalizer refusal"):
+                self.verify()
+        canonicalizer.assert_called_once_with(self.record)
 
     def test_non_utc_observer_claim_refused(self):
         self.record["observer_local_time_utc_not_attested"] = (

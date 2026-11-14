@@ -58,6 +58,27 @@ class ExternalObserverError(RuntimeError):
     """Not even a consistently signed third-key observation inventory."""
 
 
+def _canonical_manifest(record: dict) -> bytes:
+    """Exactly S1.65's ASCII, sorted and LF-delimited JSON serializer."""
+    return (json.dumps(
+        record, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+
+
+def _canonical_untrusted_utc(value: object) -> None:
+    """Check S1.65 UTC isoformat syntax, NEVER the accuracy of local time."""
+    if type(value) is not str or not 20 <= len(value) <= 50:
+        raise ExternalObserverError("Observer clock has no canonical UTC text")
+    try:
+        stamp = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ExternalObserverError("Observer clock cannot be parsed") from exc
+    if (stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0
+            or stamp.isoformat() != value):
+        raise ExternalObserverError(
+            "Observer clock is not S1.65 producer-canonical UTC")
+
+
 def _pin(value: object, what: str) -> None:
     if not isinstance(value, str) or SHA256.fullmatch(value) is None:
         raise ExternalObserverError("Externally held lowercase SHA256 required: " + what)
@@ -157,8 +178,15 @@ def verify_external_observer(
             object_pairs_hook=receipts._no_duplicate_keys,
             parse_constant=lambda _: (_ for _ in ()).throw(
                 ExternalObserverError("Nonfinite observer manifest")))
-        if not isinstance(record, dict) or set(record) != FIELDS:
+        if type(record) is not dict or set(record) != FIELDS:
             raise ExternalObserverError("Unexpected external observer manifest fields")
+        # PE-S2.57: detached Ed25519 signatures authenticate the actual
+        # bytes signed, but they cannot turn a consumer-only spelling into
+        # a valid S1.65-produced inventory. Reject re-signed noncanonical
+        # key order, whitespace, Unicode escaping and terminal framing.
+        if _canonical_manifest(record) != raw:
+            raise ExternalObserverError(
+                "Observer manifest differs from S1.65 canonical JSON")
         if (record["schema"] != SCHEMA
                 or record["security_classification"] != CLASSIFICATION
                 or record["observer_id"] != expected_observer_id
@@ -173,12 +201,10 @@ def verify_external_observer(
                 or record["release_authorized"] is not False):
             raise ExternalObserverError(
                 "Observer manifest conflicts with external pins or claims VM proof")
-        observed_at = record["observer_local_time_utc_not_attested"]
-        if not isinstance(observed_at, str) or not 20 <= len(observed_at) <= 64:
-            raise ExternalObserverError("Observer local time malformed")
-        stamp = datetime.fromisoformat(observed_at)
-        if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
-            raise ExternalObserverError("Observer local clock is not UTC")
+        # S1.65 writes datetime.now(timezone.utc).isoformat(). Merely
+        # parseable UTC aliases (space, ISO week date, Z, shortened
+        # fractional seconds) are not that producer's canonical output.
+        _canonical_untrusted_utc(record["observer_local_time_utc_not_attested"])
         entries = record["observations"]
         if not isinstance(entries, dict) or set(entries) != set(OBS_FILES):
             raise ExternalObserverError("Exactly four independent-side logs required")
