@@ -99,9 +99,13 @@ class ActualBoundedChildBoundary(unittest.TestCase):
 
     def test_real_subprocesses_complete_both_readonly_captures(self):
         self.install_fixture()
-        # Mock only executable discovery; actual Python subprocesses, pipes,
-        # output checks, permission checks and publication are all real.
-        with mock.patch.object(host.shutil, "which", return_value=str(self.executable)):
+        # Mock only the S2.55 trusted-executable decision for the
+        # deliberately untrusted fixture. Actual Python subprocesses, pipes,
+        # stdout bounds and private publication are still real.
+        # S1.70/S1.71 contract tests enforce the production root-owner gate.
+        with mock.patch.object(
+                host, "_trusted_virsh_executable",
+                return_value=str(self.executable)):
             first = self.capture_first()
             digest = hashlib.sha256((self.observer / host.TARGET).read_bytes()).hexdigest()
             second = self.capture_second(digest)
@@ -128,7 +132,9 @@ class ActualBoundedChildBoundary(unittest.TestCase):
 
     def test_real_readonly_guest_agent_refusal_fails_closed(self):
         self.install_fixture("deny_guestinfo")
-        with mock.patch.object(host.shutil, "which", return_value=str(self.executable)):
+        with mock.patch.object(
+                host, "_trusted_virsh_executable",
+                return_value=str(self.executable)):
             self.capture_first()
             digest = hashlib.sha256((self.observer / host.TARGET).read_bytes()).hexdigest()
             with self.assertRaises(guest.GuestKernelObservationError):
@@ -138,7 +144,9 @@ class ActualBoundedChildBoundary(unittest.TestCase):
 
     def test_real_child_oversized_output_rejected_before_publication(self):
         self.install_fixture("oversized_guestinfo")
-        with mock.patch.object(host.shutil, "which", return_value=str(self.executable)):
+        with mock.patch.object(
+                host, "_trusted_virsh_executable",
+                return_value=str(self.executable)):
             self.capture_first()
             digest = hashlib.sha256((self.observer / host.TARGET).read_bytes()).hexdigest()
             with self.assertRaises(guest.GuestKernelObservationError):
@@ -147,7 +155,9 @@ class ActualBoundedChildBoundary(unittest.TestCase):
 
     def test_real_guest_os_mismatch_never_publishes(self):
         self.install_fixture("wrong_guest_os")
-        with mock.patch.object(host.shutil, "which", return_value=str(self.executable)):
+        with mock.patch.object(
+                host, "_trusted_virsh_executable",
+                return_value=str(self.executable)):
             self.capture_first()
             digest = hashlib.sha256((self.observer / host.TARGET).read_bytes()).hexdigest()
             with self.assertRaises(guest.GuestKernelObservationError):
@@ -156,7 +166,9 @@ class ActualBoundedChildBoundary(unittest.TestCase):
 
     def test_external_pin_mismatch_rejected_without_any_new_child(self):
         self.install_fixture()
-        with mock.patch.object(host.shutil, "which", return_value=str(self.executable)):
+        with mock.patch.object(
+                host, "_trusted_virsh_executable",
+                return_value=str(self.executable)):
             self.capture_first()
             before = len(self.calls())
             with self.assertRaises(guest.GuestKernelObservationError):
@@ -164,9 +176,25 @@ class ActualBoundedChildBoundary(unittest.TestCase):
         self.assertEqual(len(self.calls()), before)
         self.assertFalse((self.observer / guest.TARGET).exists())
 
+    def test_s2_55_temp_fixture_cannot_impersonate_system_virsh(self):
+        # No trusted-executable mock here: the restricted lookup must reject
+        # a temporary user-owned script even before the first subprocess.
+        self.install_fixture()
+        with (mock.patch.object(
+                  host.shutil, "which", return_value=str(self.executable))
+              as discovered,
+              self.assertRaisesRegex(
+                  host.HostCaptureError, "Trusted root-owned")):
+            self.capture_first()
+        discovered.assert_called_once_with("virsh", path="/usr/bin:/bin")
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(list(self.observer.iterdir()), [])
+
     def test_default_plan_does_not_start_real_children(self):
         self.install_fixture()
-        with mock.patch.object(host.shutil, "which", return_value=str(self.executable)):
+        with mock.patch.object(
+                host, "_trusted_virsh_executable",
+                return_value=str(self.executable)):
             result = host.capture_host_domain(
                 self.observer, domain=DOMAIN, expected_domain_uuid=UUID,
                 expected_source_commit=COMMIT, reviewer_challenge=CHALLENGE)

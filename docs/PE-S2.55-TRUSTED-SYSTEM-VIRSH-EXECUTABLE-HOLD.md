@@ -22,6 +22,12 @@ A primeira execução encontrou um teste de CLI S1.70 que ainda simulava somente
 
 Quatro métodos novos cobrem caminhos forjados, o caminho canônico com metadados reprovados, recusa antes de quaisquer consultas S1.70/S1.71 e isolamento de `HOME` para host e guestinfo, preservando os cinco comandos de leitura quando o binário é confiável por contrato. Os testes usam simuladores e não ligam uma VM.
 
+## Ajuste da suíte com subprocessos reais (S1.72)
+
+A segunda execução de CI detectou cinco erros na suíte S1.72: o teste legítimo usa um script `virsh` temporário, pertencente ao usuário, para simular uma resposta e comprovar o comportamento de `subprocess` real. O novo resolvedor corretamente recusou executar esse script fora do diretório de sistema confiável.
+
+A suíte S1.72 passa a **simular apenas a decisão do resolvedor `_trusted_virsh_executable`** para os testes com o stub. Todos os subprocessos com pipes, limites, códigos de saída e gravação dos recibos continuam reais. Um novo teste separado, sem esse mock, confirma que o script temporário é recusado antes de lançar qualquer processo. A política de produção não foi relaxada.
+
 ## HOLD
 
 A PR #47 permanece Draft/unmerged e a Issue #48 OPEN. Sem prova externa de host QEMU/libvirt sob revisor independente, VM Arch nativa, Ghidra PID sob cgroup v2 e seccomp, journald, limpeza e cronologia BEFORE → WORK → AFTER, nenhuma análise de Windows PE desconhecido, merge, APK, OTA ou release é autorizada.
