@@ -42,7 +42,11 @@ def _parse(raw: bytes, keys: frozenset[str]) -> dict[str, str]:
             or not raw.endswith(b"\n") or b"\r" in raw or b"\0" in raw):
         raise RuntimeTextReviewError("Malformed or missing runtime observation text")
     try:
-        lines = raw.decode("ascii").splitlines()
+        # PE-S2.58: Python splitlines() treats VT, FF, FS, GS and RS as
+        # record separators. That silently erases control bytes before
+        # the per-line validator, allowing re-pinned non-LF records.
+        # This evidence protocol requires literal LF only.
+        lines = raw[:-1].decode("ascii").split("\n")
     except UnicodeError as exc:
         raise RuntimeTextReviewError("Runtime observation is not ASCII") from exc
     if len(lines) != len(keys):

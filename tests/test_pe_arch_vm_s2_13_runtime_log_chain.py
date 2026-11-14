@@ -80,6 +80,36 @@ class RuntimeTextChainContracts(unittest.TestCase):
             with self.assertRaises(chain.RuntimeTextReviewError):
                 review(self.r,c)
 
+    def test_s2_58_repinned_runtime_control_line_separators_rejected(self):
+        # Legacy splitlines() silently transformed these bytes to LF-like
+        # records. The cleanup hash is deliberately re-pinned to rule out
+        # relying on an old digest mismatch.
+        for separator in (b"\x0b", b"\x0c", b"\x1c", b"\x1d", b"\x1e"):
+            with self.subTest(separator=separator.hex()):
+                bad, linked = repin(self.r, self.c, b"\n", separator)
+                self.assertNotEqual(bad, self.r)
+                self.assertIn(
+                    hashlib.sha256(bad).hexdigest().encode("ascii"), linked)
+                with self.assertRaisesRegex(
+                        chain.RuntimeTextReviewError,
+                        "Noncanonical runtime observation line"):
+                    review(bad, linked)
+
+    def test_s2_58_cleanup_control_separators_rejected_with_valid_runtime(self):
+        for separator in (b"\x0b", b"\x0c", b"\x1c", b"\x1d", b"\x1e"):
+            with self.subTest(separator=separator.hex()):
+                bad = self.c.replace(b"\n", separator, 1)
+                self.assertNotEqual(bad, self.c)
+                with self.assertRaisesRegex(
+                        chain.RuntimeTextReviewError,
+                        "Noncanonical runtime observation line"):
+                    review(self.r, bad)
+
+    def test_s2_58_lf_only_runtime_and_cleanup_still_hold(self):
+        self.assertEqual(
+            review(self.r, self.c)["status"],
+            "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD")
+
     def test_rehashed_unbounded_cgroup_rejected(self):
         r,c=repin(self.r,self.c,b"pids_max=128",b"pids_max=999999")
         with self.assertRaises(chain.RuntimeTextReviewError):
