@@ -334,6 +334,64 @@ class TwoRecordReviewContracts(unittest.TestCase):
                         expected_guest_sha256=hashlib.sha256(
                             second).hexdigest())
 
+    def test_s2_54_rehashed_both_records_reject_host_final_dominfo_padding(self):
+        original = first_record()
+        for padded in (b"State: running ", b"State: running  "):
+            with self.subTest(padded=padded):
+                forged_host = original.replace(
+                    b"State: running\n", padded + b"\n")
+                self.first.write_bytes(forged_host)
+                self.first.chmod(0o600)
+                host_sha = hashlib.sha256(forged_host).hexdigest()
+                forged_guest = second_record(host_sha)
+                self.second.write_bytes(forged_guest)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "strict pre-guestinfo policy"):
+                    self.verify(
+                        expected_host_sha256=host_sha,
+                        expected_guest_sha256=hashlib.sha256(
+                            forged_guest).hexdigest())
+
+    def test_s2_54_rehashed_guest_boundary_padding_rejected_offline(self):
+        host_sha = self.pins["expected_host_sha256"]
+        original = second_record(host_sha)
+        mutations = (
+            (b"os.id : arch", b" os.id : arch"),
+            (b"os.machine : x86_64", b"os.machine : x86_64 "),
+            (b"os.machine : x86_64", b"os.machine : x86_64  "),
+        )
+        for before, after in mutations:
+            with self.subTest(after=after):
+                forged = original.replace(before, after)
+                self.second.write_bytes(forged)
+                self.second.chmod(0o600)
+                with self.assertRaisesRegex(
+                        review.TwoRecordReviewError,
+                        "Noncanonical guest self-report stdout framing"):
+                    self.verify(
+                        expected_guest_sha256=hashlib.sha256(
+                            forged).hexdigest())
+
+    def test_s2_54_guest_offline_review_shares_producer_stdout_gate(self):
+        original = host._checked_text
+        def refuse_guestinfo(data, label):
+            if label == "guestinfo --os":
+                raise host.HostCaptureError(
+                    "strict output sanitizer deliberately refused")
+            return original(data, label)
+        with mock.patch.object(
+                review.host, "_checked_text",
+                side_effect=refuse_guestinfo) as sanitizer:
+            with self.assertRaisesRegex(
+                    review.TwoRecordReviewError,
+                    "Noncanonical guest self-report stdout framing"):
+                self.verify()
+        self.assertEqual(sanitizer.call_count, 2)
+        self.assertEqual(sanitizer.call_args_list[-1], mock.call(
+            GUEST_OS.encode("ascii"), "guestinfo --os"))
+
     def test_review_uses_shared_s1_71_snapshot_validator(self):
         # Guard against a later drift that silently drops the earlier
         # check while keeping a superficially equivalent local parser.

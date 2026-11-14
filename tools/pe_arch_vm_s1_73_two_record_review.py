@@ -128,8 +128,19 @@ def _review_guest(lines: list[str], *, commit: str, challenge: str,
     raw_os = lines[15:-10]
     if not raw_os or len("\n".join(raw_os).encode("utf-8")) > host.MAX_COMMAND_BYTES:
         raise TwoRecordReviewError("Missing or oversized guest-agent OS output")
+    # PE-S2.54: before parsing fields, apply the exact S1.71 stdout
+    # sanitizer. A re-pinned guest log cannot contain padding on the
+    # first or last raw guestinfo line which capture would refuse.
+    guest_text = "\n".join(raw_os)
     try:
-        fields = guest._parse_guest_os("\n".join(raw_os))
+        if (host._checked_text(guest_text.encode("utf-8"), "guestinfo --os")
+                != guest_text):
+            raise host.HostCaptureError("Guestinfo framing was normalized")
+    except host.HostCaptureError as exc:
+        raise TwoRecordReviewError(
+            "Noncanonical guest self-report stdout framing") from exc
+    try:
+        fields = guest._parse_guest_os(guest_text)
     except guest.GuestKernelObservationError as exc:
         raise TwoRecordReviewError("Invalid guest self-reported OS fields") from exc
     if lines[-10:-7] != [

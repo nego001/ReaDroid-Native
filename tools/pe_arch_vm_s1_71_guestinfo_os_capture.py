@@ -97,13 +97,18 @@ def _check_snapshot(raw: bytes, *, commit: str, challenge: str,
             "Prior host UTC time is not producer-canonical") from exc
 
     info = lines[14:-6]
-    # PE-S2.47: the prior snapshot must satisfy the exact same canonical
-    # dominfo policy as live S1.70 (even when its hashes were re-pinned).
+    # PE-S2.54: the producer's _checked_text() refuses overall padding
+    # before publication. Re-pinned host logs must satisfy that *same*
+    # raw-command framing policy, not only dominfo Label: value syntax.
+    dominfo_text = "\n".join(info)
     try:
-        host._validate_dominfo_shape("\n".join(info))
+        if (host._checked_text(dominfo_text.encode("utf-8"), "dominfo")
+                != dominfo_text):
+            raise host.HostCaptureError("Prior dominfo framing was normalized")
+        host._validate_dominfo_shape(dominfo_text)
     except host.HostCaptureError as exc:
         raise GuestKernelObservationError(
-            "Prior dominfo contains hidden or ambiguous fields") from exc
+            "Prior dominfo violates producer-canonical framing/shape") from exc
     for field, expected in (
         ("Name:", domain), ("UUID:", uuid), ("State:", "running")
     ):

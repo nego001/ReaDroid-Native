@@ -312,6 +312,38 @@ class GuestKernelCaptureContracts(unittest.TestCase):
                 self.assertFalse(self.target.exists())
         self.prior.write_bytes(original)
 
+    def test_s2_54_rehashed_host_last_dominfo_line_padding_refused_before_virsh(self):
+        # S1.70 _checked_text() rejects whitespace at the end of stdout.
+        # A new hash must not let S1.71 accept the same forbidden framing.
+        for padded in (b"State: running ", b"State: running  "):
+            with self.subTest(padded=padded):
+                forged = self.record.replace(b"State: running\n", padded + b"\n")
+                self.prior.write_bytes(forged)
+                self.prior.chmod(0o600)
+                self.calls.clear()
+                with self.assertRaisesRegex(
+                        guest.GuestKernelObservationError,
+                        "producer-canonical framing"):
+                    self.capture(expected_prior_host_sha256=hashlib.sha256(
+                        forged).hexdigest())
+                self.assertEqual(self.calls, [])
+                self.assertFalse(self.target.exists())
+        self.prior.write_bytes(self.record)
+
+    def test_s2_54_host_snapshot_gate_reuses_raw_stdout_sanitizer(self):
+        with mock.patch.object(
+                guest.host, "_checked_text",
+                side_effect=host.HostCaptureError(
+                    "strict output sanitizer deliberately refused")) as sanitizer:
+            with self.assertRaisesRegex(
+                    guest.GuestKernelObservationError, "producer-canonical"):
+                guest._check_snapshot(
+                    self.record, commit=COMMIT, challenge=CHALLENGE,
+                    domain=DOMAIN, uuid=UUID)
+        sanitizer.assert_called_once_with(
+            b"Id: 5\nName: " + DOMAIN.encode() + b"\nUUID: "
+            + UUID.encode() + b"\nState: running", "dominfo")
+
     def test_prior_host_snapshot_symlink_rejected(self):
         other = self.owner / "copy"
         self.prior.rename(other)
