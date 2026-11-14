@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+"""PE-S1.65: prepare a reviewer-held, unsigned host observation manifest.
+
+READ-ONLY with respect to input logs and public keys, single exclusive
+publication of an unsigned manifest. The host-side observer must ALREADY
+have collected four genuine logs from a trusted machine; this tool cannot
+authenticate their origin or invent missing logs. It never accesses private
+signing keys, generates keys, runs guest programs or starts a VM.
+
+Success means "manifest prepared for external review", NOT VM attestation.
+The next actions are a separately controlled OpenSSH signature (S1.63)
+and the existing fail-closed PE-S1.64 correlation.
+"""
+from __future__ import annotations
+
+import argparse
+from contextlib import ExitStack
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import secrets
+import stat
+import sys
+
+sys.dont_write_bytecode = True
+
+import pe_arch_vm_s1_63_external_observer as external
+import pe_arch_vm_s2_13_runtime_log_chain as runtime_chain
+import pe_arch_vm_evidence as evidence
+import pe_arch_vm_receipt_verify as receipts
+import pe_arch_vm_witness_trust_review as trust
+import pe_arch_vm_witness_review as witness
+from pe_arch_vm_checkout_pin import COMMIT_SHA
+from pe_nofollow_paths import open_absolute_directory_nofollow
+
+STATUS = "UNSIGNED_PE_S1_65_HOST_MANIFEST_PREPARED_NOT_VM_ATTESTATION"
+REJECTED = "REJECTED_PE_S1_65_UNSAFE_OBSERVER_HANDOFF"
+PINS = (
+    "expected_source_commit", "expected_challenge", "expected_request_sha256",
+    "expected_custody_sha256", "expected_receipt_sha256",
+    "expected_observer_signers_sha256",
+    "expected_reviewer_signers_sha256",
+    "expected_witness_signers_sha256",
+    "expected_observer_id", "expected_reviewer_id", "expected_witness_id",
+    # PE-S1.74: pins selected by the independent reviewer, not derived
+    # solely from the unsigned logs that will enter the manifest.
+    "expected_domain", "expected_domain_uuid",
+    "expected_host_sha256", "expected_guest_sha256",
+    "expected_session_id",
+)
+
+
+# PE-S2.59: only complete, explicitly HOLD upstream verdicts may lead to
+# an unsigned manifest. An upstream API must not add, omit, or silently
+# contradict an external attestation/release claim.
+S1_73_RESULT_FIELDS = frozenset((
+    "status", "host_record_sha256_matched",
+    "guest_record_sha256_matched", "guest_record_bound_to_host_sha256",
+    "domain_uuid_correlated", "source_commit_correlated",
+    "reviewer_challenge_correlated", "guest_os_id_self_reported",
+    "guest_kernel_release_self_reported", "semantic_records_checked",
+    "other_unverified_records", "libvirt_queried",
+    "independent_host_control_verified",
+    "guest_kernel_independently_verified",
+    "seccomp_cgroups_independently_verified",
+    "scope_cleanup_independently_verified",
+    "independent_vm_attestation", "release_authorized",
+    "unknown_windows_pe_execution_authorized",
+    "apk_or_ota_publication_authorized",
+))
+S2_13_RESULT_FIELDS = frozenset((
+    "status", "records_structurally_checked",
+    "runtime_cleanup_session_and_digest_chain_agree",
+    "kernel_or_hypervisor_authenticated",
+    "seccomp_cgroups_independently_verified",
+    "scope_cleanup_independently_verified",
+    "independent_vm_attestation", "release_authorized",
+))
+
+
+class ObserverPreparationError(RuntimeError):
+    """Reviewer-side source logs or an exclusive manifest are not safe."""
+
+
+def _directory(path: Path) -> Path:
+    dest = Path(path)
+    if (not dest.is_absolute() or dest == Path("/")
+            or any(piece in ("", ".", "..") for piece in dest.parts[1:])):
+        raise ObserverPreparationError(
+            "Canonical absolute private directory required")
+    try:
+        with ExitStack() as stack:
+            fd = open_absolute_directory_nofollow(dest, stack)
+            info = os.fstat(fd)
+            if (not stat.S_ISDIR(info.st_mode) or
+                    info.st_uid != os.geteuid() or
+                    stat.S_IMODE(info.st_mode) != 0o700):
+                raise ObserverPreparationError(
+                    "Reviewer directory must be caller-owned mode 0700")
+    except (OSError, ValueError) as exc:
+        raise ObserverPreparationError("No safe nofollow private directory") from exc
+    return dest
+
+
+def _read_file(parent: Path, filename: str) -> bytes:
+    try:
+        return receipts._read_private_receipt(parent / filename)
+    except (OSError, receipts.ReceiptReviewError) as exc:
+        raise ObserverPreparationError(
+            "Missing/unsafe reviewer-owned file: " + filename) from exc
+
+
+def _require_pin(value: object, label: str) -> None:
+    if (not isinstance(value, str)
+            or external.SHA256.fullmatch(value) is None):
+        raise ObserverPreparationError(
+            "Externally selected lowercase SHA-256 required: " + label)
+
+
+def _canonical(record: dict) -> bytes:
+    return (json.dumps(record, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+
+
+def _publish_new_file(parent: Path, filename: str, raw: bytes) -> None:
+    """Durable, owner-only, atomic no-overwrite publication under directory FD."""
+    try:
+        with ExitStack() as stack:
+            directory_fd = open_absolute_directory_nofollow(parent, stack)
+            info = os.fstat(directory_fd)
+            if (info.st_uid != os.geteuid()
+                    or stat.S_IMODE(info.st_mode) != 0o700):
+                raise ObserverPreparationError("Manifest destination is not private")
+            evidence._lock_private_receipt_directory(
+                directory_fd, exclusive=True)
+            # Prevent creating a fresh manifest alongside an old signature.
+            for name in (filename, external.SIGNATURE_FILE):
+                try:
+                    os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                raise ObserverPreparationError(
+                    "Refusing an existing manifest/signature: " + name)
+            stage = ".negresco-receipt-" + secrets.token_hex(16) + ".tmp"
+            identity = None
+            published = False
+            try:
+                fd = os.open(
+                    stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                    os.O_CLOEXEC | os.O_NOFOLLOW, 0o600,
+                    dir_fd=directory_fd)
+                try:
+                    st = os.fstat(fd)
+                    identity = (st.st_dev, st.st_ino)
+                    with os.fdopen(fd, "wb") as out:
+                        out.write(raw)
+                        out.flush()
+                        os.fsync(out.fileno())
+                except BaseException:
+                    # If fdopen did not own fd yet, close safely.
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                    raise
+                os.link(
+                    stage, filename, src_dir_fd=directory_fd,
+                    dst_dir_fd=directory_fd, follow_symlinks=False)
+                published = True
+                os.unlink(stage, dir_fd=directory_fd)
+                os.fsync(directory_fd)
+            except BaseException:
+                # Never delete a replacement inode belonging to someone
+                # else, even if a same-UID process races the writer.
+                for name in ((filename, stage) if published else (stage,)):
+                    try:
+                        st = os.stat(
+                            name, dir_fd=directory_fd,
+                            follow_symlinks=False)
+                        if (identity is not None
+                                and (st.st_dev, st.st_ino) == identity
+                                and stat.S_ISREG(st.st_mode)):
+                            os.unlink(name, dir_fd=directory_fd)
+                    except FileNotFoundError:
+                        pass
+                    except OSError:
+                        pass
+                try:
+                    os.fsync(directory_fd)
+                except OSError:
+                    pass
+                raise
+    except (OSError, ValueError, evidence.AcceptanceReceiptError) as exc:
+        raise ObserverPreparationError(
+            "Could not atomically prepare owner-only observer manifest") from exc
+
+
+def prepare_observer_manifest(
+        observer_dir: Path, custody_dir: Path, *,
+        expected_source_commit: str, expected_challenge: str,
+        expected_request_sha256: str, expected_custody_sha256: str,
+        expected_receipt_sha256: str,
+        expected_observer_signers_sha256: str,
+        expected_reviewer_signers_sha256: str,
+        expected_witness_signers_sha256: str,
+        expected_observer_id: str,
+        expected_reviewer_id: str,
+        expected_witness_id: str,
+        expected_domain: str, expected_domain_uuid: str,
+        expected_host_sha256: str, expected_guest_sha256: str,
+        expected_session_id: str) -> dict:
+    """Manifest from four logs only after mandatory two-log semantic HOLD gate."""
+    for label, pin in (
+        ("challenge", expected_challenge),
+        ("request", expected_request_sha256),
+        ("custody", expected_custody_sha256),
+        ("receipt", expected_receipt_sha256),
+        ("session ID", expected_session_id),
+        ("observer key", expected_observer_signers_sha256),
+        ("reviewer key", expected_reviewer_signers_sha256),
+        ("witness key", expected_witness_signers_sha256),
+    ):
+        _require_pin(pin, label)
+    if (expected_challenge == "0" * 64
+            or expected_session_id == "0" * 64
+            or expected_session_id in (expected_challenge,
+                                        expected_host_sha256,
+                                        expected_guest_sha256)
+            or not isinstance(expected_source_commit, str)
+            or COMMIT_SHA.fullmatch(expected_source_commit) is None
+            or expected_source_commit == "0" * 40):
+        raise ObserverPreparationError("Reviewer challenge/commit must be pinned")
+    for label, identity in (
+        ("observer", expected_observer_id),
+        ("reviewer", expected_reviewer_id),
+        ("witness", expected_witness_id),
+    ):
+        if (not isinstance(identity, str)
+                or witness.WITNESS_ID.fullmatch(identity) is None):
+            raise ObserverPreparationError("Invalid signer identity: " + label)
+    if len({expected_observer_id, expected_reviewer_id,
+            expected_witness_id}) != 3:
+        raise ObserverPreparationError("Distinct signer identities required")
+    owner = _directory(Path(observer_dir))
+    operator = _directory(Path(custody_dir))
+    if owner == operator or owner in operator.parents or operator in owner.parents:
+        raise ObserverPreparationError(
+            "External observer and operator must have separate directories")
+    # Never use the operator to establish trust in the observer's key.
+    keys = []
+    for path, filename, identity, expected in (
+        (owner, external.SIGNERS_FILE, expected_observer_id,
+         expected_observer_signers_sha256),
+        (operator, external.REVIEWER_KEY_FILE, expected_reviewer_id,
+         expected_reviewer_signers_sha256),
+        (operator, external.WITNESS_KEY_FILE, expected_witness_id,
+         expected_witness_signers_sha256),
+    ):
+        raw = _read_file(path, filename)
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise ObserverPreparationError("Externally held signer key mismatch")
+        try:
+            keys.append(trust._public_key_blob(raw, identity))
+        except trust.TrustReviewError as exc:
+            raise ObserverPreparationError("Invalid Ed25519 signer key") from exc
+    if len(set(keys)) != 3:
+        raise ObserverPreparationError(
+            "Observer's signing key must differ from custody signers")
+    # PE-S1.74: do not sign just any four plaintext files. Earlier
+    # versions would hash and package completely generic strings as
+    # "observations". This mandatory offline review checks real S1.70/71
+    # *formats* and independent SHA pins before preparing a manifest.
+    # Late import is intentional: S1.73 uses this module's safe file reader.
+    import pe_arch_vm_s1_73_two_record_review as semantic
+    try:
+        checked = semantic.review_two_records(
+            owner, domain=expected_domain,
+            expected_domain_uuid=expected_domain_uuid,
+            expected_source_commit=expected_source_commit,
+            reviewer_challenge=expected_challenge,
+            expected_host_sha256=expected_host_sha256,
+            expected_guest_sha256=expected_guest_sha256)
+    except semantic.TwoRecordReviewError as exc:
+        raise ObserverPreparationError(
+            "Cannot prepare manifest: two externally pinned host logs "
+            "are not semantically coherent") from exc
+    if (type(checked) is not dict
+            or set(checked) != S1_73_RESULT_FIELDS
+            or checked.get("status") != semantic.STATUS
+            or type(checked.get("semantic_records_checked")) is not int
+            or checked["semantic_records_checked"] != 2
+            or checked.get("guest_os_id_self_reported") != "arch"
+            or type(checked.get("guest_kernel_release_self_reported")) is not str
+            or semantic.guest.RELEASE.fullmatch(
+                checked["guest_kernel_release_self_reported"]) is None
+            or checked.get("other_unverified_records") != list(semantic.UNVERIFIED)
+            or any(checked.get(key) is not True for key in (
+                "host_record_sha256_matched",
+                "guest_record_sha256_matched",
+                "guest_record_bound_to_host_sha256",
+                "domain_uuid_correlated",
+                "source_commit_correlated",
+                "reviewer_challenge_correlated"))
+            or any(checked.get(key) is not False for key in (
+                "libvirt_queried", "independent_host_control_verified",
+                "guest_kernel_independently_verified",
+                "seccomp_cgroups_independently_verified",
+                "scope_cleanup_independently_verified",
+                "independent_vm_attestation", "release_authorized",
+                "unknown_windows_pe_execution_authorized",
+                "apk_or_ota_publication_authorized"))):
+        raise ObserverPreparationError(
+            "PE-S1.73 exact upstream HOLD verdict invalid")
+
+    # PE-S2.13: reject generic free-text for the two remaining logs.
+    # This only compares self-reported text, not independent host/kernel proof.
+    try:
+        runtime_raw = _read_file(
+            owner, external.OBS_FILES["host_seccomp_cgroups"])
+        cleanup_raw = _read_file(
+            owner, external.OBS_FILES["host_scope_cleanup"])
+        chained = runtime_chain.review_runtime_cleanup_text(
+            runtime_raw, cleanup_raw,
+            expected_source_commit=expected_source_commit,
+            expected_challenge=expected_challenge,
+            expected_domain=expected_domain,
+            expected_domain_uuid=expected_domain_uuid,
+            expected_host_sha256=expected_host_sha256,
+            expected_guest_sha256=expected_guest_sha256,
+            expected_session_id=expected_session_id)
+    except runtime_chain.RuntimeTextReviewError as exc:
+        raise ObserverPreparationError(
+            "S2.13 runtime/cleanup records are not one coherent session") from exc
+    if (type(chained) is not dict
+            or set(chained) != S2_13_RESULT_FIELDS
+            or chained.get("status") !=
+               "LOCAL_S2_13_TWO_TEXT_RECORDS_STRUCTURALLY_CORRELATED_HOLD"
+            or type(chained.get("records_structurally_checked")) is not int
+            or chained["records_structurally_checked"] != 2
+            or chained.get("runtime_cleanup_session_and_digest_chain_agree")
+               is not True
+            or any(chained.get(key) is not False for key in (
+                "kernel_or_hypervisor_authenticated",
+                "seccomp_cgroups_independently_verified",
+                "scope_cleanup_independently_verified",
+                "independent_vm_attestation", "release_authorized"))):
+        raise ObserverPreparationError(
+            "S2.13 exact upstream HOLD verdict invalid")
+
+    readings = {}
+    for label, filename in external.OBS_FILES.items():
+        data = _read_file(owner, filename)
+        if not 0 < len(data) <= external.MAX_LOG_BYTES or b"\0" in data:
+            raise ObserverPreparationError(
+                "Empty, oversized or binary observation: " + label)
+        readings[label] = {
+            "filename": filename,
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+    if (readings["host_seccomp_cgroups"]["sha256"] !=
+            hashlib.sha256(runtime_raw).hexdigest()
+            or readings["host_scope_cleanup"]["sha256"] !=
+               hashlib.sha256(cleanup_raw).hexdigest()):
+        raise ObserverPreparationError(
+            "S2.13 runtime/cleanup text changed before manifest assembly")
+    # Ensure the very bytes just checked remain the ones entering the
+    # unsigned manifest. PE-S1.63 separately rereads all four later.
+    if (readings["host_vm_launch"]["sha256"] != expected_host_sha256
+            or readings["host_guest_kernel"]["sha256"] != expected_guest_sha256):
+        raise ObserverPreparationError(
+            "PE-S1.74 host records changed after semantic review")
+    manifest = {
+        "schema": external.SCHEMA,
+        "security_classification": external.CLASSIFICATION,
+        "observer_id": expected_observer_id,
+        "reviewer_id": expected_reviewer_id,
+        "witness_id": expected_witness_id,
+        "source_commit": expected_source_commit,
+        "reviewer_challenge": expected_challenge,
+        "request_sha256": expected_request_sha256,
+        "custody_index_sha256": expected_custody_sha256,
+        "receipt_sha256": expected_receipt_sha256,
+        "observer_local_time_utc_not_attested":
+            datetime.now(timezone.utc).isoformat(),
+        "independent_vm_attestation": False,
+        "release_authorized": False,
+        "observations": readings,
+    }
+    output = _canonical(manifest)
+    if not 0 < len(output) <= external.MAX_MANIFEST_BYTES:
+        raise ObserverPreparationError("Manifest larger than S1.63 limit")
+    # Detect persistent input modifications before publication; S1.63
+    # separately verifies files again at signature review time.
+    for label, entry in readings.items():
+        if hashlib.sha256(_read_file(owner, entry["filename"])).hexdigest() != (
+                entry["sha256"]):
+            raise ObserverPreparationError(
+                "Observation changed before manifest publication: " + label)
+    _publish_new_file(owner, external.MANIFEST_FILE, output)
+    return {
+        "status": STATUS,
+        "manifest_sha256": hashlib.sha256(output).hexdigest(),
+        "host_observation_hashes": {
+            label: reading["sha256"] for label, reading in readings.items()
+        },
+        "observation_count": len(readings),
+        "two_host_records_semantically_checked": True,
+        "independently_pinned_host_record_hashes_matched": True,
+        "observer_private_key_accessed": False,
+        "signature_created": False,
+        "external_host_provenance_authenticated": False,
+        "native_arch_kernel_independently_verified": False,
+        "independent_vm_attestation": False,
+        "unknown_windows_pe_execution_authorized": False,
+        "apk_or_ota_publication_authorized": False,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="Prepare unsigned external observer manifest, never VM proof")
+    ap.add_argument("--observer-dir", type=Path, required=True)
+    ap.add_argument("--custody-dir", type=Path, required=True)
+    for key in PINS:
+        ap.add_argument("--" + key.replace("_", "-"), required=True)
+    args = ap.parse_args(argv)
+    try:
+        report = prepare_observer_manifest(
+            args.observer_dir, args.custody_dir,
+            **{key: getattr(args, key) for key in PINS})
+        print(json.dumps(report, sort_keys=True))
+        return 0  # File preparation succeeded; release remains explicitly FALSE.
+    except ObserverPreparationError as exc:
+        print(json.dumps({
+            "status": REJECTED, "reason": str(exc),
+            "signature_created": False,
+            "independent_vm_attestation": False,
+            "unknown_windows_pe_execution_authorized": False,
+            "apk_or_ota_publication_authorized": False,
+        }, sort_keys=True), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

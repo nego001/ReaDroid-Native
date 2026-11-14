@@ -13,7 +13,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from pe_ghidra_sandbox import build_command, SandboxUnavailable
+from pe_ghidra_sandbox import (build_command, SandboxUnavailable,
+                               TMPFS_TMP_MAX_BYTES, TMPFS_HOME_MAX_BYTES)
 
 
 class SandboxProfileTests(unittest.TestCase):
@@ -52,6 +53,7 @@ class SandboxProfileTests(unittest.TestCase):
         self.assertIn("--ro-bind", command)
         self.assertIn("--bind", command)
         self.assertIn("--tmpfs", command)
+        self.assertEqual(command[command.index("GHIDRA_HEADLESS_MAXMEM") + 1], "2G")
         self.assertEqual(command[command.index("--bind") + 2], "/work")
         self.assertIn("/usr", command)
         self.assertIn("/opt/negresco-ghidra", command)
@@ -60,11 +62,67 @@ class SandboxProfileTests(unittest.TestCase):
         self.assertNotIn(str(self.working / "input.exe"), command)
         self.assertNotIn("-noanalysis", command)
         self.assertIn("/work/ghidra-functions.json", command)
+        self.assertEqual(command[command.index("-log")+1], "/tmp/ghidra.log")
+        self.assertNotIn("/work/ghidra.log", command)
         self.assertIn("-analysisTimeoutPerFile", command)
         self.assertEqual(command[command.index("-analysisTimeoutPerFile") + 1], "390")
         self.assertNotIn("--share-net", command)
         self.assertNotIn("/home", [command[i+1] for i,v in enumerate(command[:-1])
                                     if v in ("--bind", "--ro-bind")])
+
+    @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
+    def test_every_private_tmpfs_has_an_explicit_kernel_size_limit(self):
+        args = build_command(
+            self.ghidra, self.working, 420, bwrap_path=str(self.fake))
+        options = args[:args.index("--")]
+        declared = {"/tmp": TMPFS_TMP_MAX_BYTES,
+                    "/home": TMPFS_HOME_MAX_BYTES}
+        self.assertEqual(
+            [options[i+1] for i, word in enumerate(options[:-1])
+             if word == "--tmpfs"], ["/tmp", "/home"])
+        for dest, max_bytes in declared.items():
+            position = options.index(dest)
+            # Bubblewrap --size applies only to the next --tmpfs;
+            # the kernel creates a *different* size-limited tmpfs for each.
+            self.assertEqual(options[position-1], "--tmpfs")
+            self.assertEqual(options[position-3], "--size")
+            self.assertEqual(options[position-2], str(max_bytes))
+            self.assertGreater(max_bytes, 0)
+        self.assertLessEqual(sum(declared.values()), 512 * 1024 * 1024)
+        self.assertEqual(options.count("--size"), 2)
+        # This doesn't cap the separately --bind-mounted host /work tree.
+        self.assertIn("--bind", options)
+        self.assertEqual(options[options.index("--bind")+2], "/work")
+
+    @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
+    def test_explicit_external_jdk_is_pinned_read_only(self):
+        jdk = Path(self.temp.name) / "jdk25"
+        (jdk / "bin").mkdir(parents=True)
+        java = jdk / "bin" / "java"
+        java.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        java.chmod(java.stat().st_mode | stat.S_IXUSR)
+        with mock.patch.dict(os.environ, {"JAVA_HOME": str(jdk)}):
+            args = build_command(
+                self.ghidra, self.working, 420, bwrap_path=str(self.fake))
+        self.assertIn("--ro-bind", args)
+        self.assertIn(str(jdk), args)
+        idx = args.index(str(jdk))
+        self.assertEqual(args[idx + 1], "/opt/negresco-jdk")
+        self.assertEqual(args[idx - 1], "--ro-bind")
+        self.assertIn("JAVA_HOME", args)
+        self.assertEqual(args[args.index("JAVA_HOME") + 1], "/opt/negresco-jdk")
+        self.assertEqual(
+            args[args.index("PATH") + 1].split(":")[0],
+            "/opt/negresco-jdk/bin")
+        self.assertNotIn(str(Path.home()), args)
+
+    @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
+    def test_missing_external_jdk_is_not_silently_used(self):
+        missing = Path(self.temp.name) / "does-not-exist"
+        with mock.patch.dict(os.environ, {"JAVA_HOME": str(missing)}):
+            with self.assertRaises((OSError, SandboxUnavailable)):
+                build_command(self.ghidra, self.working, 420,
+                              bwrap_path=str(self.fake))
 
     @unittest.skipIf(os.geteuid() == 0, "profile intentionally refuses root")
     def test_missing_export_script_is_rejected(self):
