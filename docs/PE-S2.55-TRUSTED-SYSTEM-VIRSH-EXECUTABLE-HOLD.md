@@ -14,6 +14,10 @@ A análise não alega comprometimento real do host. É correção preventiva de 
 - Dependências de autenticação que exijam configuração específica do `HOME` devem falhar fechado; não elevar privilégios, mudar URI `qemu:///system` ou relaxar a política sem revisão.
 - Esses metadados do binário são **pré-condições locais**. Não provam controle independente da máquina, origem do hipervisor nem uma VM Arch autêntica. Uma substituição por root ou mudança entre a verificação e a execução requer auditoria externa.
 
+## Correção de regressões na CI
+
+A primeira execução encontrou um teste de CLI S1.70 que ainda simulava somente o caminho do `virsh`, sem simular o novo verificador de propriedade root e permissões. O simulador foi atualizado. O mesmo ajuste preventivo foi aplicado ao teste de CLI S1.71. Essa correção modifica **apenas os mocks dos testes**: não diminui os critérios de confiança da captura real.
+
 ## Testes
 
 Quatro métodos novos cobrem caminhos forjados, o caminho canônico com metadados reprovados, recusa antes de quaisquer consultas S1.70/S1.71 e isolamento de `HOME` para host e guestinfo, preservando os cinco comandos de leitura quando o binário é confiável por contrato. Os testes usam simuladores e não ligam uma VM.

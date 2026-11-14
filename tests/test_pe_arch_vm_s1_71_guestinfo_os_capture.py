@@ -594,6 +594,9 @@ class GuestKernelCaptureContracts(unittest.TestCase):
         with (redirect_stdout(stdout), redirect_stderr(stderr),
               mock.patch.object(guest.shutil, "which",
                                 return_value="/usr/bin/virsh"),
+              mock.patch.object(
+                  guest.host, "_trusted_discovered_systemd_binary",
+                  return_value=True),
               mock.patch.object(guest.bounded, "run_bounded_native",
                                 side_effect=self.fake)):
             code = guest.main(args + ["--capture-from-independent-host"])

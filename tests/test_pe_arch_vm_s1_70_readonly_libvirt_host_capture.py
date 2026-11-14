@@ -580,6 +580,8 @@ class LibvirtHostCaptureContracts(unittest.TestCase):
         stdout, stderr = StringIO(), StringIO()
         with (redirect_stdout(stdout), redirect_stderr(stderr),
               mock.patch.object(capture.shutil, "which",return_value="/usr/bin/virsh"),
+              mock.patch.object(capture, "_trusted_discovered_systemd_binary",
+                                return_value=True),
               mock.patch.object(capture.bounded,"run_bounded_native",
                                 side_effect=self.fake)):
             result = capture.main(args+["--capture-from-independent-host"])
