@@ -282,6 +282,68 @@ class HostDomstatsContracts(unittest.TestCase):
         self.assertFalse(reviewed["actual_hypervisor_independently_authenticated"])
         self.assertFalse(reviewed["independent_vm_attestation"])
 
+    def test_s2_61_resigned_repinned_sidecar_controls_rejected_offline(self):
+        output = self.fake_capture()
+        target = self.owner / telemetry.TARGET
+        canonical = target.read_bytes()
+        for separator in (b"\x0b", b"\x0c", b"\x1c", b"\x1d", b"\x1e"):
+            with self.subTest(separator=separator.hex()):
+                # Substitute an INTERNAL LF; keep the final LF and
+                # independently recompute the SHA as an adversary would.
+                forged = canonical.replace(b"\n", separator, 1)
+                self.assertTrue(forged.endswith(b"\n"))
+                target.write_bytes(forged)
+                with self.assertRaisesRegex(
+                        telemetry.HostDomstatsError,
+                        "Noncanonical LF-only host statistics"):
+                    telemetry.review_host_domstats(
+                        self.owner,
+                        expected_record_sha256=hashlib.sha256(forged).hexdigest(),
+                        **self.args)
+        target.write_bytes(canonical)
+        valid = telemetry.review_host_domstats(
+            self.owner, expected_record_sha256=output["sidecar_sha256"],
+            **self.args)
+        self.assertEqual(valid["status"], telemetry.REVIEWED)
+        self.assertFalse(valid["independent_vm_attestation"])
+
+    def test_s2_61_raw_domstats_non_lf_controls_rejected_in_both_paths(self):
+        canonical = STATS.decode("ascii").removesuffix("\n")
+        for separator in ("\x0b", "\x0c", "\x1c", "\x1d", "\x1e"):
+            with self.subTest(separator=hex(ord(separator))):
+                forged = canonical.replace("\n", separator, 1)
+                with self.assertRaisesRegex(
+                        telemetry.HostDomstatsError,
+                        "Noncanonical LF-only libvirt domstats"):
+                    telemetry._stats(forged, DOMAIN)
+
+    def test_s2_61_repinned_utc_aliases_rejected_in_sidecar(self):
+        self.fake_capture()
+        target = self.owner / telemetry.TARGET
+        canonical = target.read_bytes()
+        row = canonical.split(b"\n")[9]
+        self.assertTrue(row.startswith(b"observed_utc_untrusted="))
+        utc = row.split(b"=", 1)[1].decode("ascii")
+        for variant in (
+                utc.replace("T", " ", 1),
+                utc.replace("+00:00", "Z"),
+                utc.replace("+00:00", "-03:00"),
+                "2026-W46-6T01:44:00+00:00",
+                "2026-11-14T01:44:00.123+00:00",
+        ):
+            with self.subTest(variant=variant):
+                forged = canonical.replace(
+                    row, b"observed_utc_untrusted=" + variant.encode("ascii"),
+                    1)
+                target.write_bytes(forged)
+                with self.assertRaisesRegex(
+                        telemetry.HostDomstatsError, "producer-canonical"):
+                    telemetry.review_host_domstats(
+                        self.owner,
+                        expected_record_sha256=hashlib.sha256(forged).hexdigest(),
+                        **self.args)
+        target.write_bytes(canonical)
+
     def test_host_counter_record_cannot_be_rewritten(self):
         self.fake_capture()
         with (mock.patch.object(telemetry.shutil, "which") as find,

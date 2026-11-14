@@ -87,7 +87,13 @@ def _stats(text: str, domain: str) -> dict:
     if (type(text) is not str or not 0 < len(text.encode("utf-8")) <= MAX_STATS
             or not text.startswith("Domain: ")):
         raise HostDomstatsError("Missing bounded libvirt domstats output")
-    lines = text.splitlines()
+    # PE-S2.61: splitlines() treats VT/FF/FS/GS/RS as newline and
+    # erases evidence that is not valid raw virsh stdout. Use only literal
+    # LF and exactly the printable ASCII produced by host._checked_text().
+    if (text.endswith("\n") or "\n\n" in text
+            or any(c != "\n" and not (" " <= c <= "~") for c in text)):
+        raise HostDomstatsError("Noncanonical LF-only libvirt domstats")
+    lines = text.split("\n")
     if not 3 <= len(lines) <= MAX_FIELDS + 1:
         raise HostDomstatsError("No bounded domain statistics available")
     if lines[0] not in ("Domain: '" + domain + "'", "Domain: " + domain):
@@ -292,10 +298,16 @@ def review_host_domstats(observer_dir: Path, *, expected_record_sha256: str,
         raise HostDomstatsError("Missing private host statistics sidecar") from exc
     if hashlib.sha256(raw).hexdigest() != expected_record_sha256:
         raise HostDomstatsError("Host statistics sidecar disagrees with independent SHA pin")
-    try:
-        lines = raw.decode("utf-8").splitlines()
-    except UnicodeError as exc:
-        raise HostDomstatsError("Host statistics sidecar not UTF-8") from exc
+    # S2.15's producer writes printable ASCII and EXACTLY one final LF.
+    # A re-pinned offline sidecar must not use Python's permissive
+    # splitlines(), or non-LF control separators vanish before review.
+    if (type(raw) is not bytes or not 0 < len(raw) <= MAX_RECORD
+            or not raw.endswith(b"\n")
+            or any(ch != 10 and not 32 <= ch <= 126 for ch in raw)):
+        raise HostDomstatsError("Noncanonical LF-only host statistics sidecar")
+    lines = raw[:-1].decode("ascii").split("\n")
+    if any(not line for line in lines):
+        raise HostDomstatsError("Noncanonical empty host sidecar line")
     expected_prefix = [
         HEADER, "classification=" + CLASS,
         "source_commit=" + expected_source_commit,
@@ -306,18 +318,16 @@ def review_host_domstats(observer_dir: Path, *, expected_record_sha256: str,
         "prior_host_record_sha256=" + expected_host_sha256,
         "prior_guest_record_sha256=" + expected_guest_sha256,
     ]
-    from datetime import datetime
     if not 23 <= len(lines) <= MAX_FIELDS + 24 or lines[:9] != expected_prefix:
         raise HostDomstatsError("Unexpected host statistics record header")
     clock_line = lines[9]
     if not clock_line.startswith("observed_utc_untrusted="):
         raise HostDomstatsError("Missing explicitly untrusted host timestamp")
     try:
-        stamp = datetime.fromisoformat(clock_line.split("=", 1)[1])
-    except ValueError as exc:
-        raise HostDomstatsError("Malformed untrusted host timestamp") from exc
-    if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
-        raise HostDomstatsError("Host timestamp must be untrusted UTC")
+        host._validate_untrusted_utc_isoformat(clock_line.split("=", 1)[1])
+    except host.HostCaptureError as exc:
+        raise HostDomstatsError(
+            "Host timestamp is not producer-canonical untrusted UTC") from exc
     if lines[10:15] != [
             "uri=qemu:///system", "connection=readonly",
             "initial_domuuid=" + expected_domain_uuid,

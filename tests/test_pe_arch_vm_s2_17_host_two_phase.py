@@ -132,6 +132,49 @@ class TwoPhaseHostCaptureContracts(unittest.TestCase):
         self.assertFalse(reviewed["independent_vm_attestation"])
         self.assertFalse(reviewed["release_authorized"])
 
+    def test_s2_61_two_phase_rehashed_utc_aliases_rejected(self):
+        before = self.capture("before")
+        target = self.owner / stage.BEFORE
+        record = json.loads(target.read_text("ascii"))
+        original = record["host_time_utc_untrusted"]
+        for alias in (
+                original.replace("T", " ", 1),
+                original.replace("+00:00", "Z"),
+                "2026-W46-6T01:44:00+00:00",
+                "2026-11-14T01:44:00.123+00:00",
+                "2026-11-14T01:44:00-03:00",
+        ):
+            with self.subTest(alias=alias):
+                changed = dict(record, host_time_utc_untrusted=alias)
+                raw = stage._canonical(changed)
+                target.write_bytes(raw)
+                with self.assertRaisesRegex(
+                        stage.HostTwoPhaseError, "producer-canonical"):
+                    stage._decode(
+                        raw, phase="before", expected_before_sha256=None,
+                        **self.common)
+        target.write_bytes(stage._canonical(record))
+        self.assertEqual(
+            hashlib.sha256(target.read_bytes()).hexdigest(),
+            before["sample_sha256"])
+
+    def test_s2_61_two_phase_json_stats_control_separator_rejected(self):
+        self.capture("before")
+        target = self.owner / stage.BEFORE
+        record = json.loads(target.read_text("ascii"))
+        for separator in ("\x0b", "\x0c", "\x1c", "\x1d", "\x1e"):
+            with self.subTest(separator=hex(ord(separator))):
+                forged_stats = record["domstats_raw"].replace(
+                    "\n", separator, 1)
+                raw = stage._canonical(
+                    {**record, "domstats_raw": forged_stats})
+                with self.assertRaisesRegex(
+                        stage.HostTwoPhaseError,
+                        "Host sample raw domstats malformed"):
+                    stage._decode(
+                        raw, phase="before", expected_before_sha256=None,
+                        **self.common)
+
     def test_after_requires_external_before_hash_before_host_query(self):
         with (mock.patch.object(stage.shutil, "which") as which,
               self.assertRaises(stage.HostTwoPhaseError)):

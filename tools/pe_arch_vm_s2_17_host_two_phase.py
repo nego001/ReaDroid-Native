@@ -125,12 +125,15 @@ def _decode(raw: bytes, *, phase: str, expected_before_sha256: str | None,
     if any(type(record[key]) is not type(val) or record[key] != val
            for key, val in required.items()):
         raise HostTwoPhaseError("Host sample contradicts external pins/state")
+    # S2.17 writes datetime.now(timezone.utc).isoformat(); unlike
+    # fromisoformat() alone, the producer's shared rule refuses Z,
+    # space/ISO-week aliases and noncanonical fraction precision.
     try:
-        stamp = datetime.fromisoformat(record["host_time_utc_untrusted"])
-    except (ValueError, TypeError, AttributeError) as exc:
-        raise HostTwoPhaseError("Invalid untrusted host timestamp") from exc
-    if stamp.tzinfo is None or stamp.utcoffset() != timezone.utc.utcoffset(None):
-        raise HostTwoPhaseError("Host timestamp is not UTC")
+        host._validate_untrusted_utc_isoformat(
+            record["host_time_utc_untrusted"])
+    except host.HostCaptureError as exc:
+        raise HostTwoPhaseError(
+            "Host timestamp is not producer-canonical untrusted UTC") from exc
     if type(record["domstats_raw"]) is not str:
         raise HostTwoPhaseError("Host domstats not text")
     try:
