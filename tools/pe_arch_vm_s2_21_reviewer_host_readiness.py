@@ -131,17 +131,15 @@ def _host_prerequisites(owner: Path) -> str:
     if probe.returncode != 1:
         raise ReviewerHostReadinessError(
             "Container detected or container check inconclusive")
-    # Fixed executable path resolution and exact readonly libvirt URI
-    # and bounded subprocess are enforced by the existing S1.70 helper.
+    # PE-S2.56: S2.21 must return a candidate ONLY for the exact virsh
+    # executable that S1.70 and S1.71 can subsequently use. gate's more
+    # general trusted-tool resolver permits root-owned same-directory aliases
+    # and other installed tool locations that S1.70 intentionally refuses.
     try:
-        virsh = gate._trusted_vm_tool("virsh")
-    except gate.ArchVmUnavailable as exc:
+        return host._trusted_virsh_executable()
+    except host.HostCaptureError as exc:
         raise ReviewerHostReadinessError(
-            "Trusted local virsh binary unavailable") from exc
-    if not (virsh.startswith("/usr/bin/") or virsh.startswith("/bin/")):
-        raise ReviewerHostReadinessError(
-            "virsh must be a trusted system binary")
-    return virsh
+            "No producer-compatible trusted system virsh") from exc
 
 
 def _info_matches(text: str, *, domain: str, uuid: str) -> bool:
@@ -149,8 +147,15 @@ def _info_matches(text: str, *, domain: str, uuid: str) -> bool:
     # advertising a candidate host. No whitespace-stripping of whole lines:
     # that hid disguised field names and duplicate aliases in preflight.
     try:
+        # The S1.70 producer already rejects leading/trailing stdout
+        # padding and noncanonical LF framing before recording a snapshot.
+        # Check that same rule, not merely Label: value semantics.
+        if (type(text) is not str
+                or host._checked_text(text.encode("utf-8"), "dominfo")
+                   != text):
+            return False
         host._validate_dominfo_shape(text)
-    except host.HostCaptureError:
+    except (host.HostCaptureError, UnicodeError):
         return False
     rows = text.split("\n")
     expected = (("Name:", domain), ("UUID:", uuid), ("State:", "running"))

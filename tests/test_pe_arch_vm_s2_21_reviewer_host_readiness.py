@@ -436,13 +436,74 @@ class ReviewerHostReadinessContracts(unittest.TestCase):
               mock.patch.object(
                   readiness.gate, "_trusted_vm_tool",
                   side_effect=lambda name: "/usr/bin/" + name) as trusted,
+              mock.patch.object(
+                  readiness.host, "_trusted_virsh_executable",
+                  return_value="/usr/bin/virsh") as producer_virsh,
               mock.patch.object(readiness.subprocess, "run",
                                 return_value=subprocess.CompletedProcess([], 1))
               as detect):
             tool = readiness._host_prerequisites(self.owner)
         self.assertEqual(tool, "/usr/bin/virsh")
-        self.assertEqual(trusted.call_count, 2)
+        trusted.assert_called_once_with("systemd-detect-virt")
+        producer_virsh.assert_called_once_with()
         detect.assert_called_once()
+        self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_56_alias_or_untrusted_virsh_never_yields_candidate(self):
+        # After a valid KVM and container check, a user-rooted alias
+        # accepted by a generic tool gate must not be accepted here.
+        for error in (
+                "Trusted root-owned system virsh unavailable",
+                "Synthetic same-directory root-owned symlink alias refused",
+                "Malformed system executable path"):
+            with self.subTest(error=error):
+                with (mock.patch.dict(os.environ, {}, clear=True),
+                      mock.patch.object(readiness.os, "geteuid",
+                                        return_value=1000),
+                      mock.patch.object(readiness, "_has_known_container_marker",
+                                        return_value=False),
+                      mock.patch.object(readiness, "_require_kvm_device"),
+                      mock.patch.object(
+                          readiness.gate, "_trusted_vm_tool",
+                          return_value="/usr/bin/systemd-detect-virt") as detect,
+                      mock.patch.object(
+                          readiness.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 1)),
+                      mock.patch.object(
+                          readiness.host, "_trusted_virsh_executable",
+                          side_effect=readiness.host.HostCaptureError(error))
+                          as producer_virsh,
+                      mock.patch.object(readiness.host, "_virsh_read") as query,
+                      self.assertRaisesRegex(
+                          readiness.ReviewerHostReadinessError,
+                          "producer-compatible")):
+                    self.evaluate(probe_reviewer_host=True)
+                detect.assert_called_once_with("systemd-detect-virt")
+                producer_virsh.assert_called_once_with()
+                query.assert_not_called()
+                self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_56_preflight_refuses_raw_dominfo_producer_would_reject(self):
+        for info in (
+                " " + INFO,
+                INFO + " ",
+                INFO + "\n",
+                INFO + "\n\n",
+                INFO.replace("Id: 7", "Id: 7\u2028shadow"),
+        ):
+            with self.subTest(info=repr(info)):
+                with self.assertRaises(readiness.ReviewerHostReadinessError):
+                    self.probe([UUID, "running", info, "running", UUID])
+                self.assertEqual(list(self.owner.iterdir()), [])
+
+    def test_s2_56_preflight_reuses_raw_stdout_sanitizer(self):
+        with mock.patch.object(
+                readiness.host, "_checked_text",
+                side_effect=readiness.host.HostCaptureError(
+                    "synthetic framing refusal")) as sanitizer:
+            with self.assertRaises(readiness.ReviewerHostReadinessError):
+                self.probe()
+        sanitizer.assert_called_once_with(INFO.encode("utf-8"), "dominfo")
         self.assertEqual(list(self.owner.iterdir()), [])
 
     def test_run_as_root_never_queries(self):
