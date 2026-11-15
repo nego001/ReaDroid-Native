@@ -106,6 +106,8 @@ public final class StudioDashboard {
         tile.setBackground(NegrescoTheme.studioCard(a, false));
         ImageView symbol = new ImageView(a);
         symbol.setImageResource(glyph);
+        // Retain the real drawable ID for UI-level visual regression tests.
+        symbol.setTag(glyph);
         symbol.setScaleType(ImageView.ScaleType.FIT_CENTER);
         tile.addView(symbol, new LinearLayout.LayoutParams(dp(a, 20), dp(a, 20)));
         TextView label = label(a, title, 10, NegrescoTheme.TEXT, false);
