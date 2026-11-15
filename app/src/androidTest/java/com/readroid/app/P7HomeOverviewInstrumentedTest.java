@@ -122,6 +122,43 @@ public final class P7HomeOverviewInstrumentedTest {
         }
     }
 
+    @Test public void buildIconsMatchApprovedCrossedToolsWithoutChangingActions() {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View action = byDescription(root, "Build APK");
+                assertNotNull("Actual Home Build APK action must exist", action);
+                assertTrue(action instanceof LinearLayout);
+                LinearLayout tile = (LinearLayout) action;
+                assertTrue("Build APK action remains clickable",
+                    tile.isClickable() && tile.hasOnClickListeners());
+                assertTrue("Quick-action glyph remains a native ImageView",
+                    tile.getChildAt(0) instanceof ImageView);
+                ImageView quickGlyph = (ImageView) tile.getChildAt(0);
+                assertEquals("Build APK uses crossed tools, not one wrench",
+                    R.drawable.ic_p7_build_tools, quickGlyph.getTag());
+                assertNotNull("Build action icon asset must decode",
+                    quickGlyph.getDrawable());
+                assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                    quickGlyph.getImportantForAccessibility());
+
+                P7HomeOverview panel = new P7HomeOverview(activity, v -> {});
+                LinearLayout bottomStats = (LinearLayout) panel.getChildAt(1);
+                LinearLayout builds = (LinearLayout) bottomStats.getChildAt(0);
+                assertTrue("Build metric uses a native drawable",
+                    builds.getChildAt(0) instanceof ImageView);
+                ImageView metricGlyph = (ImageView) builds.getChildAt(0);
+                assertEquals("Build metric matches Build action asset",
+                    R.drawable.ic_p7_build_tools, metricGlyph.getTag());
+                assertNotNull(metricGlyph.getDrawable());
+                assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                    metricGlyph.getImportantForAccessibility());
+                assertStatLabel(builds, "APKs Builds: não disponível");
+            });
+        }
+    }
+
     @Test public void statisticsSpeakVerifiedValuesAndExplicitlyUnknownMetrics()
             throws Exception {
         try (ActivityScenario<MainActivity> scenario =
