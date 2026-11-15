@@ -50,6 +50,48 @@ def launch():
     smoke.ensure_foreground()
 
 
+def compact_home_accessible(nodes):
+    """Only a real active Home with five accessible app tabs is ready."""
+    if not any(n.attrib.get("package") == smoke.PKG
+               and n.attrib.get("text") == "Olá, Desenvolvedor" for n in nodes):
+        return False
+    for name in ("Início", "Arquivos", "Segurança", "Build", "Design"):
+        matching = [n for n in nodes
+                    if n.attrib.get("package") == smoke.PKG
+                    and n.attrib.get("content-desc", "").startswith("Seção " + name)]
+        if len(matching) != 1:
+            return False
+        if name == "Início" and "selecionada" not in matching[0].attrib.get(
+                "content-desc", ""):
+            return False
+    return True
+
+
+def await_compact_accessibility(max_checks=4, interval_seconds=2):
+    """Bounded post-wm/font synchronization, not a retry of failed gates.
+
+    UiAutomator can briefly return incomplete XML after Android 15 reboot.
+    Do not dismiss unidentified overlays or skip later navigation assertions.
+    """
+    if not 1 <= max_checks <= 5 or not 0 <= interval_seconds <= 4:
+        raise ValueError("Compact accessibility wait must be strictly bounded")
+    for attempt in range(max_checks):
+        smoke.ensure_foreground()
+        nodes = smoke.visible_app_hierarchy()
+        if compact_home_accessible(nodes):
+            print(f"P7_COMPACT_ACCESSIBILITY_READY sample={attempt + 1}/"
+                  f"{max_checks} gate=READY", flush=True)
+            return
+        app_nodes = sum(n.attrib.get("package") == smoke.PKG for n in nodes)
+        print(f"P7_COMPACT_ACCESSIBILITY_NOT_READY sample={attempt + 1}/"
+              f"{max_checks} app_nodes={app_nodes}", flush=True)
+        if attempt + 1 < max_checks:
+            time.sleep(interval_seconds)
+    raise AssertionError(
+        f"Compact Home accessibility never stabilized in {max_checks} "
+        "snapshots; preserving failure and diagnostics")
+
+
 def require_accessible_target(nodes, description, density, viewport):
     """Fail if a visible, clickable UI node misses the 48dp touch contract."""
     controls = [node for node in nodes
@@ -225,6 +267,11 @@ def capture_compact_failure_diagnostics(api, failure):
         # hierarchy() already saved this dump before a failed find_tab().
         # Do not re-query/dismiss a system overlay merely for diagnostics.
         root = ET.parse("v3-studio-android-hierarchy.xml").getroot()
+        from collections import Counter
+        packages = Counter(
+            n.attrib.get("package", "<missing>") for n in root.iter("node"))
+        report.append("[hierarchy_package_counts] " + repr(
+            sorted(packages.items())))
         interesting = []
         for node in root.iter("node"):
             description = node.attrib.get("content-desc", "")
@@ -274,6 +321,7 @@ def check():
         smoke.adb("shell", "wm", "size", f"{width_px}x{height_px}")
         smoke.adb("shell", "settings", "put", "system", "font_scale", "1.3")
         launch()
+        await_compact_accessibility()
         for section, title in (
                 ("Início", "Olá, Desenvolvedor"),
                 ("Arquivos", "Explorador de Arquivos"),

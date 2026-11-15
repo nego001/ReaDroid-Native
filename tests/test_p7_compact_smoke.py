@@ -8,10 +8,69 @@ import xml.etree.ElementTree as ET
 from tools.p7_compact_smoke import (
     parse_wm, viewport_pixels, require_accessible_target,
     require_stacked_explorer_summary, capture_compact_failure_diagnostics,
-    require_inline_design_header)
+    require_inline_design_header, compact_home_accessible,
+    await_compact_accessibility)
 
 
 class P7CompactViewportTests(unittest.TestCase):
+    @staticmethod
+    def _compact_nodes(selected=True):
+        def node(description="", label="", package="com.readroid.app"):
+            return ET.Element("node", {
+                "content-desc": description, "text": label,
+                "package": package})
+        tabs = ("Início", "Arquivos", "Segurança", "Build", "Design")
+        result = [node(label="Olá, Desenvolvedor")]
+        result.extend(node(description="Seção " + name
+                           + (", selecionada" if name == "Início" and selected
+                              else ", selecionar"))
+                      for name in tabs)
+        return result
+
+    def test_compact_accessibility_requires_real_home_and_five_tabs(self):
+        ready = self._compact_nodes()
+        self.assertTrue(compact_home_accessible(ready))
+        self.assertFalse(compact_home_accessible([]))
+        self.assertFalse(compact_home_accessible(ready[:-1]))
+        self.assertFalse(compact_home_accessible(ready + [ready[-1]]))
+        self.assertFalse(compact_home_accessible(self._compact_nodes(False)))
+        self.assertFalse(compact_home_accessible(
+            [ET.Element("node", {
+                **node.attrib, "package": "com.android.systemui"})
+             for node in ready]))
+        self.assertFalse(compact_home_accessible(
+            [ET.Element("node", {
+                **node.attrib, "text": "Tela inválida"})
+             for node in ready]))
+
+    def test_compact_post_resize_wait_is_bounded_and_checks_actual_nodes(self):
+        empty = [ET.Element("node", {
+            "package": "com.readroid.app", "text": "Olá, Desenvolvedor"})]
+        ready = self._compact_nodes()
+        with patch("tools.p7_compact_smoke.smoke.ensure_foreground") as foreground, \
+             patch("tools.p7_compact_smoke.smoke.visible_app_hierarchy",
+                   side_effect=[empty, ready]) as hierarchy, \
+             patch("tools.p7_compact_smoke.time.sleep") as pause:
+            await_compact_accessibility(max_checks=3, interval_seconds=2)
+            self.assertEqual(hierarchy.call_count, 2)
+            self.assertEqual(foreground.call_count, 2)
+            pause.assert_called_once_with(2)
+        with patch("tools.p7_compact_smoke.smoke.ensure_foreground") as foreground, \
+             patch("tools.p7_compact_smoke.smoke.visible_app_hierarchy",
+                   return_value=empty) as hierarchy, \
+             patch("tools.p7_compact_smoke.time.sleep") as pause:
+            with self.assertRaisesRegex(AssertionError, "never stabilized"):
+                await_compact_accessibility(max_checks=3, interval_seconds=2)
+            self.assertEqual(hierarchy.call_count, 3)
+            self.assertEqual(foreground.call_count, 3)
+            self.assertEqual(pause.call_count, 2)
+        with self.assertRaises(ValueError):
+            await_compact_accessibility(max_checks=0)
+        with self.assertRaises(ValueError):
+            await_compact_accessibility(max_checks=6)
+        with self.assertRaises(ValueError):
+            await_compact_accessibility(interval_seconds=9)
+
     def test_density_and_size_overrides_are_read_without_guesswork(self):
         self.assertEqual(((1080, 2220), None), parse_wm(
             "Physical size: 1080x2220", "size"))
