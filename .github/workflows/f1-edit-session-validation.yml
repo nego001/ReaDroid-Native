@@ -13,6 +13,8 @@ on:
       - 'app/src/main/java/com/readroid/app/RecoveryVault.java'
       - 'app/src/main/java/com/readroid/app/ApkImportPreflight.java'
       - 'app/src/main/java/com/readroid/app/ApkZipIntegrity.java'
+      - 'app/src/main/java/com/readroid/app/ApkExplorer.java'
+      - 'app/src/main/java/com/readroid/app/ApkDiskIndex.java'
       - 'app/src/main/java/com/readroid/app/ApkCacheAdmission.java'
       - 'app/src/main/java/com/readroid/app/ApkRebuilder.java'
       - 'app/src/main/java/com/readroid/app/ApkIntegrity.java'

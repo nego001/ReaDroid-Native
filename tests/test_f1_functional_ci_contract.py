@@ -20,6 +20,8 @@ PRODUCTION = {
     "RecoveryVault.java",
     "ApkImportPreflight.java",
     "ApkZipIntegrity.java",
+    "ApkExplorer.java",
+    "ApkDiskIndex.java",
     "ApkCacheAdmission.java",
     "ApkRebuilder.java",
     "ApkIntegrity.java",

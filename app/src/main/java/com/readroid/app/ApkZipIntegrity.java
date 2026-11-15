@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -49,6 +51,7 @@ public final class ApkZipIntegrity {
         final byte[] buffer = new byte[65536];
         long total = 0;
         int entries = 0, verified = 0;
+        Set<String> seen = new HashSet<>();
         try (ZipFile zip = new ZipFile(apk)) {
             Enumeration<? extends ZipEntry> cursor = zip.entries();
             while (cursor.hasMoreElements()) {
@@ -56,6 +59,13 @@ public final class ApkZipIntegrity {
                 if (++entries > MAX_ENTRIES)
                     throw new IOException("APK com entradas ZIP demais");
                 ZipEntry entry = cursor.nextElement();
+                // F1.8: reject malformed/ambiguous paths and duplicate ZIP
+                // names *before* spending CPU inflating untrusted payloads.
+                // Reuse the same policy enforced by the SQLite index.
+                String path = entry.getName();
+                ApkDiskIndex.validatePath(path);
+                if (!seen.add(path))
+                    throw new IOException("Entrada ZIP duplicada: " + path);
                 long size = entry.getSize();
                 long compressed = entry.getCompressedSize();
                 if (size < 0 || compressed < 0)

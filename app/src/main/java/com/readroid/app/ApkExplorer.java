@@ -29,8 +29,9 @@ public final class ApkExplorer {
                 ZipEntry entry = entries.nextElement();
                 if (++count > 150000) throw new IOException("APK com entradas demais");
                 String name = entry.getName();
-                if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
-                    throw new IOException("Caminho ZIP potencialmente inseguro: " + name);
+                // Reuse the admission/index path policy even for direct
+                // read-only Explorer callers and small archives without SQLite.
+                ApkDiskIndex.validatePath(name);
                 if (!seen.add(name)) throw new IOException("Entrada ZIP duplicada: " + name);
                 if (entry.isDirectory()) { directories++; continue; }
                 long size = entry.getSize();

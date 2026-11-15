@@ -86,6 +86,105 @@ public final class ApkZipIntegrityInstrumentedTest {
         return -1;
     }
 
+    private static void fixtureWithPaths(File file, String... names)
+            throws IOException {
+        try (ZipOutputStream out = new ZipOutputStream(
+                Files.newOutputStream(file.toPath()))) {
+            for (String name : names)
+                add(out, name, bytes("F18 verified ZIP path"), true);
+        }
+    }
+
+    private static void expectUnsafePath(String name) throws Exception {
+        File file = null;
+        try {
+            Context ctx = InstrumentationRegistry.getInstrumentation().getTargetContext();
+            file = File.createTempFile("f18_path_", ".apk", ctx.getCacheDir());
+            fixtureWithPaths(file, name);
+            try {
+                ApkZipIntegrity.verify(file);
+                fail("Unsafe ZIP path accepted: " + name);
+            } catch (IOException expected) {
+                assertTrue("Path must be rejected by shared path policy: " + name,
+                    expected.getMessage().contains("Caminho")
+                    || expected.getMessage().contains("Profundidade"));
+            }
+        } finally {
+            if (file != null) file.delete();
+        }
+    }
+
+    @Test public void f18ValidNestedNamesAndDotSubstringsStillWork()
+            throws Exception {
+        File file = fixture();
+        try {
+            fixtureWithPaths(file, "assets/config.json", "assets/a..b.txt",
+                "res/drawable/icon.png");
+            ApkZipIntegrity.Result result = ApkZipIntegrity.verify(file);
+            assertEquals(3, result.verifiedFiles);
+            // Direct explorer API must enforce exactly the same admission policy.
+            assertEquals(3, ApkExplorer.inspect(file).getInt("fileCount"));
+        } finally { file.delete(); }
+    }
+
+    @Test public void f18RejectsParentAndCurrentDirectorySegments()
+            throws Exception {
+        expectUnsafePath("../escape.bin");
+        expectUnsafePath("assets/../escape.bin");
+        expectUnsafePath("assets/./payload.bin");
+    }
+
+    @Test public void f18RejectsRepeatedSeparatorsAndBackslashes()
+            throws Exception {
+        expectUnsafePath("assets//data.bin");
+        expectUnsafePath("assets\\data.bin");
+    }
+
+    @Test public void f18RejectsAbsoluteOverlongAndExcessivelyDeepPaths()
+            throws Exception {
+        expectUnsafePath("/assets/payload.bin");
+        StringBuilder huge = new StringBuilder("assets/");
+        for (int i = 0; i < 4200; i++) huge.append('x');
+        huge.append(".bin");
+        expectUnsafePath(huge.toString());
+        StringBuilder deep = new StringBuilder();
+        for (int i = 0; i < 130; i++) deep.append("sub/");
+        deep.append("data.bin");
+        expectUnsafePath(deep.toString());
+    }
+
+    @Test public void f18RejectsDuplicateCentralDirectoryNames()
+            throws Exception {
+        File file = fixture();
+        try {
+            fixtureWithPaths(file, "assets/one.dat", "assets/two.dat");
+            byte[] zip = Files.readAllBytes(file.toPath());
+            byte[] former = bytes("assets/two.dat");
+            byte[] duplicate = bytes("assets/one.dat");
+            assertEquals(former.length, duplicate.length);
+            int replaced = 0;
+            for (int i = 0; i <= zip.length - former.length; i++) {
+                boolean match = true;
+                for (int j = 0; j < former.length; j++) {
+                    if (zip[i + j] != former[j]) { match = false; break; }
+                }
+                if (match) {
+                    System.arraycopy(duplicate, 0, zip, i, duplicate.length);
+                    replaced++;
+                    i += former.length - 1;
+                }
+            }
+            assertEquals("Both local and central names must be patched", 2, replaced);
+            Files.write(file.toPath(), zip);
+            try {
+                ApkZipIntegrity.verify(file);
+                fail("Duplicate names must fail before any project is admitted");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("duplicada"));
+            }
+        } finally { file.delete(); }
+    }
+
     private static void assertCorrupt(File file) throws Exception {
         try {
             ApkZipIntegrity.verify(file);
