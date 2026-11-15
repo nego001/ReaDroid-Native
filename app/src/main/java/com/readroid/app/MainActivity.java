@@ -55,6 +55,13 @@ public class MainActivity extends Activity {
     private LinearLayout aiSection;
     private LinearLayout designSection;
     private P7DesignStudio designStudio;
+    // Real native dialog reference for lifecycle-safe instrumentation.
+    private android.app.AlertDialog accentChooserDialog;
+
+    /** Package-local inspection: only the actual Activity-owned AlertDialog. */
+    android.app.AlertDialog activeAccentChooserDialog() {
+        return accentChooserDialog;
+    }
     private static final String[] NAV_TITLES = {
         "Início", "Arquivos", "Segurança", "Build", "Design"
     };
@@ -412,7 +419,8 @@ public class MainActivity extends Activity {
             String[] values = {"blue", "purple", "green", "orange", "custom"};
             String current = getSharedPreferences("v3_personalizacao", MODE_PRIVATE).getString("accent", "blue");
             int selected = java.util.Arrays.asList(values).indexOf(current);
-            new android.app.AlertDialog.Builder(this).setTitle("Cor de destaque")
+            android.app.AlertDialog chooser = new android.app.AlertDialog.Builder(this)
+                .setTitle("Cor de destaque")
                 .setSingleChoiceItems(options, Math.max(0, selected), (dialog, which) -> {
                     dialog.dismiss();
                     if (which != 4) {
@@ -461,7 +469,12 @@ public class MainActivity extends Activity {
                                 applyCustomColor.run();
                             }
                         }).setNegativeButton("Cancelar", null).show();
-                }).setNegativeButton("Cancelar", null).show();
+                }).setNegativeButton("Cancelar", null).create();
+            accentChooserDialog = chooser;
+            chooser.setOnDismissListener(dismissed -> {
+                if (accentChooserDialog == chooser) accentChooserDialog = null;
+            });
+            chooser.show();
         });
         Button textScale = NegrescoTheme.action(this, "Tamanho do texto", false);
         personalizationGroup.addView(textScale);
