@@ -166,7 +166,29 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertNotNull("Screenshot must have an image chip", find(root, "Imagens"));
                     TextView chip = find(root, "XML");
                     assertNotNull("Reference XML filter chip is missing", chip);
+                    // Visual chip is now a 36dp painted pill inside its
+                    // original >=48dp accessible hit target. Verify both
+                    // geometry layers, and then actually select the filter.
+                    assertTrue("Filter hitbox must remain at least 48dp",
+                        chip.getMinimumHeight() >= touch);
+                    assertTrue("Filter paint must use a native inset",
+                        chip.getBackground() instanceof
+                            android.graphics.drawable.InsetDrawable);
+                    android.graphics.Rect backgroundInsets =
+                        new android.graphics.Rect();
+                    assertTrue("Inset drawable must expose real padding",
+                        chip.getBackground().getPadding(backgroundInsets));
+                    assertEquals("Compact pill top inset",
+                        NegrescoTheme.dp(activity, 6), backgroundInsets.top);
+                    assertEquals("Compact pill bottom inset",
+                        NegrescoTheme.dp(activity, 6), backgroundInsets.bottom);
+                    assertEquals("Filter keeps its full accessible label",
+                        "Filtrar por XML", chip.getContentDescription().toString());
+                    assertTrue(chip.isClickable() && chip.isFocusable());
                     assertTrue(chip.performClick());
+                    assertEquals("Selected filter must stay announced",
+                        "Filtrar por XML, selecionado",
+                        find(root, "XML").getContentDescription().toString());
                     assertNull("XML filter should hide libs",
                         byDescription(root, "Abrir pasta lib/"));
                     assertNull("XML filter should hide assets",

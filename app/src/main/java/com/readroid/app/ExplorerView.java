@@ -338,7 +338,13 @@ public final class ExplorerView {
             bg.setStroke(NegrescoTheme.dp(activity, 1),
                 selected ? NegrescoTheme.ACCENT : NegrescoTheme.BORDER);
             bg.setCornerRadius(NegrescoTheme.dp(activity, 14));
-            chip.setBackground(bg);
+            // Reference-style 36dp *painted pill* inside an accessible
+            // 48dp TextView hit target. Never shrink the actual clickable
+            // control: TalkBack, keyboard focus and compact screens retain
+            // their existing navigation and semantics.
+            int paintInset = NegrescoTheme.dp(activity, 6);
+            chip.setBackground(new android.graphics.drawable.InsetDrawable(
+                bg, 0, paintInset, 0, paintInset));
             chip.setContentDescription("Filtrar por " + name
                 + (selected ? ", selecionado" : ""));
             chip.setClickable(true);
