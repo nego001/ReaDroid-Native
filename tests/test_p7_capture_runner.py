@@ -113,6 +113,13 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(27, len({
             selection.split("#", 1)[0] for selection in selections}))
         self.assertIn("ram-size: 3072M", workflow)
+        # API35 must not use the deprecated swiftshader_indirect backend
+        # on emulator 37, but the API29 baseline stays as a control.
+        self.assertIn(
+            "emulator-options: -no-window -no-audio -no-boot-anim "
+            "-gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}",
+            workflow)
+        self.assertIn("API35 showed invalid GPU color buffers", workflow)
         self.assertIn("free -m", workflow)
         heavy = ("com.readroid.app.P7NavigationInstrumentedTest"
                  "#layoutCardsKeepCompleteNamesAndNativeButtonRoleAtLargeFont")
