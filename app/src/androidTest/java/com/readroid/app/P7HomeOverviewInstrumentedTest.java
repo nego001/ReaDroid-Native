@@ -41,6 +41,22 @@ public final class P7HomeOverviewInstrumentedTest {
         return null;
     }
 
+    /** The accessibility node is populated by an ATTACHED Home view.
+     * Constructing a detached P7HomeOverview gives an incomplete node on
+     * both API29 and API35, even when its ContentDescription is assigned.
+     */
+    private static P7HomeOverview findAttachedOverview(View root) {
+        if (root instanceof P7HomeOverview) return (P7HomeOverview) root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                P7HomeOverview found = findAttachedOverview(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     private static void assertAccessibleButton(View view, String description) {
         AccessibilityNodeInfo node = view.createAccessibilityNodeInfo();
         assertNotNull("Accessibility node is required", node);
@@ -143,7 +159,12 @@ public final class P7HomeOverviewInstrumentedTest {
                 assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
                     quickGlyph.getImportantForAccessibility());
 
-                P7HomeOverview panel = new P7HomeOverview(activity, v -> {});
+                // Inspect the live, attached Home rather than a detached
+                // panel with an incomplete accessibility node.
+                P7HomeOverview panel = findAttachedOverview(root);
+                assertNotNull("Real Home statistics panel must be attached", panel);
+                assertTrue("Accessibility checks require an attached view",
+                    panel.isAttachedToWindow());
                 LinearLayout bottomStats = (LinearLayout) panel.getChildAt(1);
                 LinearLayout builds = (LinearLayout) bottomStats.getChildAt(0);
                 assertTrue("Build metric uses a native drawable",
