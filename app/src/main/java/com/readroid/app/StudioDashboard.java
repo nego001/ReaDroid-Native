@@ -287,7 +287,11 @@ public final class StudioDashboard {
         final int stageHeight = enlarged ? 133 : 101;
         final int mascotWidth = narrow ? 103 : 124;
         final int mascotHeight = enlarged ? 137 : 160;
-        final int topOverlap = enlarged ? 17 : 59;
+        // Preserve the reference artwork's intentional header overlap at
+        // ordinary font sizes. At 115%+ the longer, wrapped brand subtitle
+        // must take priority: the mascot stays within its welcome stage
+        // instead of climbing into the heading above it.
+        final int topOverlap = enlarged ? 0 : 59;
         FrameLayout welcomeStage = new FrameLayout(a);
         welcomeStage.setTag("p7-welcome-stage");
         welcomeStage.setClipChildren(false);
@@ -314,6 +318,7 @@ public final class StudioDashboard {
             11, NegrescoTheme.MUTED, false));
 
         P7MascotView mascot = new P7MascotView(a);
+        mascot.setTag("p7-welcome-mascot");
         // A card has its own elevation. Without a higher Z, Android draws
         // the opaque card over the artist's face despite child order.
         mascot.setElevation(dp(a, 8));
