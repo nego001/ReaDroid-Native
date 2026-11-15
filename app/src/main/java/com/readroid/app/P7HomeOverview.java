@@ -120,8 +120,15 @@ public final class P7HomeOverview extends LinearLayout {
                         ? R.drawable.ic_p7_cube : R.drawable.ic_p7_file);
                     resource.setScaleType(ImageView.ScaleType.FIT_CENTER);
                     icon = resource;
+                } else if (i == 2) {
+                    // Approved Home uses crossed build tools, not the single
+                    // wrench reserved for the bottom Build navigation tab.
+                    ImageView resource = new ImageView(activity);
+                    resource.setImageResource(R.drawable.ic_p7_build_tools);
+                    resource.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    icon = resource;
                 } else {
-                    NavGlyph vector = new NavGlyph(activity, i == 2 ? 2 : 3);
+                    NavGlyph vector = new NavGlyph(activity, 3);
                     vector.setSelectedState(true);
                     icon = vector;
                 }
