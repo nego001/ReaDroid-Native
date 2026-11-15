@@ -125,6 +125,7 @@ public final class P7HomeOverview extends LinearLayout {
                     // wrench reserved for the bottom Build navigation tab.
                     ImageView resource = new ImageView(activity);
                     resource.setImageResource(R.drawable.ic_p7_build_tools);
+                    resource.setTag(R.drawable.ic_p7_build_tools);
                     resource.setScaleType(ImageView.ScaleType.FIT_CENTER);
                     icon = resource;
                 } else {
