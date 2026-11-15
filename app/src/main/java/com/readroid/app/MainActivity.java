@@ -2067,6 +2067,7 @@ public class MainActivity extends Activity {
         // The provider may lie about its size: streaming checks remain required.
         ApkImportPreflight.beforeCopy(this, uri);
         File file = File.createTempFile("readroid_", ".apk", getCacheDir());
+        File diskIndex = null;
         try {
             final ApkImportPreflight.CopyResult copied;
             try (InputStream in = getContentResolver().openInputStream(uri);
@@ -2125,7 +2126,6 @@ public class MainActivity extends Activity {
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Análise interrompida");
             // Experimental UI indexing only; legacy JSON analysis retained.
-            File diskIndex = null;
             if (entries >= 200) {
                 File candidate = new File(file.getAbsolutePath() + ".idx.db");
                 try {
@@ -2135,8 +2135,13 @@ public class MainActivity extends Activity {
                     android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate);
                 }
             }
+            // F1.7: validate actual private-cache bytes after *all* analysis.
+            // A copied stream hash alone cannot prove the final file identity.
+            ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256);
             return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
+            if (diskIndex != null)
+                android.database.sqlite.SQLiteDatabase.deleteDatabase(diskIndex);
             file.delete();
             throw error;
         }
