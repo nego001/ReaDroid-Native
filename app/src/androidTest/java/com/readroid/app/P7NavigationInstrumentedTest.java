@@ -3041,41 +3041,55 @@ public final class P7NavigationInstrumentedTest {
                     color.performClick());
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            // The MainActivity's real AlertDialog owns a *separate* window;
-            // checking Activity.getDecorView() would miss this entirely.
-            android.app.UiAutomation ui =
-                InstrumentationRegistry.getInstrumentation().getUiAutomation();
-            android.view.accessibility.AccessibilityNodeInfo window =
-                ui.getRootInActiveWindow();
-            assertNotNull("Native color chooser has no active Android window",
-                window);
-            for (String expected : new String[]{
-                    "Cor de destaque", "Azul", "Roxo", "Verde",
-                    "Laranja", "Minha cor (HEX)", "Cancelar"}) {
-                java.util.List<android.view.accessibility.AccessibilityNodeInfo> nodes =
-                    window.findAccessibilityNodeInfosByText(expected);
-                boolean exact = false;
-                for (android.view.accessibility.AccessibilityNodeInfo node : nodes)
-                    if (matchesColorChooserText(node.getText(), expected))
-                        exact = true;
-                assertTrue("Native color chooser is missing " + expected, exact);
-            }
-            android.view.accessibility.AccessibilityNodeInfo cancel = null;
-            for (android.view.accessibility.AccessibilityNodeInfo node :
-                    window.findAccessibilityNodeInfosByText("Cancelar")) {
-                if (matchesColorChooserText(node.getText(), "Cancelar")
-                        && node.isClickable()) {
-                    cancel = node;
-                    break;
-                }
-            }
-            assertNotNull("Native Cancel button must be clickable", cancel);
-            assertTrue("Cancel must dismiss the real Android dialog",
-                cancel.performAction(
-                    android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));
+            // Inspect the *actual* Activity-owned native AlertDialog, not
+            // UiAutomation.getRootInActiveWindow(): that can return null or
+            // an unrelated window while the emulator changes focus.
+            // No mocked views, synthetic success or skipped cancellation.
+            final java.util.concurrent.atomic.AtomicReference<
+                android.app.AlertDialog> opened = new java.util.concurrent.atomic.AtomicReference<>();
+            scenario.onActivity(activity -> {
+                android.app.AlertDialog dialog = activity.activeAccentChooserDialog();
+                assertNotNull("Native accent chooser was not created", dialog);
+                assertTrue("Native accent chooser is not visible", dialog.isShowing());
+                assertNotNull("Native accent chooser has no window",
+                    dialog.getWindow());
+                assertTrue("Native accent chooser title absent",
+                    hasText(dialog.getWindow().getDecorView(), "Cor de destaque"));
+                android.widget.ListView options = dialog.getListView();
+                assertNotNull("Native accent choices missing", options);
+                assertTrue("Native accent choices are not visible",
+                    options.isShown());
+                String[] expected = {"Azul", "Roxo", "Verde", "Laranja",
+                    "Minha cor (HEX)"};
+                assertNotNull("Native accent adapter missing",
+                    options.getAdapter());
+                assertEquals("Native accent choice count changed",
+                    expected.length, options.getAdapter().getCount());
+                for (int i = 0; i < expected.length; i++)
+                    assertEquals("Native accent choice changed at " + i,
+                        expected[i], String.valueOf(
+                            options.getAdapter().getItem(i)));
+
+                Button cancel = dialog.getButton(
+                    android.content.DialogInterface.BUTTON_NEGATIVE);
+                assertNotNull("Native Cancel button missing", cancel);
+                assertTrue("Native Cancel button not shown", cancel.isShown());
+                assertTrue("Native Cancel button not clickable",
+                    cancel.isClickable() && cancel.isEnabled());
+                assertTrue("Unexpected native Cancel label",
+                    matchesColorChooserText(cancel.getText(), "Cancelar"));
+                opened.set(dialog);
+                assertTrue("Native Cancel button click not handled",
+                    cancel.performClick());
+            });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
+                assertNotNull("Native chooser was never observed", opened.get());
+                assertFalse("Native chooser still open after Cancel",
+                    opened.get().isShowing());
+                assertNull("Activity retained dismissed accent dialog",
+                    activity.activeAccentChooserDialog());
                 assertEquals("Cancel cannot overwrite appearance preferences",
                     original.get(), activity.getSharedPreferences(
                         "v3_personalizacao", 0).getAll());
