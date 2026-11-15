@@ -47,6 +47,18 @@ public final class P7NavigationInstrumentedTest {
         return null;
     }
 
+    /** Android's native AlertDialog may visually uppercase button labels.
+     * Keep exact matching for title/options; normalize only Cancelar.
+     * This never accepts a different action like Fechar/OK as cancellation.
+     */
+    private static boolean matchesColorChooserText(CharSequence rendered,
+            String expected) {
+        if (rendered == null || expected == null) return false;
+        if ("Cancelar".equals(expected))
+            return "Cancelar".equalsIgnoreCase(rendered.toString());
+        return expected.contentEquals(rendered);
+    }
+
     /** Resolve the actual native heading, including below the initial fold. */
     private static TextView findNativeHeading(View node, String name) {
         if (node instanceof TextView
@@ -2993,6 +3005,17 @@ public final class P7NavigationInstrumentedTest {
         }
     }
 
+    @Test public void nativeDialogCancelTextTransformationIsNotAFalseFailure() {
+        assertTrue(matchesColorChooserText("Cancelar", "Cancelar"));
+        assertTrue(matchesColorChooserText("CANCELAR", "Cancelar"));
+        assertTrue(matchesColorChooserText("cancelar", "Cancelar"));
+        assertFalse(matchesColorChooserText("CANCELAR AGORA", "Cancelar"));
+        assertFalse(matchesColorChooserText("Fechar", "Cancelar"));
+        assertFalse(matchesColorChooserText(null, "Cancelar"));
+        assertTrue(matchesColorChooserText("Cor de destaque", "Cor de destaque"));
+        assertFalse(matchesColorChooserText("COR DE DESTAQUE", "Cor de destaque"));
+    }
+
     @Test public void belowFoldColorActionOpensNativeChooserAndCancelIsNonDestructive()
             throws Exception {
         final java.util.concurrent.atomic.AtomicReference<
@@ -3033,15 +3056,14 @@ public final class P7NavigationInstrumentedTest {
                     window.findAccessibilityNodeInfosByText(expected);
                 boolean exact = false;
                 for (android.view.accessibility.AccessibilityNodeInfo node : nodes)
-                    if (node.getText() != null
-                            && expected.contentEquals(node.getText())) exact = true;
+                    if (matchesColorChooserText(node.getText(), expected))
+                        exact = true;
                 assertTrue("Native color chooser is missing " + expected, exact);
             }
             android.view.accessibility.AccessibilityNodeInfo cancel = null;
             for (android.view.accessibility.AccessibilityNodeInfo node :
                     window.findAccessibilityNodeInfosByText("Cancelar")) {
-                if (node.getText() != null
-                        && "Cancelar".contentEquals(node.getText())
+                if (matchesColorChooserText(node.getText(), "Cancelar")
                         && node.isClickable()) {
                     cancel = node;
                     break;
