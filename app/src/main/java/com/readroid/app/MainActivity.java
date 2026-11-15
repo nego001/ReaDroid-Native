@@ -851,11 +851,11 @@ public class MainActivity extends Activity {
         // remain in the Build/Security sections and are not falsely enabled.
         String[] actionNames = {"Abrir APK", "Analisar", "Build APK",
             "Decompilar", "Editar Smali", "Assinar APK"};
-        // Faithful six-action symbols: folder, search, wrench, code,
-        // editable document and verified shield instead of nav placeholders.
+        // Match the six approved Home action symbols. Build APK uses the
+        // crossed tools; the bottom navigation still uses a single wrench.
         int[] actionGlyphs = {
             R.drawable.ic_p7_folder, R.drawable.ic_p7_search,
-            R.drawable.ic_p7_wrench, R.drawable.ic_p7_code,
+            R.drawable.ic_p7_build_tools, R.drawable.ic_p7_code,
             R.drawable.ic_p7_file, R.drawable.ic_p7_shield
         };
         View.OnClickListener[] actionHandlers = new View.OnClickListener[]{
