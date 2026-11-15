@@ -67,6 +67,14 @@ public final class ExplorerView {
             && session.source == apkFile && session.source.isFile();
     }
 
+    /** Called only on UI thread. Never show results from an obsolete APK. */
+    boolean showForCurrentSession(EditSession session, Runnable show) {
+        if (!isCurrentEditSession(session)
+                || activity.isFinishing() || activity.isDestroyed()) return false;
+        show.run();
+        return true;
+    }
+
     EditPlan.EditResult applyTextEditForSession(EditSession session,
             String path, String original, String replacement) {
         if (!isCurrentEditSession(session))
@@ -666,22 +674,25 @@ public final class ExplorerView {
 
     private void inspectEntry(String path) {
         if (apkFile == null || !apkFile.isFile()) return;
-        final java.io.File source = apkFile;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String details;
             try { details = ApkEntryInspector.inspect(source, path); }
             catch (Exception error) { details = "Inspeção indisponível: " + error.getMessage(); }
             final String message = details;
-            activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Propriedades do arquivo")
-                .setMessage(message)
-                .setPositiveButton("Fechar", null)
-                .setNeutralButton("Copiar dados", (dialog, which) -> {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
-                        activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null) clipboard.setPrimaryClip(
-                        android.content.ClipData.newPlainText("Dados do arquivo", message));
-                }).show());
+            activity.runOnUiThread(() -> showForCurrentSession(session, () ->
+                new android.app.AlertDialog.Builder(activity)
+                    .setTitle("Propriedades do arquivo")
+                    .setMessage(message)
+                    .setPositiveButton("Fechar", null)
+                    .setNeutralButton("Copiar dados", (dialog, which) -> {
+                        android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) activity.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE);
+                        if (clipboard != null) clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText("Dados do arquivo", message));
+                    }).show()));
         }).start();
     }
 
@@ -697,13 +708,17 @@ public final class ExplorerView {
             String original;
             try { original = ApkPreview.readText(source, path); }
             catch (Exception error) {
-                activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show());
+                activity.runOnUiThread(() -> showForCurrentSession(session, () ->
+                    new android.app.AlertDialog.Builder(activity)
+                        .setMessage(error.getMessage())
+                        .setPositiveButton("OK", null).show()));
                 return;
             }
             activity.runOnUiThread(() -> {
                 // The import might have committed while the worker read ZIP.
                 // In that case never present an editor for the old project.
-                if (!isCurrentEditSession(session)) return;
+                if (!isCurrentEditSession(session)
+                        || activity.isFinishing() || activity.isDestroyed()) return;
                 EditText editor = new EditText(activity);
                 editor.setText(editPlan.contains(path) ? editPlan.get(path) : original);
                 editor.setTextColor(NegrescoTheme.TEXT);
@@ -768,13 +783,14 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("APK temporário indisponível. Analise o arquivo novamente.").setPositiveButton("OK", null).show();
             return;
         }
-        final java.io.File source = apkFile;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String value;
             try { value = ApkPreview.readText(source, path); }
             catch (Exception error) { value = "Não foi possível visualizar: " + error.getMessage(); }
             final String text = value;
-            activity.runOnUiThread(() -> {
+            activity.runOnUiThread(() -> showForCurrentSession(session, () -> {
                 ScrollView scroll = new ScrollView(activity);
                 TextView content = new TextView(activity);
                 content.setText(text);
@@ -786,7 +802,7 @@ public final class ExplorerView {
                 content.setPadding(24, 20, 24, 20);
                 scroll.addView(content);
                 new android.app.AlertDialog.Builder(activity).setTitle(path).setView(scroll).setPositiveButton("Fechar", null).show();
-            });
+            }));
         }).start();
     }
 

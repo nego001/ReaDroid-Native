@@ -109,6 +109,51 @@ public final class EditPlanStateInstrumentedTest {
         }
     }
 
+    @Test public void stalePreviewAndTechnicalResultsNeverDisplayAfterApkSwitch()
+            throws Exception {
+        try (androidx.test.core.app.ActivityScenario<MainActivity> scenario =
+                androidx.test.core.app.ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                java.io.File first = null, second = null;
+                try {
+                    first = java.io.File.createTempFile("session_preview_a_", ".apk",
+                        activity.getCacheDir());
+                    second = java.io.File.createTempFile("session_preview_b_", ".apk",
+                        activity.getCacheDir());
+                    ExplorerView explorer = new ExplorerView(activity,
+                        new android.widget.LinearLayout(activity));
+                    explorer.setFiles(new org.json.JSONArray(), first);
+                    ExplorerView.EditSession oldPreview = explorer.captureEditSession();
+                    java.util.concurrent.atomic.AtomicInteger deliveries =
+                        new java.util.concurrent.atomic.AtomicInteger();
+                    assertTrue(explorer.showForCurrentSession(oldPreview,
+                        deliveries::incrementAndGet));
+                    assertEquals(1, deliveries.get());
+                    explorer.setFiles(new org.json.JSONArray(), second);
+                    assertFalse("Old APK preview/metadata must not be displayed",
+                        explorer.showForCurrentSession(oldPreview,
+                            deliveries::incrementAndGet));
+                    assertEquals("No stale callbacks may run", 1, deliveries.get());
+                    ExplorerView.EditSession now = explorer.captureEditSession();
+                    assertTrue("Current APK should still show its own results",
+                        explorer.showForCurrentSession(now,
+                            deliveries::incrementAndGet));
+                    assertEquals(2, deliveries.get());
+                    explorer.setFiles(null, null);
+                    assertFalse("Clearing project must cancel pending result",
+                        explorer.showForCurrentSession(now,
+                            deliveries::incrementAndGet));
+                    assertEquals(2, deliveries.get());
+                } catch (Exception problem) {
+                    throw new AssertionError(problem);
+                } finally {
+                    if (first != null) first.delete();
+                    if (second != null) second.delete();
+                }
+            });
+        }
+    }
+
     @Test public void unchangedOriginalDoesNotCreateFakeSuccess() {
         EditPlan plan = new EditPlan();
         assertEquals(EditPlan.EditResult.UNCHANGED,
