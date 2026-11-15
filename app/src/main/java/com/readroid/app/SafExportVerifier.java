@@ -19,9 +19,39 @@ import java.util.Arrays;
 public final class SafExportVerifier {
     private SafExportVerifier() {}
 
+    // Internal seam for exercising untrusted provider behavior without
+    // granting storage access or installing a mock DocumentsProvider.
+    interface ExportTarget {
+        OutputStream openWrite() throws IOException;
+        InputStream openRead() throws IOException;
+    }
+
     public static long copyAndVerify(ContentResolver resolver, File source, Uri destination)
             throws IOException {
-        if (source == null || !source.isFile() || destination == null)
+        if (resolver == null || source == null || !source.isFile() || destination == null)
+            throw new IOException("Arquivo ou destino inválido");
+        // Do not let a direct file:// caller truncate its own source while
+        // "exporting". Normal SAF documents use content://; this checks the
+        // local-file route used in tests and in any future trusted caller.
+        if ("file".equals(destination.getScheme())) {
+            String path = destination.getPath();
+            if (path == null || path.isEmpty())
+                throw new IOException("Destino de arquivo inválido");
+            if (source.getCanonicalFile().equals(new File(path).getCanonicalFile()))
+                throw new IOException("Destino não pode ser o APK de origem");
+        }
+        return copyAndVerify(source, new ExportTarget() {
+            @Override public OutputStream openWrite() throws IOException {
+                return resolver.openOutputStream(destination, "w");
+            }
+            @Override public InputStream openRead() throws IOException {
+                return resolver.openInputStream(destination);
+            }
+        });
+    }
+
+    static long copyAndVerify(File source, ExportTarget target) throws IOException {
+        if (source == null || !source.isFile() || target == null)
             throw new IOException("Arquivo ou destino inválido");
         byte[] expected;
         long sourceLength = 0;
@@ -38,7 +68,7 @@ public final class SafExportVerifier {
         }
         expected = expectedDigest.digest();
         try (InputStream input = new FileInputStream(source);
-             OutputStream output = resolver.openOutputStream(destination, "w")) {
+             OutputStream output = target.openWrite()) {
             if (output == null) throw new IOException("O Android não abriu o destino para gravação");
             int n;
             while ((n = input.read(buffer)) != -1) {
@@ -50,7 +80,7 @@ public final class SafExportVerifier {
         }
         long exportedLength = 0;
         MessageDigest actualDigest = sha256();
-        try (InputStream verify = resolver.openInputStream(destination)) {
+        try (InputStream verify = target.openRead()) {
             if (verify == null)
                 throw new IOException("Não foi possível reler o arquivo exportado");
             int n;

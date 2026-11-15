@@ -6,7 +6,9 @@ on:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
       - 'app/src/main/java/com/readroid/app/ExplorerView.java'
+      - 'app/src/main/java/com/readroid/app/SafExportVerifier.java'
       - 'app/src/androidTest/java/com/readroid/app/EditPlanStateInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/SafExportVerifierInstrumentedTest.java'
       - '.github/workflows/f1-edit-session-validation.yml'
   workflow_dispatch:
 concurrency:
