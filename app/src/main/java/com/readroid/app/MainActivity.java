@@ -2075,6 +2075,8 @@ public class MainActivity extends Activity {
                 copied = ApkImportPreflight.copyAndHash(in, out,
                     () -> ApkImportPreflight.availableBytes(this));
             }
+            // F1.6: reject damaged internal payloads before exposing a new project.
+            ApkZipIntegrity.Result zipIntegrity = ApkZipIntegrity.verify(file);
             long size = copied.sizeBytes;
             String hash = copied.sha256;
             JSONArray dex = new JSONArray();
@@ -2107,6 +2109,11 @@ public class MainActivity extends Activity {
             json.put("explorer", ApkExplorer.inspect(file));
             json.put("sizeBytes", size);
             json.put("sha256", hash);
+            JSONObject zipAudit = new JSONObject();
+            zipAudit.put("crc32Verified", true);
+            zipAudit.put("filesVerified", zipIntegrity.verifiedFiles);
+            zipAudit.put("uncompressedBytes", zipIntegrity.uncompressedBytes);
+            json.put("zipIntegrity", zipAudit);
             json.put("entries", entries);
             json.put("dexFiles", dex);
             json.put("nativeLibraries", libraries);

@@ -19,6 +19,7 @@ PRODUCTION = {
     "EditPlan.java",
     "RecoveryVault.java",
     "ApkImportPreflight.java",
+    "ApkZipIntegrity.java",
     "ApkRebuilder.java",
     "ApkIntegrity.java",
     "RebuildVerifier.java",
@@ -29,6 +30,7 @@ ANDROID_TESTS = {
     "RecoveryVaultInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
+    "ApkZipIntegrityInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
     "SafExportVerifierInstrumentedTest",
 }
