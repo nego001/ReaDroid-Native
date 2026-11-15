@@ -2068,31 +2068,15 @@ public class MainActivity extends Activity {
         ApkImportPreflight.beforeCopy(this, uri);
         File file = File.createTempFile("readroid_", ".apk", getCacheDir());
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            long size = 0;
+            final ApkImportPreflight.CopyResult copied;
             try (InputStream in = getContentResolver().openInputStream(uri);
                  OutputStream out = new FileOutputStream(file)) {
                 if (in == null) throw new IOException("Arquivo inacessível");
-                byte[] buffer = new byte[65536];
-                int count;
-                long lastStorageCheck = 0;
-                while ((count = in.read(buffer)) != -1) {
-                    if (Thread.currentThread().isInterrupted())
-                        throw new java.io.InterruptedIOException("Análise interrompida");
-                    size += count;
-                    if (size > ApkImportPreflight.MAX_APK_BYTES)
-                        throw new IOException("Limite seguro atual de 1 GiB excedido.");
-                    digest.update(buffer, 0, count);
-                    out.write(buffer, 0, count);
-                    if (ApkImportPreflight.shouldRecheck(size, lastStorageCheck)) {
-                        ApkImportPreflight.checkProgress(size,
-                            ApkImportPreflight.availableBytes(this));
-                        lastStorageCheck = size;
-                    }
-                }
+                copied = ApkImportPreflight.copyAndHash(in, out,
+                    () -> ApkImportPreflight.availableBytes(this));
             }
-            StringBuilder hash = new StringBuilder();
-            for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
+            long size = copied.sizeBytes;
+            String hash = copied.sha256;
             JSONArray dex = new JSONArray();
             JSONArray libraries = new JSONArray();
             int entries = 0, assets = 0;
@@ -2122,7 +2106,7 @@ public class MainActivity extends Activity {
             json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
             json.put("explorer", ApkExplorer.inspect(file));
             json.put("sizeBytes", size);
-            json.put("sha256", hash.toString());
+            json.put("sha256", hash);
             json.put("entries", entries);
             json.put("dexFiles", dex);
             json.put("nativeLibraries", libraries);

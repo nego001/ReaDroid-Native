@@ -7,6 +7,12 @@ import android.os.StatFs;
 import android.provider.OpenableColumns;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.InterruptedIOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 
 /**
  * Fast, bounded import preflight. The Android document provider's size is a
@@ -17,8 +23,83 @@ public final class ApkImportPreflight {
     static final long MAX_APK_BYTES = 1024L * 1024 * 1024;
     private static final long RESERVE_BYTES = 64L * 1024 * 1024;
     private static final long CHECK_EVERY_BYTES = 32L * 1024 * 1024;
+    private static final int MAX_CONSECUTIVE_ZERO_READS = 16;
 
     private ApkImportPreflight() {}
+
+    /** Read-only source + private cache destination; the caller closes both. */
+    interface FreeSpace {
+        long availableBytes() throws IOException;
+    }
+
+    static final class CopyResult {
+        final long sizeBytes;
+        final String sha256;
+
+        CopyResult(long sizeBytes, String sha256) {
+            this.sizeBytes = sizeBytes;
+            this.sha256 = sha256;
+        }
+    }
+
+    /**
+     * Never trust SAF size hints or treat EOF, a stalled provider, or a short
+     * final chunk as a successful copy without checking space. On IOException
+     * the calling import transaction removes the unaccepted cache file.
+     *
+     * Test seam takes streams and a free-space checker instead of mocking a
+     * DocumentsProvider. The real import still opens its SAF stream exactly
+     * once and hashes the actual bytes written to its private cache.
+     */
+    static CopyResult copyAndHash(InputStream in, OutputStream out, FreeSpace space)
+            throws IOException {
+        if (in == null || out == null || space == null)
+            throw new IOException("Fluxo de importação indisponível");
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IOException("SHA-256 indisponível", unavailable);
+        }
+        final byte[] buffer = new byte[65536];
+        long copied = 0;
+        long lastStorageCheck = 0;
+        int zeroReads = 0;
+        checkProgress(0, space.availableBytes());
+        while (true) {
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Importação interrompida");
+            int count = in.read(buffer);
+            if (count < 0) break;
+            if (count == 0) {
+                if (++zeroReads > MAX_CONSECUTIVE_ZERO_READS)
+                    throw new IOException("A origem parou de fornecer dados durante a importação");
+                continue;
+            }
+            zeroReads = 0;
+            if (copied > MAX_APK_BYTES - count)
+                throw new IOException("Limite seguro atual de 1 GiB excedido.");
+            copied += count;
+            if (shouldRecheck(copied, lastStorageCheck)) {
+                checkProgress(copied, space.availableBytes());
+                lastStorageCheck = copied;
+            }
+            out.write(buffer, 0, count);
+            digest.update(buffer, 0, count);
+        }
+        if (copied == 0)
+            throw new IOException("O arquivo selecionado está vazio");
+        out.flush();
+        // A <32 MiB file, or the last chunk after a periodic check, can
+        // exhaust the safety reserve. Check once more on real EOF.
+        checkProgress(copied, space.availableBytes());
+        if (Thread.currentThread().isInterrupted())
+            throw new InterruptedIOException("Importação interrompida");
+        StringBuilder hash = new StringBuilder(64);
+        for (byte value : digest.digest())
+            hash.append(String.format(Locale.ROOT, "%02x", value & 255));
+        return new CopyResult(copied, hash.toString());
+    }
 
     public static void beforeCopy(Context context, Uri uri) throws IOException {
         long claimed = -1;
