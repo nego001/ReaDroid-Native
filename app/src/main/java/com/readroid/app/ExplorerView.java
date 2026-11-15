@@ -43,6 +43,38 @@ public final class ExplorerView {
     private java.io.File indexFile;
     private int indexPageOffset = 0;
     private final EditPlan editPlan = new EditPlan();
+    // Every accepted project binding invalidates edits opened against the
+    // previous APK, including dialogs and in-flight background reads.
+    private long projectGeneration;
+
+    static final class EditSession {
+        final java.io.File source;
+        final long generation;
+
+        EditSession(java.io.File source, long generation) {
+            this.source = source;
+            this.generation = generation;
+        }
+    }
+
+    EditSession captureEditSession() {
+        return new EditSession(apkFile, projectGeneration);
+    }
+
+    boolean isCurrentEditSession(EditSession session) {
+        return session != null && session.source != null
+            && session.generation == projectGeneration
+            && session.source == apkFile && session.source.isFile();
+    }
+
+    EditPlan.EditResult applyTextEditForSession(EditSession session,
+            String path, String original, String replacement) {
+        if (!isCurrentEditSession(session))
+            throw new IllegalStateException(
+                "Edição cancelada: outro APK foi aberto. Abra o arquivo no projeto atual.");
+        return editPlan.applyTextEdit(path, original, replacement);
+    }
+
     private static final String[] CATEGORIES = {
         "Todos", "Smali", "Recursos", "Imagens", "XML",
         "Código DEX", "Bibliotecas", "Assets", "Assinaturas/metadados",
@@ -283,6 +315,9 @@ public final class ExplorerView {
     }
 
     public void setFiles(JSONArray array, java.io.File apkFile) {
+        // Called when a candidate APK is accepted (or when the workspace is
+        // cleared). Never let an older edit dialog mutate this new binding.
+        projectGeneration++;
         this.apkFile = apkFile;
         this.indexFile = null;
         indexUnavailable = false; // A new APK starts a fresh browsing session.
@@ -655,8 +690,9 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("Edição textual ainda não suportada para este formato.").setPositiveButton("OK", null).show();
             return;
         }
-        if (apkFile == null || !apkFile.exists()) return;
-        final java.io.File source = apkFile;
+        if (apkFile == null || !apkFile.isFile()) return;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String original;
             try { original = ApkPreview.readText(source, path); }
@@ -665,6 +701,9 @@ public final class ExplorerView {
                 return;
             }
             activity.runOnUiThread(() -> {
+                // The import might have committed while the worker read ZIP.
+                // In that case never present an editor for the old project.
+                if (!isCurrentEditSession(session)) return;
                 EditText editor = new EditText(activity);
                 editor.setText(editPlan.contains(path) ? editPlan.get(path) : original);
                 editor.setTextColor(NegrescoTheme.TEXT);
@@ -687,8 +726,10 @@ public final class ExplorerView {
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
                         try {
                             String replacement = editor.getText().toString();
+                            // Re-check when saving: a new APK might have
+                            // opened while the old edit dialog was visible.
                             EditPlan.EditResult result =
-                                editPlan.applyTextEdit(path, original, replacement);
+                                applyTextEditForSession(session, path, original, replacement);
                             render();
                             String title;
                             String description;

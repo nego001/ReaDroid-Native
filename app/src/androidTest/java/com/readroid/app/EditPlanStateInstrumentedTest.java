@@ -13,6 +13,102 @@ import static org.junit.Assert.*;
 public final class EditPlanStateInstrumentedTest {
     private static final String PATH = "assets/teste_recuperacao.txt";
 
+    @Test public void oldEditorCannotWriteIntoNewApkAfterProjectSwitch()
+            throws Exception {
+        try (androidx.test.core.app.ActivityScenario<MainActivity> scenario =
+                androidx.test.core.app.ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                java.io.File first = null, second = null;
+                try {
+                    first = java.io.File.createTempFile("edit_source_a_", ".apk",
+                        activity.getCacheDir());
+                    second = java.io.File.createTempFile("edit_source_b_", ".apk",
+                        activity.getCacheDir());
+                    ExplorerView explorer = new ExplorerView(activity,
+                        new android.widget.LinearLayout(activity));
+                    explorer.setFiles(new org.json.JSONArray(), first);
+                    ExplorerView.EditSession old = explorer.captureEditSession();
+                    assertTrue(explorer.isCurrentEditSession(old));
+                    assertEquals(EditPlan.EditResult.ADDED,
+                        explorer.applyTextEditForSession(old, PATH, "antes", "editado A"));
+                    // Mirrors MainActivity's accepted import: clear the old
+                    // edit plan, then replace the Explorer's project binding.
+                    explorer.getEditPlan().clear();
+                    explorer.setFiles(new org.json.JSONArray(), second);
+                    assertFalse("Old editor must be invalid after import",
+                        explorer.isCurrentEditSession(old));
+                    try {
+                        explorer.applyTextEditForSession(old, PATH,
+                            "antes", "edição atrasada de A");
+                        fail("A former APK cannot write into the new APK edit plan");
+                    } catch (IllegalStateException expected) {
+                        assertTrue(expected.getMessage().contains("outro APK"));
+                    }
+                    assertEquals(0, explorer.getEditPlan().size());
+                    ExplorerView.EditSession current = explorer.captureEditSession();
+                    assertEquals(EditPlan.EditResult.ADDED,
+                        explorer.applyTextEditForSession(current, PATH,
+                            "original B", "mudança B"));
+                    assertEquals("mudança B", explorer.getEditPlan().get(PATH));
+                    // Even rebinding the same file must invalidate a dialog
+                    // from the old session; path equality is insufficient.
+                    explorer.setFiles(new org.json.JSONArray(), second);
+                    assertFalse(explorer.isCurrentEditSession(current));
+                    try {
+                        explorer.applyTextEditForSession(current, PATH,
+                            "original B", "texto antigo");
+                        fail("Rebound project must invalidate old editor");
+                    } catch (IllegalStateException expected) {
+                        assertEquals("mudança B", explorer.getEditPlan().get(PATH));
+                    }
+                } catch (Exception problem) {
+                    throw new AssertionError(problem);
+                } finally {
+                    if (first != null) first.delete();
+                    if (second != null) second.delete();
+                }
+            });
+        }
+    }
+
+    @Test public void failedCandidateCannotInvalidateActiveEditSession()
+            throws Exception {
+        try (androidx.test.core.app.ActivityScenario<MainActivity> scenario =
+                androidx.test.core.app.ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                java.io.File active = null;
+                try {
+                    active = java.io.File.createTempFile("edit_active_", ".apk",
+                        activity.getCacheDir());
+                    ExplorerView explorer = new ExplorerView(activity,
+                        new android.widget.LinearLayout(activity));
+                    explorer.setFiles(new org.json.JSONArray(), active);
+                    ExplorerView.EditSession edit = explorer.captureEditSession();
+                    // A rejected candidate never calls setFiles() in
+                    // MainActivity's transactional import path.
+                    assertTrue(explorer.isCurrentEditSession(edit));
+                    assertEquals(EditPlan.EditResult.ADDED,
+                        explorer.applyTextEditForSession(edit, PATH,
+                            "original", "preservado"));
+                    assertEquals("preservado", explorer.getEditPlan().get(PATH));
+                    explorer.setFiles(null, null);
+                    assertFalse(explorer.isCurrentEditSession(edit));
+                    try {
+                        explorer.applyTextEditForSession(edit, PATH,
+                            "original", "não autorizado");
+                        fail("Clearing the workspace must invalidate editors");
+                    } catch (IllegalStateException expected) {
+                        assertEquals("preservado", explorer.getEditPlan().get(PATH));
+                    }
+                } catch (Exception problem) {
+                    throw new AssertionError(problem);
+                } finally {
+                    if (active != null) active.delete();
+                }
+            });
+        }
+    }
+
     @Test public void unchangedOriginalDoesNotCreateFakeSuccess() {
         EditPlan plan = new EditPlan();
         assertEquals(EditPlan.EditResult.UNCHANGED,
