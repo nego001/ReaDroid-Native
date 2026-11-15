@@ -327,7 +327,12 @@ public final class ExplorerView {
             chip.setTextSize(12 * NegrescoTheme.FONT_SCALE);
             chip.setTextColor(selected ? NegrescoTheme.ON_ACCENT : NegrescoTheme.TEXT);
             chip.setGravity(android.view.Gravity.CENTER);
+            // TextView.setMinHeight() is a text-layout minimum and does
+            // not set View.getMinimumHeight() on all Android versions.
+            // Keep BOTH minimums so the painted 36dp pill still occupies
+            // a genuine >=48dp focusable/clickable hit target.
             chip.setMinHeight(NegrescoTheme.dp(activity, 48));
+            chip.setMinimumHeight(NegrescoTheme.dp(activity, 48));
             chip.setPadding(NegrescoTheme.dp(activity, 10),
                 NegrescoTheme.dp(activity, 6),
                 NegrescoTheme.dp(activity, 10),
