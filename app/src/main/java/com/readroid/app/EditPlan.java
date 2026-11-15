@@ -82,6 +82,30 @@ public final class EditPlan {
 
     public void clear() { replacements.clear(); }
 
+    /**
+     * Restore a recovery snapshot atomically. Validate every entry in a
+     * temporary plan BEFORE touching the user's pending edits. The recovery
+     * format supports at most 100 changes, regardless of a caller Map's
+     * potentially deceptive size() value.
+     */
+    void replaceAllValidated(Map<String, String> changes) {
+        if (changes == null || changes.isEmpty())
+            throw new IllegalArgumentException("Cópia de recuperação sem alterações");
+        EditPlan candidate = new EditPlan();
+        int count = 0;
+        for (Map.Entry<String, String> edit : changes.entrySet()) {
+            if (edit == null || ++count > 100)
+                throw new IllegalArgumentException("Cópia de recuperação inválida ou acima de 100 alterações");
+            candidate.addTextReplacement(edit.getKey(), edit.getValue());
+        }
+        if (candidate.replacements.isEmpty())
+            throw new IllegalArgumentException("Cópia de recuperação sem alterações");
+        // No validation after this point: the current plan cannot be left
+        // partially cleared by a malformed path, Unicode value or size.
+        replacements.clear();
+        replacements.putAll(candidate.replacements);
+    }
+
     public JSONObject toJson() throws Exception {
         JSONObject result = new JSONObject();
         result.put("format", "readroid-edit-plan-v1");

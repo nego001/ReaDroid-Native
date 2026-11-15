@@ -154,6 +154,127 @@ public final class EditPlanStateInstrumentedTest {
         }
     }
 
+    @Test public void rejectedRecoveryMustNotErasePendingEdits() {
+        EditPlan plan = new EditPlan();
+        plan.addTextReplacement(PATH, "minha edição atual");
+        java.util.Map<String, String> invalid = new java.util.LinkedHashMap<>();
+        invalid.put("assets/nova.txt", "segura");
+        invalid.put("../perigoso.json", "inválida");
+        try {
+            plan.replaceAllValidated(invalid);
+            fail("One malformed recovery entry must invalidate the entire replacement");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(1, plan.size());
+            assertEquals("minha edição atual", plan.get(PATH));
+            assertFalse(plan.contains("assets/nova.txt"));
+        }
+        try {
+            plan.replaceAllValidated(java.util.Collections.emptyMap());
+            fail("Empty recovery must not clear the plan");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("minha edição atual", plan.get(PATH));
+        }
+        java.util.Map<String, String> valid = new java.util.LinkedHashMap<>();
+        valid.put("assets/recuperado.txt", "conteúdo recuperado");
+        plan.replaceAllValidated(valid);
+        assertEquals(1, plan.size());
+        assertFalse(plan.contains(PATH));
+        assertEquals("conteúdo recuperado", plan.get("assets/recuperado.txt"));
+    }
+
+    @Test public void staleRecoveryConfirmationCannotReplaceNewProjectPlan()
+            throws Exception {
+        try (androidx.test.core.app.ActivityScenario<MainActivity> scenario =
+                androidx.test.core.app.ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                java.io.File first = null, second = null;
+                try {
+                    first = java.io.File.createTempFile("recovery_project_a_", ".apk",
+                        activity.getCacheDir());
+                    second = java.io.File.createTempFile("recovery_project_b_", ".apk",
+                        activity.getCacheDir());
+                    ExplorerView explorer = new ExplorerView(activity,
+                        new android.widget.LinearLayout(activity));
+                    explorer.setFiles(new org.json.JSONArray(), first);
+                    ExplorerView.EditSession old = explorer.captureEditSession();
+                    java.util.Map<String, String> recovered = new java.util.LinkedHashMap<>();
+                    recovered.put("assets/old.txt", "cópia antiga");
+                    explorer.setFiles(new org.json.JSONArray(), second);
+                    ExplorerView.EditSession current = explorer.captureEditSession();
+                    explorer.applyTextEditForSession(current, PATH,
+                        "original B", "edição de B");
+                    try {
+                        explorer.restoreEditPlanForSession(old, recovered);
+                        fail("Recovery from A cannot overwrite edits in B");
+                    } catch (IllegalStateException expected) {
+                        assertTrue(expected.getMessage().contains("outro APK"));
+                    }
+                    assertEquals("edição de B", explorer.getEditPlan().get(PATH));
+                    assertFalse(explorer.getEditPlan().contains("assets/old.txt"));
+                    explorer.restoreEditPlanForSession(current, recovered);
+                    assertEquals(1, explorer.getEditPlan().size());
+                    assertEquals("cópia antiga",
+                        explorer.getEditPlan().get("assets/old.txt"));
+                    assertFalse(explorer.getEditPlan().contains(PATH));
+                    // A same-file rebind is another project generation: a
+                    // previously displayed recovery confirmation is stale.
+                    explorer.setFiles(new org.json.JSONArray(), second);
+                    explorer.applyTextEditForSession(explorer.captureEditSession(),
+                        PATH, "original", "edição posterior");
+                    try {
+                        explorer.restoreEditPlanForSession(current, recovered);
+                        fail("Rebound same-file recovery must not mutate a new session");
+                    } catch (IllegalStateException expected) {
+                        assertEquals("edição posterior",
+                            explorer.getEditPlan().get(PATH));
+                    }
+                } catch (Exception problem) {
+                    throw new AssertionError(problem);
+                } finally {
+                    if (first != null) first.delete();
+                    if (second != null) second.delete();
+                }
+            });
+        }
+    }
+
+    @Test public void malformedRecoveryOnCurrentSessionKeepsCurrentEdits()
+            throws Exception {
+        try (androidx.test.core.app.ActivityScenario<MainActivity> scenario =
+                androidx.test.core.app.ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                java.io.File active = null;
+                try {
+                    active = java.io.File.createTempFile("recovery_current_", ".apk",
+                        activity.getCacheDir());
+                    ExplorerView explorer = new ExplorerView(activity,
+                        new android.widget.LinearLayout(activity));
+                    explorer.setFiles(new org.json.JSONArray(), active);
+                    ExplorerView.EditSession session = explorer.captureEditSession();
+                    explorer.applyTextEditForSession(session, PATH, "original",
+                        "manter meu trabalho");
+                    java.util.Map<String, String> malformed =
+                        new java.util.LinkedHashMap<>();
+                    malformed.put("assets/first.txt", "válido");
+                    malformed.put("assets/second.txt",
+                        "surrogate inválido " + (char) 0xD83D);
+                    try {
+                        explorer.restoreEditPlanForSession(session, malformed);
+                        fail("Malformed Unicode cannot partially apply recovery");
+                    } catch (IllegalArgumentException expected) {
+                        assertEquals("manter meu trabalho",
+                            explorer.getEditPlan().get(PATH));
+                        assertFalse(explorer.getEditPlan().contains("assets/first.txt"));
+                    }
+                } catch (Exception problem) {
+                    throw new AssertionError(problem);
+                } finally {
+                    if (active != null) active.delete();
+                }
+            });
+        }
+    }
+
     @Test public void unchangedOriginalDoesNotCreateFakeSuccess() {
         EditPlan plan = new EditPlan();
         assertEquals(EditPlan.EditResult.UNCHANGED,

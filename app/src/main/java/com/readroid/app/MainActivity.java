@@ -1047,12 +1047,16 @@ public class MainActivity extends Activity {
                 return;
             }
             final File source = currentApk;
+            final ExplorerView.EditSession recoverySession =
+                explorerView.captureEditSession();
             executor.execute(() -> {
                 try {
                     final Map<String, String> changes =
                         new RecoveryVault(this).loadForSource(source);
                     runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed() || source != currentApk) return;
+                        if (isFinishing() || isDestroyed() || source != currentApk
+                                || !explorerView.isCurrentEditSession(recoverySession))
+                            return;
                         new android.app.AlertDialog.Builder(this)
                             .setTitle("Recuperar " + changes.size() + " alterações?")
                             .setMessage("A cópia foi autenticada e pertence a este APK "
@@ -1061,16 +1065,25 @@ public class MainActivity extends Activity {
                                 + "não será modificado.")
                             .setNegativeButton("Cancelar", null)
                             .setPositiveButton("Substituir plano", (dialog, which) -> {
-                                if (source != currentApk) return;
-                                EditPlan plan = explorerView.getEditPlan();
-                                plan.clear();
-                                for (Map.Entry<String, String> edit : changes.entrySet())
-                                    plan.addTextReplacement(edit.getKey(), edit.getValue());
-                                explorerView.refresh();
-                                new android.app.AlertDialog.Builder(this)
-                                    .setMessage("Plano recuperado. Revise as alterações antes "
-                                        + "de exportar um APK modificado.")
-                                    .setPositiveButton("OK", null).show();
+                                if (source != currentApk
+                                        || !explorerView.isCurrentEditSession(recoverySession)) {
+                                    new android.app.AlertDialog.Builder(this)
+                                        .setMessage("A recuperação foi cancelada porque "
+                                            + "o projeto mudou. As alterações atuais "
+                                            + "foram preservadas.")
+                                        .setPositiveButton("OK", null).show();
+                                    return;
+                                }
+                                try {
+                                    explorerView.restoreEditPlanForSession(
+                                        recoverySession, changes);
+                                    new android.app.AlertDialog.Builder(this)
+                                        .setMessage("Plano recuperado. Revise as alterações antes "
+                                            + "de exportar um APK modificado.")
+                                        .setPositiveButton("OK", null).show();
+                                } catch (RuntimeException invalid) {
+                                    showRecoveryError("Recuperação cancelada", invalid);
+                                }
                             }).show();
                     });
                 } catch (Exception error) {

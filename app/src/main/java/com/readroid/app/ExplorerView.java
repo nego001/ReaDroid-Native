@@ -83,6 +83,16 @@ public final class ExplorerView {
         return editPlan.applyTextEdit(path, original, replacement);
     }
 
+    /** Restores only into the original, still-open project session. */
+    void restoreEditPlanForSession(EditSession session,
+            java.util.Map<String, String> changes) {
+        if (!isCurrentEditSession(session))
+            throw new IllegalStateException(
+                "Recuperação cancelada: outro APK foi aberto.");
+        editPlan.replaceAllValidated(changes);
+        render();
+    }
+
     private static final String[] CATEGORIES = {
         "Todos", "Smali", "Recursos", "Imagens", "XML",
         "Código DEX", "Bibliotecas", "Assets", "Assinaturas/metadados",
