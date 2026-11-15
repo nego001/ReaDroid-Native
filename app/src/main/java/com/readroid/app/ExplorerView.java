@@ -333,10 +333,6 @@ public final class ExplorerView {
             // a genuine >=48dp focusable/clickable hit target.
             chip.setMinHeight(NegrescoTheme.dp(activity, 48));
             chip.setMinimumHeight(NegrescoTheme.dp(activity, 48));
-            chip.setPadding(NegrescoTheme.dp(activity, 10),
-                NegrescoTheme.dp(activity, 6),
-                NegrescoTheme.dp(activity, 10),
-                NegrescoTheme.dp(activity, 6));
             android.graphics.drawable.GradientDrawable bg =
                 new android.graphics.drawable.GradientDrawable();
             bg.setColor(selected ? NegrescoTheme.ACCENT : NegrescoTheme.SURFACE);
@@ -350,6 +346,14 @@ public final class ExplorerView {
             int paintInset = NegrescoTheme.dp(activity, 6);
             chip.setBackground(new android.graphics.drawable.InsetDrawable(
                 bg, 0, paintInset, 0, paintInset));
+            // Android may replace a TextView's explicit content padding
+            // when its background changes. Reapply it AFTER setBackground:
+            // without this, pills shrink to the width of their text and
+            // glyphs spill over the painted outline (seen on API35).
+            chip.setPadding(NegrescoTheme.dp(activity, 10),
+                NegrescoTheme.dp(activity, 6),
+                NegrescoTheme.dp(activity, 10),
+                NegrescoTheme.dp(activity, 6));
             chip.setContentDescription("Filtrar por " + name
                 + (selected ? ", selecionado" : ""));
             chip.setClickable(true);

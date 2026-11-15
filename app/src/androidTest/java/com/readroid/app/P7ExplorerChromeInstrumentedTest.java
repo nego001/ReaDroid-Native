@@ -182,6 +182,22 @@ public final class P7ExplorerChromeInstrumentedTest {
                         NegrescoTheme.dp(activity, 6), backgroundInsets.top);
                     assertEquals("Compact pill bottom inset",
                         NegrescoTheme.dp(activity, 6), backgroundInsets.bottom);
+                    // InsetDrawable can reset TextView horizontal content
+                    // padding. Without these assertions the 36dp pill may
+                    // have text touching/spilling past its outline even
+                    // though the 48dp vertical hitbox remains intact.
+                    int horizontalPad = NegrescoTheme.dp(activity, 10);
+                    for (String category : new String[]{
+                            "Todos", "Smali", "Recursos", "Imagens", "XML"}) {
+                        TextView pill = find(root, category);
+                        assertNotNull("Missing quick filter " + category, pill);
+                        assertTrue(category + " left text inset lost",
+                            pill.getPaddingLeft() >= horizontalPad);
+                        assertTrue(category + " right text inset lost",
+                            pill.getPaddingRight() >= horizontalPad);
+                        assertTrue(category + " min height lost",
+                            pill.getMinimumHeight() >= touch);
+                    }
                     assertEquals("Filter keeps its full accessible label",
                         "Filtrar por XML", chip.getContentDescription().toString());
                     assertTrue(chip.isClickable() && chip.isFocusable());
@@ -189,6 +205,10 @@ public final class P7ExplorerChromeInstrumentedTest {
                     assertEquals("Selected filter must stay announced",
                         "Filtrar por XML, selecionado",
                         find(root, "XML").getContentDescription().toString());
+                    assertTrue("Selected XML pill must retain left padding",
+                        find(root, "XML").getPaddingLeft() >= horizontalPad);
+                    assertTrue("Selected XML pill must retain right padding",
+                        find(root, "XML").getPaddingRight() >= horizontalPad);
                     assertNull("XML filter should hide libs",
                         byDescription(root, "Abrir pasta lib/"));
                     assertNull("XML filter should hide assets",
