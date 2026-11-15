@@ -169,7 +169,9 @@ class P7CaptureRunnerTests(unittest.TestCase):
         self.assertEqual(1, isolated.count(method))
         # P7.50.11 additionally exercises the real Activity-owned accent
         # dialog through the below-fold action and cancels without saving.
-        self.assertEqual(49, navigation.count("@Test"))
+        self.assertEqual(50, navigation.count("@Test"))
+        self.assertEqual(1, navigation.count(
+            "void nativeDialogCancelTextTransformationIsNotAFalseFailure()"))
         self.assertEqual(1, navigation.count(
             "void homeQuickActionsHeadingUsesReferenceTextColorAcrossThemes()"))
         self.assertEqual(1, navigation.count(
