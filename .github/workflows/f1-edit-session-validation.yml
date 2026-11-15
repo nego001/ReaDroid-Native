@@ -1,0 +1,52 @@
+name: F1 APK editor session integrity
+# Functional-only CI for draft PRs targeting the frozen P7 visual baseline.
+# Build/execute tests on emulators, but do NOT assemble/upload QA installers.
+on:
+  pull_request:
+    branches: [feature/p7-negrecodroid-visual-foundation]
+    paths:
+      - 'app/src/main/java/com/readroid/app/ExplorerView.java'
+      - 'app/src/androidTest/java/com/readroid/app/EditPlanStateInstrumentedTest.java'
+      - '.github/workflows/f1-edit-session-validation.yml'
+  workflow_dispatch:
+concurrency:
+  group: f1-edit-session-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  functional-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Enable KVM when available
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Verify import, stale-editor isolation, rebuild and SAF export
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 3072M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
+          script: |
+            set -eu
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest
+            echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
