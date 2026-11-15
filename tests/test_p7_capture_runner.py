@@ -98,41 +98,57 @@ class P7CaptureRunnerTests(unittest.TestCase):
             "gradle --no-daemon :app:connectedDebugAndroidTest")
         self.assertLess(built, captured)
         self.assertLess(captured, regression)
-        # All three connectedAndroidTest invocations are REQUIRED. The suite
-        # may be split for emulator stability but must not shrink or duplicate.
+        # Every underlying Android class remains required. The heavy
+        # layout-card method runs in isolation, and the remaining navigation
+        # tests run once with AndroidJUnitRunner's exact notClass filter.
         import re
         commands = re.findall(
             r"gradle --no-daemon :app:connectedDebugAndroidTest "
-            r"-Pandroid\.testInstrumentationRunnerArguments\.class=([^\s]+)",
+            r"-Pandroid\\.testInstrumentationRunnerArguments\\.class=([^\\s]+)",
             workflow)
-        self.assertEqual(8, len(commands))
+        self.assertEqual(9, len(commands))
         selections = [name for cmd in commands for name in cmd.split(",")]
-        self.assertEqual(27, len(selections))
-        self.assertEqual(27, len(set(selections)))
+        self.assertEqual(28, len(selections))  # 27 classes + 1 method
+        self.assertEqual(28, len(set(selections)))
+        self.assertEqual(27, len({
+            selection.split("#", 1)[0] for selection in selections}))
         self.assertIn("ram-size: 3072M", workflow)
         self.assertIn("free -m", workflow)
+        heavy = ("com.readroid.app.P7NavigationInstrumentedTest"
+                 "#layoutCardsKeepCompleteNamesAndNativeButtonRoleAtLargeFont")
+        self.assertEqual([heavy], commands[0].split(","))
         self.assertEqual(
             ["com.readroid.app.P7BottomNavigationLargeFontInstrumentedTest"],
-            commands[0].split(","))
-        self.assertEqual(
-            ["com.readroid.app.P7WelcomeLargeFontInstrumentedTest"],
             commands[1].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7IconTemplatesLargeFontInstrumentedTest"],
+            ["com.readroid.app.P7WelcomeLargeFontInstrumentedTest"],
             commands[2].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7DesignCatalogLargeFontInstrumentedTest"],
+            ["com.readroid.app.P7IconTemplatesLargeFontInstrumentedTest"],
             commands[3].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7LogoIdentityLargeFontInstrumentedTest"],
+            ["com.readroid.app.P7DesignCatalogLargeFontInstrumentedTest"],
             commands[4].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7CreatorCardsLargeFontInstrumentedTest"],
+            ["com.readroid.app.P7LogoIdentityLargeFontInstrumentedTest"],
             commands[5].split(","))
         self.assertEqual(
-            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            ["com.readroid.app.P7CreatorCardsLargeFontInstrumentedTest"],
             commands[6].split(","))
-        self.assertEqual(20, len(commands[7].split(",")))
+        self.assertEqual(
+            ["com.readroid.app.P7NavigationInstrumentedTest"],
+            commands[7].split(","))
+        self.assertEqual(20, len(commands[8].split(",")))
+        nav_exclusion = (
+            "-Pandroid.testInstrumentationRunnerArguments.notClass=" + heavy)
+        self.assertEqual(1, workflow.count(nav_exclusion))
+        # Filtering must apply on the navigation command, not on another
+        # test or a comment. Otherwise the isolated test could run twice.
+        nav_line = next(line for line in workflow.splitlines()
+                        if "Arguments.class=com.readroid.app."
+                           "P7NavigationInstrumentedTest "
+                        in line and "gradle --no-daemon" in line)
+        self.assertIn(nav_exclusion, nav_line)
         # The runner launches each workflow line as a separate shell.
         # Run the conditional reboot in one guarded executable script.
         marker = "bash tools/p7_api35_reboot.sh ${{ matrix.api }}"
