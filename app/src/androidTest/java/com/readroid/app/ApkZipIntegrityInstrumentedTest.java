@@ -63,6 +63,29 @@ public final class ApkZipIntegrityInstrumentedTest {
         return -1;
     }
 
+    private static int centralEntry(byte[] zip, String entryName) {
+        byte[] name = bytes(entryName);
+        // Match name immediately following a central-directory record.
+        // The first central record may be a zero-byte directory.
+        for (int i = 46; i <= zip.length - name.length; i++) {
+            int header = i - 46;
+            if ((zip[header] & 255) != 0x50
+                    || (zip[header + 1] & 255) != 0x4b
+                    || (zip[header + 2] & 255) != 0x01
+                    || (zip[header + 3] & 255) != 0x02)
+                continue;
+            int nameLength = (zip[header + 28] & 255)
+                    | ((zip[header + 29] & 255) << 8);
+            if (nameLength != name.length) continue;
+            boolean same = true;
+            for (int j = 0; j < name.length; j++) {
+                if (zip[i + j] != name[j]) { same = false; break; }
+            }
+            if (same) return header;
+        }
+        return -1;
+    }
+
     private static void assertCorrupt(File file) throws Exception {
         try {
             ApkZipIntegrity.verify(file);
@@ -101,7 +124,7 @@ public final class ApkZipIntegrityInstrumentedTest {
         try {
             writeFixture(file, false);
             byte[] zip = Files.readAllBytes(file.toPath());
-            int central = locate(zip, new byte[]{0x50, 0x4b, 0x01, 0x02});
+            int central = centralEntry(zip, "assets/config.txt");
             assertTrue(central >= 0);
             // Central directory CRC32 is at +16; leaving compressed bytes
             // untouched proves that simply reading the entry is insufficient.
@@ -116,7 +139,7 @@ public final class ApkZipIntegrityInstrumentedTest {
         try {
             writeFixture(file, false);
             byte[] zip = Files.readAllBytes(file.toPath());
-            int central = locate(zip, new byte[]{0x50, 0x4b, 0x01, 0x02});
+            int central = centralEntry(zip, "assets/config.txt");
             assertTrue(central >= 0);
             // CEN uncompressed size at +24. Zero is deliberately false.
             for (int i = 0; i < 4; i++) zip[central + 24 + i] = 0;
