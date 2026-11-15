@@ -5,10 +5,24 @@ on:
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
+      # Editing, import, archive reconstruction, recovery and export must
+      # trigger this CI even if modified WITHOUT any ExplorerView change.
+      - 'app/src/main/java/com/readroid/app/MainActivity.java'
       - 'app/src/main/java/com/readroid/app/ExplorerView.java'
+      - 'app/src/main/java/com/readroid/app/EditPlan.java'
+      - 'app/src/main/java/com/readroid/app/RecoveryVault.java'
+      - 'app/src/main/java/com/readroid/app/ApkImportPreflight.java'
+      - 'app/src/main/java/com/readroid/app/ApkRebuilder.java'
+      - 'app/src/main/java/com/readroid/app/ApkIntegrity.java'
+      - 'app/src/main/java/com/readroid/app/RebuildVerifier.java'
       - 'app/src/main/java/com/readroid/app/SafExportVerifier.java'
       - 'app/src/androidTest/java/com/readroid/app/EditPlanStateInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/RecoveryVaultInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ProjectRecreationInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkImportPreflightInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkRebuilderInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/SafExportVerifierInstrumentedTest.java'
+      - 'tests/test_f1_functional_ci_contract.py'
       - '.github/workflows/f1-edit-session-validation.yml'
   workflow_dispatch:
 concurrency:
@@ -33,10 +47,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Guard functional CI triggers and required suites
+        run: python3 -m unittest discover -s tests -p 'test_f1_functional_ci_contract.py' -v
       - name: Enable KVM when available
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
-      - name: Verify import, stale-editor isolation, rebuild and SAF export
+      - name: Verify import, stale-editor isolation, recovery, rebuild and SAF export
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
@@ -50,5 +66,5 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest
             echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
