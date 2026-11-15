@@ -101,11 +101,18 @@ jobs:
             # Pixel Launcher holding window focus; fail-closed checks stay on.
             gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
             bash tools/p7_capture_populated.sh ${{ matrix.api }}
+            # P7.50.11: the real 135% layout-card test repeatedly coincided
+            # with emulator-5554 disappearing after 15 preceding navigation
+            # tests on API35. Isolate it in a REQUIRED Gradle instrumentation
+            # session *before* the longer suite, without changing assertions.
+            # Any failure immediately blocks this job (set -eu).
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7NavigationInstrumentedTest#layoutCardsKeepCompleteNamesAndNativeButtonRoleAtLargeFont
             # Run the full regression suite only after the capture. Gradle may
             # reinstall debug APKs, but the screenshot is already on the host.
-            # Split the exact 27 test selectors into eight REQUIRED Gradle
-            # invocations. On API35 an intermittently lost emulator stopped
-            # during the large-font navigation test after 24 other tests.
+            # Split the exact 27 test classes into nine REQUIRED Gradle
+            # invocations (one navigation method in its own instrumented run).
+            # Never skip the test, hide the failing Gradle exit code or reuse
+            # a prior artifact when any required invocation fails.
             # Run the isolated bottom-tab class, then the rest of navigation.
             # First session: preserve 135% bottom-navigation assertions in isolation.
             # API35 has intermittently lost the emulator when this method ran
@@ -126,7 +133,9 @@ jobs:
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7LogoIdentityLargeFontInstrumentedTest
             # Isolate full 135-percent creator-card accessibility and layout QA.
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7CreatorCardsLargeFontInstrumentedTest
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7NavigationInstrumentedTest
+            # Full navigation except the *already required* isolated method.
+            # AndroidJUnitRunner's notClass filter prevents duplicate tests.
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.P7NavigationInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.readroid.app.P7NavigationInstrumentedTest#layoutCardsKeepCompleteNamesAndNativeButtonRoleAtLargeFont
             # Final session: the 116 tests from the remaining 20 selectors.
             # mandatory; either Gradle failure blocks the entire screenshot gate.
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.BrandIdentityInstrumentedTest,com.readroid.app.P7HomeOverviewInstrumentedTest,com.readroid.app.P7ExplorerChromeInstrumentedTest,com.readroid.app.P7ExplorerPopulatedCaptureInstrumentedTest#detectsSyntheticSystemOverlayBeforeEvidenceExport,com.readroid.app.IndexedExplorerViewInstrumentedTest,com.readroid.app.P7ThemeCatalogInstrumentedTest,com.readroid.app.P7VisualCatalogInstrumentedTest,com.readroid.app.P7MascotArtworkInstrumentedTest,com.readroid.app.P7IndexedFiltersInstrumentedTest,com.readroid.app.P7ProjectHistoryInstrumentedTest,com.readroid.app.P7RecentAppIconsInstrumentedTest,com.readroid.app.P7ExplorerEntryRowInstrumentedTest,com.readroid.app.P7IconWorkshopInstrumentedTest,com.readroid.app.P7IconSvgInstrumentedTest,com.readroid.app.P7LogoWorkshopInstrumentedTest,com.readroid.app.P7LogoSvgInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest
