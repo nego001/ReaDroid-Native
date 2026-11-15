@@ -93,7 +93,12 @@ jobs:
           ram-size: 3072M
           disk-size: 4096M
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          # Emulator 37.2.13: swiftshader_indirect was deprecated in 36.4.9.
+          # API35 showed invalid GPU color buffers and a Pixel Launcher ANR
+          # during protected Explorer capture. Android recommends software
+          # when graphics emulation is unstable. Keep API29 as control.
+          # No screenshot/focus gate is relaxed, no retries added.
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
             # Capture the real, synthetic-only Explorer on a fresh emulator.
