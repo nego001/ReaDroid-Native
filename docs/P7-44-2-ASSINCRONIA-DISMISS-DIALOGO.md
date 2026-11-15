@@ -1,0 +1,9 @@
+# P7.44.2 — Síncronia correta de fechamento de confirmações
+
+## Evidência da falha
+A matriz da P7.44.1 [#40125584805](https://github.com/nego001/ReaDroid-Native/actions/runs/40125584805) foi `failure`. Relatório XML Android 10, não apenas resumo Gradle: `themeAndLayoutBadgesRequireCommittedAppearance` falhou na linha 1870 (a confirmação de layout ainda não estava aberta), e `crossFamilyAppearanceConfirmationsNeverStackOrLeavePhantomPreview` na linha 414, igualmente aguardando um layout nulo. Nos dois casos, o teste acionava `Cancelar.performClick()` e **dentro do mesmo callback main-thread** já tentava abrir a próxima confirmação. A referência do diálogo anterior ainda estava visível até a fila `OnDismiss` rodar, e a guarda conjunta da P7.44 o bloqueou corretamente. A API35 perdeu o emulador durante outro teste (Logo), portanto não há prova de regressão específica de produção nesse dispositivo.
+
+## Correção sem desativar guarda
+Reestrutura os dois testes Android para que cada nova família seja iniciada em um `ActivityScenario.onActivity` posterior, após `InstrumentationRegistry.getInstrumentation().waitForIdleSync()`. Entre etapas, verifica `isShowing() == false` e referência `active...Confirmation() == null`, exige funcionamento da família seguinte, mantém os checks de impossibilidade de empilhamento e confirma todas as preferências intactas em cada ciclo. Em encerramento, limpa eventual diálogo em `finally`. Um helper privado só obtém a mesma instância `P7DesignStudio` da Activity por reflexão, sem mocks. Contrato fonte agora exige a separação do ciclo de vida e as checagens de fechamento.
+
+**Nenhuma alteração de produção**: bloqueio de empilhamento das quatro classes de diálogos preservado. Cobertura continua **162 instrumentados/API (1+1+1+43+116)**, 14 capturas por API e cross 28/28. Aprovação só após Source, OTA, API29, API35 e cross green; visual 1:1 e Galaxy A55/TalkBack físico continuam pendentes.

@@ -1,0 +1,6 @@
+<resources>
+    <!-- P7: brand colors for the launcher and approved OLED identity. -->
+    <color name="negrecodroid_ink">#030B16</color>
+    <color name="negrecodroid_blue">#169FFF</color>
+    <color name="negrecodroid_silver">#F4F8FF</color>
+</resources>

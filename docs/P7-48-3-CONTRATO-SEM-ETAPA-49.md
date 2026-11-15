@@ -1,0 +1,7 @@
+# P7.48.3 — Contrato Source alinhado ao isolamento sem P7.49
+
+A P7.48.2 #40161441910 e Source #40161441863 terminaram `failure` nos contratos Python **antes de testar qualquer Android**. O método `test_workflow_keeps_overlay_test_in_suite_and_capture_isolated` exigia que `androidBackRollsBackThemeLayoutAndPresetConfirmations` estivesse na classe de navegação, embora este teste pertença **à futura P7.49 ainda não integrada**. O mesmo contrato também exigia a guarda única `appearanceDialogShowing()` da P7.49, que não estava na base P7.48.2.
+
+Esta correção remove **somente expectativas prematuras dessas alterações não integradas**; restabelece a asserção já existente da guarda real `catalogChooser != null && catalogChooser.isShowing()`. Preserva as assertivas já integradas em P7.48/P7.48.1: Back nos três catálogos, confirmação de janela nativa depois do `waitForIdleSync`, nenhum commit de aparência, e a própria proteção atual de produção. Preserva as novas exigências do isolamento do logotipo em `P7LogoIdentityLargeFontInstrumentedTest` com método único, sem duplicação, todos os asserts de acessibilidade/fonte/persistência, **7 sessões, 26 seletores únicos, 165 instrumentados/API**.
+
+Não há alteração no aplicativo ou nas instrumentações; apenas o contrato da matriz e esta documentação. Android29, Android35, Source/OTA, 14 PNG/API, 28 cross e fail-closed continuam obrigatórios. PR draft, main sem merge, sem APK/OTA e sem homologação visual 1:1 nem teste físico Galaxy A55/TalkBack.

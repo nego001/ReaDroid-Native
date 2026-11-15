@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Freestanding 3D N artwork for the creative tool card, based on the
+         official two-PNG reference. It does NOT replace the launcher shield. -->
+    <path android:fillColor="#06183D"
+        android:pathData="M15,15 L38,38 L38,44 L31,36 L15,20 Z"/>
+    <path android:fillColor="#00BDF5"
+        android:pathData="M8,9 L15,8 L16,9 L16,34 L8,42 Z"/>
+    <path android:fillColor="#4BD8FF"
+        android:pathData="M15,8 L18,9 L18,33 L16,34 L16,9 Z"/>
+    <path android:fillColor="#B4EAFF"
+        android:pathData="M15,8 L19,8 L31,22 L27,29 L16,17 Z"/>
+    <path android:fillColor="#67D4FF"
+        android:pathData="M15,8 L19,8 L27,17 L24,22 Z"/>
+    <path android:fillColor="#A37AF0"
+        android:pathData="M27,22 L34,29 L38,34 L38,42 L27,29 L24,26 Z"/>
+    <path android:fillColor="#192B69"
+        android:pathData="M32,29 L38,34 L38,42 L31,34 Z"/>
+    <path android:fillColor="#EDF6FF"
+        android:pathData="M31,15 L38,9 L38,34 L31,27 Z"/>
+    <path android:fillColor="#B8C8ED"
+        android:pathData="M31,15 L34,13 L34,30 L31,27 Z"/>
+    <path android:fillColor="#7F61D0"
+        android:pathData="M27,25 L38,36 L38,42 L27,30 Z"/>
+</vector>

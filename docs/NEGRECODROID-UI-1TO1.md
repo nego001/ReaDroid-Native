@@ -1,6 +1,6 @@
 # P7 — NegrecoDroid: interface e identidade visual 1:1
 
-> **Aprovação visual:** 20/10/2026. **Situação: PLANEJADO, NÃO IMPLEMENTADO.**
+> **Aprovação visual:** 20/10/2026. **Situação: EM IMPLEMENTAÇÃO NA BRANCH P7; mockup completo ainda NÃO implementado.**
 > **Tarefa oficial:** [issue #11](https://github.com/nego001/ReaDroid-Native/issues/11).
 > **Nome oficial exibido ao usuário:** `NegrecoDroid` — grafia exata, sem "s".
 > **Referência obrigatória:** as duas artes aprovadas pelo proprietário nesta conversa.
@@ -122,3 +122,78 @@ A referência artística mostra elementos aspiracionais. Na implementação, cad
 - [ ] Aceite final 1:1 em Android.
 
 **Importante:** criação desta documentação **não implementa a interface**. Mudanças de código ocorrerão em PRs de entrega da P7, apenas quando iniciada a fase, para preservar a base estável.
+
+
+## 8. Entrega técnica P7.1-A (20/10/2026; branch isolada)
+
+- [x] Criar marca vetorial SVG editável em `design/brand/negrecodroid-mark-master.svg`; arte do **primeiro passe**, a refinar com comparação à prancha oficial.
+- [x] Criar vetores Android para ícone colorido e monocromático e recurso adaptive icon API 26+.
+- [x] Substituir rótulos de launcher `NegrescoDroid` por **`NegrecoDroid`** em app debug/QA, sem alterar applicationId, assinatura ou armazenamento.
+- [x] Substituir a marca genérica do cabeçalho por vetor de escudo/N nativo.
+- [x] Migrar apenas o nome de marca predefinido de instalações anteriores; nomes personalizados não são substituídos.
+- [x] Adicionar testes instrumentados de carregamento do recurso, nome e launcher icon.
+- [ ] Validar build, Android 10/15, QA e inspeção visual com evidências dos workflows da PR; não registrar PASS antecipadamente.
+- [ ] Incorporar os PNGs aprovados no GitHub; **a identificação via hash não substitui as imagens**.
+- [ ] Refinar desenho da logo e ícone 1:1, com validação visual lado a lado.
+- [ ] Construir as três telas completas e funcionais. A navegação existente ainda não foi redesenhada.
+
+A P7.1-A é **apenas fundação de identidade visual**. Não altera importação, recuperação, edit plan, SQLite ou exportação e não representa o fechamento de P7.1–P7.7.
+
+
+## 9. Entrega P7.2-A — Home funcional (20/10/2026)
+
+**Implementado em branch de trabalho, aguardando homologação CI e revisão visual:**
+
+- [x] `P7MascotView`: mascote escuro com olhos ciano desenhado por Canvas nativo, sem bitmap nem efeitos pesados (aproximação, **ainda não validada 1:1** contra a arte original).
+- [x] `StudioDashboard.compose`: saudação "Olá, Desenvolvedor", texto de introdução, mascote e cartão do projeto; preserva o botão real de seleção SAF.
+- [x] `P7HomeOverview`: quatro cartões em grade 2×2 e seção "Projetos recentes" baseada **no APK aberto na sessão**, com aviso honesto quando não há histórico persistente. Nunca inventar 12 projetos, builds ou zero ameaças.
+- [x] Seis atalhos: quatro abas reais anteriores (favorito preservado), "Abrir APK" via seletor do Android e "Plano de edição" ligado à revisão existente. Grade responsiva de duas colunas para preservar acessibilidade.
+- [x] Atualização dos contadores ao concluir análise, iniciar novo APK, retornar à Home e restaurar rotação/tema; projeto e plano de edição preservados pela arquitetura existente.
+- [x] `P7HomeOverviewInstrumentedTest` de estados vazio/ativo/retorno; adicionado ao workflow P7 API 29 e 35.
+- [x] Corrigido workflow CI P7 que falhava por variável `SDK_ROOT` definida em etapa anterior, não dentro do script do emulador. Falha anterior era do próprio script `aapt`, não evidência de APK quebrado.
+- [ ] Aguardar execução de CI **no commit final** e registrar evidência de builds e tests, sem presumir sucesso.
+- [ ] Fazer comparação lado a lado com mockup da Home e homologação Samsung física. Projeto P7.2 não concluído até obter a semelhança visual aprovada.
+
+**Escopo explicitamente parcial:** P7.2-A é uma primeira implementação nativa da Home; a fidelidade 1:1 integral depende dos PNGs versionados, assets mais refinados, navegação final e testes visuais. Não modificar licença, assinatura, OTA, índice SQLite, recuperação ou exportação nesta entrega.
+
+
+## 10. Entrega P7.3-A — estrutura visual do Explorador (20/10/2026)
+
+**Status: implementado parcialmente na branch de trabalho, sujeito ao CI e revisão de screenshots.**
+
+- [x] Classe nativa `P7ExplorerChrome` com título "Explorador de Arquivos", subtítulo e cartão do APK atual; nome de pacote/tamanho vêm do relatório da sessão, não de dados demonstrativos.
+- [x] Indicador de alterações pendentes conectado ao `EditPlan`, inclusive pluralização correta de zero, uma ou várias edições.
+- [x] Breadcrumb horizontal acessível com raiz APK e até quatro últimos segmentos visíveis; cada segmento aberto navega à pasta real e reinicia o offset.
+- [x] Filtros rápidos horizontais **Todos, Código DEX, Recursos, Assets e Alterados**, conectados às categorias existentes. O menu avançado preserva as outras categorias.
+- [x] Listagem original, botões de paginação SQLite, busca, prévia, plano de edição e ação de pasta continuam sendo a fonte funcional; filtros fora de "Todos" ainda usam o fallback clássico.
+- [x] Remoção do título redundante do módulo Arquivos e do rótulo antigo de pasta duplicado; contexto de busca permanece.
+- [x] `P7ExplorerChromeInstrumentedTest` cobre seleção de categoria, retorno pela trilha e contador de edições. `IndexedExplorerViewInstrumentedTest` foi incluído na matriz do CI para proteger paginação de 301 itens.
+- [x] Script `tools/p7_explorer_smoke.py` abre a aba Arquivos no emulador e coleta screenshot sem carregar arquivo pessoal.
+- [x] Corrigido erro de compilação detectado pelo CI (`search` final capturada antes de ser inicializada pela callback do breadcrumb).
+- [x] Home: contador de itens usa primeiro o número `entries` real do relatório, com fallback para campos compatíveis quando indisponível.
+- [ ] Aguardar aprovação de todos os testes Android 10/15 no commit definitivo; publicar links de evidência e discrepâncias, não chamar de aprovado enquanto pendente.
+- [ ] Refinar largura, tipografia, ícones e contornos por comparação de pixels com PNG oficial.
+- [ ] Incorporar os PNGs de referência no GitHub; construir o Design Studio, editor de logo/ícone e concluir 1:1 nos três layouts.
+
+**Restrições:** sem aumentar limite de importação, sem modificar APK original, sem operações de segurança/assinatura automáticas. P7.3-A não representa homologação completa da P7.3.
+
+
+## 11. P7.4-C — prévias selecionáveis sem aplicações falsas (20/10/2026)
+
+- [x] `P7DesignStudio`: prateleiras de temas, layouts e presets agora possuem seleção visual individual (em vez de todos os cards abrirem o mesmo seletor), borda azul e estado acessível.
+- [x] As prévias são explicitamente rotuladas como **prévia apenas**; selecionar um tema não escreve configurações nem reivindica que a mudança já foi aplicada. Os comandos reais de paleta, densidade e importação/exportação permanecem nos controles existentes.
+- [x] Adicionado teste de seleção (Matrix Green deve ficar selecionado e Negreco Blue desmarcado) em `P7NavigationInstrumentedTest` no CI Android.
+- [ ] Implementar aplicação real e persistida de cada tema/layout/preset, incluindo rollback seguro, antes de alegar catálogo funcional completo.
+- [ ] Comparar miniaturas e proporções com a imagem original fixada pelo proprietário. A implementação atual ainda não é equivalente a pixels 1:1.
+- [ ] Homologar CI no commit final, comparar screenshots reais e repetir QA no telefone físico.
+
+
+## 12. P7.4-D — aplicar tema com confirmação e persistência (20/10/2026)
+
+- [x] `P7ThemeCatalog`: conecta quatro opções iniciais ao mecanismo existente de `theme` + `accent` em `v3_personalizacao`, com `commit()` validado e `Activity.recreate()` somente após sucesso da gravação.
+- [x] A galeria mostra seleção de prévia separada de aplicação. O botão "Aplicar tema selecionado" pede confirmação antes de atualizar o app; restaura a seleção conforme preferências quando a tela é recriada.
+- [x] Invalidar índices fora de 0–3 sem gravar alterações; nenhum dado de APK, recuperação ou plano de edições é escrito pelo catálogo.
+- [x] Novo `P7ThemeCatalogInstrumentedTest` cobre persistência/rejeição de opção inválida, incluído no workflow Android API 29/35.
+- [ ] Auditar fluxo de recuperação da `MainActivity` com APK aberto e verificar screenshot do tema aplicado.
+- [ ] Correspondência visual literal: **ainda não concluída**. Carbon, Matrix Green e Sunset usam combinações preexistentes de fundo/cor; o catálogo planejado de 24 temas e os layouts alternativos completos ainda não existem.
+- [ ] Homologação CI do commit final e testes físicos pendentes.

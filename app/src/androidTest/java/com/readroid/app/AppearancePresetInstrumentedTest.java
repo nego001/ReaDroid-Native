@@ -34,6 +34,8 @@ public final class AppearancePresetInstrumentedTest {
             .putInt("card_radius", 26)
             .putInt("font_percent", 130)
             .putBoolean("compact", true)
+            .putInt("layout_variant", 1)
+            .putInt("p7_active_preset", 2)
             .putBoolean("nav_labels", false)
             .putInt("favorite_tab", 4)
             .putString("display_name", "Meu Negresco")
@@ -53,6 +55,8 @@ public final class AppearancePresetInstrumentedTest {
         assertEquals(26, prefs.getInt("card_radius", 0));
         assertEquals(130, prefs.getInt("font_percent", 0));
         assertTrue(prefs.getBoolean("compact", false));
+        assertEquals(1, prefs.getInt("layout_variant", -1));
+        assertEquals(2, prefs.getInt("p7_active_preset", -1));
         assertFalse(prefs.getBoolean("nav_labels", true));
         assertEquals(4, prefs.getInt("favorite_tab", 0));
         assertEquals("Meu Negresco", prefs.getString("display_name", ""));
@@ -92,12 +96,15 @@ public final class AppearancePresetInstrumentedTest {
         assertEquals("#1688FF", prefs.getString("custom_accent", null));
         assertTrue(prefs.getBoolean("studio_glow", false));
         assertEquals(18, prefs.getInt("card_radius", -1));
+        assertEquals(0, prefs.getInt("layout_variant", -1));
+        assertEquals(-1, prefs.getInt("p7_active_preset", 99));
     }
 
     @Test public void wrongTypesAndRangesDoNotPartiallyImport() throws Exception {
         assertTrue(prefs.edit().putString("theme", "graphite").commit());
         for (String key : new String[]{"compact", "nav_labels", "font_percent", "favorite_tab",
-                "studio_glow", "card_radius", "custom_accent"}) {
+                "studio_glow", "card_radius", "custom_accent",
+                "layout_variant", "p7_active_preset"}) {
             JSONObject invalid = validPreset();
             switch (key) {
                 case "font_percent":
@@ -107,6 +114,8 @@ public final class AppearancePresetInstrumentedTest {
                 case "custom_accent":
                     invalid.put(key, "#FF0000ZZ"); break;
                 case "card_radius":
+                case "layout_variant":
+                case "p7_active_preset":
                     invalid.put(key, 300); break;
                 default:
                     invalid.put(key, "true"); break;
