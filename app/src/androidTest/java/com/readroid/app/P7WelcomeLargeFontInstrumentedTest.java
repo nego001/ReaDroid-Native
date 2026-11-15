@@ -29,8 +29,14 @@ public final class P7WelcomeLargeFontInstrumentedTest {
                     View root = activity.getWindow().getDecorView();
                     View stage = root.findViewWithTag("p7-welcome-stage");
                     LinearLayout text = root.findViewWithTag("p7-welcome-text");
+                    View mascot = root.findViewWithTag("p7-welcome-mascot");
                     assertNotNull(stage);
                     assertNotNull(text);
+                    assertNotNull("Approved mascot must remain present", mascot);
+                    assertTrue("At 135% mascot cannot intrude into brand header",
+                        mascot.getTop() >= 0);
+                    assertTrue("At 135% mascot must fit inside welcome stage",
+                        mascot.getBottom() <= stage.getHeight());
                     assertEquals("Welcome stage must measure from its content",
                         -2, stage.getLayoutParams().height);
                     assertEquals(-2, text.getLayoutParams().height);
