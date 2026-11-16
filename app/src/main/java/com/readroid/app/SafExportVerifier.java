@@ -17,6 +17,10 @@ import java.util.Arrays;
  * preserving every byte; only a full readback can confirm success.
  */
 public final class SafExportVerifier {
+    // A provider can legally produce short reads, including transient zero
+    // reads. Persistent zero reads must never spin the export worker forever.
+    private static final int MAX_ZERO_READS = 16;
+
     private SafExportVerifier() {}
 
     // Internal seam for exercising untrusted provider behavior without
@@ -53,49 +57,85 @@ public final class SafExportVerifier {
     static long copyAndVerify(File source, ExportTarget target) throws IOException {
         if (source == null || !source.isFile() || target == null)
             throw new IOException("Arquivo ou destino inválido");
-        byte[] expected;
-        long sourceLength = 0;
+        // The initial digest pins the bytes expected from the local staging
+        // file; the second digest catches changes between hashing and writing.
         MessageDigest expectedDigest = sha256();
         byte[] buffer = new byte[65536];
+        long sourceLength = 0;
         try (InputStream in = new FileInputStream(source)) {
+            int[] zeros = {0};
             int n;
-            while ((n = in.read(buffer)) != -1) {
-                if (Thread.currentThread().isInterrupted())
-                    throw new java.io.InterruptedIOException("Exportação interrompida");
-                expectedDigest.update(buffer, 0, n);
+            while ((n = readWithProgress(in, buffer, zeros, "Origem")) != -1) {
+                if (n == 0) continue;
                 sourceLength += n;
+                expectedDigest.update(buffer, 0, n);
             }
         }
-        expected = expectedDigest.digest();
+        final byte[] expected = expectedDigest.digest();
+        long copiedLength = 0;
+        MessageDigest copiedDigest = sha256();
         try (InputStream input = new FileInputStream(source);
              OutputStream output = target.openWrite()) {
-            if (output == null) throw new IOException("O Android não abriu o destino para gravação");
+            if (output == null)
+                throw new IOException("O Android não abriu o destino para gravação");
+            int[] zeros = {0};
             int n;
-            while ((n = input.read(buffer)) != -1) {
-                if (Thread.currentThread().isInterrupted())
-                    throw new java.io.InterruptedIOException("Exportação interrompida");
+            while ((n = readWithProgress(input, buffer, zeros, "Origem")) != -1) {
+                if (n == 0) continue;
+                if (n > sourceLength - copiedLength)
+                    throw new IOException("O APK temporário mudou durante a exportação");
                 output.write(buffer, 0, n);
+                copiedDigest.update(buffer, 0, n);
+                copiedLength += n;
             }
             output.flush();
         }
+        ensureActive("Exportação");
+        if (copiedLength != sourceLength
+                || !Arrays.equals(expected, copiedDigest.digest()))
+            throw new IOException("O APK temporário mudou durante a exportação");
+
+        // Never mark the SAF result successful from write/close alone.
+        // Content providers can silently truncate, append, or corrupt bytes.
         long exportedLength = 0;
         MessageDigest actualDigest = sha256();
         try (InputStream verify = target.openRead()) {
             if (verify == null)
                 throw new IOException("Não foi possível reler o arquivo exportado");
+            int[] zeros = {0};
             int n;
-            while ((n = verify.read(buffer)) != -1) {
-                if (Thread.currentThread().isInterrupted())
-                    throw new java.io.InterruptedIOException("Verificação interrompida");
+            while ((n = readWithProgress(verify, buffer, zeros, "Releitura SAF")) != -1) {
+                if (n == 0) continue;
+                if (n > sourceLength - exportedLength)
+                    throw new IOException("O destino contém bytes extras");
                 actualDigest.update(buffer, 0, n);
                 exportedLength += n;
-                if (exportedLength > sourceLength)
-                    throw new IOException("O destino contém bytes extras");
             }
         }
-        if (sourceLength != exportedLength || !Arrays.equals(expected, actualDigest.digest()))
+        ensureActive("Verificação");
+        if (sourceLength != exportedLength
+                || !Arrays.equals(expected, actualDigest.digest()))
             throw new IOException("O arquivo exportado não confere com o APK verificado (SHA-256)");
         return exportedLength;
+    }
+
+    /** Zero-byte provider reads are bounded, not interpreted as EOF. */
+    private static int readWithProgress(InputStream stream, byte[] buffer,
+            int[] consecutiveZeros, String stage) throws IOException {
+        ensureActive(stage);
+        int n = stream.read(buffer);
+        if (n == 0) {
+            if (++consecutiveZeros[0] > MAX_ZERO_READS)
+                throw new IOException(stage + " sem progresso: provedor não retornou dados");
+        } else if (n > 0) {
+            consecutiveZeros[0] = 0;
+        }
+        return n;
+    }
+
+    private static void ensureActive(String stage) throws java.io.InterruptedIOException {
+        if (Thread.currentThread().isInterrupted())
+            throw new java.io.InterruptedIOException(stage + " interrompida");
     }
 
     private static MessageDigest sha256() throws IOException {

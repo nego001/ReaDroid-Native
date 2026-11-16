@@ -166,6 +166,161 @@ public final class SafExportVerifierInstrumentedTest {
         }
     }
 
+    private static File newSourceFixture() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File source = File.createTempFile("f112_saf_", ".apk", context.getCacheDir());
+        Files.write(source.toPath(), fixtureBytes());
+        return source;
+    }
+
+    @Test public void permanentlyStalledReadbackIsRejectedWithoutEndlessLoop()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            ByteArrayOutputStream written = new ByteArrayOutputStream();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() { return written; }
+                @Override public InputStream openRead() {
+                    return new InputStream() {
+                        @Override public int read() { return 0; }
+                        @Override public int read(byte[] b, int off, int len) { return 0; }
+                    };
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider);
+                fail("Provider returning zero bytes forever must not hang");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("sem progresso"));
+            }
+            assertArrayEquals(fixtureBytes(), Files.readAllBytes(source.toPath()));
+            assertArrayEquals(fixtureBytes(), written.toByteArray());
+        } finally { source.delete(); }
+    }
+
+    @Test public void temporaryZeroReadbacksAreTolerated()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            ByteArrayOutputStream written = new ByteArrayOutputStream();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() { return written; }
+                @Override public InputStream openRead() {
+                    return new ByteArrayInputStream(written.toByteArray()) {
+                        int zeros = 2;
+                        @Override public synchronized int read(byte[] bytes,
+                                int off, int length) {
+                            if (zeros-- > 0) return 0;
+                            return super.read(bytes, off, length);
+                        }
+                    };
+                }
+            };
+            assertEquals(fixtureBytes().length,
+                SafExportVerifier.copyAndVerify(source, provider));
+            assertArrayEquals(fixtureBytes(), written.toByteArray());
+        } finally { source.delete(); }
+    }
+
+    @Test public void readbackProviderFailureAfterPartialBytesCannotSucceed()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            ByteArrayOutputStream written = new ByteArrayOutputStream();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() { return written; }
+                @Override public InputStream openRead() {
+                    byte[] values = written.toByteArray();
+                    return new InputStream() {
+                        int calls;
+                        @Override public int read() throws IOException {
+                            throw new IOException("Provedor falhou na releitura");
+                        }
+                        @Override public int read(byte[] b, int off, int len)
+                                throws IOException {
+                            if (++calls > 1)
+                                throw new IOException("Provedor falhou na releitura");
+                            int n = Math.min(11, len);
+                            System.arraycopy(values, 0, b, off, n);
+                            return n;
+                        }
+                    };
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider);
+                fail("Interrupted provider readback cannot be marked successful");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("falhou na releitura"));
+            }
+            assertArrayEquals(fixtureBytes(), Files.readAllBytes(source.toPath()));
+        } finally { source.delete(); }
+    }
+
+    @Test public void cancellationDuringWriteCloseSkipsReadback()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            java.util.concurrent.atomic.AtomicInteger reads =
+                new java.util.concurrent.atomic.AtomicInteger();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() {
+                    return new ByteArrayOutputStream() {
+                        @Override public void close() throws IOException {
+                            super.close();
+                            Thread.currentThread().interrupt();
+                        }
+                    };
+                }
+                @Override public InputStream openRead() {
+                    reads.incrementAndGet();
+                    return new ByteArrayInputStream(fixtureBytes());
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider);
+                fail("Cancellation after closing write must not be accepted");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("interrompida"));
+            } finally { Thread.interrupted(); }
+            assertEquals("No readback should begin after cancellation",
+                0, reads.get());
+            assertArrayEquals(fixtureBytes(), Files.readAllBytes(source.toPath()));
+        } finally {
+            Thread.interrupted();
+            source.delete();
+        }
+    }
+
+    @Test public void changedLocalStageAfterInitialHashRejectsBeforeReadback()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            java.util.concurrent.atomic.AtomicInteger reads =
+                new java.util.concurrent.atomic.AtomicInteger();
+            ByteArrayOutputStream written = new ByteArrayOutputStream();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() throws IOException {
+                    byte[] altered = fixtureBytes();
+                    altered[altered.length / 2] ^= 1;
+                    Files.write(source.toPath(), altered);
+                    return written;
+                }
+                @Override public InputStream openRead() {
+                    reads.incrementAndGet();
+                    return new ByteArrayInputStream(written.toByteArray());
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider);
+                fail("Mutated local staging file must not receive success");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou durante"));
+            }
+            assertEquals(0, reads.get());
+        } finally { source.delete(); }
+    }
+
     @Test public void copiesEveryByteAndConfirmsSha256() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File original = File.createTempFile("negresco_source_", ".apk", context.getCacheDir());
