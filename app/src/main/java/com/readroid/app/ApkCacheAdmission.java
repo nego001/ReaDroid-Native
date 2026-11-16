@@ -16,8 +16,12 @@ public final class ApkCacheAdmission {
 
     static void verify(File cache, long copiedBytes, String copiedSha256)
             throws IOException {
-        if (Thread.currentThread().isInterrupted())
-            throw new InterruptedIOException("Validação final do APK interrompida");
+        verify(cache, copiedBytes, copiedSha256, null);
+    }
+
+    static void verify(File cache, long copiedBytes, String copiedSha256,
+            ExportSessionGuard.Token token) throws IOException {
+        ExportSessionGuard.check(token);
         if (cache == null || !cache.isFile()
                 || copiedBytes <= 0
                 || copiedBytes > ApkImportPreflight.MAX_APK_BYTES
@@ -28,10 +32,9 @@ public final class ApkCacheAdmission {
             throw new IOException("Tamanho do APK em cache mudou após a cópia");
 
         // 64 KiB streaming, no entire-file loading; checks interruption.
-        ApkIntegrity.confirmExpected(cache, copiedSha256);
+        ApkIntegrity.confirmExpected(cache, copiedSha256, token);
 
-        if (Thread.currentThread().isInterrupted())
-            throw new InterruptedIOException("Validação final do APK interrompida");
+        ExportSessionGuard.check(token);
         if (!cache.isFile() || cache.length() != copiedBytes)
             throw new IOException("Tamanho do APK em cache mudou durante a verificação");
     }

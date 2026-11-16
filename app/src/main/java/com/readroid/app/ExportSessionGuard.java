@@ -4,10 +4,11 @@ import java.io.InterruptedIOException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * F1.14. An export belongs to exactly one project/picker/activity generation.
- * Invalidation is thread-safe and can be observed by an active SAF worker.
+ * F1.14/F1.22. Independent instances guard one export or import operation
+ * per project/picker/activity generation. Each AtomicLong is separately owned.
+ * Invalidation is thread-safe and observed between SAF/ZIP/SQLite operations.
  * A provider blocked inside its own read/write may only notice cancellation
- * when that call returns; a canceled export must never report success.
+ * when that call returns; a stale operation must never report success.
  */
 final class ExportSessionGuard {
     private final AtomicLong version = new AtomicLong();
@@ -42,7 +43,7 @@ final class ExportSessionGuard {
         void requireActive() throws InterruptedIOException {
             if (!isActive() || Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException(
-                    "Exportação cancelada: projeto, tela ou sessão mudou");
+                    "Operação cancelada: projeto, tela ou sessão mudou");
         }
     }
 }

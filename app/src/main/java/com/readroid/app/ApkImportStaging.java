@@ -35,6 +35,13 @@ final class ApkImportStaging {
 
     static Result copy(File privateCache, OpenSource source,
             ApkImportPreflight.FreeSpace space) throws IOException {
+        return copy(privateCache, source, space, null);
+    }
+
+    static Result copy(File privateCache, OpenSource source,
+            ApkImportPreflight.FreeSpace space, ExportSessionGuard.Token token)
+            throws IOException {
+        ExportSessionGuard.check(token);
         if (privateCache == null || !privateCache.isDirectory()
                 || source == null || space == null)
             throw new IOException("Origem ou cache privado indisponível para importação");
@@ -44,12 +51,16 @@ final class ApkImportStaging {
         boolean complete = false;
         try {
             final ApkImportPreflight.CopyResult copied;
+            ExportSessionGuard.check(token);
             try (InputStream input = source.open();
                  OutputStream output = new FileOutputStream(staged)) {
+                ExportSessionGuard.check(token);
                 if (input == null)
                     throw new IOException("O provedor SAF não abriu o arquivo selecionado");
-                copied = ApkImportPreflight.copyAndHash(input, output, space);
+                copied = ApkImportPreflight.copyAndHash(input, output, space, token);
+                ExportSessionGuard.check(token);
             }
+            ExportSessionGuard.check(token);
             // Resource close can itself fail. Ownership is transferred only
             // AFTER both SAF input and private-cache output close cleanly.
             complete = true;

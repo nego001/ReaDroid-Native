@@ -83,6 +83,9 @@ public class MainActivity extends Activity {
     /** A replacement is staged independently until its analysis succeeds. */
     private Uri pendingApkUri;
     private volatile int analysisSequence = 0;
+    // Separate atomic generations: a newer import cancels its own stale worker
+    // without accidentally revoking unrelated UI/export state.
+    private final ExportSessionGuard importSessions = new ExportSessionGuard();
     private final ExportSessionGuard exportSessions = new ExportSessionGuard();
     // An ACTION_CREATE_DOCUMENT callback must never attach to a newer APK.
     private PendingExport pendingExport;
@@ -1950,6 +1953,9 @@ public class MainActivity extends Activity {
         // Starting a different analysis revokes in-flight export immediately,
         // even if that candidate later fails to replace the current project.
         exportSessions.invalidate();
+        // F1.22: invalidate the old worker immediately on the UI thread,
+        // even if the previous DocumentsProvider is still inside read().
+        final ExportSessionGuard.Token importToken = importSessions.begin();
         final int sequence = ++analysisSequence;
         pendingApkUri = uri;
         final boolean previousProjectIsUsable =
@@ -1979,11 +1985,14 @@ public class MainActivity extends Activity {
         }
         executor.execute(() -> {
             try {
-                AnalyzedApk candidate = analyze(uri, expectedResumeSha256);
+                importToken.requireActive();
+                AnalyzedApk candidate = analyze(uri, expectedResumeSha256, importToken);
+                importToken.requireActive();
                 // Validation alone is not an accepted import. The history and
                 // icon cache must not change until the UI commits this candidate.
                 runOnUiThread(() -> {
-                    if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
+                    if (!importToken.isActive() || sequence != analysisSequence
+                            || isFinishing() || isDestroyed()) {
                         try {
                             candidate.file.delete();
                             if (candidate.indexFile != null)
@@ -2021,7 +2030,8 @@ public class MainActivity extends Activity {
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    if (sequence != analysisSequence || isFinishing() || isDestroyed()) return;
+                    if (!importToken.isActive() || sequence != analysisSequence
+                            || isFinishing() || isDestroyed()) return;
                     pendingApkUri = null;
                     if (previousProjectIsUsable) {
                         rebuild.setEnabled(true);
@@ -2257,18 +2267,26 @@ public class MainActivity extends Activity {
     }
 
     private AnalyzedApk analyze(Uri uri, String expectedResumeSha256) throws Exception {
+        return analyze(uri, expectedResumeSha256, null);
+    }
+
+    private AnalyzedApk analyze(Uri uri, String expectedResumeSha256,
+            ExportSessionGuard.Token importToken) throws Exception {
+        ExportSessionGuard.check(importToken);
         // Reserve private storage before copying the untrusted document.
         // The provider may lie about its size: streaming checks remain required.
         ApkImportPreflight.beforeCopy(this, uri);
+        ExportSessionGuard.check(importToken);
         // F1.21: one transaction owns the fresh cache candidate. A SAF
         // exception on open/read/close deletes it before any project change.
         final ApkImportStaging.Result imported = ApkImportStaging.copy(
             getCacheDir(), () -> getContentResolver().openInputStream(uri),
-            () -> ApkImportPreflight.availableBytes(this));
+            () -> ApkImportPreflight.availableBytes(this), importToken);
         File file = imported.candidate;
         File diskIndex = null;
         try {
             final ApkImportPreflight.CopyResult copied = imported.copied;
+            ExportSessionGuard.check(importToken);
             // F1.20: even an authorized SAF URI may now serve another APK.
             // A cold resume must match the previously accepted digest before
             // parsing, indexing, or committing a candidate project.
@@ -2276,7 +2294,7 @@ public class MainActivity extends Activity {
                 SavedProjectResume.requireExpectedSha256(
                     expectedResumeSha256, copied.sha256);
             // F1.6: reject damaged internal payloads before exposing a new project.
-            ApkZipIntegrity.Result zipIntegrity = ApkZipIntegrity.verify(file);
+            ApkZipIntegrity.Result zipIntegrity = ApkZipIntegrity.verify(file, importToken);
             long size = copied.sizeBytes;
             String hash = copied.sha256;
             JSONArray dex = new JSONArray();
@@ -2286,8 +2304,7 @@ public class MainActivity extends Activity {
             try (ZipFile zip = new ZipFile(file)) {
                 Enumeration<? extends ZipEntry> items = zip.entries();
                 while (items.hasMoreElements()) {
-                    if (Thread.currentThread().isInterrupted())
-                        throw new java.io.InterruptedIOException("Análise interrompida");
+                    ExportSessionGuard.check(importToken);
                     ZipEntry entry = items.nextElement();
                     String name = entry.getName();
                     if (++entries > 150000) throw new IOException("Entradas demais");
@@ -2297,6 +2314,7 @@ public class MainActivity extends Activity {
                     if (name.equals("AndroidManifest.xml")) manifest = true;
                 }
             }
+            ExportSessionGuard.check(importToken);
             JSONObject json = new JSONObject();
             FileHeaderProbe.Result header = FileHeaderProbe.inspect(file);
             JSONObject formatHint = new JSONObject();
@@ -2306,7 +2324,9 @@ public class MainActivity extends Activity {
             formatHint.put("recognized", header.recognized);
             json.put("fileHeader", formatHint);
             json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
+            ExportSessionGuard.check(importToken);
             json.put("explorer", ApkExplorer.inspect(file));
+            ExportSessionGuard.check(importToken);
             json.put("sizeBytes", size);
             json.put("sha256", hash);
             JSONObject zipAudit = new JSONObject();
@@ -2320,30 +2340,35 @@ public class MainActivity extends Activity {
             json.put("assets", assets);
             json.put("hasManifest", manifest);
             try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
+            ExportSessionGuard.check(importToken);
             json.put("intelligence", ApkIntelligence.inspect(json));
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
-            if (Thread.currentThread().isInterrupted())
-                throw new java.io.InterruptedIOException("Análise interrompida");
+            ExportSessionGuard.check(importToken);
             // Experimental UI indexing only; legacy JSON analysis retained.
             if (entries >= 200) {
                 File candidate = new File(file.getAbsolutePath() + ".idx.db");
                 ImportCacheAudit.track(candidate);
                 try {
-                    ApkDiskIndex.build(file, candidate);
+                    ApkDiskIndex.build(file, candidate, importToken);
+                    ExportSessionGuard.check(importToken);
                     diskIndex = candidate;
                 } catch (IOException optionalIndexError) {
                     try { android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate); }
                     finally { ImportCacheAudit.release(candidate); }
+                    // Cancelled indexing is not an optional index failure:
+                    // abandon the whole stale import, not just the index.
+                    ExportSessionGuard.check(importToken);
                 }
             }
             // F1.7: validate actual private-cache bytes after *all* analysis.
             // A copied stream hash alone cannot prove the final file identity.
-            ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256);
+            ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256, importToken);
             if (expectedResumeSha256 != null) {
                 // Independent cache hash after ZIP inspection and indexing;
                 // an import source cannot change during resume unnoticed.
                 ApkIntegrity.confirmExpected(file, expectedResumeSha256);
             }
+            ExportSessionGuard.check(importToken);
             return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
             try {
@@ -2424,6 +2449,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        importSessions.invalidate();
         exportSessions.invalidate();
         pendingExport = null;
         analysisSequence++;

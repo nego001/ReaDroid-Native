@@ -53,6 +53,12 @@ public final class ApkImportPreflight {
      */
     static CopyResult copyAndHash(InputStream in, OutputStream out, FreeSpace space)
             throws IOException {
+        return copyAndHash(in, out, space, null);
+    }
+
+    static CopyResult copyAndHash(InputStream in, OutputStream out, FreeSpace space,
+            ExportSessionGuard.Token token) throws IOException {
+        ExportSessionGuard.check(token);
         if (in == null || out == null || space == null)
             throw new IOException("Fluxo de importação indisponível");
         final MessageDigest digest;
@@ -66,14 +72,13 @@ public final class ApkImportPreflight {
         long lastStorageCheck = 0;
         int zeroReads = 0;
         checkProgress(0, space.availableBytes());
+        ExportSessionGuard.check(token);
         while (true) {
-            if (Thread.currentThread().isInterrupted())
-                throw new InterruptedIOException("Importação interrompida");
+            ExportSessionGuard.check(token);
             int count = in.read(buffer);
-            // Some providers revoke permission or interruption while read()
-            // is in progress. Refuse another write or a success on late EOF.
-            if (Thread.currentThread().isInterrupted())
-                throw new InterruptedIOException("Importação interrompida");
+            // Observe newer imports immediately after a slow provider returns,
+            // including EOF. A superseded copy must never be admitted.
+            ExportSessionGuard.check(token);
             if (count < 0) break;
             if (count == 0) {
                 if (++zeroReads > MAX_CONSECUTIVE_ZERO_READS)
@@ -88,22 +93,24 @@ public final class ApkImportPreflight {
                 checkProgress(copied, space.availableBytes());
                 lastStorageCheck = copied;
             }
+            ExportSessionGuard.check(token);
             out.write(buffer, 0, count);
-            if (Thread.currentThread().isInterrupted())
-                throw new InterruptedIOException("Importação interrompida");
+            ExportSessionGuard.check(token);
             digest.update(buffer, 0, count);
         }
         if (copied == 0)
             throw new IOException("O arquivo selecionado está vazio");
+        ExportSessionGuard.check(token);
         out.flush();
+        ExportSessionGuard.check(token);
         // A <32 MiB file, or the last chunk after a periodic check, can
         // exhaust the safety reserve. Check once more on real EOF.
         checkProgress(copied, space.availableBytes());
-        if (Thread.currentThread().isInterrupted())
-            throw new InterruptedIOException("Importação interrompida");
+        ExportSessionGuard.check(token);
         StringBuilder hash = new StringBuilder(64);
         for (byte value : digest.digest())
             hash.append(String.format(Locale.ROOT, "%02x", value & 255));
+        ExportSessionGuard.check(token);
         return new CopyResult(copied, hash.toString());
     }
 
