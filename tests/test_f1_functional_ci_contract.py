@@ -156,7 +156,11 @@ class FunctionalCIContract(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("ImportCacheAudit.inspect(", activity)
-        self.assertIn("ImportCacheAudit.track(file)", activity)
+        staging = (ROOT / "app/src/main/java/com/readroid/app/ApkImportStaging.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ImportCacheAudit.track(staged)", staging)
+        self.assertIn("ImportCacheAudit.release(staged)", staging)
         self.assertIn("ImportCacheAudit.release(candidate.file)", activity)
         self.assertIn("LinkOption.NOFOLLOW_LINKS", audit)
         self.assertNotIn("Files.delete", audit)
