@@ -18,6 +18,7 @@ PRODUCTION = {
     "ExplorerView.java",
     "EditPlan.java",
     "RecoveryVault.java",
+    "RecoveryResumeGate.java",
     "ApkImportPreflight.java",
     "ApkZipIntegrity.java",
     "ApkExplorer.java",
@@ -35,6 +36,7 @@ PRODUCTION = {
 ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
     "RecoveryVaultInstrumentedTest",
+    "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
@@ -156,6 +158,21 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("Files.delete", audit)
         self.assertNotIn("SQLiteDatabase.deleteDatabase", audit)
         self.assertIn("REVIEW_AGE_MS", audit)
+
+    def test_f118_recovery_requires_revalidation_after_consent(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        gate = (ROOT / "app/src/main/java/com/readroid/app/RecoveryResumeGate.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("RecoveryResumeGate.attest(source, reportHash)", activity)
+        self.assertIn("RecoveryResumeGate.revalidate(proof, source, reportHash)", activity)
+        self.assertIn("isRecoveryTargetCurrent(source, importedDocument,", activity)
+        self.assertIn("restoreEditPlanForSession(", activity)
+        self.assertIn("ApkZipIntegrity.verify(source)", gate)
+        self.assertIn("ApkIntegrity.confirmExpected(source, reportedSha256)", gate)
+        self.assertNotIn("Files.delete", gate)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

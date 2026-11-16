@@ -1067,47 +1067,73 @@ public class MainActivity extends Activity {
                 return;
             }
             final File source = currentApk;
+            final Uri importedDocument = selectedApkUri;
+            final int projectGeneration = analysisSequence;
+            final String reportHash = report.optString("sha256", "");
             final ExplorerView.EditSession recoverySession =
                 explorerView.captureEditSession();
             executor.execute(() -> {
                 try {
+                    // F1.18: do not trust a retained cache file or a restored
+                    // Activity state without SHA and ZIP content verification.
+                    final RecoveryResumeGate.Proof proof =
+                        RecoveryResumeGate.attest(source, reportHash);
                     final Map<String, String> changes =
                         new RecoveryVault(this).loadForSource(source);
+                    RecoveryResumeGate.revalidate(proof, source, reportHash);
                     runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed() || source != currentApk
-                                || !explorerView.isCurrentEditSession(recoverySession))
+                        if (!isRecoveryTargetCurrent(source, importedDocument,
+                                projectGeneration, reportHash, recoverySession))
                             return;
                         new android.app.AlertDialog.Builder(this)
                             .setTitle("Recuperar " + changes.size() + " alterações?")
                             .setMessage("A cópia foi autenticada e pertence a este APK "
-                                + "(SHA-256 conferido). Recuperar substituirá todas "
-                                + "as alterações atualmente pendentes; o APK original "
-                                + "não será modificado.")
+                                + "(SHA-256 e conteúdo ZIP conferidos). Recuperar substituirá "
+                                + "todas as alterações pendentes; o APK original não será modificado.")
                             .setNegativeButton("Cancelar", null)
                             .setPositiveButton("Substituir plano", (dialog, which) -> {
-                                if (source != currentApk
-                                        || !explorerView.isCurrentEditSession(recoverySession)) {
-                                    new android.app.AlertDialog.Builder(this)
-                                        .setMessage("A recuperação foi cancelada porque "
-                                            + "o projeto mudou. As alterações atuais "
-                                            + "foram preservadas.")
-                                        .setPositiveButton("OK", null).show();
+                                if (!isRecoveryTargetCurrent(source, importedDocument,
+                                        projectGeneration, reportHash, recoverySession)) {
+                                    showRecoveryError("Recuperação cancelada",
+                                        new IOException("O projeto ou as edições mudaram."));
                                     return;
                                 }
-                                try {
-                                    explorerView.restoreEditPlanForSession(
-                                        recoverySession, changes);
-                                    new android.app.AlertDialog.Builder(this)
-                                        .setMessage("Plano recuperado. Revise as alterações antes "
-                                            + "de exportar um APK modificado.")
-                                        .setPositiveButton("OK", null).show();
-                                } catch (RuntimeException invalid) {
-                                    showRecoveryError("Recuperação cancelada", invalid);
-                                }
+                                // Consent is not enough: hash and ZIP may have
+                                // changed while this confirmation was open.
+                                executor.execute(() -> {
+                                    try {
+                                        RecoveryResumeGate.revalidate(proof, source, reportHash);
+                                        runOnUiThread(() -> {
+                                            if (!isRecoveryTargetCurrent(source, importedDocument,
+                                                    projectGeneration, reportHash, recoverySession))
+                                                return;
+                                            try {
+                                                explorerView.restoreEditPlanForSession(
+                                                    recoverySession, changes);
+                                                new android.app.AlertDialog.Builder(this)
+                                                    .setMessage("Plano recuperado. Revise as alterações "
+                                                        + "antes de exportar um APK modificado.")
+                                                    .setPositiveButton("OK", null).show();
+                                            } catch (RuntimeException invalid) {
+                                                showRecoveryError("Recuperação cancelada", invalid);
+                                            }
+                                        });
+                                    } catch (Exception error) {
+                                        runOnUiThread(() -> {
+                                            if (isRecoveryTargetCurrent(source, importedDocument,
+                                                    projectGeneration, reportHash, recoverySession))
+                                                showRecoveryError("Recuperação bloqueada", error);
+                                        });
+                                    }
+                                });
                             }).show();
                     });
                 } catch (Exception error) {
-                    showRecoveryError("Recuperação bloqueada", error);
+                    runOnUiThread(() -> {
+                        if (isRecoveryTargetCurrent(source, importedDocument,
+                                projectGeneration, reportHash, recoverySession))
+                            showRecoveryError("Recuperação bloqueada", error);
+                    });
                 }
             });
         });
@@ -1422,6 +1448,17 @@ public class MainActivity extends Activity {
         homeOverview.update(report, explorerView.getEditPlan().size());
         showSection(workspace.activeSection);
         return true;
+    }
+
+    private boolean isRecoveryTargetCurrent(File source, Uri document,
+            int generation, String expectedSha256, ExplorerView.EditSession editSession) {
+        return !isFinishing() && !isDestroyed()
+            && generation == analysisSequence
+            && source == currentApk
+            && Objects.equals(document, selectedApkUri)
+            && report != null
+            && expectedSha256.equals(report.optString("sha256", ""))
+            && explorerView.isCurrentEditSession(editSession);
     }
 
     private void showRecoveryError(String title, Exception error) {
