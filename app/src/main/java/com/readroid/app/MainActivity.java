@@ -1354,13 +1354,22 @@ public class MainActivity extends Activity {
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
         boolean retained = restoreWorkspace();
         if (state != null) {
-            selectedApkUri = state.getParcelable("selected_apk_uri");
-            Uri interruptedImport = state.getParcelable("pending_apk_uri");
-            // A rotation must not lose the user's already-authorized request
-            // or replace the retained old project with an unfinished import.
-            if (interruptedImport != null) analyzeSelectedApk(interruptedImport);
-            else if (!retained && selectedApkUri != null)
-                analyzeSelectedApk(selectedApkUri);
+            Uri accepted = state.getParcelable("selected_apk_uri");
+            Uri interrupted = state.getParcelable("pending_apk_uri");
+            // F1.19: saved Bundle URIs are not read permissions. On process
+            // death replay ONLY a previously accepted, persistently granted
+            // document. Never replay an unfinished import as a new project.
+            SavedProjectResume.Decision resume = SavedProjectResume.decide(
+                accepted, interrupted, retained,
+                uri -> P7ProjectHistory.hasPermission(this, uri));
+            selectedApkUri = resume.acceptedReference;
+            if (resume.reimport != null) analyzeSelectedApk(resume.reimport);
+            else if (resume.requiresReselection && !retained) {
+                output.setText("Acesso ao APK anterior indisponível. "
+                    + "Abra novamente o arquivo pelo seletor Android; "
+                    + "nenhuma edição foi restaurada automaticamente.");
+                apkSummary.setText("REABRIR APK PARA CONTINUAR");
+            }
         }
         refreshRecentProjects();
         // F1.16: a process death can leave staging behind. Prune only exact,
@@ -1795,7 +1804,8 @@ public class MainActivity extends Activity {
     }
 
     private void openRecentProject(P7ProjectHistory.Entry item) {
-        if (!P7ProjectHistory.hasPermission(this, item.uri)) {
+        if (!SavedProjectResume.permitted(item.uri,
+                uri -> P7ProjectHistory.hasPermission(this, uri))) {
             refreshRecentProjects();
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Permissão expirada")
@@ -1885,6 +1895,17 @@ public class MainActivity extends Activity {
             return;
         }
         Runnable open = () -> {
+            // A recent-project grant can expire while the confirmation
+            // dialog is still open; re-check immediately before any import.
+            if (!fromPicker && !SavedProjectResume.permitted(uri,
+                    candidate -> P7ProjectHistory.hasPermission(this, candidate))) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Permissão expirada")
+                    .setMessage("O acesso ao APK foi revogado. Selecione o arquivo "
+                        + "novamente. O projeto aberto e suas edições foram preservados.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
             if (fromPicker) {
                 try {
                     getContentResolver().takePersistableUriPermission(uri,
@@ -1999,6 +2020,10 @@ public class MainActivity extends Activity {
                                 + "pendentes foram preservados.")
                             .setPositiveButton("Entendi", null).show();
                     } else {
+                        // A process-death reimport might have lost its grant
+                        // between the saved-state check and the provider read.
+                        // Never retain a failed URI as an accepted project.
+                        selectedApkUri = null;
                         output.setText("Erro: " + error.getMessage());
                         apkSummary.setText("FALHA AO ABRIR PROJETO");
                         projectMetrics.setText("ESTRUTURA   •   Indisponível");

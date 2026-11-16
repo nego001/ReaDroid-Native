@@ -25,6 +25,7 @@ PRODUCTION = {
     "ApkDiskIndex.java",
     "ImportCacheAudit.java",
     "ApkCacheAdmission.java",
+    "SavedProjectResume.java",
     "ApkRebuilder.java",
     "RebuildTempJanitor.java",
     "RebuildStorageBudget.java",
@@ -41,6 +42,7 @@ ANDROID_TESTS = {
     "ApkImportPreflightInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
+    "SavedProjectResumeInstrumentedTest",
     "ImportCacheAuditInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
     "RebuildTempJanitorInstrumentedTest",
@@ -173,6 +175,20 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("ApkZipIntegrity.verify(source)", gate)
         self.assertIn("ApkIntegrity.confirmExpected(source, reportedSha256)", gate)
         self.assertNotIn("Files.delete", gate)
+
+    def test_f119_process_death_resume_and_grant_revocation_are_fail_closed(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        policy = (ROOT / "app/src/main/java/com/readroid/app/SavedProjectResume.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SavedProjectResume.decide(", activity)
+        self.assertIn("SavedProjectResume.permitted(", activity)
+        self.assertIn("P7ProjectHistory.hasPermission(this, uri)", activity)
+        self.assertIn("selectedApkUri = null;", activity)
+        self.assertIn("interrupted/unaccepted import", policy.lower())
+        self.assertIn("return new Decision(null, null, accepted != null || interrupted != null)", policy)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

@@ -189,6 +189,45 @@ public final class ProjectRecreationInstrumentedTest {
         }
     }
 
+    @Test public void f119RevokedRecentPermissionLeavesCurrentProjectUnchanged()
+            throws Exception {
+        File apk = File.createTempFile("f119_previous_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            byte[] before = Files.readAllBytes(apk.toPath());
+            Uri selected = Uri.parse("content://com.readroid.app.f119/original.apk");
+            Uri revoked = Uri.parse("content://com.readroid.app.revoked/other.apk");
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        setField(activity, "selectedApkUri", selected);
+                        int generation = (Integer) field(activity, "analysisSequence");
+                        P7ProjectHistory.Entry entry = new P7ProjectHistory.Entry(
+                            revoked, "Revoked", "com.example.revoked", 0L);
+                        Method reopen = MainActivity.class.getDeclaredMethod(
+                            "openRecentProject", P7ProjectHistory.Entry.class);
+                        reopen.setAccessible(true);
+                        reopen.invoke(activity, entry);
+                        assertWorkspace(activity, apk);
+                        assertEquals(selected, field(activity, "selectedApkUri"));
+                        assertNull(field(activity, "pendingApkUri"));
+                        assertEquals(generation, field(activity, "analysisSequence"));
+                    } catch (Exception error) {
+                        throw new AssertionError(error);
+                    }
+                });
+            }
+            assertArrayEquals(before, Files.readAllBytes(apk.toPath()));
+        } finally { apk.delete(); }
+    }
+
     @Test public void failedReplacementRetainsOldApkAndUnsavedEdits()
             throws Exception {
         File apk = File.createTempFile("p7_previous_project_", ".apk",
