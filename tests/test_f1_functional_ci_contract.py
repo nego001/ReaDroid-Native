@@ -20,6 +20,7 @@ PRODUCTION = {
     "RecoveryVault.java",
     "RecoveryResumeGate.java",
     "ApkImportPreflight.java",
+    "ApkImportStaging.java",
     "ApkZipIntegrity.java",
     "ApkExplorer.java",
     "ApkDiskIndex.java",
@@ -40,6 +41,7 @@ ANDROID_TESTS = {
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
+    "ApkImportStagingInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
@@ -208,6 +210,22 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("ApkIntegrity.confirmExpected(file, expectedResumeSha256)", activity)
         self.assertIn("validSha256(savedSha256) && permitted(accepted, checker)", policy)
         self.assertIn("return new Decision(accepted, accepted, false, savedSha256)", policy)
+
+    def test_f121_saf_failure_transaction_owns_and_cleans_unaccepted_cache(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        importer = (ROOT / "app/src/main/java/com/readroid/app/ApkImportStaging.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ApkImportStaging.copy(", activity)
+        self.assertIn("getContentResolver().openInputStream(uri)", activity)
+        self.assertIn("File.createTempFile(\"readroid_\", \".apk\", privateCache)", importer)
+        self.assertIn("ImportCacheAudit.track(staged)", importer)
+        self.assertIn("Files.deleteIfExists(staged.toPath())", importer)
+        self.assertIn("ImportCacheAudit.release(staged)", importer)
+        self.assertIn("if (!complete)", importer)
+        self.assertIn("return new Result(staged, copied)", importer)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

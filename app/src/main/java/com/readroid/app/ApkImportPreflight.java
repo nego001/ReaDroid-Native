@@ -70,6 +70,10 @@ public final class ApkImportPreflight {
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Importação interrompida");
             int count = in.read(buffer);
+            // Some providers revoke permission or interruption while read()
+            // is in progress. Refuse another write or a success on late EOF.
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Importação interrompida");
             if (count < 0) break;
             if (count == 0) {
                 if (++zeroReads > MAX_CONSECUTIVE_ZERO_READS)
@@ -85,6 +89,8 @@ public final class ApkImportPreflight {
                 lastStorageCheck = copied;
             }
             out.write(buffer, 0, count);
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Importação interrompida");
             digest.update(buffer, 0, count);
         }
         if (copied == 0)

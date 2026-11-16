@@ -2260,17 +2260,15 @@ public class MainActivity extends Activity {
         // Reserve private storage before copying the untrusted document.
         // The provider may lie about its size: streaming checks remain required.
         ApkImportPreflight.beforeCopy(this, uri);
-        File file = File.createTempFile("readroid_", ".apk", getCacheDir());
-        ImportCacheAudit.track(file);
+        // F1.21: one transaction owns the fresh cache candidate. A SAF
+        // exception on open/read/close deletes it before any project change.
+        final ApkImportStaging.Result imported = ApkImportStaging.copy(
+            getCacheDir(), () -> getContentResolver().openInputStream(uri),
+            () -> ApkImportPreflight.availableBytes(this));
+        File file = imported.candidate;
         File diskIndex = null;
         try {
-            final ApkImportPreflight.CopyResult copied;
-            try (InputStream in = getContentResolver().openInputStream(uri);
-                 OutputStream out = new FileOutputStream(file)) {
-                if (in == null) throw new IOException("Arquivo inacessível");
-                copied = ApkImportPreflight.copyAndHash(in, out,
-                    () -> ApkImportPreflight.availableBytes(this));
-            }
+            final ApkImportPreflight.CopyResult copied = imported.copied;
             // F1.20: even an authorized SAF URI may now serve another APK.
             // A cold resume must match the previously accepted digest before
             // parsing, indexing, or committing a candidate project.
