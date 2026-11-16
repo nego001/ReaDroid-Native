@@ -9,7 +9,21 @@ import java.util.zip.*;
 public final class ApkRebuilder {
     private ApkRebuilder() {}
 
-    public static void rebuild(File original, File destination, Map<String, String> edits) throws IOException {
+    /** Test-only injection point, never passed by production UI callers. */
+    interface BeforeStageVerification {
+        void run(File staged) throws IOException;
+    }
+
+    public static void rebuild(File original, File destination, Map<String, String> edits)
+            throws IOException {
+        rebuild(original, destination, edits, staged -> {});
+    }
+
+    // F1.10 tests can simulate a damaged staging archive before final commit.
+    static void rebuild(File original, File destination, Map<String, String> edits,
+            BeforeStageVerification beforeVerify) throws IOException {
+        if (beforeVerify == null)
+            throw new IOException("Validador de estágio indisponível");
         if (original == null || !original.isFile() || destination == null || edits == null || edits.isEmpty())
             throw new IOException("APK e alterações são obrigatórios");
         if (original.getCanonicalPath().equals(destination.getCanonicalPath()))
@@ -27,6 +41,11 @@ public final class ApkRebuilder {
         }
         if (Thread.currentThread().isInterrupted())
             throw new InterruptedIOException("Reconstrução interrompida");
+        // Validate direct callers as rigorously as the SAF importer. An intact
+        // central directory alone does not prove every payload can inflate.
+        final String sourceSha256 = ApkIntegrity.sha256(original);
+        ApkZipIntegrity.verify(original);
+        ApkIntegrity.confirmExpected(original, sourceSha256);
         // Build beside the target, never directly over an existing export.
         // A failed rebuild leaves both original APK and previous result intact.
         File staged = File.createTempFile("readroid-rebuild-", ".tmp",
@@ -86,6 +105,15 @@ public final class ApkRebuilder {
             if (applied.size() != safeEdits.size())
                 throw new IOException("Alguns arquivos editados não existem no APK");
           }
+          if (Thread.currentThread().isInterrupted())
+              throw new InterruptedIOException("Reconstrução interrompida");
+          // Complete and close staged ZIP first. Do not replace an existing
+          // export until CRC, paths, expected edits, and every untouched member
+          // match the original. The test seam injects damage at this boundary.
+          beforeVerify.run(staged);
+          ApkZipIntegrity.verify(staged);
+          RebuildVerifier.verifyAgainstOriginal(original, staged, safeEdits);
+          ApkIntegrity.confirmExpected(original, sourceSha256);
           if (Thread.currentThread().isInterrupted())
               throw new InterruptedIOException("Reconstrução interrompida");
           // Fail closed on filesystems without atomic replacement. Never

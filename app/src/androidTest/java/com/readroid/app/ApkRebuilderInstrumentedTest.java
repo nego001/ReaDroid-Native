@@ -395,6 +395,131 @@ public final class ApkRebuilderInstrumentedTest {
         }
     }
 
+
+    @Test public void damagedStagingZipNeverOverwritesPreviousExport()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] sourceBytes = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("valid previous export");
+            Files.write(target.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":true}");
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(),
+                    staged -> Files.write(staged.toPath(), utf8("broken staged ZIP")));
+                fail("Corrupted staging archive must be rejected before atomic move");
+            } catch (IOException expected) {
+                assertNotNull(expected.getMessage());
+            }
+            assertArrayEquals(previous, Files.readAllBytes(target.toPath()));
+            assertArrayEquals(sourceBytes, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void validButTamperedStagingMemberCannotReplacePreviousExport()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] sourceBytes = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("validated previous result");
+            Files.write(target.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"edited\":true}");
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(), staged -> {
+                    File alternate = File.createTempFile("f110_tamper_", ".zip",
+                        staged.getParentFile());
+                    try {
+                        try (ZipFile input = new ZipFile(staged);
+                             ZipOutputStream out = new ZipOutputStream(
+                                Files.newOutputStream(alternate.toPath()))) {
+                            java.util.Enumeration<? extends ZipEntry> cursor = input.entries();
+                            while (cursor.hasMoreElements()) {
+                                ZipEntry entry = cursor.nextElement();
+                                if (entry.isDirectory()) {
+                                    out.putNextEntry(new ZipEntry(entry.getName()));
+                                    out.closeEntry();
+                                    continue;
+                                }
+                                byte[] payload = entryBytes(input, entry.getName());
+                                if ("assets/original.bin".equals(entry.getName()))
+                                    payload[0] ^= 1;
+                                add(out, entry.getName(), payload);
+                            }
+                        }
+                        Files.copy(alternate.toPath(), staged.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    } finally { alternate.delete(); }
+                });
+                fail("A valid ZIP with an altered untouched member must fail");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("não editado"));
+            }
+            assertArrayEquals(previous, Files.readAllBytes(target.toPath()));
+            assertArrayEquals(sourceBytes, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void canceledAtStagedVerificationBoundaryKeepsPreviousResult()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] previous = utf8("previous result remains available");
+            Files.write(target.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"edited\":true}");
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(),
+                    staged -> Thread.currentThread().interrupt());
+                fail("Cancellation after staging must block publication");
+            } catch (java.io.InterruptedIOException expected) {
+                assertNotNull(expected.getMessage());
+            } finally { Thread.interrupted(); }
+            assertArrayEquals(previous, Files.readAllBytes(target.toPath()));
+        } finally {
+            Thread.interrupted();
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void verifiedStagingAtomicallyReplacesPriorExport()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] sourceBytes = Files.readAllBytes(original.toPath());
+            Files.write(target.toPath(), utf8("old export"));
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"committed\":true}");
+            ApkRebuilder.rebuild(original, target, plan.snapshot());
+            assertTrue(RebuildVerifier.verifyAgainstOriginal(original, target,
+                plan.snapshot()).contains("arquivo(s) não editado(s)"));
+            assertArrayEquals(sourceBytes, Files.readAllBytes(original.toPath()));
+            try (ZipFile zip = new ZipFile(target)) {
+                assertEquals("{\"committed\":true}", new String(
+                    entryBytes(zip, "assets/config.json"), StandardCharsets.UTF_8));
+            }
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
     @Test public void interruptedRebuildKeepsPriorExportAndSource() throws Exception {
         File original = file(".apk");
         File output = file(".apk");
