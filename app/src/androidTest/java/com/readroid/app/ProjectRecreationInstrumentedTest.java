@@ -298,6 +298,58 @@ public final class ProjectRecreationInstrumentedTest {
         }
     }
 
+    @Test public void f122TwoFailedImportsCannotReplacePriorWorkspaceOrEdits()
+            throws Exception {
+        File apk = File.createTempFile("f122_previous_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            byte[] previousBytes = Files.readAllBytes(apk.toPath());
+            Uri oldUri = Uri.parse("content://com.readroid.app.f122/project/previous.apk");
+            Uri first = Uri.parse("content://com.readroid.app.f122.invalid/first.apk");
+            Uri second = Uri.parse("content://com.readroid.app.f122.invalid/second.apk");
+            CountDownLatch workersFinished = new CountDownLatch(1);
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        setField(activity, "selectedApkUri", oldUri);
+                        int before = (Integer) field(activity, "analysisSequence");
+                        Method open = MainActivity.class.getDeclaredMethod(
+                            "analyzeSelectedApk", Uri.class);
+                        open.setAccessible(true);
+                        open.invoke(activity, first);
+                        open.invoke(activity, second);
+                        assertWorkspace(activity, apk);
+                        assertEquals(before + 2, field(activity, "analysisSequence"));
+                        assertEquals(second, field(activity, "pendingApkUri"));
+                        ExecutorService worker =
+                            (ExecutorService) field(activity, "executor");
+                        worker.execute(workersFinished::countDown);
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                assertTrue("Two queued import workers did not finish",
+                    workersFinished.await(20, TimeUnit.SECONDS));
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, apk);
+                        assertEquals(oldUri, field(activity, "selectedApkUri"));
+                        assertNull("Last failed import must clear pending URI",
+                            field(activity, "pendingApkUri"));
+                        assertArrayEquals("Old project bytes changed after two failures",
+                            previousBytes, Files.readAllBytes(apk.toPath()));
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+            }
+        } finally { apk.delete(); }
+    }
+
     @Test public void failedReplacementRetainsOldApkAndUnsavedEdits()
             throws Exception {
         File apk = File.createTempFile("p7_previous_project_", ".apk",

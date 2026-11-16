@@ -42,6 +42,7 @@ ANDROID_TESTS = {
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
     "ApkImportStagingInstrumentedTest",
+    "ImportConcurrencyInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
@@ -230,6 +231,34 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("ImportCacheAudit.release(staged)", importer)
         self.assertIn("if (!complete)", importer)
         self.assertIn("return new Result(staged, copied)", importer)
+
+    def test_f122_stale_import_aborts_inside_provider_zip_index_and_commit(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        staging = (ROOT / "app/src/main/java/com/readroid/app/ApkImportStaging.java").read_text(
+            encoding="utf-8"
+        )
+        preflight = (ROOT / "app/src/main/java/com/readroid/app/ApkImportPreflight.java").read_text(
+            encoding="utf-8"
+        )
+        admission = (ROOT / "app/src/main/java/com/readroid/app/ApkCacheAdmission.java").read_text(
+            encoding="utf-8"
+        )
+        index = (ROOT / "app/src/main/java/com/readroid/app/ApkDiskIndex.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("importSessions.begin()", activity)
+        self.assertIn("importSessions.invalidate()", activity)
+        self.assertIn("analyze(uri, expectedResumeSha256, importToken)", activity)
+        self.assertIn("!importToken.isActive()", activity)
+        self.assertIn("ApkZipIntegrity.verify(file, importToken)", activity)
+        self.assertIn("ApkDiskIndex.build(file, candidate, importToken)", activity)
+        self.assertIn("ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256, importToken)", activity)
+        self.assertIn("ApkImportPreflight.copyAndHash(input, output, space, token)", staging)
+        self.assertIn("ExportSessionGuard.check(token)", preflight)
+        self.assertIn("ApkIntegrity.confirmExpected(cache, copiedSha256, token)", admission)
+        self.assertIn("ExportSessionGuard.check(token)", index)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
