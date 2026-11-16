@@ -20,6 +20,12 @@ final class ExportSessionGuard {
         version.incrementAndGet();
     }
 
+    static void check(Token token) throws InterruptedIOException {
+        if (token != null) token.requireActive();
+        else if (Thread.currentThread().isInterrupted())
+            throw new InterruptedIOException("Operação interrompida");
+    }
+
     static final class Token {
         private final AtomicLong version;
         private final long expected;

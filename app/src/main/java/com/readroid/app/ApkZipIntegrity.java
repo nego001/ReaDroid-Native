@@ -36,12 +36,22 @@ public final class ApkZipIntegrity {
     }
 
     static Result verify(File apk) throws IOException {
-        return verify(apk, MAX_ENTRY_BYTES, MAX_TOTAL_BYTES, MAX_VERIFY_NANOS);
+        return verify(apk, MAX_ENTRY_BYTES, MAX_TOTAL_BYTES, MAX_VERIFY_NANOS, null);
+    }
+
+    static Result verify(File apk, ExportSessionGuard.Token token) throws IOException {
+        return verify(apk, MAX_ENTRY_BYTES, MAX_TOTAL_BYTES, MAX_VERIFY_NANOS, token);
     }
 
     // Package-private budgets make zip-bomb tests small and deterministic.
     static Result verify(File apk, long maxEntry, long maxTotal, long maxNanos)
             throws IOException {
+        return verify(apk, maxEntry, maxTotal, maxNanos, null);
+    }
+
+    static Result verify(File apk, long maxEntry, long maxTotal, long maxNanos,
+            ExportSessionGuard.Token token) throws IOException {
+        ExportSessionGuard.check(token);
         if (apk == null || !apk.isFile())
             throw new IOException("Arquivo APK indisponível para auditoria ZIP");
         if (maxEntry < 0 || maxTotal < 0 || maxNanos < 0)
@@ -55,7 +65,7 @@ public final class ApkZipIntegrity {
         try (ZipFile zip = new ZipFile(apk)) {
             Enumeration<? extends ZipEntry> cursor = zip.entries();
             while (cursor.hasMoreElements()) {
-                ensureActive(started, maxNanos);
+                ensureActive(started, maxNanos, token);
                 if (++entries > MAX_ENTRIES)
                     throw new IOException("APK com entradas ZIP demais");
                 ZipEntry entry = cursor.nextElement();
@@ -94,8 +104,9 @@ public final class ApkZipIntegrity {
                     if (input == null)
                         throw new IOException("Entrada ZIP não pode ser aberta");
                     while (true) {
-                        ensureActive(started, maxNanos);
+                        ensureActive(started, maxNanos, token);
                         int n = input.read(buffer);
+                        ensureActive(started, maxNanos, token);
                         if (n < 0) break;
                         if (n == 0) {
                             if (++zeroReads > MAX_ZERO_READS)
@@ -119,15 +130,15 @@ public final class ApkZipIntegrity {
                 verified++;
             }
         }
-        ensureActive(started, maxNanos);
+        ensureActive(started, maxNanos, token);
         if (entries == 0 || verified == 0)
             throw new IOException("ZIP/APK sem arquivos internos válidos");
         return new Result(verified, total);
     }
 
-    private static void ensureActive(long start, long budget) throws IOException {
-        if (Thread.currentThread().isInterrupted())
-            throw new InterruptedIOException("Auditoria ZIP interrompida");
+    private static void ensureActive(long start, long budget,
+            ExportSessionGuard.Token token) throws IOException {
+        ExportSessionGuard.check(token);
         if (System.nanoTime() - start > budget)
             throw new IOException("Tempo máximo de auditoria ZIP excedido");
     }
