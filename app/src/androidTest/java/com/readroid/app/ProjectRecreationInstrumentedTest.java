@@ -219,12 +219,15 @@ public final class ProjectRecreationInstrumentedTest {
                         assertEquals(selected, field(activity, "selectedApkUri"));
                         assertNull(field(activity, "pendingApkUri"));
                         assertEquals(generation, field(activity, "analysisSequence"));
+                        // ActivityScenario.close() calls onDestroy(), which
+                        // legitimately deletes its privately owned APK cache.
+                        // Assert source integrity BEFORE lifecycle teardown.
+                        assertArrayEquals(before, Files.readAllBytes(apk.toPath()));
                     } catch (Exception error) {
                         throw new AssertionError(error);
                     }
                 });
             }
-            assertArrayEquals(before, Files.readAllBytes(apk.toPath()));
         } finally { apk.delete(); }
     }
 
