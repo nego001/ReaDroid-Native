@@ -321,6 +321,133 @@ public final class SafExportVerifierInstrumentedTest {
         } finally { source.delete(); }
     }
 
+    private static final String DOCUMENTS_AUTHORITY =
+        "com.android.providers.downloads.documents";
+
+    private static Uri directDoc(String id) {
+        return Uri.parse("content://" + DOCUMENTS_AUTHORITY + "/document/" +
+            Uri.encode(id));
+    }
+
+    private static Uri treeDoc(String tree, String doc) {
+        return Uri.parse("content://" + DOCUMENTS_AUTHORITY + "/tree/" +
+            Uri.encode(tree) + "/document/" + Uri.encode(doc));
+    }
+
+    @Test public void sameSafDocumentUriIsRejectedBeforeWriting()
+            throws Exception {
+        Uri source = directDoc("primary:Download/original.apk");
+        try {
+            SafExportVerifier.ensureDistinctDocument(source, source);
+            fail("Cannot export directly over the imported document");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("APK de origem"));
+        }
+    }
+
+    @Test public void directAndTreeDocumentUriAliasesAreRejected()
+            throws Exception {
+        Uri source = directDoc("primary:Download/app.apk");
+        Uri alias = treeDoc("primary:Download", "primary:Download/app.apk");
+        try {
+            SafExportVerifier.ensureDistinctDocument(source, alias);
+            fail("Tree URI and document URI for the same id must be equivalent");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("APK de origem"));
+        }
+        try {
+            SafExportVerifier.ensureDistinctDocument(alias, source);
+            fail("Identity comparison must be symmetric");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("APK de origem"));
+        }
+    }
+
+    @Test public void fragmentAndQueryCannotDisguiseSameDocument()
+            throws Exception {
+        Uri source = directDoc("12345");
+        Uri disguised = source.buildUpon()
+            .appendQueryParameter("mode", "other").fragment("different").build();
+        try {
+            SafExportVerifier.ensureDistinctDocument(source, disguised);
+            fail("Query and fragment are not new document identities");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("APK de origem"));
+        }
+    }
+
+    @Test public void differentSafDocumentsAndAuthoritiesRemainValid()
+            throws Exception {
+        Uri source = directDoc("primary:Download/original.apk");
+        SafExportVerifier.ensureDistinctDocument(source,
+            directDoc("primary:Download/exported.apk"));
+        SafExportVerifier.ensureDistinctDocument(source,
+            Uri.parse("content://org.example.other.documents/document/" +
+                Uri.encode("primary:Download/original.apk")));
+        SafExportVerifier.ensureDistinctDocument(source,
+            treeDoc("primary:Download", "primary:Download/other.apk"));
+    }
+
+    @Test public void canonicalLocalFileAliasesAreRejected()
+            throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File original = File.createTempFile("f113_origin_", ".apk", context.getCacheDir());
+        try {
+            Uri imported = Uri.fromFile(original);
+            Uri alias = Uri.fromFile(new File(original.getParentFile(),
+                "alias/../" + original.getName()));
+            try {
+                SafExportVerifier.ensureDistinctDocument(imported, alias);
+                fail("Canonical file paths must identify the same source");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("APK de origem"));
+            }
+        } finally { original.delete(); }
+    }
+
+    @Test public void missingDocumentIdentityFailsClosed()
+            throws Exception {
+        try {
+            SafExportVerifier.ensureDistinctDocument(null, directDoc("file.apk"));
+            fail("Missing selected source cannot be proven safe");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("indisponível"));
+        }
+        try {
+            SafExportVerifier.ensureDistinctDocument(directDoc("file.apk"), null);
+            fail("Missing output cannot be proven safe");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("indisponível"));
+        }
+    }
+
+    @Test public void fourArgSafCopyRejectsOriginalBeforeOpeningDestination()
+            throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File staged = File.createTempFile("f113_staged_", ".apk", context.getCacheDir());
+        File originalDocument = File.createTempFile("f113_user_original_", ".apk",
+            context.getCacheDir());
+        try {
+            byte[] before = fixtureBytes();
+            Files.write(staged.toPath(), before);
+            Files.write(originalDocument.toPath(), new byte[]{42, 12, 7, 3});
+            byte[] original = Files.readAllBytes(originalDocument.toPath());
+            try {
+                SafExportVerifier.copyAndVerify(context.getContentResolver(),
+                    staged, Uri.fromFile(originalDocument),
+                    Uri.fromFile(originalDocument));
+                fail("Never write over the imported file even if staging is different");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("APK de origem"));
+            }
+            assertArrayEquals(original, Files.readAllBytes(originalDocument.toPath()));
+            assertArrayEquals(before, Files.readAllBytes(staged.toPath()));
+        } finally {
+            staged.delete();
+            originalDocument.delete();
+        }
+    }
+
     @Test public void copiesEveryByteAndConfirmsSha256() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File original = File.createTempFile("negresco_source_", ".apk", context.getCacheDir());

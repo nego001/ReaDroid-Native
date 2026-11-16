@@ -10,6 +10,8 @@ import java.io.OutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Confirm that the exported file really contains the complete rebuilt ZIP.
@@ -28,6 +30,68 @@ public final class SafExportVerifier {
     interface ExportTarget {
         OutputStream openWrite() throws IOException;
         InputStream openRead() throws IOException;
+    }
+
+    /**
+     * F1.13: compare the user-selected import document with the SAF output
+     * before a content provider is opened for writing.
+     */
+    public static long copyAndVerify(ContentResolver resolver, File source, Uri destination,
+            Uri importedDocument) throws IOException {
+        ensureDistinctDocument(importedDocument, destination);
+        return copyAndVerify(resolver, source, destination);
+    }
+
+    /**
+     * Fail closed if the selected output is the imported document. SAF may
+     * represent one item as either /document/{id} or /tree/{id}/document/{id}.
+     * Queries and fragments are not document identity. Opaque aliases across
+     * different authorities cannot be established without provider support.
+     */
+    static void ensureDistinctDocument(Uri imported, Uri destination) throws IOException {
+        if (imported == null || destination == null)
+            throw new IOException("Identidade do documento SAF de origem ou destino indisponível");
+        String aScheme = normalizedScheme(imported);
+        String bScheme = normalizedScheme(destination);
+        if (!"content".equals(aScheme) && !"file".equals(aScheme))
+            throw new IOException("URI de origem não suportado para exportação segura");
+        if (!"content".equals(bScheme) && !"file".equals(bScheme))
+            throw new IOException("URI de destino não suportado para exportação segura");
+        if ("file".equals(aScheme) && "file".equals(bScheme)) {
+            if (imported.getPath() == null || destination.getPath() == null)
+                throw new IOException("Caminho de documento local indisponível");
+            if (new File(imported.getPath()).getCanonicalFile()
+                    .equals(new File(destination.getPath()).getCanonicalFile()))
+                throw new IOException("O destino é o APK de origem; escolha outro documento");
+            return;
+        }
+        if (!"content".equals(aScheme) || !"content".equals(bScheme)) return;
+        String authorityA = imported.getAuthority();
+        String authorityB = destination.getAuthority();
+        if (authorityA == null || authorityB == null)
+            throw new IOException("Autoridade SAF inválida");
+        if (!authorityA.equalsIgnoreCase(authorityB)) return;
+        if (imported.getPath() != null && imported.getPath().equals(destination.getPath()))
+            throw new IOException("O destino é o APK de origem; escolha outro documento");
+        String documentA = documentId(imported);
+        String documentB = documentId(destination);
+        if (documentA != null && documentA.equals(documentB))
+            throw new IOException("O destino é o APK de origem; escolha outro documento");
+    }
+
+    private static String normalizedScheme(Uri uri) {
+        return uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+    }
+
+    /** Decode only the two documented SAF document URI path shapes. */
+    private static String documentId(Uri uri) {
+        List<String> parts = uri.getPathSegments();
+        if (parts.size() == 2 && "document".equals(parts.get(0)))
+            return parts.get(1);
+        if (parts.size() == 4 && "tree".equals(parts.get(0))
+                && "document".equals(parts.get(2)))
+            return parts.get(3);
+        return null;
     }
 
     public static long copyAndVerify(ContentResolver resolver, File source, Uri destination)

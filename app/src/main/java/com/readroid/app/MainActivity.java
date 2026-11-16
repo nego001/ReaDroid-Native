@@ -2016,6 +2016,7 @@ public class MainActivity extends Activity {
     private void exportRebuilt(Uri destination) {
         if (currentApk == null) return;
         final File source = currentApk;
+        final Uri importedDocument = selectedApkUri;
         final Map<String, String> changes = explorerView.getEditPlan().snapshot();
         if (changes.isEmpty()) return;
         final String originalImportHash = report == null
@@ -2024,6 +2025,9 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             File temp = null;
             try {
+                // F1.13: reject choosing the original SAF document as output
+                // before opening the provider or creating an export staging ZIP.
+                SafExportVerifier.ensureDistinctDocument(importedDocument, destination);
                 // The cached original must match the imported APK, and cannot
                 // change while the export is being reconstructed or verified.
                 ApkIntegrity.confirmExpected(source, originalImportHash);
@@ -2036,7 +2040,7 @@ public class MainActivity extends Activity {
                 // Check again immediately before and after read-back from SAF.
                 ApkIntegrity.confirmExpected(source, originalImportHash);
                 final long exportedBytes = SafExportVerifier.copyAndVerify(
-                    getContentResolver(), temp, destination);
+                    getContentResolver(), temp, destination, importedDocument);
                 ApkIntegrity.confirmExpected(source, originalImportHash);
                 runOnUiThread(() -> {
                     if (!isFinishing() && !isDestroyed())
