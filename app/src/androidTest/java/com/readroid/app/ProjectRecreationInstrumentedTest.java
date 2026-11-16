@@ -231,6 +231,73 @@ public final class ProjectRecreationInstrumentedTest {
         } finally { apk.delete(); }
     }
 
+    @Test public void f120SavedStateRecordsAcceptedApkDigestWithoutSavingEdits()
+            throws Exception {
+        File apk = File.createTempFile("f120_state_fixture_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry("AndroidManifest.xml"));
+                out.write("test".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        Uri accepted = Uri.parse(
+                            "content://com.readroid.app.f120/document/accepted.apk");
+                        setField(activity, "selectedApkUri", accepted);
+                        String digest = ApkIntegrity.sha256(apk);
+                        ((JSONObject) field(activity, "report")).put("sha256", digest);
+                        android.os.Bundle saved = new android.os.Bundle();
+                        Method save = MainActivity.class.getDeclaredMethod(
+                            "onSaveInstanceState", android.os.Bundle.class);
+                        save.setAccessible(true);
+                        save.invoke(activity, saved);
+                        assertEquals(accepted, saved.getParcelable("selected_apk_uri"));
+                        assertEquals(digest, saved.getString("f120_accepted_sha256"));
+                        assertFalse("Edits must not appear in saved Activity state",
+                            saved.toString().contains(CHANGE));
+                        assertWorkspace(activity, apk);
+                    } catch (Exception error) {
+                        throw new AssertionError(error);
+                    }
+                });
+            }
+        } finally { apk.delete(); }
+    }
+
+    @Test public void f120PendingImportNeverReceivesAnAcceptedHashWithoutProject()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                try {
+                    setField(activity, "currentApk", null);
+                    setField(activity, "report", null);
+                    setField(activity, "selectedApkUri", null);
+                    setField(activity, "pendingApkUri", Uri.parse(
+                        "content://com.readroid.app.f120/document/pending.apk"));
+                    android.os.Bundle saved = new android.os.Bundle();
+                    Method save = MainActivity.class.getDeclaredMethod(
+                        "onSaveInstanceState", android.os.Bundle.class);
+                    save.setAccessible(true);
+                    save.invoke(activity, saved);
+                    assertNull(saved.getString("f120_accepted_sha256"));
+                    assertNull(saved.getParcelable("selected_apk_uri"));
+                    assertNotNull(saved.getParcelable("pending_apk_uri"));
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+        }
+    }
+
     @Test public void failedReplacementRetainsOldApkAndUnsavedEdits()
             throws Exception {
         File apk = File.createTempFile("p7_previous_project_", ".apk",

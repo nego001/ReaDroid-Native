@@ -191,7 +191,23 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("P7ProjectHistory.hasPermission(this, uri)", activity)
         self.assertIn("selectedApkUri = null;", activity)
         self.assertIn("interrupted/unaccepted import", policy.lower())
-        self.assertIn("return new Decision(null, null, accepted != null || interrupted != null)", policy)
+        self.assertIn("return new Decision(null, null, accepted != null || interrupted != null, null)", policy)
+
+    def test_f120_cold_resume_binds_saved_sha_to_actual_saf_bytes(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        policy = (ROOT / "app/src/main/java/com/readroid/app/SavedProjectResume.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('outState.putString("f120_accepted_sha256", acceptedSha256)', activity)
+        self.assertIn('state.getString("f120_accepted_sha256")', activity)
+        self.assertIn("analyzeSelectedApk(resume.reimport, resume.expectedSha256)", activity)
+        self.assertIn("SavedProjectResume.requireExpectedSha256(", activity)
+        self.assertIn("expectedResumeSha256, copied.sha256", activity)
+        self.assertIn("ApkIntegrity.confirmExpected(file, expectedResumeSha256)", activity)
+        self.assertIn("validSha256(savedSha256) && permitted(accepted, checker)", policy)
+        self.assertIn("return new Decision(accepted, accepted, false, savedSha256)", policy)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

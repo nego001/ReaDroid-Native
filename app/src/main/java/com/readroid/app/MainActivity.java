@@ -1364,15 +1364,19 @@ public class MainActivity extends Activity {
             // document. Never replay an unfinished import as a new project.
             boolean sameProcessRecreation =
                 PROCESS_EPOCH.equals(state.getString("f119_process_epoch"));
+            // F1.20: permission and URI are insufficient to prove the
+            // previously accepted APK has the same bytes after process death.
             SavedProjectResume.Decision resume = SavedProjectResume.decide(
                 accepted, interrupted, retained, sameProcessRecreation,
+                state.getString("f120_accepted_sha256"),
                 uri -> P7ProjectHistory.hasPermission(this, uri));
             selectedApkUri = resume.acceptedReference;
-            if (resume.reimport != null) analyzeSelectedApk(resume.reimport);
+            if (resume.reimport != null)
+                analyzeSelectedApk(resume.reimport, resume.expectedSha256);
             else if (resume.requiresReselection && !retained) {
-                output.setText("Acesso ao APK anterior indisponível. "
-                    + "Abra novamente o arquivo pelo seletor Android; "
-                    + "nenhuma edição foi restaurada automaticamente.");
+                output.setText("A identidade ou o acesso ao APK anterior não "
+                    + "pôde ser confirmado. Abra novamente o arquivo pelo "
+                    + "seletor Android; nenhuma edição foi restaurada automaticamente.");
                 apkSummary.setText("REABRIR APK PARA CONTINUAR");
             }
         }
@@ -1939,6 +1943,10 @@ public class MainActivity extends Activity {
     }
 
     private void analyzeSelectedApk(Uri uri) {
+        analyzeSelectedApk(uri, null);
+    }
+
+    private void analyzeSelectedApk(Uri uri, String expectedResumeSha256) {
         // Starting a different analysis revokes in-flight export immediately,
         // even if that candidate later fails to replace the current project.
         exportSessions.invalidate();
@@ -1971,7 +1979,7 @@ public class MainActivity extends Activity {
         }
         executor.execute(() -> {
             try {
-                AnalyzedApk candidate = analyze(uri);
+                AnalyzedApk candidate = analyze(uri, expectedResumeSha256);
                 // Validation alone is not an accepted import. The history and
                 // icon cache must not change until the UI commits this candidate.
                 runOnUiThread(() -> {
@@ -2245,6 +2253,10 @@ public class MainActivity extends Activity {
     }
 
     private AnalyzedApk analyze(Uri uri) throws Exception {
+        return analyze(uri, null);
+    }
+
+    private AnalyzedApk analyze(Uri uri, String expectedResumeSha256) throws Exception {
         // Reserve private storage before copying the untrusted document.
         // The provider may lie about its size: streaming checks remain required.
         ApkImportPreflight.beforeCopy(this, uri);
@@ -2259,6 +2271,12 @@ public class MainActivity extends Activity {
                 copied = ApkImportPreflight.copyAndHash(in, out,
                     () -> ApkImportPreflight.availableBytes(this));
             }
+            // F1.20: even an authorized SAF URI may now serve another APK.
+            // A cold resume must match the previously accepted digest before
+            // parsing, indexing, or committing a candidate project.
+            if (expectedResumeSha256 != null)
+                SavedProjectResume.requireExpectedSha256(
+                    expectedResumeSha256, copied.sha256);
             // F1.6: reject damaged internal payloads before exposing a new project.
             ApkZipIntegrity.Result zipIntegrity = ApkZipIntegrity.verify(file);
             long size = copied.sizeBytes;
@@ -2323,6 +2341,11 @@ public class MainActivity extends Activity {
             // F1.7: validate actual private-cache bytes after *all* analysis.
             // A copied stream hash alone cannot prove the final file identity.
             ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256);
+            if (expectedResumeSha256 != null) {
+                // Independent cache hash after ZIP inspection and indexing;
+                // an import source cannot change during resume unnoticed.
+                ApkIntegrity.confirmExpected(file, expectedResumeSha256);
+            }
             return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
             try {
@@ -2390,6 +2413,14 @@ public class MainActivity extends Activity {
                 Integer.toString(pendingLogoExport.color),
                 Integer.toString(pendingLogoExport.background) });
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
+        // Save only the SHA-256 of a fully accepted project, never the edit
+        // plan, cached APK bytes, or an unaccepted pending import.
+        if (selectedApkUri != null && currentApk != null
+                && currentApk.isFile() && report != null) {
+            String acceptedSha256 = report.optString("sha256", "");
+            if (SavedProjectResume.validSha256(acceptedSha256))
+                outState.putString("f120_accepted_sha256", acceptedSha256);
+        }
         if (pendingApkUri != null) outState.putParcelable("pending_apk_uri", pendingApkUri);
         super.onSaveInstanceState(outState);
     }
