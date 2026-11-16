@@ -1341,7 +1341,19 @@ public class MainActivity extends Activity {
         // sufficiently old export-temp names from our private cache, off UI.
         // Never touch imported readroid_ APKs or active tracked files.
         final File privateCache = getCacheDir();
-        executor.execute(() -> RebuildTempJanitor.sweep(privateCache));
+        executor.execute(() -> {
+            RebuildTempJanitor.sweep(privateCache);
+            // F1.17 is strictly read-only. It cannot infer that a cache APK
+            // without a SQLite index is orphaned, nor auto-delete it.
+            ImportCacheAudit.Report audit = ImportCacheAudit.inspect(
+                privateCache, currentApk, currentIndex);
+            android.util.Log.i("ReaDroidImportAudit",
+                "imports=" + audit.importedApks
+                + " indexes=" + audit.sqliteIndexes
+                + " indexesMissingSource=" + audit.indexWithoutApk
+                + " oldForReview=" + audit.oldCandidates
+                + " incomplete=" + audit.incomplete);
+        });
     }
 
     /** The same report renderer is used for fresh APKs and retained workspaces. */
@@ -1901,9 +1913,14 @@ public class MainActivity extends Activity {
                 // icon cache must not change until the UI commits this candidate.
                 runOnUiThread(() -> {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
-                        candidate.file.delete();
-                        if (candidate.indexFile != null)
-                            android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate.indexFile);
+                        try {
+                            candidate.file.delete();
+                            if (candidate.indexFile != null)
+                                android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate.indexFile);
+                        } finally {
+                            ImportCacheAudit.release(candidate.file);
+                            ImportCacheAudit.release(candidate.indexFile);
+                        }
                         return;
                     }
                     File previousApk = currentApk;
@@ -1927,6 +1944,9 @@ public class MainActivity extends Activity {
                         previousApk.delete();
                     if (previousIndex != null && previousIndex != candidate.indexFile)
                         android.database.sqlite.SQLiteDatabase.deleteDatabase(previousIndex);
+                    // Ownership transferred from the import worker to this UI.
+                    ImportCacheAudit.release(candidate.file);
+                    ImportCacheAudit.release(candidate.indexFile);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
@@ -2162,6 +2182,7 @@ public class MainActivity extends Activity {
         // The provider may lie about its size: streaming checks remain required.
         ApkImportPreflight.beforeCopy(this, uri);
         File file = File.createTempFile("readroid_", ".apk", getCacheDir());
+        ImportCacheAudit.track(file);
         File diskIndex = null;
         try {
             final ApkImportPreflight.CopyResult copied;
@@ -2223,11 +2244,13 @@ public class MainActivity extends Activity {
             // Experimental UI indexing only; legacy JSON analysis retained.
             if (entries >= 200) {
                 File candidate = new File(file.getAbsolutePath() + ".idx.db");
+                ImportCacheAudit.track(candidate);
                 try {
                     ApkDiskIndex.build(file, candidate);
                     diskIndex = candidate;
                 } catch (IOException optionalIndexError) {
-                    android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate);
+                    try { android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate); }
+                    finally { ImportCacheAudit.release(candidate); }
                 }
             }
             // F1.7: validate actual private-cache bytes after *all* analysis.
@@ -2235,9 +2258,14 @@ public class MainActivity extends Activity {
             ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256);
             return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
-            if (diskIndex != null)
-                android.database.sqlite.SQLiteDatabase.deleteDatabase(diskIndex);
-            file.delete();
+            try {
+                if (diskIndex != null)
+                    android.database.sqlite.SQLiteDatabase.deleteDatabase(diskIndex);
+                file.delete();
+            } finally {
+                ImportCacheAudit.release(diskIndex);
+                ImportCacheAudit.release(file);
+            }
             throw error;
         }
     }

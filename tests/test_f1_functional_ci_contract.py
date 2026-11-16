@@ -22,6 +22,7 @@ PRODUCTION = {
     "ApkZipIntegrity.java",
     "ApkExplorer.java",
     "ApkDiskIndex.java",
+    "ImportCacheAudit.java",
     "ApkCacheAdmission.java",
     "ApkRebuilder.java",
     "RebuildTempJanitor.java",
@@ -38,6 +39,7 @@ ANDROID_TESTS = {
     "ApkImportPreflightInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
+    "ImportCacheAuditInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
     "RebuildTempJanitorInstrumentedTest",
     "RebuildStorageBudgetInstrumentedTest",
@@ -139,6 +141,21 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("RebuildTempJanitor.release(staged)", rebuilder)
         self.assertIn("LinkOption.NOFOLLOW_LINKS", janitor)
         self.assertIn("MIN_STALE_AGE_MS", janitor)
+
+    def test_f117_import_index_audit_is_non_destructive(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        audit = (ROOT / "app/src/main/java/com/readroid/app/ImportCacheAudit.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ImportCacheAudit.inspect(", activity)
+        self.assertIn("ImportCacheAudit.track(file)", activity)
+        self.assertIn("ImportCacheAudit.release(candidate.file)", activity)
+        self.assertIn("LinkOption.NOFOLLOW_LINKS", audit)
+        self.assertNotIn("Files.delete", audit)
+        self.assertNotIn("SQLiteDatabase.deleteDatabase", audit)
+        self.assertIn("REVIEW_AGE_MS", audit)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
