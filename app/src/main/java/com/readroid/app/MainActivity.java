@@ -2099,25 +2099,25 @@ public class MainActivity extends Activity {
                 // User-selected document identity and cached APK must be
                 // validated before creating any staging or writing to SAF.
                 SafExportVerifier.ensureDistinctDocument(importedDocument, destination);
-                ApkIntegrity.confirmExpected(source, originalImportHash);
+                ApkIntegrity.confirmExpected(source, originalImportHash, session);
                 session.requireActive();
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
-                ApkRebuilder.rebuild(source, temp, changes);
+                ApkRebuilder.rebuild(source, temp, changes, session);
                 session.requireActive();
                 final String verification = RebuildVerifier.verifyAgainstOriginal(
-                    source, temp, changes);
+                    source, temp, changes, session);
                 session.requireActive();
                 final String preflight = SigningPreflight.inspect(temp);
                 session.requireActive();
-                final String rebuiltSha256 = ApkIntegrity.sha256(temp);
-                ApkIntegrity.confirmExpected(source, originalImportHash);
+                final String rebuiltSha256 = ApkIntegrity.sha256(temp, session);
+                ApkIntegrity.confirmExpected(source, originalImportHash, session);
                 session.requireActive();
                 // F1.14: the provider checks the same session before every
                 // read/write and again after readback, not just at the end.
                 final long exportedBytes = SafExportVerifier.copyAndVerifyBound(
                     getContentResolver(), temp, destination, importedDocument, session);
                 session.requireActive();
-                ApkIntegrity.confirmExpected(source, originalImportHash);
+                ApkIntegrity.confirmExpected(source, originalImportHash, session);
                 session.requireActive();
                 runOnUiThread(() -> {
                     if (!isFinishing() && !isDestroyed() && session.isActive()
