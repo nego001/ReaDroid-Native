@@ -24,6 +24,7 @@ PRODUCTION = {
     "ApkDiskIndex.java",
     "ApkCacheAdmission.java",
     "ApkRebuilder.java",
+    "RebuildStorageBudget.java",
     "ApkIntegrity.java",
     "RebuildVerifier.java",
     "SafExportVerifier.java",
@@ -36,6 +37,7 @@ ANDROID_TESTS = {
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
+    "RebuildStorageBudgetInstrumentedTest",
     "SafExportVerifierInstrumentedTest",
 }
 

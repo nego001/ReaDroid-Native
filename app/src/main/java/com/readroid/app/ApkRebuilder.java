@@ -22,8 +22,17 @@ public final class ApkRebuilder {
     // F1.10 tests can simulate a damaged staging archive before final commit.
     static void rebuild(File original, File destination, Map<String, String> edits,
             BeforeStageVerification beforeVerify) throws IOException {
-        if (beforeVerify == null)
-            throw new IOException("Validador de estágio indisponível");
+        rebuild(original, destination, edits, beforeVerify,
+            RebuildStorageBudget.forDirectory(destination == null
+                ? null : destination.getAbsoluteFile().getParentFile()));
+    }
+
+    // F1.11: deterministic free-space seam for instrumented low-storage tests.
+    static void rebuild(File original, File destination, Map<String, String> edits,
+            BeforeStageVerification beforeVerify, RebuildStorageBudget.FreeSpace space)
+            throws IOException {
+        if (beforeVerify == null || space == null)
+            throw new IOException("Validador ou orçamento de armazenamento indisponível");
         if (original == null || !original.isFile() || destination == null || edits == null || edits.isEmpty())
             throw new IOException("APK e alterações são obrigatórios");
         if (original.getCanonicalPath().equals(destination.getCanonicalPath()))
@@ -46,6 +55,9 @@ public final class ApkRebuilder {
         final String sourceSha256 = ApkIntegrity.sha256(original);
         ApkZipIntegrity.verify(original);
         ApkIntegrity.confirmExpected(original, sourceSha256);
+        // Reserve 64 MiB of free storage before creating staging. The quota
+        // counts actual compressed ZIP bytes, including headers and trailers.
+        RebuildStorageBudget.preflight(space);
         // Build beside the target, never directly over an existing export.
         // A failed rebuild leaves both original APK and previous result intact.
         File staged = File.createTempFile("readroid-rebuild-", ".tmp",
@@ -54,9 +66,11 @@ public final class ApkRebuilder {
         Set<String> applied = new HashSet<>();
         byte[] buffer = new byte[65536];
         try {
+          RebuildStorageBudget.CheckedOutputStream budget =
+              RebuildStorageBudget.open(staged, space);
           try (ZipFile input = new ZipFile(original);
                ZipOutputStream output = new ZipOutputStream(
-                   new BufferedOutputStream(new FileOutputStream(staged)))) {
+                   new BufferedOutputStream(budget))) {
             Enumeration<? extends ZipEntry> entries = input.entries();
             Set<String> seen = new HashSet<>();
             int count = 0;
@@ -107,6 +121,9 @@ public final class ApkRebuilder {
           }
           if (Thread.currentThread().isInterrupted())
               throw new InterruptedIOException("Reconstrução interrompida");
+          // A short final ZIP or central-directory trailer still needs a
+          // post-close reserve check, even below the periodic 8 MiB interval.
+          budget.verifyFinal();
           // Complete and close staged ZIP first. Do not replace an existing
           // export until CRC, paths, expected edits, and every untouched member
           // match the original. The test seam injects damage at this boundary.

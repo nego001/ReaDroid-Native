@@ -520,6 +520,38 @@ public final class ApkRebuilderInstrumentedTest {
         }
     }
 
+    @Test public void lowSpaceAfterStagingPreservesOldExportAndOriginal()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] before = Files.readAllBytes(original.toPath());
+            byte[] prior = utf8("previous signed-off export must survive");
+            Files.write(target.toPath(), prior);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"edited\":1}");
+            java.util.concurrent.atomic.AtomicInteger reads =
+                new java.util.concurrent.atomic.AtomicInteger();
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(), staged -> {},
+                    () -> reads.incrementAndGet() >= 4
+                        ? 32L * 1024 * 1024
+                        : 512L * 1024 * 1024);
+                fail("Low storage after staging cannot commit");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("Espaço insuficiente"));
+            }
+            assertArrayEquals(prior, Files.readAllBytes(target.toPath()));
+            assertArrayEquals(before, Files.readAllBytes(original.toPath()));
+            assertTrue("Space probes must happen before and after staging",
+                reads.get() >= 4);
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
     @Test public void interruptedRebuildKeepsPriorExportAndSource() throws Exception {
         File original = file(".apk");
         File output = file(".apk");

@@ -17,6 +17,7 @@ on:
       - 'app/src/main/java/com/readroid/app/ApkDiskIndex.java'
       - 'app/src/main/java/com/readroid/app/ApkCacheAdmission.java'
       - 'app/src/main/java/com/readroid/app/ApkRebuilder.java'
+      - 'app/src/main/java/com/readroid/app/RebuildStorageBudget.java'
       - 'app/src/main/java/com/readroid/app/ApkIntegrity.java'
       - 'app/src/main/java/com/readroid/app/RebuildVerifier.java'
       - 'app/src/main/java/com/readroid/app/SafExportVerifier.java'
@@ -27,6 +28,7 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/ApkZipIntegrityInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkCacheAdmissionInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkRebuilderInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/RebuildStorageBudgetInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/SafExportVerifierInstrumentedTest.java'
       - 'tests/test_f1_functional_ci_contract.py'
       - '.github/workflows/f1-edit-session-validation.yml'
@@ -72,5 +74,5 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest
             echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
