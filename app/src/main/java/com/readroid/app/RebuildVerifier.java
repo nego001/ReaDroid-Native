@@ -22,6 +22,7 @@ public final class RebuildVerifier {
                 ZipEntry entry = entries.nextElement();
                 if (++count > 150000) throw new IOException("Entradas demais");
                 String name = entry.getName();
+                ApkDiskIndex.validatePath(name);
                 if (!names.add(name)) throw new IOException("Entrada duplicada: " + name);
                 if (name.equals("AndroidManifest.xml")) manifest = true;
                 if (name.matches("classes([0-9]+)?\\.dex")) dex = true;
@@ -68,6 +69,7 @@ public final class RebuildVerifier {
                 if (++count > 150000) throw new IOException("Entradas demais na origem");
                 ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
+                ApkDiskIndex.validatePath(name);
                 if (!originalPaths.add(name)) throw new IOException("Entrada duplicada na origem");
                 if (isOldSignature(name)) {
                     if (output.getEntry(name) != null)
@@ -91,6 +93,7 @@ public final class RebuildVerifier {
                 if (++rebuiltCount > 150000)
                     throw new IOException("Entradas demais no resultado");
                 String name = rebuiltEntries.nextElement().getName();
+                ApkDiskIndex.validatePath(name);
                 if (!expectedPaths.remove(name))
                     throw new IOException("Arquivo inesperado no resultado: " + name);
             }

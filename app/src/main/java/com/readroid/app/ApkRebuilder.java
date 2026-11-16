@@ -47,8 +47,9 @@ public final class ApkRebuilder {
                 ZipEntry entry = entries.nextElement();
                 if (++count > 150000) throw new IOException("Número excessivo de entradas");
                 String name = entry.getName();
-                if (name.startsWith("/") || name.contains("\\") || name.contains("../") || name.equals(".."))
-                    throw new IOException("Caminho inseguro: " + name);
+                // F1.9: same strict archive-path policy used by admission and
+                // the read-only SQLite index, including direct rebuild callers.
+                ApkDiskIndex.validatePath(name);
                 if (!seen.add(name)) throw new IOException("Entrada duplicada: " + name);
                 // Signing metadata cannot be reused after modifications.
                 String upper = name.toUpperCase(Locale.ROOT);

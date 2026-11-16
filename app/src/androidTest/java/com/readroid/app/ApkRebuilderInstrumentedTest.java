@@ -142,6 +142,108 @@ public final class ApkRebuilderInstrumentedTest {
     }
 
 
+    /** A path rejected by admission must also be rejected by direct rebuild. */
+    private void assertDirectRebuildRejectsPath(String untrustedPath)
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(original.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("binary manifest placeholder"));
+                add(out, "classes.dex", new byte[]{100, 101, 120, 10});
+                add(out, "assets/config.json", utf8("{\"safe\":true}"));
+                add(out, untrustedPath, utf8("untrusted path"));
+            }
+            byte[] source = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("previous export must remain intact");
+            Files.write(output.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"safe\":false}");
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot());
+                fail("Direct rebuild must reject unsafe path: " + untrustedPath);
+            } catch (IOException expected) {
+                assertNotNull(expected.getMessage());
+            }
+            assertArrayEquals(previous, Files.readAllBytes(output.toPath()));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void directRebuildRejectsDotSegmentsAndRepeatedSeparators()
+            throws Exception {
+        assertDirectRebuildRejectsPath("assets/./payload.bin");
+        assertDirectRebuildRejectsPath("assets//payload.bin");
+    }
+
+    @Test public void directRebuildRejectsOverlongAndTooDeepPaths()
+            throws Exception {
+        StringBuilder longName = new StringBuilder("assets/");
+        for (int i = 0; i < 4200; i++) longName.append('x');
+        longName.append(".txt");
+        assertDirectRebuildRejectsPath(longName.toString());
+
+        StringBuilder deepPath = new StringBuilder();
+        for (int i = 0; i < 130; i++) deepPath.append("dir/");
+        deepPath.append("payload.bin");
+        assertDirectRebuildRejectsPath(deepPath.toString());
+    }
+
+    @Test public void directVerifierRejectsInvalidPathDespiteValidEditedContent()
+            throws Exception {
+        File output = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(output.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("manifest"));
+                add(out, "classes.dex", utf8("dex"));
+                add(out, "assets/config.json", utf8("{\"new\":1}"));
+                add(out, "assets/./danger.bin", utf8("extra"));
+            }
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":1}");
+            try {
+                RebuildVerifier.verify(output, plan.snapshot());
+                fail("Verifier cannot claim success with unsafe ZIP path");
+            } catch (IOException expected) {
+                assertNotNull(expected.getMessage());
+            }
+        } finally {
+            output.delete();
+        }
+    }
+
+    @Test public void legitimateDoubleDotsInsideBasenameRemainValid()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(original.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("manifest"));
+                add(out, "classes.dex", utf8("dex"));
+                add(out, "assets/config.json", utf8("{\"old\":1}"));
+                add(out, "assets/a..b.txt", utf8("dots within basename"));
+            }
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":1}");
+            ApkRebuilder.rebuild(original, output, plan.snapshot());
+            assertTrue(RebuildVerifier.verify(output, plan.snapshot())
+                .contains("1 alteração"));
+            try (ZipFile zip = new ZipFile(output)) {
+                assertEquals("dots within basename",
+                    new String(entryBytes(zip, "assets/a..b.txt"), StandardCharsets.UTF_8));
+            }
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
     @Test public void comparisonDetectsTamperedUntouchedEntryEvenWhenEditLooksCorrect()
             throws Exception {
         File original = file(".apk");
