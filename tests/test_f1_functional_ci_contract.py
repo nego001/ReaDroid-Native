@@ -24,6 +24,7 @@ PRODUCTION = {
     "ApkDiskIndex.java",
     "ApkCacheAdmission.java",
     "ApkRebuilder.java",
+    "RebuildTempJanitor.java",
     "RebuildStorageBudget.java",
     "ApkIntegrity.java",
     "RebuildVerifier.java",
@@ -38,6 +39,7 @@ ANDROID_TESTS = {
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
+    "RebuildTempJanitorInstrumentedTest",
     "RebuildStorageBudgetInstrumentedTest",
     "SafExportVerifierInstrumentedTest",
     "ExportSessionGuardInstrumentedTest",
@@ -117,6 +119,26 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("ExportSessionGuard.check(token)", integrity)
         self.assertIn("ExportSessionGuard.check(token)", zipcheck)
         self.assertIn("ExportSessionGuard.check(token)", verifier)
+
+    def test_f116_orphan_pruning_limited_to_private_cache(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        rebuilder = (ROOT / "app/src/main/java/com/readroid/app/ApkRebuilder.java").read_text(
+            encoding="utf-8"
+        )
+        janitor = (ROOT / "app/src/main/java/com/readroid/app/RebuildTempJanitor.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("RebuildTempJanitor.sweep(privateCache)", activity)
+        self.assertIn('File.createTempFile("readroid_unsigned_", ".apk", getCacheDir())', activity)
+        self.assertIn("RebuildTempJanitor.track(temp)", activity)
+        self.assertIn("RebuildTempJanitor.release(temp)", activity)
+        self.assertIn('File.createTempFile("readroid-rebuild-", ".tmp"', rebuilder)
+        self.assertIn("RebuildTempJanitor.track(staged)", rebuilder)
+        self.assertIn("RebuildTempJanitor.release(staged)", rebuilder)
+        self.assertIn("LinkOption.NOFOLLOW_LINKS", janitor)
+        self.assertIn("MIN_STALE_AGE_MS", janitor)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

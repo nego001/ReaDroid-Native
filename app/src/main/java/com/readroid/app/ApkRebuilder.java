@@ -87,6 +87,7 @@ public final class ApkRebuilder {
         // A failed rebuild leaves both original APK and previous result intact.
         File staged = File.createTempFile("readroid-rebuild-", ".tmp",
             destination.getAbsoluteFile().getParentFile());
+        RebuildTempJanitor.track(staged);
         boolean committed = false;
         Set<String> applied = new HashSet<>();
         byte[] buffer = new byte[65536];
@@ -180,7 +181,11 @@ public final class ApkRebuilder {
           }
           committed = true;
         } finally {
-            if (!committed) staged.delete();
+            try {
+                if (!committed) staged.delete();
+            } finally {
+                RebuildTempJanitor.release(staged);
+            }
         }
     }
 }

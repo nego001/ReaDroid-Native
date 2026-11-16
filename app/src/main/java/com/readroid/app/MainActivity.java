@@ -1337,6 +1337,11 @@ public class MainActivity extends Activity {
                 analyzeSelectedApk(selectedApkUri);
         }
         refreshRecentProjects();
+        // F1.16: a process death can leave staging behind. Prune only exact,
+        // sufficiently old export-temp names from our private cache, off UI.
+        // Never touch imported readroid_ APKs or active tracked files.
+        final File privateCache = getCacheDir();
+        executor.execute(() -> RebuildTempJanitor.sweep(privateCache));
     }
 
     /** The same report renderer is used for fresh APKs and retained workspaces. */
@@ -2102,6 +2107,7 @@ public class MainActivity extends Activity {
                 ApkIntegrity.confirmExpected(source, originalImportHash, session);
                 session.requireActive();
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
+                RebuildTempJanitor.track(temp);
                 ApkRebuilder.rebuild(source, temp, changes, session);
                 session.requireActive();
                 final String verification = RebuildVerifier.verifyAgainstOriginal(
@@ -2138,7 +2144,10 @@ public class MainActivity extends Activity {
                         .setPositiveButton("OK", null).show();
                 });
             } finally {
-                if (temp != null) temp.delete();
+                if (temp != null) {
+                    try { temp.delete(); }
+                    finally { RebuildTempJanitor.release(temp); }
+                }
                 runOnUiThread(() -> {
                     if (!isFinishing() && !isDestroyed() && session.isActive()
                             && source == currentApk)
