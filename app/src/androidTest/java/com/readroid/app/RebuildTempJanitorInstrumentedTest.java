@@ -64,7 +64,8 @@ public final class RebuildTempJanitorInstrumentedTest {
     @Test public void freshOrFutureDatedFilesAreNeverRemoved() throws Exception {
         File root = root();
         try {
-            File fresh = entry(root, "readroid_unsigned_", ".apk", NOW - DAY + 1);
+            // Use a full minute: Android filesystems may round mtime to seconds.
+            File fresh = entry(root, "readroid_unsigned_", ".apk", NOW - DAY + 60000);
             File future = entry(root, "readroid-rebuild-", ".tmp", NOW + 1000);
             RebuildTempJanitor.Result result = RebuildTempJanitor.sweep(root, NOW, DAY);
             assertEquals(0, result.deleted);
