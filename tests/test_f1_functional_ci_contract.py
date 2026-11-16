@@ -85,6 +85,8 @@ class FunctionalCIContract(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("pendingExport = new PendingExport(", activity)
+        self.assertIn("analysisAtPrompt != analysisSequence", activity)
+        self.assertIn("sourceAtPrompt != currentApk", activity)
         self.assertIn("intent.source != currentApk", activity)
         self.assertIn("exportSessions.invalidate();", activity)
         self.assertIn("session.requireActive();", activity)

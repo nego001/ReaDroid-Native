@@ -1218,16 +1218,34 @@ public class MainActivity extends Activity {
                 new android.app.AlertDialog.Builder(this).setMessage("Primeiro registre uma alteração textual no explorador.").setPositiveButton("OK", null).show();
                 return;
             }
+            // The dialog itself can outlive its originating project.
+            final File sourceAtPrompt = currentApk;
+            final Uri documentAtPrompt = selectedApkUri;
+            final String hashAtPrompt = report == null
+                ? "" : report.optString("sha256", "");
+            final Map<String, String> editsAtPrompt =
+                explorerView.getEditPlan().snapshot();
+            final int analysisAtPrompt = analysisSequence;
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Reconstrução experimental")
                 .setMessage("O resultado NÃO estará assinado e pode não instalar ou funcionar. O APK original será preservado. Continuar?")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Escolher destino", (dialog, which) -> {
-                    // Freeze project, hash and edits before the external picker.
-                    // A later project switch revokes this exact request.
-                    pendingExport = new PendingExport(currentApk, selectedApkUri,
-                        report == null ? "" : report.optString("sha256", ""),
-                        explorerView.getEditPlan().snapshot(), exportSessions.begin());
+                    if (isFinishing() || isDestroyed()
+                            || analysisAtPrompt != analysisSequence
+                            || sourceAtPrompt != currentApk
+                            || !Objects.equals(documentAtPrompt, selectedApkUri)) {
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Exportação cancelada")
+                            .setMessage("O projeto mudou enquanto a confirmação estava aberta. "
+                                + "Inicie uma nova exportação no projeto atual.")
+                            .setPositiveButton("OK", null).show();
+                        return;
+                    }
+                    // Freeze the originally-confirmed project and edit snapshot
+                    // before launching the external Android document picker.
+                    pendingExport = new PendingExport(sourceAtPrompt, documentAtPrompt,
+                        hashAtPrompt, editsAtPrompt, exportSessions.begin());
                     Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     create.addCategory(Intent.CATEGORY_OPENABLE);
                     create.setType("application/vnd.android.package-archive");
