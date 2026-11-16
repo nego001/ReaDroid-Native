@@ -184,6 +184,9 @@ class FunctionalCIContract(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("SavedProjectResume.decide(", activity)
+        self.assertIn('outState.putString("f119_process_epoch", PROCESS_EPOCH)', activity)
+        self.assertIn('state.getString("f119_process_epoch")', activity)
+        self.assertIn("sameProcessRecreation", policy)
         self.assertIn("SavedProjectResume.permitted(", activity)
         self.assertIn("P7ProjectHistory.hasPermission(this, uri)", activity)
         self.assertIn("selectedApkUri = null;", activity)

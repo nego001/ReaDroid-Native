@@ -34,6 +34,9 @@ public class MainActivity extends Activity {
     private Button localIdentity;
     private Button signingTest;
     private Button apkAdvisor;
+    // Exists only in this app process. Unlike Bundle URIs, it is not restored
+    // after Android terminates and recreates the process.
+    private static final String PROCESS_EPOCH = java.util.UUID.randomUUID().toString();
     private static final int REQUEST_EXPORT_APK = 2;
     private static final int REQUEST_COMPARE_APK = 3;
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
@@ -1359,8 +1362,10 @@ public class MainActivity extends Activity {
             // F1.19: saved Bundle URIs are not read permissions. On process
             // death replay ONLY a previously accepted, persistently granted
             // document. Never replay an unfinished import as a new project.
+            boolean sameProcessRecreation =
+                PROCESS_EPOCH.equals(state.getString("f119_process_epoch"));
             SavedProjectResume.Decision resume = SavedProjectResume.decide(
-                accepted, interrupted, retained,
+                accepted, interrupted, retained, sameProcessRecreation,
                 uri -> P7ProjectHistory.hasPermission(this, uri));
             selectedApkUri = resume.acceptedReference;
             if (resume.reimport != null) analyzeSelectedApk(resume.reimport);
@@ -2366,6 +2371,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle outState) {
+        outState.putString("f119_process_epoch", PROCESS_EPOCH);
         outState.putInt("active_studio_section", selectedSection);
         if (sectionNavigationInitialized && pendingScrollSection != selectedSection)
             sectionScrollPositions[selectedSection] =

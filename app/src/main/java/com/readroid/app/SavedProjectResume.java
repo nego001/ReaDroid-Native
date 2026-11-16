@@ -43,17 +43,39 @@ final class SavedProjectResume {
 
     static Decision decide(Uri accepted, Uri interrupted, boolean hasRetainedWorkspace,
             ReadGrant checker) {
+        return decide(accepted, interrupted, hasRetainedWorkspace, false, checker);
+    }
+
+    /**
+     * sameProcessRecreation is backed by a process-local random marker in
+     * saved instance state. The marker cannot survive a killed process.
+     */
+    static Decision decide(Uri accepted, Uri interrupted, boolean hasRetainedWorkspace,
+            boolean sameProcessRecreation, ReadGrant checker) {
         if (hasRetainedWorkspace) {
-            // Keep the verified in-memory project; denied/missing permissions
-            // must not replace it or discard its unsaved EditPlan.
-            Uri retry = permitted(interrupted, checker) ? interrupted : null;
-            return new Decision(accepted, retry,
-                interrupted != null && retry == null);
+            // Retain the previous project, and retry a pending import only
+            // if this is the same process or its URI grant is still persisted.
+            Uri retry = validContentUri(interrupted) && (sameProcessRecreation
+                    || permitted(interrupted, checker)) ? interrupted : null;
+            return new Decision(accepted, retry, interrupted != null && retry == null);
         }
-        // Process death: no trusted retained workspace. An interrupted picker
-        // never establishes user acceptance even with a persisted URI grant.
+        // Configuration recreation: the Android document picker may have
+        // supplied only a transient grant. Preserve the already-started action
+        // within this still-alive process, with normal SAF reads still required.
+        if (sameProcessRecreation) {
+            if (validContentUri(interrupted))
+                return new Decision(accepted, interrupted, false);
+            if (validContentUri(accepted))
+                return new Decision(accepted, accepted, false);
+        }
+        // Process death: never promote an unaccepted pending import. An
+        // accepted URI may be reimported only with a persisted read grant.
         if (permitted(accepted, checker))
             return new Decision(accepted, accepted, false);
         return new Decision(null, null, accepted != null || interrupted != null);
+    }
+
+    private static boolean validContentUri(Uri uri) {
+        return uri != null && "content".equals(uri.getScheme());
     }
 }

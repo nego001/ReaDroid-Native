@@ -69,6 +69,21 @@ public final class SavedProjectResumeInstrumentedTest {
         }));
     }
 
+    @Test public void sameProcessRotationPreservesAuthorizedPendingFirstImport() {
+        SavedProjectResume.Decision result = SavedProjectResume.decide(
+            null, PENDING, false, true, uri -> false);
+        assertEquals(PENDING, result.reimport);
+        assertNull(result.acceptedReference);
+        assertFalse(result.requiresReselection);
+    }
+
+    @Test public void processDeathDoesNotReplayPendingEvenWithStoredGrant() {
+        SavedProjectResume.Decision result = SavedProjectResume.decide(
+            null, PENDING, false, false, uri -> true);
+        assertNull(result.reimport);
+        assertTrue(result.requiresReselection);
+    }
+
     @Test public void noSavedProjectNeverOpensOrAsksToRestore() {
         SavedProjectResume.Decision result = SavedProjectResume.decide(
             null, null, false, uri -> true);
