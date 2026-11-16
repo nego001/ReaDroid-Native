@@ -46,8 +46,15 @@ final class RebuildStorageBudget {
         if (staged == null || !staged.isFile())
             throw new IOException("Arquivo temporário de reconstrução indisponível");
         preflight(space);
-        return new CheckedOutputStream(new FileOutputStream(staged), space,
-            MAX_STAGED_BYTES, SAFETY_RESERVE, PROBE_INTERVAL);
+        FileOutputStream descriptor = new FileOutputStream(staged);
+        try {
+            return new CheckedOutputStream(descriptor, space,
+                MAX_STAGED_BYTES, SAFETY_RESERVE, PROBE_INTERVAL);
+        } catch (IOException | RuntimeException failure) {
+            try { descriptor.close(); }
+            catch (IOException closeFailure) { failure.addSuppressed(closeFailure); }
+            throw failure;
+        }
     }
 
     private static void checkSpace(FreeSpace space, long reserve, long upcoming)

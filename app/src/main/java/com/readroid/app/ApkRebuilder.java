@@ -68,9 +68,12 @@ public final class ApkRebuilder {
         try {
           RebuildStorageBudget.CheckedOutputStream budget =
               RebuildStorageBudget.open(staged, space);
-          try (ZipFile input = new ZipFile(original);
+          // First resource owns the file descriptor even if opening ZipFile
+          // fails. ZipOutputStream may close it first; close() is idempotent.
+          try (RebuildStorageBudget.CheckedOutputStream managedBudget = budget;
+               ZipFile input = new ZipFile(original);
                ZipOutputStream output = new ZipOutputStream(
-                   new BufferedOutputStream(budget))) {
+                   new BufferedOutputStream(managedBudget))) {
             Enumeration<? extends ZipEntry> entries = input.entries();
             Set<String> seen = new HashSet<>();
             int count = 0;
