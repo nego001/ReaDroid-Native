@@ -552,6 +552,143 @@ public final class ApkRebuilderInstrumentedTest {
         }
     }
 
+    @Test public void f115InvalidationDuringZipCopyAbortsAndPreservesPreviousExport()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] source = Files.readAllBytes(original.toPath());
+            byte[] prior = utf8("previous completed export");
+            Files.write(output.toPath(), prior);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":true}");
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token token = guard.begin();
+            java.util.concurrent.atomic.AtomicInteger chunks =
+                new java.util.concurrent.atomic.AtomicInteger();
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot(),
+                    staged -> {}, () -> 512L * 1024 * 1024, token,
+                    (path, total) -> {
+                        chunks.incrementAndGet();
+                        guard.invalidate();
+                    });
+                fail("Stale project must never replace the prior export");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertTrue("Must have begun copying ZIP content", chunks.get() > 0);
+            assertArrayEquals(prior, Files.readAllBytes(output.toPath()));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115CancellationAtVerificationBoundaryPreservesPriorExport()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] prior = utf8("prior output");
+            Files.write(output.toPath(), prior);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{}");
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token token = guard.begin();
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot(),
+                    staged -> guard.invalidate(), () -> 512L * 1024 * 1024,
+                    token, (path, total) -> {});
+                fail("Cancelled staging must never reach atomic commit");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertArrayEquals(prior, Files.readAllBytes(output.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115AlreadyRevokedTokenNeverCreatesResult()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            assertTrue(output.delete());
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token stale = guard.begin();
+            guard.invalidate();
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{}");
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot(), stale);
+                fail("Stale export cannot start");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertFalse(output.exists());
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115CurrentTokenCanBuildAndVerifyValidZip()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] source = Files.readAllBytes(original.toPath());
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"ok\":true}");
+            ExportSessionGuard.Token active = new ExportSessionGuard().begin();
+            ApkRebuilder.rebuild(original, output, plan.snapshot(), active);
+            assertTrue(RebuildVerifier.verifyAgainstOriginal(
+                original, output, plan.snapshot(), active).contains("conferido(s)"));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115RevokedTokenRejectsShaCrcAndRebuildVerifier()
+            throws Exception {
+        File original = file(".apk");
+        try {
+            fixture(original, false);
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token stale = guard.begin();
+            guard.invalidate();
+            try {
+                ApkIntegrity.sha256(original, stale);
+                fail("Revoked SHA must abort");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            try {
+                ApkZipIntegrity.verify(original, stale);
+                fail("Revoked CRC audit must abort");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            try {
+                RebuildVerifier.verify(original,
+                    Collections.singletonMap("assets/config.json", "{}"), stale);
+                fail("Revoked verifier must abort");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+        } finally { original.delete(); }
+    }
+
     @Test public void interruptedRebuildKeepsPriorExportAndSource() throws Exception {
         File original = file(".apk");
         File output = file(".apk");

@@ -94,6 +94,30 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("checkToken(token);", saf)
         self.assertIn('readWithProgress(verify, buffer, zeros, "Releitura SAF", token)', saf)
 
+    def test_f115_token_reaches_archive_hash_and_verifier(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        rebuild = (ROOT / "app/src/main/java/com/readroid/app/ApkRebuilder.java").read_text(
+            encoding="utf-8"
+        )
+        integrity = (ROOT / "app/src/main/java/com/readroid/app/ApkIntegrity.java").read_text(
+            encoding="utf-8"
+        )
+        zipcheck = (ROOT / "app/src/main/java/com/readroid/app/ApkZipIntegrity.java").read_text(
+            encoding="utf-8"
+        )
+        verifier = (ROOT / "app/src/main/java/com/readroid/app/RebuildVerifier.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ApkRebuilder.rebuild(source, temp, changes, session)", activity)
+        self.assertIn("ApkZipIntegrity.verify(original, token)", rebuild)
+        self.assertIn("ApkZipIntegrity.verify(staged, token)", rebuild)
+        self.assertIn("RebuildVerifier.verifyAgainstOriginal(original, staged, safeEdits, token)", rebuild)
+        self.assertIn("ExportSessionGuard.check(token)", integrity)
+        self.assertIn("ExportSessionGuard.check(token)", zipcheck)
+        self.assertIn("ExportSessionGuard.check(token)", verifier)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",
