@@ -448,6 +448,130 @@ public final class SafExportVerifierInstrumentedTest {
         }
     }
 
+    @Test public void staleSessionCannotOpenProviderForWriting() throws Exception {
+        File source = newSourceFixture();
+        try {
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token stale = guard.begin();
+            guard.invalidate();
+            java.util.concurrent.atomic.AtomicInteger opens =
+                new java.util.concurrent.atomic.AtomicInteger();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() {
+                    opens.incrementAndGet();
+                    return new ByteArrayOutputStream();
+                }
+                @Override public InputStream openRead() {
+                    opens.incrementAndGet();
+                    return new ByteArrayInputStream(fixtureBytes());
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider, stale);
+                fail("Old project session may not open SAF provider");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertEquals(0, opens.get());
+        } finally { source.delete(); }
+    }
+
+    @Test public void projectSwitchDuringSafWriteStopsBeforeReadback()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token session = guard.begin();
+            ByteArrayOutputStream storage = new ByteArrayOutputStream();
+            java.util.concurrent.atomic.AtomicInteger reads =
+                new java.util.concurrent.atomic.AtomicInteger();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() {
+                    return new OutputStream() {
+                        boolean firstWrite = true;
+                        @Override public void write(int b) throws IOException {
+                            storage.write(b);
+                            if (firstWrite) {
+                                firstWrite = false;
+                                guard.invalidate();
+                            }
+                        }
+                        @Override public void write(byte[] bytes, int off, int length)
+                                throws IOException {
+                            storage.write(bytes, off, length);
+                            if (firstWrite) {
+                                firstWrite = false;
+                                guard.invalidate();
+                            }
+                        }
+                    };
+                }
+                @Override public InputStream openRead() {
+                    reads.incrementAndGet();
+                    return new ByteArrayInputStream(storage.toByteArray());
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider, session);
+                fail("Project change during SAF write must be rejected");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertEquals(0, reads.get());
+            assertArrayEquals(fixtureBytes(), Files.readAllBytes(source.toPath()));
+        } finally { source.delete(); }
+    }
+
+    @Test public void projectSwitchDuringSafReadbackCannotReportSuccess()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token session = guard.begin();
+            ByteArrayOutputStream storage = new ByteArrayOutputStream();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() { return storage; }
+                @Override public InputStream openRead() {
+                    return new ByteArrayInputStream(storage.toByteArray()) {
+                        boolean first = true;
+                        @Override public synchronized int read(byte[] b, int off, int len) {
+                            int n = super.read(b, off, len);
+                            if (first) {
+                                first = false;
+                                guard.invalidate();
+                            }
+                            return n;
+                        }
+                    };
+                }
+            };
+            try {
+                SafExportVerifier.copyAndVerify(source, provider, session);
+                fail("Cancelled project may not pass SAF readback");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+        } finally { source.delete(); }
+    }
+
+    @Test public void currentSessionStillCopiesAndReadsBackSuccessfully()
+            throws Exception {
+        File source = newSourceFixture();
+        try {
+            ExportSessionGuard.Token session = new ExportSessionGuard().begin();
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            SafExportVerifier.ExportTarget provider = new SafExportVerifier.ExportTarget() {
+                @Override public OutputStream openWrite() { return bytes; }
+                @Override public InputStream openRead() {
+                    return new ByteArrayInputStream(bytes.toByteArray());
+                }
+            };
+            assertEquals(fixtureBytes().length,
+                SafExportVerifier.copyAndVerify(source, provider, session));
+            assertTrue(session.isActive());
+        } finally { source.delete(); }
+    }
+
     @Test public void copiesEveryByteAndConfirmsSha256() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File original = File.createTempFile("negresco_source_", ".apk", context.getCacheDir());

@@ -28,6 +28,7 @@ PRODUCTION = {
     "ApkIntegrity.java",
     "RebuildVerifier.java",
     "SafExportVerifier.java",
+    "ExportSessionGuard.java",
 }
 ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
@@ -39,6 +40,7 @@ ANDROID_TESTS = {
     "ApkRebuilderInstrumentedTest",
     "RebuildStorageBudgetInstrumentedTest",
     "SafExportVerifierInstrumentedTest",
+    "ExportSessionGuardInstrumentedTest",
 }
 
 
@@ -74,6 +76,21 @@ class FunctionalCIContract(unittest.TestCase):
                         f"Missing Android instrumentation: {required - actual}")
         self.assertIn("set -eu", self.workflow)
         self.assertIn("api: [29, 35]", self.workflow)
+
+    def test_f114_export_picker_bound_to_project_and_lifecycle(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        saf = (ROOT / "app/src/main/java/com/readroid/app/SafExportVerifier.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("pendingExport = new PendingExport(", activity)
+        self.assertIn("intent.source != currentApk", activity)
+        self.assertIn("exportSessions.invalidate();", activity)
+        self.assertIn("session.requireActive();", activity)
+        self.assertIn("SafExportVerifier.copyAndVerifyBound(", activity)
+        self.assertIn("checkToken(token);", saf)
+        self.assertIn('readWithProgress(verify, buffer, zeros, "Releitura SAF", token)', saf)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

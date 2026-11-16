@@ -80,6 +80,26 @@ public class MainActivity extends Activity {
     /** A replacement is staged independently until its analysis succeeds. */
     private Uri pendingApkUri;
     private volatile int analysisSequence = 0;
+    private final ExportSessionGuard exportSessions = new ExportSessionGuard();
+    // An ACTION_CREATE_DOCUMENT callback must never attach to a newer APK.
+    private PendingExport pendingExport;
+
+    private static final class PendingExport {
+        final File source;
+        final Uri importedDocument;
+        final String expectedSha256;
+        final Map<String, String> changes;
+        final ExportSessionGuard.Token token;
+
+        PendingExport(File source, Uri importedDocument, String expectedSha256,
+                Map<String, String> changes, ExportSessionGuard.Token token) {
+            this.source = source;
+            this.importedDocument = importedDocument;
+            this.expectedSha256 = expectedSha256;
+            this.changes = Collections.unmodifiableMap(new LinkedHashMap<>(changes));
+            this.token = token;
+        }
+    }
 
     /** Keep worker output separate from the Activity's current project. */
     private static final class AnalyzedApk {
@@ -1203,6 +1223,11 @@ public class MainActivity extends Activity {
                 .setMessage("O resultado NÃO estará assinado e pode não instalar ou funcionar. O APK original será preservado. Continuar?")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Escolher destino", (dialog, which) -> {
+                    // Freeze project, hash and edits before the external picker.
+                    // A later project switch revokes this exact request.
+                    pendingExport = new PendingExport(currentApk, selectedApkUri,
+                        report == null ? "" : report.optString("sha256", ""),
+                        explorerView.getEditPlan().snapshot(), exportSessions.begin());
                     Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     create.addCategory(Intent.CATEGORY_OPENABLE);
                     create.setType("application/vnd.android.package-archive");
@@ -1663,8 +1688,29 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (request == REQUEST_EXPORT_APK) {
+            PendingExport intent = pendingExport;
+            pendingExport = null;
+            if (result != RESULT_OK || data == null || data.getData() == null) {
+                if (intent != null && intent.token.isActive())
+                    exportSessions.invalidate();
+                return;
+            }
+            if (intent == null || !intent.token.isActive()
+                    || intent.source != currentApk
+                    || !Objects.equals(intent.importedDocument, selectedApkUri)) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Exportação cancelada")
+                    .setMessage("O projeto ou a tela mudou enquanto você escolhia "
+                        + "o destino. Nenhum APK foi gravado. Abra a exportação "
+                        + "novamente no projeto atual.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
+            exportRebuilt(data.getData(), intent);
+            return;
+        }
         if (result != RESULT_OK || data == null || data.getData() == null) return;
-        if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
         if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
         if (request != 1) return;
         selectApkWithConfirmation(data.getData(), true);
@@ -1795,6 +1841,9 @@ public class MainActivity extends Activity {
     }
 
     private void analyzeSelectedApk(Uri uri) {
+        // Starting a different analysis revokes in-flight export immediately,
+        // even if that candidate later fails to replace the current project.
+        exportSessions.invalidate();
         final int sequence = ++analysisSequence;
         pendingApkUri = uri;
         final boolean previousProjectIsUsable =
@@ -1817,6 +1866,7 @@ public class MainActivity extends Activity {
             signatureInfo.setEnabled(false);
             explorerView.setFiles(null, null);
         } else {
+            rebuild.setEnabled(false);
             android.widget.Toast.makeText(this,
                 "Verificando novo APK. Seu projeto atual será preservado até a validação.",
                 android.widget.Toast.LENGTH_LONG).show();
@@ -1860,6 +1910,7 @@ public class MainActivity extends Activity {
                     if (sequence != analysisSequence || isFinishing() || isDestroyed()) return;
                     pendingApkUri = null;
                     if (previousProjectIsUsable) {
+                        rebuild.setEnabled(true);
                         new android.app.AlertDialog.Builder(this)
                             .setTitle("Falha ao abrir outro APK")
                             .setMessage("Não foi possível validar o novo arquivo: "
@@ -2013,43 +2064,54 @@ public class MainActivity extends Activity {
             .setPositiveButton("Concluir", null).show();
     }
 
-    private void exportRebuilt(Uri destination) {
-        if (currentApk == null) return;
-        final File source = currentApk;
-        final Uri importedDocument = selectedApkUri;
-        final Map<String, String> changes = explorerView.getEditPlan().snapshot();
-        if (changes.isEmpty()) return;
-        final String originalImportHash = report == null
-            ? "" : report.optString("sha256", "");
+    private void exportRebuilt(Uri destination, PendingExport request) {
+        if (request == null || request.changes.isEmpty()) return;
+        final File source = request.source;
+        final Uri importedDocument = request.importedDocument;
+        final String originalImportHash = request.expectedSha256;
+        final Map<String, String> changes = request.changes;
+        final ExportSessionGuard.Token session = request.token;
+        if (!session.isActive() || source != currentApk
+                || !Objects.equals(importedDocument, selectedApkUri)) return;
         rebuild.setEnabled(false);
         executor.execute(() -> {
             File temp = null;
             try {
-                // F1.13: reject choosing the original SAF document as output
-                // before opening the provider or creating an export staging ZIP.
+                session.requireActive();
+                // User-selected document identity and cached APK must be
+                // validated before creating any staging or writing to SAF.
                 SafExportVerifier.ensureDistinctDocument(importedDocument, destination);
-                // The cached original must match the imported APK, and cannot
-                // change while the export is being reconstructed or verified.
                 ApkIntegrity.confirmExpected(source, originalImportHash);
+                session.requireActive();
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
                 ApkRebuilder.rebuild(source, temp, changes);
+                session.requireActive();
                 final String verification = RebuildVerifier.verifyAgainstOriginal(
                     source, temp, changes);
+                session.requireActive();
                 final String preflight = SigningPreflight.inspect(temp);
+                session.requireActive();
                 final String rebuiltSha256 = ApkIntegrity.sha256(temp);
-                // Check again immediately before and after read-back from SAF.
                 ApkIntegrity.confirmExpected(source, originalImportHash);
-                final long exportedBytes = SafExportVerifier.copyAndVerify(
-                    getContentResolver(), temp, destination, importedDocument);
+                session.requireActive();
+                // F1.14: the provider checks the same session before every
+                // read/write and again after readback, not just at the end.
+                final long exportedBytes = SafExportVerifier.copyAndVerifyBound(
+                    getContentResolver(), temp, destination, importedDocument, session);
+                session.requireActive();
                 ApkIntegrity.confirmExpected(source, originalImportHash);
+                session.requireActive();
                 runOnUiThread(() -> {
-                    if (!isFinishing() && !isDestroyed())
+                    if (!isFinishing() && !isDestroyed() && session.isActive()
+                            && source == currentApk
+                            && Objects.equals(importedDocument, selectedApkUri))
                         showExportSuccess(exportedBytes, verification, preflight,
                             originalImportHash, rebuiltSha256);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
+                    if (isFinishing() || isDestroyed() || !session.isActive()
+                            || source != currentApk) return;
                     new android.app.AlertDialog.Builder(this)
                         .setTitle("Falha ao exportar")
                         .setMessage(error.getMessage()
@@ -2060,7 +2122,9 @@ public class MainActivity extends Activity {
             } finally {
                 if (temp != null) temp.delete();
                 runOnUiThread(() -> {
-                    if (!isFinishing() && !isDestroyed()) rebuild.setEnabled(true);
+                    if (!isFinishing() && !isDestroyed() && session.isActive()
+                            && source == currentApk)
+                        rebuild.setEnabled(true);
                 });
             }
         });
@@ -2208,6 +2272,8 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        exportSessions.invalidate();
+        pendingExport = null;
         analysisSequence++;
         executor.shutdownNow();
         // The new Activity owns this cache file after a configuration change.

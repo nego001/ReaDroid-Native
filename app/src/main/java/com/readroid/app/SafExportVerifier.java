@@ -38,8 +38,16 @@ public final class SafExportVerifier {
      */
     public static long copyAndVerify(ContentResolver resolver, File source, Uri destination,
             Uri importedDocument) throws IOException {
+        return copyAndVerifyBound(resolver, source, destination, importedDocument, null);
+    }
+
+    /** Internal worker route: keeps the project session bound through SAF I/O. */
+    static long copyAndVerifyBound(ContentResolver resolver, File source, Uri destination,
+            Uri importedDocument, ExportSessionGuard.Token token) throws IOException {
+        checkToken(token);
         ensureDistinctDocument(importedDocument, destination);
-        return copyAndVerify(resolver, source, destination);
+        checkToken(token);
+        return copyAndVerifyInternal(resolver, source, destination, token);
     }
 
     /**
@@ -96,6 +104,12 @@ public final class SafExportVerifier {
 
     public static long copyAndVerify(ContentResolver resolver, File source, Uri destination)
             throws IOException {
+        return copyAndVerifyInternal(resolver, source, destination, null);
+    }
+
+    private static long copyAndVerifyInternal(ContentResolver resolver, File source,
+            Uri destination, ExportSessionGuard.Token token) throws IOException {
+        checkToken(token);
         if (resolver == null || source == null || !source.isFile() || destination == null)
             throw new IOException("Arquivo ou destino inválido");
         // Do not let a direct file:// caller truncate its own source while
@@ -110,15 +124,23 @@ public final class SafExportVerifier {
         }
         return copyAndVerify(source, new ExportTarget() {
             @Override public OutputStream openWrite() throws IOException {
+                checkToken(token);
                 return resolver.openOutputStream(destination, "w");
             }
             @Override public InputStream openRead() throws IOException {
+                checkToken(token);
                 return resolver.openInputStream(destination);
             }
-        });
+        }, token);
     }
 
     static long copyAndVerify(File source, ExportTarget target) throws IOException {
+        return copyAndVerify(source, target, null);
+    }
+
+    static long copyAndVerify(File source, ExportTarget target,
+            ExportSessionGuard.Token token) throws IOException {
+        checkToken(token);
         if (source == null || !source.isFile() || target == null)
             throw new IOException("Arquivo ou destino inválido");
         // The initial digest pins the bytes expected from the local staging
@@ -129,31 +151,37 @@ public final class SafExportVerifier {
         try (InputStream in = new FileInputStream(source)) {
             int[] zeros = {0};
             int n;
-            while ((n = readWithProgress(in, buffer, zeros, "Origem")) != -1) {
+            while ((n = readWithProgress(in, buffer, zeros, "Origem", token)) != -1) {
                 if (n == 0) continue;
                 sourceLength += n;
                 expectedDigest.update(buffer, 0, n);
             }
         }
         final byte[] expected = expectedDigest.digest();
+        checkToken(token);
         long copiedLength = 0;
         MessageDigest copiedDigest = sha256();
         try (InputStream input = new FileInputStream(source);
              OutputStream output = target.openWrite()) {
             if (output == null)
                 throw new IOException("O Android não abriu o destino para gravação");
+            checkToken(token);
             int[] zeros = {0};
             int n;
-            while ((n = readWithProgress(input, buffer, zeros, "Origem")) != -1) {
+            while ((n = readWithProgress(input, buffer, zeros, "Origem", token)) != -1) {
                 if (n == 0) continue;
                 if (n > sourceLength - copiedLength)
                     throw new IOException("O APK temporário mudou durante a exportação");
+                checkToken(token);
                 output.write(buffer, 0, n);
+                checkToken(token);
                 copiedDigest.update(buffer, 0, n);
                 copiedLength += n;
             }
+            checkToken(token);
             output.flush();
         }
+        checkToken(token);
         ensureActive("Exportação");
         if (copiedLength != sourceLength
                 || !Arrays.equals(expected, copiedDigest.digest()))
@@ -163,12 +191,14 @@ public final class SafExportVerifier {
         // Content providers can silently truncate, append, or corrupt bytes.
         long exportedLength = 0;
         MessageDigest actualDigest = sha256();
+        checkToken(token);
         try (InputStream verify = target.openRead()) {
             if (verify == null)
                 throw new IOException("Não foi possível reler o arquivo exportado");
+            checkToken(token);
             int[] zeros = {0};
             int n;
-            while ((n = readWithProgress(verify, buffer, zeros, "Releitura SAF")) != -1) {
+            while ((n = readWithProgress(verify, buffer, zeros, "Releitura SAF", token)) != -1) {
                 if (n == 0) continue;
                 if (n > sourceLength - exportedLength)
                     throw new IOException("O destino contém bytes extras");
@@ -176,18 +206,29 @@ public final class SafExportVerifier {
                 exportedLength += n;
             }
         }
+        checkToken(token);
         ensureActive("Verificação");
         if (sourceLength != exportedLength
                 || !Arrays.equals(expected, actualDigest.digest()))
             throw new IOException("O arquivo exportado não confere com o APK verificado (SHA-256)");
+        checkToken(token);
         return exportedLength;
+    }
+
+    private static void checkToken(ExportSessionGuard.Token token)
+            throws java.io.InterruptedIOException {
+        if (token != null) token.requireActive();
     }
 
     /** Zero-byte provider reads are bounded, not interpreted as EOF. */
     private static int readWithProgress(InputStream stream, byte[] buffer,
-            int[] consecutiveZeros, String stage) throws IOException {
+            int[] consecutiveZeros, String stage, ExportSessionGuard.Token token)
+            throws IOException {
+        checkToken(token);
         ensureActive(stage);
         int n = stream.read(buffer);
+        checkToken(token);
+        ensureActive(stage);
         if (n == 0) {
             if (++consecutiveZeros[0] > MAX_ZERO_READS)
                 throw new IOException(stage + " sem progresso: provedor não retornou dados");
