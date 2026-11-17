@@ -316,6 +316,98 @@ public final class ProjectRecreationInstrumentedTest {
         fail("The newest SAF import did not settle in 20 seconds");
     }
 
+    @Test public void f125RotationWithBlockedOldSafWorkerPreservesNewActivityAndEdits()
+            throws Exception {
+        File accepted = File.createTempFile("f125_accepted_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> outcome =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        final ImportActivityScope[] previousScope = {null};
+        final ExportSessionGuard.Token[] previousToken = {null};
+        try {
+            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(accepted))) {
+                zip.putNextEntry(new ZipEntry(PATH));
+                zip.write("original".getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+            byte[] unchanged = Files.readAllBytes(accepted.toPath());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, accepted);
+                        ImportActivityScope scope =
+                            (ImportActivityScope) field(activity, "importScope");
+                        previousScope[0] = scope;
+                        ExportSessionGuard sessions =
+                            (ExportSessionGuard) field(activity, "importSessions");
+                        ExportSessionGuard.Token token = sessions.begin();
+                        previousToken[0] = token;
+                        ImportWorkerLane workers =
+                            (ImportWorkerLane) field(activity, "importWorkers");
+                        File cache = activity.getCacheDir();
+                        workers.execute(() -> {
+                            try {
+                                ApkImportStaging.copy(cache, () ->
+                                    new java.io.ByteArrayInputStream(new byte[2048]) {
+                                        @Override public synchronized int read(
+                                                byte[] bytes, int off, int len) {
+                                            entered.countDown();
+                                            while (release.getCount() != 0) {
+                                                try { release.await(1, TimeUnit.SECONDS); }
+                                                catch (InterruptedException ignored) {
+                                                    // Provider ignores worker interrupt.
+                                                }
+                                            }
+                                            return super.read(bytes, off, len);
+                                        }
+                                    }, () -> 128L * 1024 * 1024, token, scope);
+                                outcome.set(new AssertionError(
+                                    "Destroyed Activity accepted a late provider result"));
+                            } catch (Throwable failure) {
+                                outcome.set(failure);
+                            } finally { completed.countDown(); }
+                        });
+                    } catch (Exception e) { throw new AssertionError(e); }
+                });
+                assertTrue("Provider must block before rotation",
+                    entered.await(10, TimeUnit.SECONDS));
+                assertEquals(1, previousScope[0].pendingCount());
+                scenario.recreate();
+                assertTrue(previousScope[0].isClosed());
+                assertEquals(0, previousScope[0].pendingCount());
+                assertFalse(previousToken[0].isActive());
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, accepted);
+                        ImportActivityScope fresh =
+                            (ImportActivityScope) field(activity, "importScope");
+                        assertNotSame("New Activity must own a fresh scope",
+                            previousScope[0], fresh);
+                        assertFalse(fresh.isClosed());
+                        assertArrayEquals(unchanged, Files.readAllBytes(accepted.toPath()));
+                    } catch (Exception e) { throw new AssertionError(e); }
+                });
+                release.countDown();
+                assertTrue("Old provider must eventually leave its worker",
+                    completed.await(10, TimeUnit.SECONDS));
+                assertTrue("Late completion must be rejected",
+                    outcome.get() instanceof java.io.InterruptedIOException);
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, accepted);
+                    } catch (Exception e) { throw new AssertionError(e); }
+                });
+            }
+        } finally {
+            release.countDown();
+            accepted.delete();
+        }
+    }
+
     @Test public void f124SaturatedLaneDisplaysWaitThenSafelyResumesNewestImport()
             throws Exception {
         CountDownLatch running = new CountDownLatch(2);
