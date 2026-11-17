@@ -25,6 +25,9 @@ public class MainActivity extends Activity {
     // F1.23: SAF streams can block inside an external DocumentsProvider.
     // Keep imports off the shared export/recovery executor and bound them.
     private final ImportWorkerLane importWorkers = new ImportWorkerLane();
+    // F1.25: owns ONLY uncommitted import staging in this Activity instance.
+    // A new Activity after rotation receives a separate ownership scope.
+    private ImportActivityScope importScope;
     private TextView output;
     private Button share;
     private Button ai;
@@ -205,6 +208,7 @@ public class MainActivity extends Activity {
             ? android.R.style.Theme_Material_Light_NoActionBar
             : android.R.style.Theme_Material_NoActionBar);
         super.onCreate(state);
+        importScope = new ImportActivityScope(getCacheDir());
         if (state != null && state.containsKey("p7_icon_export")) {
             int[] selected = state.getIntArray("p7_icon_export");
             if (selected != null && selected.length == 3) {
@@ -2025,6 +2029,7 @@ public class MainActivity extends Activity {
                         } finally {
                             ImportCacheAudit.release(candidate.file);
                             ImportCacheAudit.release(candidate.indexFile);
+                            importScope.release(candidate.file);
                         }
                         return;
                     }
@@ -2052,6 +2057,7 @@ public class MainActivity extends Activity {
                     // Ownership transferred from the import worker to this UI.
                     ImportCacheAudit.release(candidate.file);
                     ImportCacheAudit.release(candidate.indexFile);
+                    importScope.release(candidate.file);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
@@ -2341,7 +2347,7 @@ public class MainActivity extends Activity {
         // exception on open/read/close deletes it before any project change.
         final ApkImportStaging.Result imported = ApkImportStaging.copy(
             getCacheDir(), () -> getContentResolver().openInputStream(uri),
-            () -> ApkImportPreflight.availableBytes(this), importToken);
+            () -> ApkImportPreflight.availableBytes(this), importToken, importScope);
         File file = imported.candidate;
         File diskIndex = null;
         try {
@@ -2438,6 +2444,7 @@ public class MainActivity extends Activity {
             } finally {
                 ImportCacheAudit.release(diskIndex);
                 ImportCacheAudit.release(file);
+                importScope.release(file);
             }
             throw error;
         }
@@ -2510,6 +2517,9 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         importSessions.invalidate();
+        // Unlink this Activity's private unaccepted candidate immediately,
+        // even when its SAF provider ignores interruption while blocked.
+        if (importScope != null) importScope.close();
         exportSessions.invalidate();
         pendingExport = null;
         analysisSequence++;

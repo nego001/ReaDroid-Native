@@ -22,6 +22,7 @@ PRODUCTION = {
     "ApkImportPreflight.java",
     "ApkImportStaging.java",
     "ImportWorkerLane.java",
+    "ImportActivityScope.java",
     "ApkZipIntegrity.java",
     "ApkExplorer.java",
     "ApkDiskIndex.java",
@@ -45,6 +46,7 @@ ANDROID_TESTS = {
     "ApkImportStagingInstrumentedTest",
     "ImportConcurrencyInstrumentedTest",
     "ImportWorkerLaneInstrumentedTest",
+    "ImportActivityScopeInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
@@ -299,6 +301,30 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("synchronized (admissionLock)", lane)
         self.assertIn("new ArrayBlockingQueue<>(MAX_PENDING)", lane)
         self.assertNotIn("newCachedThreadPool", lane)
+
+    def test_f125_activity_scope_only_cleans_its_own_uncommitted_imports(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        scope = (ROOT / "app/src/main/java/com/readroid/app/ImportActivityScope.java").read_text(
+            encoding="utf-8"
+        )
+        staging = (ROOT / "app/src/main/java/com/readroid/app/ApkImportStaging.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("importScope = new ImportActivityScope(getCacheDir())", activity)
+        self.assertIn("if (importScope != null) importScope.close()", activity)
+        self.assertIn("importSessions.invalidate()", activity)
+        self.assertIn("importScope.release(candidate.file)", activity)
+        self.assertIn("importScope.release(file)", activity)
+        self.assertIn("importToken, importScope", activity)
+        self.assertIn("if (scope != null) scope.track(staged)", staging)
+        self.assertIn("if (scope != null) scope.release(staged)", staging)
+        self.assertIn("LinkOption.NOFOLLOW_LINKS", scope)
+        self.assertIn("pending.add(path)", scope)
+        self.assertIn("MAX_OWNED = 4", scope)
+        self.assertNotIn("walkFileTree", scope)
+        self.assertNotIn("deleteDatabase", scope)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

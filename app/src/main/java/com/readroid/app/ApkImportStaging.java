@@ -41,6 +41,12 @@ final class ApkImportStaging {
     static Result copy(File privateCache, OpenSource source,
             ApkImportPreflight.FreeSpace space, ExportSessionGuard.Token token)
             throws IOException {
+        return copy(privateCache, source, space, token, null);
+    }
+
+    static Result copy(File privateCache, OpenSource source,
+            ApkImportPreflight.FreeSpace space, ExportSessionGuard.Token token,
+            ImportActivityScope scope) throws IOException {
         ExportSessionGuard.check(token);
         if (privateCache == null || !privateCache.isDirectory()
                 || source == null || space == null)
@@ -50,6 +56,8 @@ final class ApkImportStaging {
         ImportCacheAudit.track(staged);
         boolean complete = false;
         try {
+            if (scope != null) scope.track(staged);
+            ExportSessionGuard.check(token);
             final ApkImportPreflight.CopyResult copied;
             ExportSessionGuard.check(token);
             try (InputStream input = source.open();
@@ -75,6 +83,7 @@ final class ApkImportStaging {
                     Files.deleteIfExists(staged.toPath());
                 } finally {
                     ImportCacheAudit.release(staged);
+                    if (scope != null) scope.release(staged);
                 }
             }
         }
