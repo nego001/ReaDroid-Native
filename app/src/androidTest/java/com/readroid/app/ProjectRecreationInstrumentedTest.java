@@ -298,6 +298,24 @@ public final class ProjectRecreationInstrumentedTest {
         }
     }
 
+    private static void awaitPendingImportSettled(ActivityScenario<MainActivity> scenario)
+            throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        final boolean[] cleared = {false};
+        while (System.nanoTime() < deadline) {
+            scenario.onActivity(activity -> {
+                try {
+                    cleared[0] = field(activity, "pendingApkUri") == null;
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+            if (cleared[0]) return;
+            Thread.sleep(30);
+        }
+        fail("The newest SAF import did not settle in 20 seconds");
+    }
+
     @Test public void f122TwoFailedImportsCannotReplacePriorWorkspaceOrEdits()
             throws Exception {
         File apk = File.createTempFile("f122_previous_", ".apk",
@@ -312,7 +330,7 @@ public final class ProjectRecreationInstrumentedTest {
             Uri oldUri = Uri.parse("content://com.readroid.app.f122/project/previous.apk");
             Uri first = Uri.parse("content://com.readroid.app.f122.invalid/first.apk");
             Uri second = Uri.parse("content://com.readroid.app.f122.invalid/second.apk");
-            CountDownLatch workersFinished = new CountDownLatch(1);
+
             try (ActivityScenario<MainActivity> scenario =
                     ActivityScenario.launch(MainActivity.class)) {
                 scenario.onActivity(activity -> {
@@ -328,14 +346,12 @@ public final class ProjectRecreationInstrumentedTest {
                         assertWorkspace(activity, apk);
                         assertEquals(before + 2, field(activity, "analysisSequence"));
                         assertEquals(second, field(activity, "pendingApkUri"));
-                        ExecutorService worker =
-                            (ExecutorService) field(activity, "executor");
-                        worker.execute(workersFinished::countDown);
+
                     } catch (Exception error) { throw new AssertionError(error); }
                 });
-                assertTrue("Two queued import workers did not finish",
-                    workersFinished.await(20, TimeUnit.SECONDS));
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                // Imports use a separate bounded lane. A barrier on the
+                // shared export executor no longer waits for SAF work.
+                awaitPendingImportSettled(scenario);
                 scenario.onActivity(activity -> {
                     try {
                         assertWorkspace(activity, apk);
@@ -363,7 +379,7 @@ public final class ProjectRecreationInstrumentedTest {
             byte[] originalBytes = Files.readAllBytes(apk.toPath());
             Uri previousUri = Uri.parse("content://com.readroid.app.original/project.apk");
             Uri brokenUri = Uri.parse("content://com.readroid.app.invalid/new.apk");
-            CountDownLatch analyzed = new CountDownLatch(1);
+
             try (ActivityScenario<MainActivity> scenario =
                     ActivityScenario.launch(MainActivity.class)) {
                 scenario.onActivity(activity -> {
@@ -377,14 +393,10 @@ public final class ProjectRecreationInstrumentedTest {
                         open.setAccessible(true);
                         open.invoke(activity, brokenUri);
                         assertWorkspace(activity, apk);
-                        ExecutorService worker = (ExecutorService) field(activity,
-                            "executor");
-                        worker.execute(analyzed::countDown);
+
                     } catch (Exception error) { throw new AssertionError(error); }
                 });
-                assertTrue("Failed import worker did not complete",
-                    analyzed.await(20, TimeUnit.SECONDS));
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                awaitPendingImportSettled(scenario);
                 scenario.onActivity(activity -> {
                     try {
                         assertWorkspace(activity, apk);

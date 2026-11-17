@@ -22,6 +22,9 @@ import java.util.zip.ZipFile;
 
 public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    // F1.23: SAF streams can block inside an external DocumentsProvider.
+    // Keep imports off the shared export/recovery executor and bound them.
+    private final ImportWorkerLane importWorkers = new ImportWorkerLane();
     private TextView output;
     private Button share;
     private Button ai;
@@ -1983,7 +1986,8 @@ public class MainActivity extends Activity {
                 "Verificando novo APK. Seu projeto atual será preservado até a validação.",
                 android.widget.Toast.LENGTH_LONG).show();
         }
-        executor.execute(() -> {
+        try {
+            importWorkers.execute(() -> {
             try {
                 importToken.requireActive();
                 AnalyzedApk candidate = analyze(uri, expectedResumeSha256, importToken);
@@ -2053,7 +2057,25 @@ public class MainActivity extends Activity {
                     }
                 });
             }
-        });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException unavailable) {
+            // Bounded lane is closed or temporarily unable to accept work.
+            // Never strand a pending URI or discard an accepted workspace.
+            if (sequence == analysisSequence && !isFinishing() && !isDestroyed()) {
+                pendingApkUri = null;
+                if (previousProjectIsUsable) {
+                    rebuild.setEnabled(true);
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Importação indisponível")
+                        .setMessage("A fila de leitura SAF está ocupada. "
+                            + "Seu projeto e suas edições foram preservados.")
+                        .setPositiveButton("OK", null).show();
+                } else {
+                    output.setText("Importação indisponível. Selecione o APK novamente.");
+                    apkSummary.setText("FALHA AO ABRIR PROJETO");
+                }
+            }
+        }
     }
 
     /**
@@ -2453,6 +2475,7 @@ public class MainActivity extends Activity {
         exportSessions.invalidate();
         pendingExport = null;
         analysisSequence++;
+        importWorkers.shutdownNow();
         executor.shutdownNow();
         // The new Activity owns this cache file after a configuration change.
         if (!isChangingConfigurations()) {

@@ -21,6 +21,7 @@ PRODUCTION = {
     "RecoveryResumeGate.java",
     "ApkImportPreflight.java",
     "ApkImportStaging.java",
+    "ImportWorkerLane.java",
     "ApkZipIntegrity.java",
     "ApkExplorer.java",
     "ApkDiskIndex.java",
@@ -43,6 +44,7 @@ ANDROID_TESTS = {
     "ApkImportPreflightInstrumentedTest",
     "ApkImportStagingInstrumentedTest",
     "ImportConcurrencyInstrumentedTest",
+    "ImportWorkerLaneInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
@@ -259,6 +261,26 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("ExportSessionGuard.check(token)", preflight)
         self.assertIn("ApkIntegrity.confirmExpected(cache, copiedSha256, token)", admission)
         self.assertIn("ExportSessionGuard.check(token)", index)
+
+    def test_f123_saf_import_lane_is_bounded_and_separate_from_export_recovery(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        lane = (ROOT / "app/src/main/java/com/readroid/app/ImportWorkerLane.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("private final ImportWorkerLane importWorkers", activity)
+        self.assertIn("importWorkers.execute(() ->", activity)
+        self.assertIn("importWorkers.shutdownNow()", activity)
+        self.assertIn("executor.shutdownNow()", activity)
+        self.assertIn("importToken.requireActive()", activity)
+        self.assertIn("importSessions.begin()", activity)
+        self.assertIn("MAX_RUNNING = 2", lane)
+        self.assertIn("MAX_PENDING = 1", lane)
+        self.assertIn("new ArrayBlockingQueue<>(MAX_PENDING)", lane)
+        self.assertIn("pool.getQueue().poll()", lane)
+        self.assertIn("pool.getQueue().offer(latest)", lane)
+        self.assertNotIn("newCachedThreadPool", lane)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

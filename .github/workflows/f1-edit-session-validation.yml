@@ -14,6 +14,7 @@ on:
       - 'app/src/main/java/com/readroid/app/RecoveryResumeGate.java'
       - 'app/src/main/java/com/readroid/app/ApkImportPreflight.java'
       - 'app/src/main/java/com/readroid/app/ApkImportStaging.java'
+      - 'app/src/main/java/com/readroid/app/ImportWorkerLane.java'
       - 'app/src/main/java/com/readroid/app/ApkZipIntegrity.java'
       - 'app/src/main/java/com/readroid/app/ApkExplorer.java'
       - 'app/src/main/java/com/readroid/app/ApkDiskIndex.java'
@@ -34,6 +35,7 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/ApkImportPreflightInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkImportStagingInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ImportConcurrencyInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ImportWorkerLaneInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkZipIntegrityInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkCacheAdmissionInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/SavedProjectResumeInstrumentedTest.java'
@@ -87,5 +89,5 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ImportWorkerLaneInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
             echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
