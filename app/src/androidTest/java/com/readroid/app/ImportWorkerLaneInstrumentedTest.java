@@ -29,6 +29,112 @@ public final class ImportWorkerLaneInstrumentedTest {
         return latch.await(10, TimeUnit.SECONDS);
     }
 
+    @Test public void f124ImmediateAdmissionDoesNotReportQueueWait() throws Exception {
+        ImportWorkerLane lane = new ImportWorkerLane();
+        CountDownLatch completed = new CountDownLatch(1);
+        try {
+            ImportWorkerLane.Submission admission = lane.submit(completed::countDown);
+            assertFalse("First available SAF worker must not look queued",
+                admission.waiting);
+            assertTrue(reached(completed));
+        } finally { lane.shutdownNow(); }
+    }
+
+    @Test public void f124SaturatedAdmissionWaitsUntilProviderReleases() throws Exception {
+        ImportWorkerLane lane = new ImportWorkerLane();
+        CountDownLatch busy = new CountDownLatch(2);
+        CountDownLatch free = new CountDownLatch(1);
+        CountDownLatch newestStarted = new CountDownLatch(1);
+        try {
+            Runnable blocker = () -> {
+                busy.countDown();
+                try { free.await(10, TimeUnit.SECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            };
+            lane.execute(blocker);
+            lane.execute(blocker);
+            assertTrue(reached(busy));
+            ImportWorkerLane.Submission admission = lane.submit(newestStarted::countDown);
+            assertTrue("Newest selection must show waiting when both SAF readers block",
+                admission.waiting);
+            assertEquals(2, admission.activeWorkers);
+            assertEquals(1, lane.pendingCount());
+            assertEquals(1L, newestStarted.getCount());
+            free.countDown();
+            assertTrue("Queued import must resume when reader is released",
+                reached(newestStarted));
+        } finally {
+            free.countDown();
+            lane.shutdownNow();
+        }
+    }
+
+    @Test public void f124WaitingNoticeBelongsOnlyToNewestQueuedSelection()
+            throws Exception {
+        ImportWorkerLane lane = new ImportWorkerLane();
+        CountDownLatch busy = new CountDownLatch(2);
+        CountDownLatch free = new CountDownLatch(1);
+        CountDownLatch newestStarted = new CountDownLatch(1);
+        AtomicInteger supersededStarted = new AtomicInteger();
+        ExportSessionGuard sessions = new ExportSessionGuard();
+        try {
+            Runnable blocker = () -> {
+                busy.countDown();
+                try { free.await(10, TimeUnit.SECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            };
+            lane.execute(blocker);
+            lane.execute(blocker);
+            assertTrue(reached(busy));
+            ExportSessionGuard.Token old = sessions.begin();
+            ImportWorkerLane.Submission first = lane.submit(() -> {
+                supersededStarted.incrementAndGet();
+                assertFalse("Superseded import must not be live", old.isActive());
+            });
+            assertTrue(first.waiting);
+            ExportSessionGuard.Token current = sessions.begin();
+            ImportWorkerLane.Submission newest = lane.submit(() -> {
+                assertTrue(current.isActive());
+                newestStarted.countDown();
+            });
+            assertTrue(newest.waiting);
+            assertEquals(1, lane.pendingCount());
+            free.countDown();
+            assertTrue(reached(newestStarted));
+            assertEquals("Evicted queued import must never start",
+                0, supersededStarted.get());
+        } finally {
+            free.countDown();
+            lane.shutdownNow();
+        }
+    }
+
+    @Test public void f124ShutdownDoesNotResumePreviouslyQueuedSelection()
+            throws Exception {
+        ImportWorkerLane lane = new ImportWorkerLane();
+        CountDownLatch busy = new CountDownLatch(2);
+        CountDownLatch free = new CountDownLatch(1);
+        AtomicBoolean startedAfterShutdown = new AtomicBoolean(false);
+        try {
+            Runnable blocker = () -> {
+                busy.countDown();
+                try { free.await(10, TimeUnit.SECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            };
+            lane.execute(blocker);
+            lane.execute(blocker);
+            assertTrue(reached(busy));
+            assertTrue(lane.submit(() -> startedAfterShutdown.set(true)).waiting);
+            lane.shutdownNow();
+            free.countDown();
+            assertFalse(startedAfterShutdown.get());
+            assertTrue(lane.isShutdown());
+        } finally {
+            free.countDown();
+            lane.shutdownNow();
+        }
+    }
+
     @Test public void f123BlockedSafReadDoesNotBlockSecondImportOrOtherWork()
             throws Exception {
         ImportWorkerLane lane = new ImportWorkerLane();

@@ -270,7 +270,7 @@ class FunctionalCIContract(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("private final ImportWorkerLane importWorkers", activity)
-        self.assertIn("importWorkers.execute(() ->", activity)
+        self.assertIn("importWorkers.submit(() ->", activity)
         self.assertIn("importWorkers.shutdownNow()", activity)
         self.assertIn("executor.shutdownNow()", activity)
         self.assertIn("importToken.requireActive()", activity)
@@ -280,6 +280,24 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("new ArrayBlockingQueue<>(MAX_PENDING)", lane)
         self.assertIn("pool.getQueue().poll()", lane)
         self.assertIn("pool.getQueue().offer(latest)", lane)
+        self.assertNotIn("newCachedThreadPool", lane)
+
+    def test_f124_saturation_notice_only_for_live_latest_import(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8"
+        )
+        lane = (ROOT / "app/src/main/java/com/readroid/app/ImportWorkerLane.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ImportWorkerLane.Submission admission = importWorkers.submit(", activity)
+        self.assertIn("wasQueued.set(admission.waiting)", activity)
+        self.assertIn("AGUARDANDO LEITURA SAF", activity)
+        self.assertIn("Leitura SAF retomada", activity)
+        self.assertIn("!importToken.isActive()", activity)
+        self.assertIn("sequence != analysisSequence", activity)
+        self.assertIn("workers.getQueue().contains(task)", lane)
+        self.assertIn("synchronized (admissionLock)", lane)
+        self.assertIn("new ArrayBlockingQueue<>(MAX_PENDING)", lane)
         self.assertNotIn("newCachedThreadPool", lane)
 
     def test_pr_scope_and_no_installer_publication(self):

@@ -48,9 +48,32 @@ final class ImportWorkerLane {
         }
     );
 
-    void execute(Runnable task) {
+    /** Snapshot for UI hints only; cancellation remains owned by tokens. */
+    static final class Submission {
+        final boolean waiting;
+        final int activeWorkers;
+
+        Submission(boolean waiting, int activeWorkers) {
+            this.waiting = waiting;
+            this.activeWorkers = activeWorkers;
+        }
+    }
+
+    private final Object admissionLock = new Object();
+
+    Submission submit(Runnable task) {
         if (task == null) throw new NullPointerException("import task");
-        workers.execute(task);
+        synchronized (admissionLock) {
+            workers.execute(task);
+            // A task can start immediately after admission. The UI treats
+            // this as a hint, not an authoritative running-task status.
+            return new Submission(workers.getQueue().contains(task),
+                workers.getActiveCount());
+        }
+    }
+
+    void execute(Runnable task) {
+        submit(task);
     }
 
     int pendingCount() { return workers.getQueue().size(); }

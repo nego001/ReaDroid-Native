@@ -316,6 +316,54 @@ public final class ProjectRecreationInstrumentedTest {
         fail("The newest SAF import did not settle in 20 seconds");
     }
 
+    @Test public void f124SaturatedLaneDisplaysWaitThenSafelyResumesNewestImport()
+            throws Exception {
+        CountDownLatch running = new CountDownLatch(2);
+        CountDownLatch unblock = new CountDownLatch(1);
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                try {
+                    ImportWorkerLane lane = (ImportWorkerLane) field(activity, "importWorkers");
+                    Runnable blockedProvider = () -> {
+                        running.countDown();
+                        try { unblock.await(10, TimeUnit.SECONDS); }
+                        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    };
+                    lane.execute(blockedProvider);
+                    lane.execute(blockedProvider);
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+            assertTrue("Both SAF readers must be occupied", running.await(10, TimeUnit.SECONDS));
+            scenario.onActivity(activity -> {
+                try {
+                    Method open = MainActivity.class.getDeclaredMethod(
+                        "analyzeSelectedApk", Uri.class);
+                    open.setAccessible(true);
+                    Uri stale = Uri.parse("content://com.readroid.f124.invalid/stale.apk");
+                    Uri latest = Uri.parse("content://com.readroid.f124.invalid/latest.apk");
+                    open.invoke(activity, stale);
+                    open.invoke(activity, latest);
+                    assertEquals(latest, field(activity, "pendingApkUri"));
+                    ImportWorkerLane lane = (ImportWorkerLane) field(activity, "importWorkers");
+                    assertEquals(1, lane.pendingCount());
+                    TextView summary = (TextView) field(activity, "apkSummary");
+                    assertEquals("AGUARDANDO LEITURA SAF", summary.getText().toString());
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+            unblock.countDown();
+            awaitPendingImportSettled(scenario);
+            scenario.onActivity(activity -> {
+                try {
+                    assertNull(field(activity, "pendingApkUri"));
+                    assertNull(field(activity, "currentApk"));
+                    TextView summary = (TextView) field(activity, "apkSummary");
+                    assertEquals("FALHA AO ABRIR PROJETO", summary.getText().toString());
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+        } finally { unblock.countDown(); }
+    }
+
     @Test public void f122TwoFailedImportsCannotReplacePriorWorkspaceOrEdits()
             throws Exception {
         File apk = File.createTempFile("f122_previous_", ".apk",

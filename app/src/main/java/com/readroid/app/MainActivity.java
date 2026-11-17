@@ -1986,8 +1986,29 @@ public class MainActivity extends Activity {
                 "Verificando novo APK. Seu projeto atual será preservado até a validação.",
                 android.widget.Toast.LENGTH_LONG).show();
         }
+        // This flag is written by the UI before any posted start callback
+        // can run on the UI thread. A stale request cannot clear the new
+        // request's queue notice.
+        final java.util.concurrent.atomic.AtomicBoolean wasQueued =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
         try {
-            importWorkers.execute(() -> {
+            ImportWorkerLane.Submission admission = importWorkers.submit(() -> {
+            // A blocked SAF provider may delay this callback indefinitely:
+            // never pretend it has started until this worker actually runs.
+            runOnUiThread(() -> {
+                if (!wasQueued.get() || !importToken.isActive()
+                        || sequence != analysisSequence || isFinishing() || isDestroyed())
+                    return;
+                if (previousProjectIsUsable) {
+                    android.widget.Toast.makeText(this,
+                        "Leitura SAF retomada. Seu projeto anterior continua protegido.",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                } else {
+                    output.setText("Analisando...");
+                    apkSummary.setText("ANÁLISE EM ANDAMENTO");
+                    projectMetrics.setText("ESTRUTURA   •   Analisando...");
+                }
+            });
             try {
                 importToken.requireActive();
                 AnalyzedApk candidate = analyze(uri, expectedResumeSha256, importToken);
@@ -2058,6 +2079,23 @@ public class MainActivity extends Activity {
                 });
             }
             });
+            wasQueued.set(admission.waiting);
+            if (admission.waiting && importToken.isActive()
+                    && sequence == analysisSequence && !isFinishing() && !isDestroyed()) {
+                // Bounded: at most two reads active and one latest selection
+                // waiting. No automatic retry loop or extra threads.
+                if (previousProjectIsUsable) {
+                    android.widget.Toast.makeText(this,
+                        "Dois leitores SAF ocupados. Novo APK na fila; "
+                            + "projeto e edições atuais preservados.",
+                        android.widget.Toast.LENGTH_LONG).show();
+                } else {
+                    output.setText("Aguardando liberação de um leitor SAF. "
+                        + "O APK será analisado assim que um trabalhador ficar livre.");
+                    apkSummary.setText("AGUARDANDO LEITURA SAF");
+                    projectMetrics.setText("ESTRUTURA   •   Aguardando leitura...");
+                }
+            }
         } catch (java.util.concurrent.RejectedExecutionException unavailable) {
             // Bounded lane is closed or temporarily unable to accept work.
             // Never strand a pending URI or discard an accepted workspace.
