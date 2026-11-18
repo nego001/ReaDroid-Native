@@ -373,6 +373,27 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
 
+    def test_f128_real_system_saf_grant_survives_process_then_revokes(self):
+        script = (ROOT / "tests/f128_real_saf_grant.sh").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F128RealSafGrantInstrumentedTest.java").read_text(encoding="utf-8")
+        gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn("bash tests/f128_real_saf_grant.sh", self.workflow)
+        self.assertIn("F128_REAL_SAF_PERMISSION_PASS", self.workflow)
+        self.assertIn("F128RealSafGrantInstrumentedTest.java", self.workflow)
+        self.assertIn("uiautomator:2.3.0", gradle)
+        self.assertIn("Intent.ACTION_OPEN_DOCUMENT", tests)
+        self.assertIn("getPersistedUriPermissions()", tests)
+        self.assertIn("releasePersistableUriPermission", tests)
+        self.assertIn("SavedProjectResume.decide(", tests)
+        self.assertIn("P7ProjectHistory.hasPermission", tests)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("f128ObtainPersistedGrantFromSystemPicker", script)
+        self.assertIn("f128AfterColdStartRevokeRealPersistedGrant", script)
+        self.assertIn("f128NextProcessRejectsRevokedGrant", script)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("adb uninstall", script)
+        self.assertNotIn("rm -rf", script)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

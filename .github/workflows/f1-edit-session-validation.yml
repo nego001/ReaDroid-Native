@@ -43,6 +43,7 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/ApkZipIntegrityInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkCacheAdmissionInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/SavedProjectResumeInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F128RealSafGrantInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ImportCacheAuditInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkRebuilderInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/RebuildTempJanitorInstrumentedTest.java'
@@ -51,6 +52,8 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/ExportSessionGuardInstrumentedTest.java'
       - 'tests/test_f1_functional_ci_contract.py'
       - 'tests/f127_android_process_death.sh'
+      - 'tests/f128_real_saf_grant.sh'
+      - 'app/build.gradle.kts'
       - '.github/workflows/f1-edit-session-validation.yml'
   workflow_dispatch:
 concurrency:
@@ -100,3 +103,7 @@ jobs:
             # the normal in-process instrumentation has finished.
             bash tests/f127_android_process_death.sh
             echo "F127_REAL_FORCE_STOP_PASS api=${{ matrix.api }}"
+            # F1.28: real system DocumentsUI read grant + cold-process revocation.
+            # Independent test sessions prevent an in-process mock result.
+            bash tests/f128_real_saf_grant.sh
+            echo "F128_REAL_SAF_PERMISSION_PASS api=${{ matrix.api }}"
