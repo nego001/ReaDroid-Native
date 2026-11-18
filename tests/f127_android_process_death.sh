@@ -29,7 +29,10 @@ wait_for_pid() {
         fi
         sleep 1
     done
-    echo "F127 FAIL: app did not start" >&2
+    echo "F127 FAIL: app did not start (pidof empty)" >&2
+    adb shell pm path "$PKG" || true
+    adb shell dumpsys activity activities | grep -E 'readroid|mResumed' | tail -25 || true
+    adb logcat -d -t 250 -v brief | grep -E 'FATAL EXCEPTION|com.readroid.app|ReaDroidImportCrash' | tail -35 || true
     return 1
 }
 cleanup() {
@@ -42,9 +45,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Gradle's connectedAndroidTest may remove its installed APK on teardown.
+# Re-install the debug build only inside this disposable CI emulator; do NOT
+# assemble/upload a QA release or touch the user's physical device.
+DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk
+if [[ ! -f "$DEBUG_APK" ]]; then
+    echo "F127 FAIL: Gradle debug APK absent" >&2
+    exit 1
+fi
+adb install -r "$DEBUG_APK"
+adb shell pm path "$PKG"
+
 # No synthetic Activity lifecycle callbacks: kill an actual running app PID.
 adb shell am force-stop "$PKG"
-adb shell am start -W -n "$COMPONENT" >/dev/null
+adb shell am start -W -n "$COMPONENT"
 pid_before=$(wait_for_pid)
 run_as "mkdir -p cache"
 
@@ -70,7 +84,7 @@ if [[ -n "$(get_pid || true)" ]]; then
 fi
 run_as "test -f cache/$PARTIAL"  # force-stop skips onDestroy and does not clean it
 
-adb shell am start -W -n "$COMPONENT" >/dev/null
+adb shell am start -W -n "$COMPONENT"
 pid_after=$(wait_for_pid)
 if [[ "$pid_before" == "$pid_after" ]]; then
     echo "F127 FAIL: fresh process has same PID" >&2

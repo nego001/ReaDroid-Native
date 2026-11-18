@@ -361,6 +361,8 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("adb shell am force-stop", script)
         self.assertIn("adb shell am start -W -n", script)
         self.assertIn("run-as $PKG", script)
+        self.assertIn('adb install -r "$DEBUG_APK"', script)
+        self.assertIn('adb shell pm path "$PKG"', script)
         self.assertIn("test ! -e cache/$PARTIAL", script)
         self.assertIn("test -f cache/$PARTIAL", script)
         self.assertIn("pid_before", script)
