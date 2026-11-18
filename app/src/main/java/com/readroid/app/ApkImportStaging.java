@@ -60,8 +60,12 @@ final class ApkImportStaging {
             ExportSessionGuard.check(token);
             final ApkImportPreflight.CopyResult copied;
             ExportSessionGuard.check(token);
-            try (InputStream input = source.open();
-                 OutputStream output = new FileOutputStream(staged)) {
+            // Acquire the only writable descriptor BEFORE opening an untrusted
+            // provider. A blocked source.open() must never reopen this path
+            // after its Activity has unlinked the temporary file onDestroy().
+            try (OutputStream output = scope == null
+                    ? new FileOutputStream(staged) : scope.openForWrite(staged);
+                 InputStream input = source.open()) {
                 ExportSessionGuard.check(token);
                 if (input == null)
                     throw new IOException("O provedor SAF não abriu o arquivo selecionado");

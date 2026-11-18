@@ -216,4 +216,84 @@ public final class ImportActivityScopeInstrumentedTest {
             cleanup(root);
         }
     }
+
+    @Test public void f125BlockedProviderOpenNeverRecreatesUnlinkedCandidate()
+            throws Exception {
+        File root = folder();
+        ImportActivityScope lifetime = new ImportActivityScope(root);
+        ExportSessionGuard generations = new ExportSessionGuard();
+        ExportSessionGuard.Token token = generations.begin();
+        CountDownLatch insideOpen = new CountDownLatch(1);
+        CountDownLatch unblock = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(1);
+        AtomicReference<Throwable> outcome = new AtomicReference<>();
+        AtomicReference<Boolean> pathVisibleAtSourceClose = new AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                ApkImportStaging.copy(root, () -> {
+                    insideOpen.countDown();
+                    while (unblock.getCount() != 0) {
+                        try { unblock.await(1, TimeUnit.SECONDS); }
+                        catch (InterruptedException ignored) {
+                            // Simulate a DocumentsProvider that ignores interrupts.
+                        }
+                    }
+                    return new ByteArrayInputStream(new byte[]{1, 2, 3}) {
+                        @Override public void close() throws IOException {
+                            File[] current = root.listFiles();
+                            pathVisibleAtSourceClose.set(
+                                current != null && current.length != 0);
+                            super.close();
+                        }
+                    };
+                }, () -> AVAILABLE, token, lifetime);
+                outcome.set(new AssertionError("Stale SAF import was accepted"));
+            } catch (Throwable result) {
+                outcome.set(result);
+            } finally { finished.countDown(); }
+        });
+        try {
+            worker.start();
+            assertTrue("Source.open must be blocked", insideOpen.await(10, TimeUnit.SECONDS));
+            File[] files = root.listFiles();
+            assertNotNull(files);
+            assertEquals(1, files.length);
+            assertEquals(1, lifetime.pendingCount());
+            generations.invalidate();
+            lifetime.close();
+            assertFalse("Old temporary path must be unlinked", files[0].exists());
+            unblock.countDown();
+            assertTrue("Blocked worker must return", finished.await(10, TimeUnit.SECONDS));
+            assertTrue("Old token must reject the late provider",
+                outcome.get() instanceof InterruptedIOException);
+            assertEquals("InputStream.close must not observe a recreated APK path",
+                Boolean.FALSE, pathVisibleAtSourceClose.get());
+            assertEquals(0, root.listFiles().length);
+        } finally {
+            generations.invalidate();
+            lifetime.close();
+            unblock.countDown();
+            worker.join(10000);
+            cleanup(root);
+        }
+    }
+
+    @Test public void f125ClosedScopeCannotOpenStagingAgain() throws Exception {
+        File root = folder();
+        try {
+            File candidate = File.createTempFile("readroid_", ".apk", root);
+            ImportActivityScope old = new ImportActivityScope(root);
+            old.track(candidate);
+            old.close();
+            old.close(); // idempotent, including on repeated teardown
+            try {
+                old.openForWrite(candidate);
+                fail("Destroyed Activity cannot reacquire a writable APK path");
+            } catch (InterruptedIOException expected) {
+                assertTrue(old.isClosed());
+            }
+            assertFalse(candidate.exists());
+            assertEquals(0, old.pendingCount());
+        } finally { cleanup(root); }
+    }
 }

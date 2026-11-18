@@ -3,9 +3,11 @@ package com.readroid.app;
 import java.io.File;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -47,6 +49,22 @@ final class ImportActivityScope implements AutoCloseable {
         if (!pending.contains(path) && pending.size() >= MAX_OWNED)
             throw new IOException("Limite de arquivos temporários da importação atingido");
         pending.add(path);
+    }
+
+    /**
+     * Open the already tracked inode before calling an untrusted SAF provider.
+     * Both acquisition and onDestroy() cleanup hold this same monitor, so a
+     * provider returning late from open() cannot recreate an unlinked path.
+     * CREATE is intentionally omitted and links are not followed.
+     */
+    synchronized OutputStream openForWrite(File candidate) throws IOException {
+        if (closed)
+            throw new InterruptedIOException("A Activity antiga já foi encerrada");
+        Path path = requireOwnedCandidate(candidate);
+        if (!pending.contains(path))
+            throw new IOException("Candidato SAF não pertence a esta Activity");
+        return Files.newOutputStream(path, StandardOpenOption.WRITE,
+            StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS);
     }
 
     synchronized void release(File candidate) {
