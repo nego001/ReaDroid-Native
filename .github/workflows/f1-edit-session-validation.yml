@@ -50,6 +50,7 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/SafExportVerifierInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ExportSessionGuardInstrumentedTest.java'
       - 'tests/test_f1_functional_ci_contract.py'
+      - 'tests/f127_android_process_death.sh'
       - '.github/workflows/f1-edit-session-validation.yml'
   workflow_dispatch:
 concurrency:
@@ -95,3 +96,7 @@ jobs:
             set -eu
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ImportWorkerLaneInstrumentedTest,com.readroid.app.ImportActivityScopeInstrumentedTest,com.readroid.app.ImportCrashJanitorInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
             echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
+            # F1.27: host-driven real app process termination; run AFTER
+            # the normal in-process instrumentation has finished.
+            bash tests/f127_android_process_death.sh
+            echo "F127_REAL_FORCE_STOP_PASS api=${{ matrix.api }}"

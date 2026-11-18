@@ -352,6 +352,25 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("REPLACE_EXISTING", staging)
         self.assertNotIn("REPLACE_EXISTING", scope)
 
+
+    def test_f127_real_process_death_probe_runs_on_both_emulators(self):
+        probe = ROOT / "tests/f127_android_process_death.sh"
+        script = probe.read_text(encoding="utf-8")
+        self.assertIn("bash tests/f127_android_process_death.sh", self.workflow)
+        self.assertIn("F127_REAL_FORCE_STOP_PASS", self.workflow)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("adb shell am start -W -n", script)
+        self.assertIn("run-as $PKG", script)
+        self.assertIn("test ! -e cache/$PARTIAL", script)
+        self.assertIn("test -f cache/$PARTIAL", script)
+        self.assertIn("pid_before", script)
+        self.assertIn("pid_after", script)
+        self.assertIn("readroid_F127accepted123.apk", script)
+        self.assertIn("readroid_F127partial123.apk.pending", script)
+        self.assertNotIn("adb uninstall", script)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

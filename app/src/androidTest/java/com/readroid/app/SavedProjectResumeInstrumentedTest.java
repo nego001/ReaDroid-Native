@@ -155,4 +155,21 @@ public final class SavedProjectResumeInstrumentedTest {
         assertNull(result.reimport);
         assertFalse(result.requiresReselection);
     }
+
+    @Test public void f127ColdRestartWithRevokedGrantAndPendingImportFailsClosed() {
+        SavedProjectResume.Decision denied = SavedProjectResume.decide(
+            ACCEPTED, PENDING, false, false, SHA, uri -> false);
+        assertNull("Cold restart must not reimport accepted project without grant",
+            denied.reimport);
+        assertNull(denied.acceptedReference);
+        assertNull(denied.expectedSha256);
+        assertTrue("User must reselect when persisted read grant is absent",
+            denied.requiresReselection);
+
+        SavedProjectResume.Decision pendingOnly = SavedProjectResume.decide(
+            null, PENDING, false, false, SHA, uri -> true);
+        assertNull("Unaccepted pending URI is never automatically replayed",
+            pendingOnly.reimport);
+        assertTrue(pendingOnly.requiresReselection);
+    }
 }
