@@ -1,4 +1,4 @@
-package com.readroid.app;
+package com.readroid.f130fixture;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -18,16 +18,16 @@ import java.util.concurrent.TimeUnit;
 /**
  * F1.30: intentionally crashable provider in the AndroidTest APK ONLY.
  *
- * The test manifest puts this provider into the :f130crash process. Killing
- * it must NOT kill the AndroidJUnitRunner or the actual app under test.
+ * The standalone F130 fixture APK uses a distinct UID and package from
+ * the instrumentation runner and the app. Killing this provider cannot
+ * kill the instrumentation process or project owner.
  * A pipe stays open after a valid ZIP prefix until the remote provider dies;
  * the client sees EOF/EIO and must refuse to commit a partial import.
  */
-public final class F130CrashContentProvider extends ContentProvider {
-    static final String AUTHORITY = "com.readroid.app.f130.crashprovider";
+public final class CrashProvider extends ContentProvider {
+    static final String AUTHORITY = "com.readroid.f130fixture.provider";
     static final Uri SOURCE = Uri.parse("content://" + AUTHORITY + "/interrupted.zip");
     private final CountDownLatch bytesWritten = new CountDownLatch(1);
-    private volatile ParcelFileDescriptor producer;
 
     @Override public boolean onCreate() { return true; }
     @Override public String getType(Uri uri) {
@@ -57,7 +57,6 @@ public final class F130CrashContentProvider extends ContentProvider {
         final ParcelFileDescriptor[] pipe;
         try { pipe = ParcelFileDescriptor.createPipe(); }
         catch (IOException e) { throw new FileNotFoundException("F130 pipe unavailable"); }
-        producer = pipe[1];
 
         // Write a plausible ZIP local-file record and hold the writer open.
         // An open Fd is killed with the provider; a successful source read

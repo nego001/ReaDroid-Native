@@ -45,8 +45,11 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/SavedProjectResumeInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/F128RealSafGrantInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/F129RealProviderInstrumentedTest.java'
-      - 'app/src/androidTest/java/com/readroid/app/F130CrashContentProvider.java'
       - 'app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java'
+      - 'f130fixture/build.gradle.kts'
+      - 'f130fixture/src/main/AndroidManifest.xml'
+      - 'f130fixture/src/main/java/com/readroid/f130fixture/CrashProvider.java'
+      - 'settings.gradle.kts'
       - 'app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java'
       - 'app/src/androidTest/AndroidManifest.xml'
       - 'app/src/androidTest/java/com/readroid/app/ImportCacheAuditInstrumentedTest.java'
@@ -102,6 +105,9 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
+            # Separate disposable Android application: own UID and remote provider.
+            gradle --no-daemon :f130fixture:assembleDebug
+            adb install -r f130fixture/build/outputs/apk/debug/f130fixture-debug.apk
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ImportWorkerLaneInstrumentedTest,com.readroid.app.ImportActivityScopeInstrumentedTest,com.readroid.app.ImportCrashJanitorInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.F129RealProviderInstrumentedTest,com.readroid.app.F130ProviderDeathInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
             echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
             # F1.27: host-driven real app process termination; run AFTER

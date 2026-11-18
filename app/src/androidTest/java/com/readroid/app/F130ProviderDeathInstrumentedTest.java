@@ -24,10 +24,13 @@ import java.util.zip.ZipOutputStream;
 
 import static org.junit.Assert.*;
 
-/** Host-independent Android instrumentation with a genuine isolated process. */
+/** Android instrumentation against a separately installed disposable fixture APK. */
 @RunWith(AndroidJUnit4.class)
 public final class F130ProviderDeathInstrumentedTest {
     private static final long SPACE = 128L * 1024 * 1024;
+    private static final String REMOTE_AUTHORITY = "com.readroid.f130fixture.provider";
+    private static final android.net.Uri REMOTE_SOURCE = android.net.Uri.parse(
+        "content://" + REMOTE_AUTHORITY + "/interrupted.zip");
 
     private static Context app() {
         return InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -69,7 +72,7 @@ public final class F130ProviderDeathInstrumentedTest {
 
     private static Bundle provider(String command) {
         Bundle response = app().getContentResolver().call(
-            F130CrashContentProvider.AUTHORITY, command, null, null);
+            REMOTE_AUTHORITY, command, null, null);
         assertNotNull("Crashable AndroidTest provider not available", response);
         return response;
     }
@@ -84,7 +87,7 @@ public final class F130ProviderDeathInstrumentedTest {
         Thread reader = null;
         try {
             File[] saved = preservationFixture(dir);
-            ApkImportPreflight.beforeCopy(app(), F130CrashContentProvider.SOURCE);
+            ApkImportPreflight.beforeCopy(app(), REMOTE_SOURCE);
             int oldProviderPid = provider("pid").getInt("pid", -1);
             assertTrue("Provider process PID unavailable", oldProviderPid > 0);
             assertNotEquals("Provider must be in a DIFFERENT Android process",
@@ -94,7 +97,7 @@ public final class F130ProviderDeathInstrumentedTest {
                 try {
                     copied.set(ApkImportStaging.copy(dir,
                         () -> app().getContentResolver().openInputStream(
-                            F130CrashContentProvider.SOURCE), () -> SPACE, null, scope));
+                            REMOTE_SOURCE), () -> SPACE, null, scope));
                 } catch (Throwable ex) { error.set(ex); }
                 finally { ended.countDown(); }
             }, "F130-staging-client");
