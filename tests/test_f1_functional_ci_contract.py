@@ -52,6 +52,7 @@ ANDROID_TESTS = {
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
+    "F129RealProviderInstrumentedTest",
     "ImportCacheAuditInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
     "RebuildTempJanitorInstrumentedTest",
@@ -393,6 +394,25 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("pm clear", script)
         self.assertNotIn("adb uninstall", script)
         self.assertNotIn("rm -rf", script)
+
+    def test_f129_faulty_provider_only_in_test_apk_and_real_resolver_guard(self):
+        manifest = (ROOT / "app/src/androidTest/AndroidManifest.xml").read_text(encoding="utf-8")
+        provider = (ROOT / "app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F129RealProviderInstrumentedTest.java").read_text(encoding="utf-8")
+        production_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        self.assertIn("app/src/androidTest/AndroidManifest.xml", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java", self.workflow)
+        self.assertIn("F129RealProviderInstrumentedTest", self.workflow)
+        self.assertIn("F129FaultyContentProvider", manifest)
+        self.assertIn("ParcelFileDescriptor.createPipe()", provider)
+        self.assertIn("F129FaultyContentProvider", tests)
+        self.assertIn("resolver().openInputStream", tests)
+        self.assertIn("ApkImportStaging.copy(", tests)
+        self.assertIn("scope.close()", tests)
+        self.assertIn("ApkZipIntegrity.verify(promoted)", tests)
+        self.assertNotIn("F129FaultyContentProvider", production_manifest)
+        self.assertNotIn("android.permission.MANAGE_DOCUMENTS", production_manifest)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
