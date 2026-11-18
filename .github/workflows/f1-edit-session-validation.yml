@@ -53,6 +53,8 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java'
       - 'app/src/androidTest/AndroidManifest.xml'
       - 'app/src/debug/AndroidManifest.xml'
+      - 'app/src/debug/java/com/readroid/app/F130CrashHarnessActivity.java'
+      - 'tests/f130_external_provider_death.sh'
       - 'app/src/androidTest/java/com/readroid/app/ImportCacheAuditInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkRebuilderInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/RebuildTempJanitorInstrumentedTest.java'
@@ -119,3 +121,7 @@ jobs:
             # Independent test sessions prevent an in-process mock result.
             bash tests/f128_real_saf_grant.sh
             echo "F128_REAL_SAF_PERMISSION_PASS api=${{ matrix.api }}"
+            # F1.30: deliberately terminate the fixture provider from ADB
+            # AFTER all instrumentation sessions have exited.
+            bash tests/f130_external_provider_death.sh
+            echo "F130_EXTERNAL_PROVIDER_DEATH_PASS api=${{ matrix.api }}"

@@ -416,33 +416,51 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("android.permission.MANAGE_DOCUMENTS", production_manifest)
 
     def test_f130_crash_provider_is_an_independent_ci_only_app(self):
-        fixture_manifest = (ROOT / "f130fixture/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-        fixture_gradle = (ROOT / "f130fixture/build.gradle.kts").read_text(encoding="utf-8")
-        fixture_provider = (ROOT / "f130fixture/src/main/java/com/readroid/f130fixture/CrashProvider.java").read_text(encoding="utf-8")
+        fixture_manifest = (ROOT / "f130fixture/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        fixture_provider = (ROOT / "f130fixture/src/main/java/com/readroid/f130fixture/CrashProvider.java").read_text(
+            encoding="utf-8")
+        fixture_gradle = (ROOT / "f130fixture/build.gradle.kts").read_text(
+            encoding="utf-8")
+        debug_manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        harness = (ROOT / "app/src/debug/java/com/readroid/app/F130CrashHarnessActivity.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f130_external_provider_death.sh").read_text(encoding="utf-8")
         tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java").read_text(encoding="utf-8")
         production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
             encoding="utf-8")
-        debug_manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(encoding="utf-8")
         settings = (ROOT / "settings.gradle.kts").read_text(encoding="utf-8")
-        self.assertIn('<queries>', debug_manifest)
-        self.assertIn('com.readroid.f130fixture.provider', debug_manifest)
-        self.assertIn('app/src/debug/AndroidManifest.xml', self.workflow)
         self.assertIn('include(":app", ":f130fixture")', settings)
         self.assertIn('android:process=":provider"', fixture_manifest)
         self.assertIn('com.readroid.f130fixture.provider', fixture_manifest)
         self.assertIn('applicationId = "com.readroid.f130fixture"', fixture_gradle)
         self.assertIn('ParcelFileDescriptor.createPipe()', fixture_provider)
-        self.assertIn('android.os.Process.killProcess', fixture_provider)
-        self.assertIn('app().getContentResolver().openInputStream', tests)
-        self.assertIn('ApkImportStaging.copy(', tests)
-        self.assertIn('ApkZipIntegrity.verify(', tests)
-        self.assertIn('ImportActivityScope', tests)
+        self.assertIn('app/src/debug/AndroidManifest.xml', self.workflow)
+        self.assertIn('F130CrashHarnessActivity', debug_manifest)
+        self.assertIn('com.readroid.f130fixture.provider', debug_manifest)
+        self.assertIn('ApkImportStaging.copy(', harness)
+        self.assertIn('getContentResolver().openInputStream(SOURCE)', harness)
+        self.assertIn('ApkZipIntegrity.verify(', harness)
+        self.assertIn('ImportActivityScope', harness)
+        self.assertIn('f130ValidLocalEntriesButMissingZipEndAreRejected', tests)
+        self.assertNotIn('f130RemoteProviderProcessDeathRejectsPartialApk', tests)
         self.assertIn(':f130fixture:assembleDebug', self.workflow)
         self.assertIn('adb install -r f130fixture/build/outputs/apk/debug/f130fixture-debug.apk', self.workflow)
-        for path in ("f130fixture/src/main/AndroidManifest.xml", "f130fixture/build.gradle.kts",
-                     "f130fixture/src/main/java/com/readroid/f130fixture/CrashProvider.java", "settings.gradle.kts"):
+        self.assertIn('bash tests/f130_external_provider_death.sh', self.workflow)
+        self.assertIn('F130_EXTERNAL_PROVIDER_DEATH_PASS', self.workflow)
+        self.assertIn('adb shell am force-stop "$FIXTURE"', script)
+        self.assertIn('run_as "wc -c $ROOT/readroid_*.apk.pending"', script)
+        self.assertIn('run_as "test -f $ROOT/readroid_F130accepted123.apk"', script)
+        self.assertNotIn('pm clear', script)
+        self.assertNotIn('rm -rf', script)
+        for path in (
+            "f130fixture/build.gradle.kts",
+            "f130fixture/src/main/AndroidManifest.xml",
+            "f130fixture/src/main/java/com/readroid/f130fixture/CrashProvider.java",
+            "settings.gradle.kts", "app/src/debug/java/com/readroid/app/F130CrashHarnessActivity.java", "tests/f130_external_provider_death.sh",
+        ):
             self.assertIn(path, self.workflow)
-        self.assertNotIn('F130CrashContentProvider', production)
+        self.assertNotIn('F130CrashHarnessActivity', production)
         self.assertNotIn('com.readroid.f130fixture.provider', production)
         self.assertNotIn("assembleQa", self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
