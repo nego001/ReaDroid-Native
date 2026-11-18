@@ -29,7 +29,7 @@ run_case() {
     local method=$1 output
     output=$(adb shell am instrument -w -e class "$TEST#$method" "$RUNNER" 2>&1 | tr -d '\r')
     printf '%s\n' "$output"
-    if ! grep -qE '^OK \\(1 test\\)' <<<"$output" ||
+    if ! grep -Fq "OK (1 test)" <<<"$output" ||
        grep -qE 'FAILURES!!!|INSTRUMENTATION_FAILED' <<<"$output"; then
         echo "F128 FAIL: $method" >&2
         return 1
