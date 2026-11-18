@@ -469,6 +469,34 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("assembleQa", self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
 
+    def test_f131_repeated_real_cold_starts_preserve_history_and_vault(self):
+        test_path = ROOT / "app/src/androidTest/java/com/readroid/app/F131RepeatedColdRestartInstrumentedTest.java"
+        test = test_path.read_text(encoding="utf-8")
+        script = (ROOT / "tests/f128_real_saf_grant.sh").read_text(encoding="utf-8")
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F131RepeatedColdRestartInstrumentedTest.java", self.workflow)
+        self.assertIn("F131RepeatedColdRestartInstrumentedTest", test)
+        self.assertIn("P7ProjectHistory.record(", test)
+        self.assertIn("P7ProjectHistory.list(", test)
+        self.assertIn("RecoveryVault protectedVault", test)
+        self.assertIn("RecoveryResumeGate.attest(", test)
+        self.assertIn("SavedProjectResume.decide(", test)
+        self.assertIn("assertPendingPrunedByRealMainActivity()", test)
+        self.assertIn("KeyStore.getInstance(\"AndroidKeyStore\")", test)
+        self.assertIn("F131_HISTORY_CHECKPOINT_RESTART_PASS", script)
+        for method in (
+            "f131SeedAcceptedHistoryAndEncryptedCheckpoint",
+            "f131ColdStartRoundOne", "f131ColdStartRoundTwo",
+            "f131ColdStartRoundThree",
+            "f131RevokedGrantStillPreservesEncryptedRecovery",
+            "f131SecondRevokedRestartCleansAndPreservesRecovery",
+        ):
+            self.assertIn(method, script)
+            self.assertIn(method, test)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("ro.kernel.qemu", script)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

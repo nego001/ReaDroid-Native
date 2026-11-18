@@ -44,6 +44,7 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/ApkCacheAdmissionInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/SavedProjectResumeInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/F128RealSafGrantInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F131RepeatedColdRestartInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/F129RealProviderInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java'
       - 'f130fixture/build.gradle.kts'
@@ -64,6 +65,7 @@ on:
       - 'tests/test_f1_functional_ci_contract.py'
       - 'tests/f127_android_process_death.sh'
       - 'tests/f128_real_saf_grant.sh'
+      - 'app/src/androidTest/java/com/readroid/app/F131RepeatedColdRestartInstrumentedTest.java'
       - 'app/build.gradle.kts'
       - '.github/workflows/f1-edit-session-validation.yml'
   workflow_dispatch:
