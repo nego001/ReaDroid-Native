@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardCopyOption;
 
 /**
  * F1.21: one owner of private import staging for untrusted SAF streams.
@@ -52,7 +54,11 @@ final class ApkImportStaging {
                 || source == null || space == null)
             throw new IOException("Origem ou cache privado indisponível para importação");
         // Create the only file we are authorized to clean on failure.
-        File staged = File.createTempFile("readroid_", ".apk", privateCache);
+        // F1.26: only an incomplete copy has the .apk.pending extension.
+        // A cold process restart can safely discard exactly these entries.
+        File staged = File.createTempFile("readroid_", ".apk.pending", privateCache);
+        File completedApk = new File(privateCache,
+            staged.getName().substring(0, staged.getName().length() - ".pending".length()));
         ImportCacheAudit.track(staged);
         boolean complete = false;
         try {
@@ -73,10 +79,24 @@ final class ApkImportStaging {
                 ExportSessionGuard.check(token);
             }
             ExportSessionGuard.check(token);
-            // Resource close can itself fail. Ownership is transferred only
-            // AFTER both SAF input and private-cache output close cleanly.
+            // Resource close can itself fail. Publish the normal .apk name
+            // only after the stream, digest, and BOTH descriptors have closed.
+            // An atomic same-directory move never exposes a partial .apk.
+            ExportSessionGuard.check(token);
+            final File candidate;
+            if (scope != null) {
+                candidate = scope.promote(staged, token);
+            } else {
+                if (Files.exists(completedApk.toPath(), LinkOption.NOFOLLOW_LINKS))
+                    throw new IOException("Já existe um APK privado com este identificador");
+                Files.move(staged.toPath(), completedApk.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE);
+                ImportCacheAudit.release(staged);
+                ImportCacheAudit.track(completedApk);
+                candidate = completedApk;
+            }
             complete = true;
-            return new Result(staged, copied);
+            return new Result(candidate, copied);
         } catch (SecurityException | IllegalArgumentException accessDenied) {
             throw new IOException("Permissão ou documento SAF inválido durante importação",
                 accessDenied);

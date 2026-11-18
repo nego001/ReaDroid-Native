@@ -23,6 +23,7 @@ PRODUCTION = {
     "ApkImportStaging.java",
     "ImportWorkerLane.java",
     "ImportActivityScope.java",
+    "ImportCrashJanitor.java",
     "ApkZipIntegrity.java",
     "ApkExplorer.java",
     "ApkDiskIndex.java",
@@ -47,6 +48,7 @@ ANDROID_TESTS = {
     "ImportConcurrencyInstrumentedTest",
     "ImportWorkerLaneInstrumentedTest",
     "ImportActivityScopeInstrumentedTest",
+    "ImportCrashJanitorInstrumentedTest",
     "ApkZipIntegrityInstrumentedTest",
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
@@ -325,6 +327,30 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("MAX_OWNED = 4", scope)
         self.assertNotIn("walkFileTree", scope)
         self.assertNotIn("deleteDatabase", scope)
+
+
+    def test_f126_process_death_only_prunes_unfinished_private_copy(self):
+        staging = (ROOT / "app/src/main/java/com/readroid/app/ApkImportStaging.java").read_text(
+            encoding="utf-8")
+        scope = (ROOT / "app/src/main/java/com/readroid/app/ImportActivityScope.java").read_text(
+            encoding="utf-8")
+        janitor = (ROOT / "app/src/main/java/com/readroid/app/ImportCrashJanitor.java").read_text(
+            encoding="utf-8")
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
+            encoding="utf-8")
+        self.assertIn('".apk.pending"', staging)
+        self.assertIn("StandardCopyOption.ATOMIC_MOVE", staging)
+        self.assertIn("scope.promote(staged, token)", staging)
+        self.assertIn("StandardCopyOption.ATOMIC_MOVE", scope)
+        self.assertIn("pending.add(destination)", scope)
+        self.assertIn("COLD_IMPORT_SWEEP.compareAndSet(false, true)", activity)
+        self.assertIn("ImportCrashJanitor.sweep(getCacheDir())", activity)
+        self.assertIn('name.endsWith(".apk.pending")', janitor)
+        self.assertIn("LinkOption.NOFOLLOW_LINKS", janitor)
+        self.assertNotIn("walkFileTree", janitor)
+        self.assertNotIn("SQLiteDatabase.deleteDatabase", janitor)
+        self.assertNotIn("REPLACE_EXISTING", staging)
+        self.assertNotIn("REPLACE_EXISTING", scope)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

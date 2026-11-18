@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Set;
@@ -67,6 +68,34 @@ final class ImportActivityScope implements AutoCloseable {
             StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS);
     }
 
+    /**
+     * Atomic handoff from partial copy to a fully copied private APK. This is
+     * NOT project acceptance; the returned APK remains tracked and disposable
+     * until MainActivity has validated ZIP, index and UI project commit.
+     */
+    synchronized File promote(File partial, ExportSessionGuard.Token token)
+            throws IOException {
+        if (closed)
+            throw new InterruptedIOException("A Activity antiga já foi encerrada");
+        Path source = requireOwnedCandidate(partial);
+        String name = source.getFileName().toString();
+        if (!name.endsWith(".apk.pending") || !pending.contains(source))
+            throw new IOException("Arquivo parcial não pertence à importação atual");
+        ExportSessionGuard.check(token);
+        Path destination = root.resolve(name.substring(
+            0, name.length() - ".pending".length()));
+        if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("APK privado já existe; substituição recusada");
+        // Source and target are siblings in the same private cache filesystem.
+        // Do not silently fall back to a potentially non-atomic move.
+        Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        pending.remove(source);
+        pending.add(destination);
+        ImportCacheAudit.release(partial);
+        ImportCacheAudit.track(destination.toFile());
+        return destination.toFile();
+    }
+
     synchronized void release(File candidate) {
         if (candidate != null)
             pending.remove(candidate.toPath().toAbsolutePath().normalize());
@@ -106,9 +135,12 @@ final class ImportActivityScope implements AutoCloseable {
                 || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
             return false;
         String name = path.getFileName().toString();
-        if (!name.startsWith("readroid_") || !name.endsWith(".apk"))
-            return false;
-        String random = name.substring("readroid_".length(), name.length() - ".apk".length());
+        if (!name.startsWith("readroid_")) return false;
+        String expected = name.endsWith(".apk.pending")
+            ? name.substring(0, name.length() - ".pending".length()) : name;
+        if (!expected.endsWith(".apk")) return false;
+        String random = expected.substring("readroid_".length(),
+            expected.length() - ".apk".length());
         if (random.length() < 6 || random.length() > 64) return false;
         for (int i = 0; i < random.length(); i++) {
             char c = random.charAt(i);

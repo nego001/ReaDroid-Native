@@ -43,6 +43,10 @@ public class MainActivity extends Activity {
     // Exists only in this app process. Unlike Bundle URIs, it is not restored
     // after Android terminates and recreates the process.
     private static final String PROCESS_EPOCH = java.util.UUID.randomUUID().toString();
+    // F1.26: a rotation is NOT a process restart. Sweep abandoned SAF partials
+    // only on the first Activity creation of a fresh app process.
+    private static final java.util.concurrent.atomic.AtomicBoolean COLD_IMPORT_SWEEP =
+        new java.util.concurrent.atomic.AtomicBoolean();
     private static final int REQUEST_EXPORT_APK = 2;
     private static final int REQUEST_COMPARE_APK = 3;
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
@@ -208,6 +212,12 @@ public class MainActivity extends Activity {
             ? android.R.style.Theme_Material_Light_NoActionBar
             : android.R.style.Theme_Material_NoActionBar);
         super.onCreate(state);
+        if (COLD_IMPORT_SWEEP.compareAndSet(false, true)) {
+            ImportCrashJanitor.Report residues = ImportCrashJanitor.sweep(getCacheDir());
+            android.util.Log.i("ReaDroidImportCrash",
+                "pendingRemoved=" + residues.deleted + " errors=" + residues.errors
+                + " incomplete=" + residues.incomplete);
+        }
         importScope = new ImportActivityScope(getCacheDir());
         if (state != null && state.containsKey("p7_icon_export")) {
             int[] selected = state.getIntArray("p7_icon_export");
