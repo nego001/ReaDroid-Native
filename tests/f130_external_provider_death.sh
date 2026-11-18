@@ -8,7 +8,7 @@ FIXTURE=com.readroid.f130fixture
 REMOTE_PROCESS=com.readroid.f130fixture:provider
 HARNESS=com.readroid.app/.F130CrashHarnessActivity
 RESULT=files/f130_crash_result
-ROOT=cache/f130_crash_sandbox
+ROOT=cache
 
 run_as() {
     adb shell "run-as $APP sh -c '$1'" | tr -d '\r'
@@ -30,7 +30,12 @@ adb install -r "$DEBUG_APK" >/dev/null
 adb shell pm path "$FIXTURE" | grep -q 'package:' ||
     fail "independent provider APK not installed"
 run_as "test ! -e $RESULT" || fail "fixture result already existed"
-run_as "test ! -e $ROOT" || fail "fixture cache already existed"
+for own in readroid_F130accepted123.apk readroid_F130accepted123.apk.idx.db recovery_f130.enc; do
+    run_as "test ! -e $ROOT/$own" || fail "fixture already exists: $own"
+done
+preexisting=$(run_as "ls $ROOT/readroid_*.apk.pending 2>/dev/null | wc -l" |
+    tr -d '[:space:]')
+[[ "$preexisting" == 0 ]] || fail "unowned pending cache already exists"
 
 adb shell am force-stop "$APP"
 adb shell am start -W -n "$HARNESS" >/dev/null
@@ -53,29 +58,48 @@ done
     fail "remote provider did not supply staged bytes"
 }
 
+# The provider must still have the client blocked before we kill it.
+[[ "$(run_as "cat $RESULT")" == RUNNING ]] ||
+    fail "import finished before provider termination"
 adb shell am force-stop "$FIXTURE"
 [[ -z "$(pid_for "$REMOTE_PROCESS" || true)" ]] ||
     fail "remote provider survived force-stop"
-[[ "$(pid_for "$APP")" == "$owner_pid" ]] ||
-    fail "importing app process died with external provider"
 
-result=""
-for _ in $(seq 1 20); do
-    result=$(run_as "cat $RESULT" 2>/dev/null || true)
-    case "$result" in
-        PASS_*) break ;;
-        FAIL_*) fail "harness reported $result" ;;
+new_owner_pid=$(pid_for "$APP" || true)
+if [[ "$new_owner_pid" != "$owner_pid" ]]; then
+    # Android can kill an importer that holds a *stable* ContentProvider
+    # reference when that provider dies. This is a real platform cascade,
+    # not an in-process catchable IOException. Reopen the app, exercising
+    # F1.26's ImportCrashJanitor on the FIRST Activity of a new process.
+    adb shell am start -W -n "$APP/.MainActivity" >/dev/null
+    new_owner_pid=$(pid_for "$APP")
+    [[ -n "$new_owner_pid" && "$new_owner_pid" != "$owner_pid" ]] ||
+        fail "consumer process did not restart after cascading provider death"
+    verdict=PASS_CASCADE_COLD_START
+else
+    verdict=""
+    for _ in $(seq 1 20); do
+        verdict=$(run_as "cat $RESULT" 2>/dev/null || true)
+        case "$verdict" in
+            PASS_*) break ;;
+            FAIL_*) fail "harness reported $verdict" ;;
+        esac
+        sleep 1
+    done
+    case "$verdict" in
+        PASS_ZIP_REJECTED|PASS_TRANSPORT_REJECTED) ;;
+        *) fail "importer never rejected killed provider: $verdict" ;;
     esac
-    sleep 1
-done
-case "$result" in
-    PASS_ZIP_REJECTED|PASS_TRANSPORT_REJECTED) ;;
-    *) fail "importer never rejected killed provider: $result" ;;
-esac
+fi
 
+# Both modes must preserve the old data and leave NO transient candidate.
 run_as "test -f $ROOT/readroid_F130accepted123.apk"
 run_as "test -f $ROOT/readroid_F130accepted123.apk.idx.db"
 run_as "test -f $ROOT/recovery_f130.enc"
-count=$(run_as "ls -1 $ROOT | wc -l" | tr -d '[:space:]')
-[[ "$count" == 3 ]] || fail "unaccepted APK or partial cache survived"
-echo "F130_EXTERNAL_PROVIDER_DEATH_PASS provider_pid=$old_provider_pid app_pid=$owner_pid verdict=$result"
+[[ "$(run_as "cat $ROOT/readroid_F130accepted123.apk")" == "accepted before crash" ]]
+[[ "$(run_as "cat $ROOT/readroid_F130accepted123.apk.idx.db")" == "saved index" ]]
+[[ "$(run_as "cat $ROOT/recovery_f130.enc")" == "saved checkpoint" ]]
+remaining=$(run_as "ls $ROOT/readroid_*.apk.pending 2>/dev/null | wc -l" |
+    tr -d '[:space:]')
+[[ "$remaining" == 0 ]] || fail "cold restart retained unfinished SAF candidate"
+echo "F130_EXTERNAL_PROVIDER_DEATH_PASS provider_pid=$old_provider_pid old_owner=$owner_pid new_owner=$new_owner_pid verdict=$verdict"

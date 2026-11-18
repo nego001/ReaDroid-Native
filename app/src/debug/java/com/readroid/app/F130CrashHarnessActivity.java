@@ -24,7 +24,6 @@ import java.nio.file.StandardCopyOption;
 public final class F130CrashHarnessActivity extends Activity {
     private static final Uri SOURCE = Uri.parse(
         "content://com.readroid.f130fixture.provider/interrupted.zip");
-    private static final String DIR = "f130_crash_sandbox";
     private static final String RESULT = "f130_crash_result";
     private static final String[] NAMES = {
         "readroid_F130accepted123.apk",
@@ -37,13 +36,16 @@ public final class F130CrashHarnessActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        final File root = new File(getCacheDir(), DIR);
+        // The real app's cold-start janitor scans the immediate PRIVATE
+        // cache root. A stable provider death can also kill the consumer
+        // process, so stage here to test that exact cold-start recovery.
+        final File root = getCacheDir();
         try {
-            if (!root.mkdir())
-                throw new IOException("Sandbox already exists; refusing to overwrite");
             for (int i = 0; i < NAMES.length; i++) {
                 Files.write(new File(root, NAMES[i]).toPath(),
-                    VALUES[i].getBytes(StandardCharsets.UTF_8));
+                    VALUES[i].getBytes(StandardCharsets.UTF_8),
+                    java.nio.file.StandardOpenOption.CREATE_NEW,
+                    java.nio.file.StandardOpenOption.WRITE);
             }
             publish("RUNNING");
         } catch (Exception setupError) {
@@ -88,8 +90,12 @@ public final class F130CrashHarnessActivity extends Activity {
     }
 
     private boolean preserved(File root) throws IOException {
-        File[] entries = root.listFiles();
-        if (entries == null || entries.length != NAMES.length) return false;
+        // Other private-cache entries may exist; this probe may inspect
+        // only its OWN sentinels and ensure no unfinished import remains.
+        try (java.nio.file.DirectoryStream<java.nio.file.Path> unfinished =
+                 Files.newDirectoryStream(root.toPath(), "readroid_*.apk.pending")) {
+            if (unfinished.iterator().hasNext()) return false;
+        }
         for (int i = 0; i < NAMES.length; i++) {
             File original = new File(root, NAMES[i]);
             if (!Files.isRegularFile(original.toPath(), LinkOption.NOFOLLOW_LINKS))
