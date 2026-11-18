@@ -10,6 +10,7 @@ ACCEPTED=readroid_F127accepted123.apk
 INDEX=readroid_F127accepted123.apk.idx.db
 RECOVERY=f127_recovery.enc
 UNRELATED=readroid_unsigned_F127123.apk.pending
+FIXTURES_CREATED=0
 
 run_as() {
     # Fixed CI-only names/commands. All paths live in the debug app's cache.
@@ -32,8 +33,11 @@ wait_for_pid() {
     return 1
 }
 cleanup() {
-    # Never delete unrelated files or user data. This test uses a fresh emulator.
-    run_as "rm -f cache/$PARTIAL cache/$ACCEPTED cache/$INDEX cache/$RECOVERY cache/$UNRELATED" >/dev/null 2>&1 || true
+    # Only remove our fixtures when the preflight proved they were absent.
+    # Never touch any existing data if a fixture name was already occupied.
+    if [[ "$FIXTURES_CREATED" == 1 ]]; then
+        run_as "rm -f cache/$PARTIAL cache/$ACCEPTED cache/$INDEX cache/$RECOVERY cache/$UNRELATED" >/dev/null 2>&1 || true
+    fi
     adb shell am force-stop "$PKG" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -48,6 +52,7 @@ run_as "mkdir -p cache"
 for file in "$PARTIAL" "$ACCEPTED" "$INDEX" "$RECOVERY" "$UNRELATED"; do
     run_as "test ! -e cache/$file"
 done
+FIXTURES_CREATED=1
 
 # Stage a recognizable partially copied SAF filename in the app's private
 # sandbox while that real app process is alive. Completed files must survive.
