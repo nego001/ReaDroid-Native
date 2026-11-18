@@ -53,6 +53,9 @@ on:
       - 'settings.gradle.kts'
       - 'app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java'
       - 'app/src/androidTest/AndroidManifest.xml'
+      - 'app/src/debug/java/com/readroid/app/F132CheckpointHarnessActivity.java'
+      - 'app/src/androidTest/java/com/readroid/app/F132CheckpointCrashInstrumentedTest.java'
+      - 'tests/f132_checkpoint_process_death.sh'
       - 'app/src/debug/AndroidManifest.xml'
       - 'app/src/debug/java/com/readroid/app/F130CrashHarnessActivity.java'
       - 'tests/f130_external_provider_death.sh'
@@ -127,3 +130,7 @@ jobs:
             # AFTER all instrumentation sessions have exited.
             bash tests/f130_external_provider_death.sh
             echo "F130_EXTERNAL_PROVIDER_DEATH_PASS api=${{ matrix.api }}"
+            # F1.32: real process kill after a synced encrypted stage and
+            # before RecoveryVault atomically replaces a prior checkpoint.
+            bash tests/f132_checkpoint_process_death.sh
+            echo "F132_CHECKPOINT_ATOMIC_CRASH_PASS api=${{ matrix.api }}"

@@ -497,6 +497,39 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
 
+
+    def test_f132_real_checkpoint_precommit_death_and_atomic_replacement(self):
+        debug = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        harness = (ROOT / "app/src/debug/java/com/readroid/app/F132CheckpointHarnessActivity.java").read_text(encoding="utf-8")
+        test = (ROOT / "app/src/androidTest/java/com/readroid/app/F132CheckpointCrashInstrumentedTest.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f132_checkpoint_process_death.sh").read_text(encoding="utf-8")
+        production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        self.assertIn("F132CheckpointHarnessActivity", debug)
+        self.assertNotIn("F132CheckpointHarnessActivity", production)
+        self.assertIn("new RecoveryVault(vaultFolder(dir), ALIAS,", harness)
+        self.assertIn("mark(dir, marker)", harness)
+        self.assertIn("Thread.sleep(60000)", harness)
+        self.assertIn("RecoveryVault vault = new RecoveryVault(", harness)
+        self.assertIn("RecoveryResumeGate.attest(", test)
+        self.assertIn("RecoveryResumeGate.revalidate(", test)
+        self.assertIn("vault().loadForSource(source())", test)
+        self.assertIn("AndroidKeyStore", test)
+        self.assertIn("F132_CHECKPOINT_ATOMIC_CRASH_PASS", script)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("f132FirstCrashPreservesCommittedA", script)
+        self.assertIn("f132SuccessfulAtomicReplacementAcceptsB", script)
+        self.assertIn("f132SecondCrashPreservesCommittedB", script)
+        self.assertIn("ro.kernel.qemu", script)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+        self.assertIn("bash tests/f132_checkpoint_process_death.sh", self.workflow)
+        for path in ("app/src/debug/java/com/readroid/app/F132CheckpointHarnessActivity.java", "app/src/androidTest/java/com/readroid/app/F132CheckpointCrashInstrumentedTest.java", "tests/f132_checkpoint_process_death.sh"):
+            self.assertIn(path, self.workflow)
+        self.assertNotIn("upload-artifact@", self.workflow)
+        self.assertNotIn("assembleQa", self.workflow)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

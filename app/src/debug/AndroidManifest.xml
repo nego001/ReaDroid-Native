@@ -8,5 +8,8 @@
         <!-- Debug-only fixed-source import probe, never in production APK. -->
         <activity android:name=".F130CrashHarnessActivity"
             android:exported="true" />
+        <!-- Fixed-identity checkpoint probe, debug build only. -->
+        <activity android:name=".F132CheckpointHarnessActivity"
+            android:exported="true" />
     </application>
 </manifest>
