@@ -54,8 +54,10 @@ public final class F131RepeatedColdRestartInstrumentedTest {
     }
 
     private static Uri accepted() {
-        String text = context().getSharedPreferences(F128_PREF, Context.MODE_PRIVATE)
-            .getString(F128_URI, null);
+        String text = state().getString("accepted_uri", null);
+        if (text == null)
+            text = context().getSharedPreferences(F128_PREF, Context.MODE_PRIVATE)
+                .getString(F128_URI, null);
         assertNotNull("F1.28 real picker URI is required", text);
         Uri uri = Uri.parse(text);
         assertEquals("content", uri.getScheme());
@@ -63,8 +65,10 @@ public final class F131RepeatedColdRestartInstrumentedTest {
     }
 
     private static String expectedSha() {
-        String hash = context().getSharedPreferences(F128_PREF, Context.MODE_PRIVATE)
-            .getString(F128_SHA, null);
+        String hash = state().getString("accepted_sha256", null);
+        if (hash == null)
+            hash = context().getSharedPreferences(F128_PREF, Context.MODE_PRIVATE)
+                .getString(F128_SHA, null);
         assertTrue("F1.28 must accept a verified original APK",
             SavedProjectResume.validSha256(hash));
         return hash;
@@ -191,6 +195,8 @@ public final class F131RepeatedColdRestartInstrumentedTest {
             new String(ciphertext, StandardCharsets.ISO_8859_1).contains(EDIT_TEXT));
         assertTrue("Initial acceptance state could not be committed",
             state().edit().putInt("pid", Process.myPid()).putInt("epoch", 0)
+                .putString("accepted_uri", uri.toString())
+                .putString("accepted_sha256", expectedSha())
                 .putString("name", recorded.name).putLong("opened_at", recorded.openedAt)
                 .putString("checkpoint_sha256", ApkIntegrity.sha256(checkpoint()))
                 .commit());
