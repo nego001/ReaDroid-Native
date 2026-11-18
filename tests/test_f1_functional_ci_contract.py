@@ -231,12 +231,12 @@ class FunctionalCIContract(unittest.TestCase):
         )
         self.assertIn("ApkImportStaging.copy(", activity)
         self.assertIn("getContentResolver().openInputStream(uri)", activity)
-        self.assertIn("File.createTempFile(\"readroid_\", \".apk\", privateCache)", importer)
+        self.assertIn('File.createTempFile("readroid_", ".apk.pending", privateCache)', importer)
         self.assertIn("ImportCacheAudit.track(staged)", importer)
         self.assertIn("Files.deleteIfExists(staged.toPath())", importer)
         self.assertIn("ImportCacheAudit.release(staged)", importer)
         self.assertIn("if (!complete)", importer)
-        self.assertIn("return new Result(staged, copied)", importer)
+        self.assertIn("return new Result(candidate, copied)", importer)
 
     def test_f122_stale_import_aborts_inside_provider_zip_index_and_commit(self):
         activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(
