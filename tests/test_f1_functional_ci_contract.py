@@ -53,6 +53,7 @@ ANDROID_TESTS = {
     "ApkCacheAdmissionInstrumentedTest",
     "SavedProjectResumeInstrumentedTest",
     "F129RealProviderInstrumentedTest",
+    "F130ProviderDeathInstrumentedTest",
     "ImportCacheAuditInstrumentedTest",
     "ApkRebuilderInstrumentedTest",
     "RebuildTempJanitorInstrumentedTest",
@@ -413,6 +414,26 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("ApkZipIntegrity.verify(promoted)", tests)
         self.assertNotIn("F129FaultyContentProvider", production_manifest)
         self.assertNotIn("android.permission.MANAGE_DOCUMENTS", production_manifest)
+
+    def test_f130_crash_provider_is_remote_and_only_in_test_manifest(self):
+        manifest = (ROOT / "app/src/androidTest/AndroidManifest.xml").read_text(encoding="utf-8")
+        source = (ROOT / "app/src/androidTest/java/com/readroid/app/F130CrashContentProvider.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java").read_text(encoding="utf-8")
+        production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        self.assertIn('android:process=":f130crash"', manifest)
+        self.assertIn("F130CrashContentProvider", manifest)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F130CrashContentProvider.java", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java", self.workflow)
+        self.assertIn("F130ProviderDeathInstrumentedTest", self.workflow)
+        self.assertIn("ParcelFileDescriptor.createPipe()", source)
+        self.assertIn("android.os.Process.killProcess", source)
+        self.assertIn("getContentResolver().openInputStream", tests)
+        self.assertIn("ApkImportStaging.copy(", tests)
+        self.assertIn("ApkZipIntegrity.verify(", tests)
+        self.assertIn("ImportActivityScope", tests)
+        self.assertNotIn("F130CrashContentProvider", production)
+        self.assertNotIn("android.permission.MANAGE_DOCUMENTS", production)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
