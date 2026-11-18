@@ -422,7 +422,11 @@ class FunctionalCIContract(unittest.TestCase):
         tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java").read_text(encoding="utf-8")
         production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
             encoding="utf-8")
+        debug_manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(encoding="utf-8")
         settings = (ROOT / "settings.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn('<queries>', debug_manifest)
+        self.assertIn('com.readroid.f130fixture.provider', debug_manifest)
+        self.assertIn('app/src/debug/AndroidManifest.xml', self.workflow)
         self.assertIn('include(":app", ":f130fixture")', settings)
         self.assertIn('android:process=":provider"', fixture_manifest)
         self.assertIn('com.readroid.f130fixture.provider', fixture_manifest)

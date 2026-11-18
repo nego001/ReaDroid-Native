@@ -52,6 +52,7 @@ on:
       - 'settings.gradle.kts'
       - 'app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java'
       - 'app/src/androidTest/AndroidManifest.xml'
+      - 'app/src/debug/AndroidManifest.xml'
       - 'app/src/androidTest/java/com/readroid/app/ImportCacheAuditInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/ApkRebuilderInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/RebuildTempJanitorInstrumentedTest.java'
