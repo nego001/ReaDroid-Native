@@ -70,6 +70,9 @@ public final class F135VerifierCrashHarnessActivity extends Activity {
         vault.save(source(), edits(A));
         Files.write(new File(root(), "accepted.sha256").toPath(),
             ApkIntegrity.sha256(checkpoint()).getBytes(StandardCharsets.US_ASCII));
+        Files.write(new File(root(), "accepted.version").toPath(),
+            "SEEDED".getBytes(StandardCharsets.US_ASCII));
+        // Expose READY only once every precondition has reached disk.
         status("SEEDED");
     }
 
@@ -112,11 +115,8 @@ public final class F135VerifierCrashHarnessActivity extends Activity {
 
     private void execute(String phase) {
         try {
-            if ("seed".equals(phase)) {
-                seed();
-                Files.write(new File(root(), "accepted.version").toPath(),
-                    "SEEDED".getBytes(StandardCharsets.US_ASCII));
-            } else if ("commit_b".equals(phase)) commitB();
+            if ("seed".equals(phase)) seed();
+            else if ("commit_b".equals(phase)) commitB();
             else interruptedVerification(phase);
         } catch (Exception e) {
             try { if (root().isDirectory()) status("FAIL_" + phase); }
