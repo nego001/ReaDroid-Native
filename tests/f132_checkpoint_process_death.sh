@@ -12,17 +12,32 @@ DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk
 TEST_APK=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 fail() { echo "F132 FAIL: $*" >&2; exit 1; }
+install_ci_apk() {
+    local apk="$1" attempt output=""
+    for attempt in 1 2 3; do
+        if output=$(adb install -r "$apk" 2>&1) &&
+           [[ "$output" == *Success* ]]; then
+            echo "F132 installed disposable APK: $apk"
+            return 0
+        fi
+        echo "F132 install attempt $attempt failed: $output" >&2
+        sleep 2
+    done
+    fail "unable to reinstall CI-only debug APK: $apk"
+}
+
 run_as() { adb shell "run-as $PKG sh -c '$1'" | tr -d '\r'; }
-pid() { adb shell pidof "$PKG" 2>/dev/null | tr -d '\r\n'; }
+pid() { adb shell pidof "$PKG" 2>/dev/null | tr -d '\r\n' || true; }
 marker() { run_as "cat $LAB/status" 2>/dev/null || true; }
 cleanup() { adb shell am force-stop "$PKG" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
+trap 'rc=$?; echo "F132 unexpected command failure line $LINENO exit=$rc" >&2' ERR
 
 [[ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]] ||
     fail "CI emulator required; refuse physical device"
 [[ -f "$DEBUG_APK" && -f "$TEST_APK" ]] || fail "missing debug builds"
-adb install -r "$DEBUG_APK" >/dev/null
-adb install -r "$TEST_APK" >/dev/null
+install_ci_apk "$DEBUG_APK"
+install_ci_apk "$TEST_APK"
 run_as "test ! -e $LAB" || fail "F132 sandbox already exists"
 
 start_phase() {

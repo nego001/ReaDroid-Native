@@ -11,17 +11,32 @@ APK=app/build/outputs/apk/debug/app-debug.apk
 TEST_APK=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 fail() { echo "F135 FAIL: $*" >&2; exit 1; }
+install_ci_apk() {
+    local apk="$1" attempt output=""
+    for attempt in 1 2 3; do
+        if output=$(adb install -r "$apk" 2>&1) &&
+           [[ "$output" == *Success* ]]; then
+            echo "F135 installed disposable APK: $apk"
+            return 0
+        fi
+        echo "F135 install attempt $attempt failed: $output" >&2
+        sleep 2
+    done
+    fail "unable to reinstall CI-only debug APK: $apk"
+}
+
 run_as() { adb shell "run-as $APP sh -c '$1'" | tr -d '\r'; }
-pid() { adb shell pidof "$APP" 2>/dev/null | tr -d '\r\n'; }
+pid() { adb shell pidof "$APP" 2>/dev/null | tr -d '\r\n' || true; }
 status() { run_as "cat $LAB/status" 2>/dev/null || true; }
 cleanup() { adb shell am force-stop "$APP" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
+trap 'rc=$?; echo "F135 unexpected command failure line $LINENO exit=$rc" >&2' ERR
 
 [[ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]] ||
     fail "physical devices are not authorized"
 [[ -f "$APK" && -f "$TEST_APK" ]] || fail "missing debug binaries"
-adb install -r "$APK" >/dev/null
-adb install -r "$TEST_APK" >/dev/null
+install_ci_apk "$APK"
+install_ci_apk "$TEST_APK"
 run_as "test ! -e $LAB" || fail "F135 private test folder already exists"
 
 start_phase() {

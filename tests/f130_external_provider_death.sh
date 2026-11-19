@@ -14,19 +14,36 @@ run_as() {
     adb shell "run-as $APP sh -c '$1'" | tr -d '\r'
 }
 pid_for() {
-    adb shell pidof "$1" 2>/dev/null | tr -d '\r\n'
+    adb shell pidof "$1" 2>/dev/null | tr -d '\r\n' || true
 }
 fail() { echo "F130 FAIL: $*" >&2; exit 1; }
+install_ci_apk() {
+    local apk="$1" attempt output=""
+    for attempt in 1 2 3; do
+        if output=$(adb install -r "$apk" 2>&1) &&
+           [[ "$output" == *Success* ]]; then
+            echo "F130 installed disposable APK: $apk"
+            return 0
+        fi
+        echo "F130 install attempt $attempt failed: $output" >&2
+        sleep 2
+    done
+    fail "unable to reinstall CI-only debug APK: $apk"
+}
+
 cleanup() {
     # Kill only the two disposable debug apps; do not clear data or user files.
     adb shell am force-stop "$FIXTURE" >/dev/null 2>&1 || true
     adb shell am force-stop "$APP" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+trap 'rc=$?; echo "F130 unexpected command failure line $LINENO exit=$rc" >&2' ERR
 
 DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk
+[[ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]] ||
+    fail "physical devices are never authorized for process-kill tests"
 [[ -f "$DEBUG_APK" ]] || fail "debug app build absent"
-adb install -r "$DEBUG_APK" >/dev/null
+install_ci_apk "$DEBUG_APK"
 adb shell pm path "$FIXTURE" | grep -q 'package:' ||
     fail "independent provider APK not installed"
 run_as "test ! -e $RESULT" || fail "fixture result already existed"

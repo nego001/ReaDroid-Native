@@ -641,6 +641,20 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertNotIn("rm -rf", tests)
         self.assertNotIn("pm clear", tests)
 
+    def test_emulator_crash_harnesses_report_install_and_pid_failures(self):
+        for path in (
+            "tests/f130_external_provider_death.sh", "tests/f132_checkpoint_process_death.sh", "tests/f135_verifier_process_death.sh",
+        ):
+            script = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn("install_ci_apk()", script)
+            self.assertIn("install attempt $attempt failed", script)
+            self.assertIn("unexpected command failure line $LINENO", script)
+            self.assertIn("getprop ro.kernel.qemu", script)
+            self.assertNotIn("pm clear", script)
+            self.assertNotIn("rm -rf", script)
+            self.assertNotIn("adb uninstall", script)
+            self.assertIn(path, self.workflow)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",
