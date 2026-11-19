@@ -45,6 +45,7 @@ ANDROID_TESTS = {
     "F133RecoverySpaceConcurrencyInstrumentedTest",
     "F134RecoveryStageIntegrityInstrumentedTest",
     "F135StageVerificationInstrumentedTest",
+    "F136PreMoveRaceInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -613,6 +614,32 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("tests/f135_verifier_process_death.sh", self.workflow)
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
+
+    def test_f136_premove_race_guard_rechecks_bytes_and_inode(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F136PreMoveRaceInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("interface BeforeMove", vault)
+        self.assertIn("beforeMove.run(temporary);", vault)
+        self.assertIn("verifyStagedCiphertext(temporary, encoded, (verified, total) -> {});", vault)
+        self.assertIn("final StageIdentity verifiedIdentity = stageIdentity(temporary)", vault)
+        self.assertIn("verifiedIdentity.sameFile(stageIdentity(temporary))", vault)
+        self.assertIn("Os.lstat(staged.getAbsolutePath())", vault)
+        self.assertIn("Files.move(temporary.toPath()", vault)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F136PreMoveRaceInstrumentedTest.java", self.workflow)
+        self.assertIn("com.readroid.app.F136PreMoveRaceInstrumentedTest", self.workflow)
+        for method in (
+            "f136BitFlipBetweenVerifyAndMoveCannotCommit",
+            "f136TruncationBetweenVerifyAndMoveCannotCommit",
+            "f136DeletionBetweenVerifyAndMoveCannotCommit",
+            "f136SameBytesNewInodeBetweenVerifyAndMoveRejected",
+            "f136SymlinkSwapWithMatchingBytesBetweenVerifyAndMoveRejected",
+            "f136InterruptedBeforeMovePreservesLastGoodCheckpoint",
+            "f136UnmodifiedStageStillAtomicallyReplacesCheckpoint",
+        ):
+            self.assertIn(method, tests)
+        self.assertIn("KeyStore.getInstance(\"AndroidKeyStore\")", tests)
+        self.assertNotIn("rm -rf", tests)
+        self.assertNotIn("pm clear", tests)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
