@@ -11,5 +11,8 @@
         <!-- Fixed-identity checkpoint probe, debug build only. -->
         <activity android:name=".F132CheckpointHarnessActivity"
             android:exported="true" />
+        <!-- F1.35 emulator-only verifier interruption, debug build only. -->
+        <activity android:name=".F135VerifierCrashHarnessActivity"
+            android:exported="true" />
     </application>
 </manifest>

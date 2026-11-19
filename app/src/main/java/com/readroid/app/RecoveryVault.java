@@ -60,10 +60,16 @@ public final class RecoveryVault {
     private final String alias;
     private final BeforeCommit beforeCommit;
     private final RecoveryStorageBudget.FreeSpace freeSpace;
+    private final StageReadObserver stageReadObserver;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
         void run(File staged) throws IOException;
+    }
+
+    /** Package-private CI seam: observe a verified chunk, no user callback. */
+    interface StageReadObserver {
+        void onChunk(int bytesVerified, int totalBytes) throws IOException;
     }
 
     public RecoveryVault(Context context) {
@@ -84,13 +90,26 @@ public final class RecoveryVault {
     /** Deterministic free-space changes are injected only by instrumentation. */
     RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
             RecoveryStorageBudget.FreeSpace freeSpace) {
+        this(storage, alias, beforeCommit, freeSpace,
+            (verified, total) -> {});
+    }
+
+    /**
+     * Package-private seam for deterministic stage-verification interruption
+     * in isolated Android tests. Production always uses the no-op observer.
+     */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver) {
         if (storage == null || alias == null || alias.isEmpty()
-                || beforeCommit == null || freeSpace == null)
+                || beforeCommit == null || freeSpace == null
+                || stageReadObserver == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
         this.beforeCommit = beforeCommit;
         this.freeSpace = freeSpace;
+        this.stageReadObserver = stageReadObserver;
     }
 
     public boolean hasCheckpoint() {
@@ -178,7 +197,7 @@ public final class RecoveryVault {
             // F1.34: a synced temporary is not necessarily an intact one.
             // Re-read the exact encrypted bytes before replacing the last
             // usable recovery checkpoint, and refuse swapped symlinks.
-            verifyStagedCiphertext(temporary, encoded);
+            verifyStagedCiphertext(temporary, encoded, stageReadObserver);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -204,8 +223,8 @@ public final class RecoveryVault {
      * This is not a power-loss proof or a defense against processes with
      * filesystem write access racing the final rename.
      */
-    private static void verifyStagedCiphertext(File stage, byte[] expected)
-            throws IOException {
+    private static void verifyStagedCiphertext(File stage, byte[] expected,
+            StageReadObserver observer) throws IOException {
         if (stage == null || expected == null || expected.length < 33)
             throw new IOException("Estágio criptografado inválido");
         Path path = stage.toPath();
@@ -226,6 +245,14 @@ public final class RecoveryVault {
                 for (int i = 0; i < n; i++)
                     mismatch |= chunk[i] ^ expected[offset + i];
                 offset += n;
+                // F1.35: process death can now be triggered mid-verification
+                // on a real emulator, while unverified bytes still remain.
+                // Production uses a no-op observer; the checkpoint is never
+                // promoted while this callback is pending.
+                observer.onChunk(offset, expected.length);
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException(
+                        "Verificação do estágio interrompida");
             }
             if (in.read() != -1)
                 throw new IOException("Estágio criptografado cresceu durante a leitura");

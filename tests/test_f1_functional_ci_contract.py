@@ -44,6 +44,7 @@ ANDROID_TESTS = {
     "RecoveryVaultInstrumentedTest",
     "F133RecoverySpaceConcurrencyInstrumentedTest",
     "F134RecoveryStageIntegrityInstrumentedTest",
+    "F135StageVerificationInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -578,6 +579,40 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("vault.loadForSource(original)", tests)
         self.assertNotIn("pm clear", tests)
         self.assertNotIn("rm -rf", tests)
+
+    def test_f135_verification_interruption_and_multiple_real_process_deaths(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        debug = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        harness = (ROOT / "app/src/debug/java/com/readroid/app/F135VerifierCrashHarnessActivity.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F135StageVerificationInstrumentedTest.java").read_text(encoding="utf-8")
+        external = (ROOT / "app/src/androidTest/java/com/readroid/app/F135VerifierCrashInstrumentedTest.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f135_verifier_process_death.sh").read_text(encoding="utf-8")
+        production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        self.assertIn("StageReadObserver", vault)
+        self.assertIn("observer.onChunk(offset, expected.length)", vault)
+        self.assertIn("verifyStagedCiphertext(temporary, encoded, stageReadObserver)", vault)
+        self.assertIn("F135VerifierCrashHarnessActivity", debug)
+        self.assertNotIn("F135VerifierCrashHarnessActivity", production)
+        self.assertIn("new RecoveryVault(folder(), KEY,", harness)
+        self.assertIn("verified < 8192 || verified >= total", harness)
+        self.assertIn("Thread.sleep(60000)", harness)
+        self.assertIn("f135InterruptMidVerificationCannotCommitCheckpoint", tests)
+        self.assertIn("f135ConcurrentReaderWaitsForAbortedVerifier", tests)
+        self.assertIn("f135FirstMidVerificationCrashPreservesA", external)
+        self.assertIn("f135SecondMidVerificationCrashPreservesA", external)
+        self.assertIn("f135CommittedBStillDecryptsAfterTwoCrashes", external)
+        self.assertIn("F135_VERIFIER_PROCESS_DEATH_PASS", script)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("ro.kernel.qemu", script)
+        self.assertIn("bash tests/f135_verifier_process_death.sh", self.workflow)
+        self.assertIn("app/src/debug/java/com/readroid/app/F135VerifierCrashHarnessActivity.java", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F135StageVerificationInstrumentedTest.java", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F135VerifierCrashInstrumentedTest.java", self.workflow)
+        self.assertIn("tests/f135_verifier_process_death.sh", self.workflow)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
