@@ -559,7 +559,7 @@ class FunctionalCIContract(unittest.TestCase):
     def test_f134_stage_integrity_check_rejects_corrupted_or_symlinked_stages(self):
         vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
         tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F134RecoveryStageIntegrityInstrumentedTest.java").read_text(encoding="utf-8")
-        self.assertIn("verifyStagedCiphertext(temporary, encoded);", vault)
+        self.assertIn("verifyStagedCiphertext(temporary, encoded, stageReadObserver);", vault)
         self.assertIn("Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)", vault)
         self.assertIn("Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)", vault)
         self.assertIn("mismatch |= chunk[i] ^ expected[offset + i]", vault)
