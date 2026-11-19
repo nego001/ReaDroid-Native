@@ -175,6 +175,10 @@ public final class RecoveryVault {
             // Recheck AFTER fsync and callback, just before atomic promotion:
             // free space may have vanished while the encrypted file was saved.
             RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
+            // F1.34: a synced temporary is not necessarily an intact one.
+            // Re-read the exact encrypted bytes before replacing the last
+            // usable recovery checkpoint, and refuse swapped symlinks.
+            verifyStagedCiphertext(temporary, encoded);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -188,6 +192,50 @@ public final class RecoveryVault {
             if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
             if (encoded != null) Arrays.fill(encoded, (byte) 0);
         }
+    }
+
+    /**
+     * F1.34: verify staged encrypted bytes against those actually produced by
+     * AES-GCM, before the atomic rename. This covers truncated / tampered /
+     * vanished temporary files, and does not follow symlinks even if the
+     * symlink points to matching bytes.
+     *
+     * A process-local transaction lock still guards concurrent vault calls.
+     * This is not a power-loss proof or a defense against processes with
+     * filesystem write access racing the final rename.
+     */
+    private static void verifyStagedCiphertext(File stage, byte[] expected)
+            throws IOException {
+        if (stage == null || expected == null || expected.length < 33)
+            throw new IOException("Estágio criptografado inválido");
+        Path path = stage.toPath();
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(path) != expected.length)
+            throw new IOException("Estágio criptografado incompleto ou substituído");
+        byte[] chunk = new byte[8192];
+        int mismatch = 0;
+        int offset = 0;
+        try (InputStream in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
+            while (offset < expected.length) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Verificação do estágio interrompida");
+                int n = in.read(chunk, 0, Math.min(chunk.length,
+                    expected.length - offset));
+                if (n <= 0)
+                    throw new IOException("Leitura incompleta do estágio criptografado");
+                for (int i = 0; i < n; i++)
+                    mismatch |= chunk[i] ^ expected[offset + i];
+                offset += n;
+            }
+            if (in.read() != -1)
+                throw new IOException("Estágio criptografado cresceu durante a leitura");
+        } finally {
+            Arrays.fill(chunk, (byte) 0);
+        }
+        if (mismatch != 0
+                || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(path) != expected.length)
+            throw new IOException("Conteúdo do estágio criptografado foi alterado");
     }
 
     /** Pure read/verification: caller must get consent before modifying live EditPlan. */

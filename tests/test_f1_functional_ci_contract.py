@@ -43,6 +43,7 @@ ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
     "RecoveryVaultInstrumentedTest",
     "F133RecoverySpaceConcurrencyInstrumentedTest",
+    "F134RecoveryStageIntegrityInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -551,6 +552,30 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("vault().clear()", (ROOT / "app/src/androidTest/java/com/readroid/app/F132CheckpointCrashInstrumentedTest.java").read_text(encoding="utf-8"))
         self.assertIn("app/src/main/java/com/readroid/app/RecoveryStorageBudget.java", self.workflow)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F133RecoverySpaceConcurrencyInstrumentedTest.java", self.workflow)
+        self.assertNotIn("pm clear", tests)
+        self.assertNotIn("rm -rf", tests)
+
+    def test_f134_stage_integrity_check_rejects_corrupted_or_symlinked_stages(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F134RecoveryStageIntegrityInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("verifyStagedCiphertext(temporary, encoded);", vault)
+        self.assertIn("Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)", vault)
+        self.assertIn("Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)", vault)
+        self.assertIn("mismatch |= chunk[i] ^ expected[offset + i]", vault)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F134RecoveryStageIntegrityInstrumentedTest.java", self.workflow)
+        self.assertIn("com.readroid.app.F134RecoveryStageIntegrityInstrumentedTest",
+                      self.workflow)
+        for method in (
+            "f134TruncatedFsyncedStageCannotReplaceValidCiphertext",
+            "f134SameLengthBitFlipCannotReplaceValidCiphertext",
+            "f134DeletedTemporaryCannotEraseOldRecovery",
+            "f134SymlinkToMatchingBytesMustNeverBePromoted",
+            "f134ReaderCannotSeeCorruptedStageDuringConcurrentSave",
+        ):
+            self.assertIn(method, tests)
+        self.assertIn("Files.createSymbolicLink(stage.toPath(), replacement.toPath())", tests)
+        self.assertIn("threads.shutdownNow()", tests)
+        self.assertIn("vault.loadForSource(original)", tests)
         self.assertNotIn("pm clear", tests)
         self.assertNotIn("rm -rf", tests)
 
