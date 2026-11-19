@@ -18,6 +18,7 @@ PRODUCTION = {
     "ExplorerView.java",
     "EditPlan.java",
     "RecoveryVault.java",
+    "RecoveryStorageBudget.java",
     "RecoveryResumeGate.java",
     "ApkImportPreflight.java",
     "ApkImportStaging.java",
@@ -41,6 +42,7 @@ PRODUCTION = {
 ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
     "RecoveryVaultInstrumentedTest",
+    "F133RecoverySpaceConcurrencyInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -529,6 +531,28 @@ class FunctionalCIContract(unittest.TestCase):
             self.assertIn(path, self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
         self.assertNotIn("assembleQa", self.workflow)
+
+    def test_f133_encrypted_checkpoint_space_and_transaction_lock(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        budget = (ROOT / "app/src/main/java/com/readroid/app/RecoveryStorageBudget.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F133RecoverySpaceConcurrencyInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length)", vault)
+        self.assertEqual(2, vault.count(
+            "RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length)"))
+        self.assertIn("new StatFs(directory.getAbsolutePath()).getAvailableBytes()", budget)
+        self.assertIn("SAFETY_RESERVE", budget)
+        self.assertIn("AtomicLong free", tests)
+        self.assertIn("f133InsufficientRoomBeforeStagingCannotChangeOldCheckpoint", tests)
+        self.assertIn("f133StorageDropsAfterFsyncBeforeMoveOldVersionSurvives", tests)
+        self.assertIn("f133ConcurrentReadWaitsForFailedSaveAndGetsLastGoodPlan", tests)
+        self.assertIn("f133ConcurrentClearWaitsForFailedSaveThenRemovesOnlyVault", tests)
+        self.assertIn("f133RejectsUnknownSpaceAndImpossibleStageBudgets", tests)
+        self.assertIn("workers.shutdownNow()", tests)
+        self.assertIn("vault().clear()", (ROOT / "app/src/androidTest/java/com/readroid/app/F132CheckpointCrashInstrumentedTest.java").read_text(encoding="utf-8"))
+        self.assertIn("app/src/main/java/com/readroid/app/RecoveryStorageBudget.java", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F133RecoverySpaceConcurrencyInstrumentedTest.java", self.workflow)
+        self.assertNotIn("pm clear", tests)
+        self.assertNotIn("rm -rf", tests)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

@@ -59,6 +59,7 @@ public final class RecoveryVault {
     private final File storage;
     private final String alias;
     private final BeforeCommit beforeCommit;
+    private final RecoveryStorageBudget.FreeSpace freeSpace;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
@@ -76,11 +77,20 @@ public final class RecoveryVault {
 
     /** Test-only seam to simulate failure after durable write and before commit. */
     RecoveryVault(File storage, String alias, BeforeCommit beforeCommit) {
-        if (storage == null || alias == null || alias.isEmpty() || beforeCommit == null)
+        this(storage, alias, beforeCommit,
+            RecoveryStorageBudget.forDirectory(storage));
+    }
+
+    /** Deterministic free-space changes are injected only by instrumentation. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace) {
+        if (storage == null || alias == null || alias.isEmpty()
+                || beforeCommit == null || freeSpace == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
         this.beforeCommit = beforeCommit;
+        this.freeSpace = freeSpace;
     }
 
     public boolean hasCheckpoint() {
@@ -146,6 +156,9 @@ public final class RecoveryVault {
             encoded = buffer.array();
             if (!storage.isDirectory() && !storage.mkdirs())
                 throw new IOException("Não foi possível criar o diretório privado");
+            // Refuse low-space saves BEFORE staging new ciphertext. Never
+            // touch an already committed checkpoint on budget failure.
+            RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
             pruneAbandonedStages(storage, System.currentTimeMillis());
             temporary = File.createTempFile("checkpoint-", ".tmp", storage);
             try (FileOutputStream out = new FileOutputStream(temporary)) {
@@ -159,6 +172,9 @@ public final class RecoveryVault {
             beforeCommit.run(temporary);
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Gravação da recuperação interrompida");
+            // Recheck AFTER fsync and callback, just before atomic promotion:
+            // free space may have vanished while the encrypted file was saved.
+            RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
