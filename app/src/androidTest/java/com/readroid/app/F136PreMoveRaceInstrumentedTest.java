@@ -35,6 +35,14 @@ public final class F136PreMoveRaceInstrumentedTest {
     private static Map<String, String> revision(String v) {
         return Collections.singletonMap(PATH, v);
     }
+    private static long inode(File file) throws IOException {
+        try {
+            return Os.lstat(file.getAbsolutePath()).st_ino;
+        } catch (android.system.ErrnoException lookupFailure) {
+            throw new IOException("Unable to inspect isolated test inode",
+                lookupFailure);
+        }
+    }
     private static final class Fixture implements AutoCloseable {
         final File root, vaultDir, source, checkpoint;
         final String alias;
@@ -132,9 +140,9 @@ public final class F136PreMoveRaceInstrumentedTest {
             reject(f, stage -> {
                 File alternate = new File(f.root, "alternate.tmp");
                 byte[] bytes = Files.readAllBytes(stage.toPath());
-                long originalInode = Os.lstat(stage.getAbsolutePath()).st_ino;
+                long originalInode = inode(stage);
                 Files.write(alternate.toPath(), bytes);
-                long replacementInode = Os.lstat(alternate.getAbsolutePath()).st_ino;
+                long replacementInode = inode(alternate);
                 assertNotEquals("Different files must have distinct inodes",
                     originalInode, replacementInode);
                 Files.move(alternate.toPath(), stage.toPath(),
