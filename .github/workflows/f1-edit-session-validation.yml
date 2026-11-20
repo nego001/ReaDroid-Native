@@ -1,0 +1,149 @@
+name: F1 APK editor session integrity
+# Functional-only CI for draft PRs targeting the frozen P7 visual baseline.
+# Build/execute tests on emulators, but do NOT assemble/upload QA installers.
+on:
+  pull_request:
+    branches: [feature/p7-negrecodroid-visual-foundation]
+    paths:
+      # Editing, import, archive reconstruction, recovery and export must
+      # trigger this CI even if modified WITHOUT any ExplorerView change.
+      - 'app/src/main/java/com/readroid/app/MainActivity.java'
+      - 'app/src/main/java/com/readroid/app/ExplorerView.java'
+      - 'app/src/main/java/com/readroid/app/EditPlan.java'
+      - 'app/src/main/java/com/readroid/app/RecoveryVault.java'
+      - 'app/src/main/java/com/readroid/app/RecoveryStorageBudget.java'
+      - 'app/src/main/java/com/readroid/app/RecoveryResumeGate.java'
+      - 'app/src/main/java/com/readroid/app/ApkImportPreflight.java'
+      - 'app/src/main/java/com/readroid/app/ApkImportStaging.java'
+      - 'app/src/main/java/com/readroid/app/ImportWorkerLane.java'
+      - 'app/src/main/java/com/readroid/app/ImportActivityScope.java'
+      - 'app/src/main/java/com/readroid/app/ImportCrashJanitor.java'
+      - 'app/src/main/java/com/readroid/app/ApkZipIntegrity.java'
+      - 'app/src/main/java/com/readroid/app/ApkExplorer.java'
+      - 'app/src/main/java/com/readroid/app/ApkDiskIndex.java'
+      - 'app/src/main/java/com/readroid/app/ImportCacheAudit.java'
+      - 'app/src/main/java/com/readroid/app/ApkCacheAdmission.java'
+      - 'app/src/main/java/com/readroid/app/SavedProjectResume.java'
+      - 'app/src/main/java/com/readroid/app/ApkRebuilder.java'
+      - 'app/src/main/java/com/readroid/app/RebuildTempJanitor.java'
+      - 'app/src/main/java/com/readroid/app/RebuildStorageBudget.java'
+      - 'app/src/main/java/com/readroid/app/ApkIntegrity.java'
+      - 'app/src/main/java/com/readroid/app/RebuildVerifier.java'
+      - 'app/src/main/java/com/readroid/app/SafExportVerifier.java'
+      - 'app/src/main/java/com/readroid/app/ExportSessionGuard.java'
+      - 'app/src/androidTest/java/com/readroid/app/EditPlanStateInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/RecoveryVaultInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F133RecoverySpaceConcurrencyInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F134RecoveryStageIntegrityInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/RecoveryResumeGateInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ProjectRecreationInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkImportPreflightInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkImportStagingInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ImportConcurrencyInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ImportWorkerLaneInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ImportActivityScopeInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ImportCrashJanitorInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkZipIntegrityInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkCacheAdmissionInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/SavedProjectResumeInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F128RealSafGrantInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F131RepeatedColdRestartInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F129RealProviderInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F130ProviderDeathInstrumentedTest.java'
+      - 'f130fixture/build.gradle.kts'
+      - 'f130fixture/src/main/AndroidManifest.xml'
+      - 'f130fixture/src/main/java/com/readroid/f130fixture/CrashProvider.java'
+      - 'settings.gradle.kts'
+      - 'app/src/androidTest/java/com/readroid/app/F129FaultyContentProvider.java'
+      - 'app/src/androidTest/AndroidManifest.xml'
+      - 'app/src/debug/java/com/readroid/app/F132CheckpointHarnessActivity.java'
+      - 'app/src/debug/java/com/readroid/app/F135VerifierCrashHarnessActivity.java'
+      - 'app/src/androidTest/java/com/readroid/app/F135StageVerificationInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F136PreMoveRaceInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F137DescriptorPinnedStageInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F135VerifierCrashInstrumentedTest.java'
+      - 'tests/f135_verifier_process_death.sh'
+      - 'app/src/androidTest/java/com/readroid/app/F132CheckpointCrashInstrumentedTest.java'
+      - 'tests/f132_checkpoint_process_death.sh'
+      - 'app/src/debug/AndroidManifest.xml'
+      - 'app/src/debug/java/com/readroid/app/F130CrashHarnessActivity.java'
+      - 'tests/f130_external_provider_death.sh'
+      - 'app/src/androidTest/java/com/readroid/app/ImportCacheAuditInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkRebuilderInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/RebuildTempJanitorInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/RebuildStorageBudgetInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/SafExportVerifierInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ExportSessionGuardInstrumentedTest.java'
+      - 'tests/test_f1_functional_ci_contract.py'
+      - 'tests/f127_android_process_death.sh'
+      - 'tests/f128_real_saf_grant.sh'
+      - 'app/src/androidTest/java/com/readroid/app/F131RepeatedColdRestartInstrumentedTest.java'
+      - 'app/build.gradle.kts'
+      - '.github/workflows/f1-edit-session-validation.yml'
+  workflow_dispatch:
+concurrency:
+  group: f1-edit-session-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  functional-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Guard functional CI triggers and required suites
+        run: python3 -m unittest discover -s tests -p 'test_f1_functional_ci_contract.py' -v
+      - name: Enable KVM when available
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Verify import, stale-editor isolation, recovery, rebuild and SAF export
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 3072M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
+          script: |
+            set -eu
+            # Separate disposable Android application: own UID and remote provider.
+            gradle --no-daemon :f130fixture:assembleDebug
+            adb install -r f130fixture/build/outputs/apk/debug/f130fixture-debug.apk
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.F133RecoverySpaceConcurrencyInstrumentedTest,com.readroid.app.F134RecoveryStageIntegrityInstrumentedTest,com.readroid.app.F135StageVerificationInstrumentedTest,com.readroid.app.F136PreMoveRaceInstrumentedTest,com.readroid.app.F137DescriptorPinnedStageInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ImportWorkerLaneInstrumentedTest,com.readroid.app.ImportActivityScopeInstrumentedTest,com.readroid.app.ImportCrashJanitorInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.F129RealProviderInstrumentedTest,com.readroid.app.F130ProviderDeathInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
+            echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
+            # F1.27: host-driven real app process termination; run AFTER
+            # the normal in-process instrumentation has finished.
+            bash tests/f127_android_process_death.sh
+            echo "F127_REAL_FORCE_STOP_PASS api=${{ matrix.api }}"
+            # F1.28: real system DocumentsUI read grant + cold-process revocation.
+            # Independent test sessions prevent an in-process mock result.
+            bash tests/f128_real_saf_grant.sh
+            echo "F128_REAL_SAF_PERMISSION_PASS api=${{ matrix.api }}"
+            # F1.30: deliberately terminate the fixture provider from ADB
+            # AFTER all instrumentation sessions have exited.
+            bash tests/f130_external_provider_death.sh
+            echo "F130_EXTERNAL_PROVIDER_DEATH_PASS api=${{ matrix.api }}"
+            # F1.32: real process kill after a synced encrypted stage and
+            # before RecoveryVault atomically replaces a prior checkpoint.
+            bash tests/f132_checkpoint_process_death.sh
+            echo "F132_CHECKPOINT_ATOMIC_CRASH_PASS api=${{ matrix.api }}"
+            # F1.35: host-driven process termination while the AES-GCM
+            # stage integrity verifier has bytes left to read.
+            bash tests/f135_verifier_process_death.sh
+            echo "F135_VERIFIER_PROCESS_DEATH_PASS api=${{ matrix.api }}"

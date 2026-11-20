@@ -142,6 +142,108 @@ public final class ApkRebuilderInstrumentedTest {
     }
 
 
+    /** A path rejected by admission must also be rejected by direct rebuild. */
+    private void assertDirectRebuildRejectsPath(String untrustedPath)
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(original.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("binary manifest placeholder"));
+                add(out, "classes.dex", new byte[]{100, 101, 120, 10});
+                add(out, "assets/config.json", utf8("{\"safe\":true}"));
+                add(out, untrustedPath, utf8("untrusted path"));
+            }
+            byte[] source = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("previous export must remain intact");
+            Files.write(output.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"safe\":false}");
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot());
+                fail("Direct rebuild must reject unsafe path: " + untrustedPath);
+            } catch (IOException expected) {
+                assertNotNull(expected.getMessage());
+            }
+            assertArrayEquals(previous, Files.readAllBytes(output.toPath()));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void directRebuildRejectsDotSegmentsAndRepeatedSeparators()
+            throws Exception {
+        assertDirectRebuildRejectsPath("assets/./payload.bin");
+        assertDirectRebuildRejectsPath("assets//payload.bin");
+    }
+
+    @Test public void directRebuildRejectsOverlongAndTooDeepPaths()
+            throws Exception {
+        StringBuilder longName = new StringBuilder("assets/");
+        for (int i = 0; i < 4200; i++) longName.append('x');
+        longName.append(".txt");
+        assertDirectRebuildRejectsPath(longName.toString());
+
+        StringBuilder deepPath = new StringBuilder();
+        for (int i = 0; i < 130; i++) deepPath.append("dir/");
+        deepPath.append("payload.bin");
+        assertDirectRebuildRejectsPath(deepPath.toString());
+    }
+
+    @Test public void directVerifierRejectsInvalidPathDespiteValidEditedContent()
+            throws Exception {
+        File output = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(output.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("manifest"));
+                add(out, "classes.dex", utf8("dex"));
+                add(out, "assets/config.json", utf8("{\"new\":1}"));
+                add(out, "assets/./danger.bin", utf8("extra"));
+            }
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":1}");
+            try {
+                RebuildVerifier.verify(output, plan.snapshot());
+                fail("Verifier cannot claim success with unsafe ZIP path");
+            } catch (IOException expected) {
+                assertNotNull(expected.getMessage());
+            }
+        } finally {
+            output.delete();
+        }
+    }
+
+    @Test public void legitimateDoubleDotsInsideBasenameRemainValid()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(
+                    Files.newOutputStream(original.toPath()))) {
+                add(out, "AndroidManifest.xml", utf8("manifest"));
+                add(out, "classes.dex", utf8("dex"));
+                add(out, "assets/config.json", utf8("{\"old\":1}"));
+                add(out, "assets/a..b.txt", utf8("dots within basename"));
+            }
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":1}");
+            ApkRebuilder.rebuild(original, output, plan.snapshot());
+            assertTrue(RebuildVerifier.verify(output, plan.snapshot())
+                .contains("1 alteração"));
+            try (ZipFile zip = new ZipFile(output)) {
+                assertEquals("dots within basename",
+                    new String(entryBytes(zip, "assets/a..b.txt"), StandardCharsets.UTF_8));
+            }
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
     @Test public void comparisonDetectsTamperedUntouchedEntryEvenWhenEditLooksCorrect()
             throws Exception {
         File original = file(".apk");
@@ -291,6 +393,300 @@ public final class ApkRebuilderInstrumentedTest {
             original.delete();
             output.delete();
         }
+    }
+
+
+    @Test public void damagedStagingZipNeverOverwritesPreviousExport()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] sourceBytes = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("valid previous export");
+            Files.write(target.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":true}");
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(),
+                    staged -> Files.write(staged.toPath(), utf8("broken staged ZIP")));
+                fail("Corrupted staging archive must be rejected before atomic move");
+            } catch (IOException expected) {
+                assertNotNull(expected.getMessage());
+            }
+            assertArrayEquals(previous, Files.readAllBytes(target.toPath()));
+            assertArrayEquals(sourceBytes, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void validButTamperedStagingMemberCannotReplacePreviousExport()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] sourceBytes = Files.readAllBytes(original.toPath());
+            byte[] previous = utf8("validated previous result");
+            Files.write(target.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"edited\":true}");
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(), staged -> {
+                    File alternate = File.createTempFile("f110_tamper_", ".zip",
+                        staged.getParentFile());
+                    try {
+                        try (ZipFile input = new ZipFile(staged);
+                             ZipOutputStream out = new ZipOutputStream(
+                                Files.newOutputStream(alternate.toPath()))) {
+                            java.util.Enumeration<? extends ZipEntry> cursor = input.entries();
+                            while (cursor.hasMoreElements()) {
+                                ZipEntry entry = cursor.nextElement();
+                                if (entry.isDirectory()) {
+                                    out.putNextEntry(new ZipEntry(entry.getName()));
+                                    out.closeEntry();
+                                    continue;
+                                }
+                                byte[] payload = entryBytes(input, entry.getName());
+                                if ("assets/original.bin".equals(entry.getName()))
+                                    payload[0] ^= 1;
+                                add(out, entry.getName(), payload);
+                            }
+                        }
+                        Files.copy(alternate.toPath(), staged.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    } finally { alternate.delete(); }
+                });
+                fail("A valid ZIP with an altered untouched member must fail");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("não editado"));
+            }
+            assertArrayEquals(previous, Files.readAllBytes(target.toPath()));
+            assertArrayEquals(sourceBytes, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void canceledAtStagedVerificationBoundaryKeepsPreviousResult()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] previous = utf8("previous result remains available");
+            Files.write(target.toPath(), previous);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"edited\":true}");
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(),
+                    staged -> Thread.currentThread().interrupt());
+                fail("Cancellation after staging must block publication");
+            } catch (java.io.InterruptedIOException expected) {
+                assertNotNull(expected.getMessage());
+            } finally { Thread.interrupted(); }
+            assertArrayEquals(previous, Files.readAllBytes(target.toPath()));
+        } finally {
+            Thread.interrupted();
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void verifiedStagingAtomicallyReplacesPriorExport()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] sourceBytes = Files.readAllBytes(original.toPath());
+            Files.write(target.toPath(), utf8("old export"));
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"committed\":true}");
+            ApkRebuilder.rebuild(original, target, plan.snapshot());
+            assertTrue(RebuildVerifier.verifyAgainstOriginal(original, target,
+                plan.snapshot()).contains("arquivo(s) não editado(s)"));
+            assertArrayEquals(sourceBytes, Files.readAllBytes(original.toPath()));
+            try (ZipFile zip = new ZipFile(target)) {
+                assertEquals("{\"committed\":true}", new String(
+                    entryBytes(zip, "assets/config.json"), StandardCharsets.UTF_8));
+            }
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void lowSpaceAfterStagingPreservesOldExportAndOriginal()
+            throws Exception {
+        File original = file(".apk");
+        File target = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] before = Files.readAllBytes(original.toPath());
+            byte[] prior = utf8("previous signed-off export must survive");
+            Files.write(target.toPath(), prior);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"edited\":1}");
+            java.util.concurrent.atomic.AtomicInteger reads =
+                new java.util.concurrent.atomic.AtomicInteger();
+            try {
+                ApkRebuilder.rebuild(original, target, plan.snapshot(), staged -> {},
+                    () -> reads.incrementAndGet() >= 4
+                        ? 32L * 1024 * 1024
+                        : 512L * 1024 * 1024);
+                fail("Low storage after staging cannot commit");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("Espaço insuficiente"));
+            }
+            assertArrayEquals(prior, Files.readAllBytes(target.toPath()));
+            assertArrayEquals(before, Files.readAllBytes(original.toPath()));
+            assertTrue("Space probes must happen before and after staging",
+                reads.get() >= 4);
+        } finally {
+            original.delete();
+            target.delete();
+        }
+    }
+
+    @Test public void f115InvalidationDuringZipCopyAbortsAndPreservesPreviousExport()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] source = Files.readAllBytes(original.toPath());
+            byte[] prior = utf8("previous completed export");
+            Files.write(output.toPath(), prior);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"new\":true}");
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token token = guard.begin();
+            java.util.concurrent.atomic.AtomicInteger chunks =
+                new java.util.concurrent.atomic.AtomicInteger();
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot(),
+                    staged -> {}, () -> 512L * 1024 * 1024, token,
+                    (path, total) -> {
+                        chunks.incrementAndGet();
+                        guard.invalidate();
+                    });
+                fail("Stale project must never replace the prior export");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertTrue("Must have begun copying ZIP content", chunks.get() > 0);
+            assertArrayEquals(prior, Files.readAllBytes(output.toPath()));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115CancellationAtVerificationBoundaryPreservesPriorExport()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] prior = utf8("prior output");
+            Files.write(output.toPath(), prior);
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{}");
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token token = guard.begin();
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot(),
+                    staged -> guard.invalidate(), () -> 512L * 1024 * 1024,
+                    token, (path, total) -> {});
+                fail("Cancelled staging must never reach atomic commit");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertArrayEquals(prior, Files.readAllBytes(output.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115AlreadyRevokedTokenNeverCreatesResult()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            assertTrue(output.delete());
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token stale = guard.begin();
+            guard.invalidate();
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{}");
+            try {
+                ApkRebuilder.rebuild(original, output, plan.snapshot(), stale);
+                fail("Stale export cannot start");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            assertFalse(output.exists());
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115CurrentTokenCanBuildAndVerifyValidZip()
+            throws Exception {
+        File original = file(".apk");
+        File output = file(".apk");
+        try {
+            fixture(original, false);
+            byte[] source = Files.readAllBytes(original.toPath());
+            EditPlan plan = new EditPlan();
+            plan.addTextReplacement("assets/config.json", "{\"ok\":true}");
+            ExportSessionGuard.Token active = new ExportSessionGuard().begin();
+            ApkRebuilder.rebuild(original, output, plan.snapshot(), active);
+            assertTrue(RebuildVerifier.verifyAgainstOriginal(
+                original, output, plan.snapshot(), active).contains("conferido(s)"));
+            assertArrayEquals(source, Files.readAllBytes(original.toPath()));
+        } finally {
+            original.delete();
+            output.delete();
+        }
+    }
+
+    @Test public void f115RevokedTokenRejectsShaCrcAndRebuildVerifier()
+            throws Exception {
+        File original = file(".apk");
+        try {
+            fixture(original, false);
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token stale = guard.begin();
+            guard.invalidate();
+            try {
+                ApkIntegrity.sha256(original, stale);
+                fail("Revoked SHA must abort");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            try {
+                ApkZipIntegrity.verify(original, stale);
+                fail("Revoked CRC audit must abort");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+            try {
+                RebuildVerifier.verify(original,
+                    Collections.singletonMap("assets/config.json", "{}"), stale);
+                fail("Revoked verifier must abort");
+            } catch (java.io.InterruptedIOException expected) {
+                assertTrue(expected.getMessage().contains("cancelada"));
+            }
+        } finally { original.delete(); }
     }
 
     @Test public void interruptedRebuildKeepsPriorExportAndSource() throws Exception {

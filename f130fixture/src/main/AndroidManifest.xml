@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="F130 CI fixture" android:allowBackup="false">
+        <!-- Independent app package/UID: its crash cannot kill instrumentation. -->
+        <provider android:name=".CrashProvider"
+            android:authorities="com.readroid.f130fixture.provider"
+            android:process=":provider"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

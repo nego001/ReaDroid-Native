@@ -44,3 +44,5 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_p7_capture_runner.py' -v
       - name: Protect major-only APK generation policy
         run: python3 -m unittest discover -s tests -p 'test_major_apk_policy.py' -v
+      - name: Guard F1 functional CI coverage and no release publishing
+        run: python3 -m unittest discover -s tests -p 'test_f1_functional_ci_contract.py' -v

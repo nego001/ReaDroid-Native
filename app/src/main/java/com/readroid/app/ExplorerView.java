@@ -43,6 +43,56 @@ public final class ExplorerView {
     private java.io.File indexFile;
     private int indexPageOffset = 0;
     private final EditPlan editPlan = new EditPlan();
+    // Every accepted project binding invalidates edits opened against the
+    // previous APK, including dialogs and in-flight background reads.
+    private long projectGeneration;
+
+    static final class EditSession {
+        final java.io.File source;
+        final long generation;
+
+        EditSession(java.io.File source, long generation) {
+            this.source = source;
+            this.generation = generation;
+        }
+    }
+
+    EditSession captureEditSession() {
+        return new EditSession(apkFile, projectGeneration);
+    }
+
+    boolean isCurrentEditSession(EditSession session) {
+        return session != null && session.source != null
+            && session.generation == projectGeneration
+            && session.source == apkFile && session.source.isFile();
+    }
+
+    /** Called only on UI thread. Never show results from an obsolete APK. */
+    boolean showForCurrentSession(EditSession session, Runnable show) {
+        if (!isCurrentEditSession(session)
+                || activity.isFinishing() || activity.isDestroyed()) return false;
+        show.run();
+        return true;
+    }
+
+    EditPlan.EditResult applyTextEditForSession(EditSession session,
+            String path, String original, String replacement) {
+        if (!isCurrentEditSession(session))
+            throw new IllegalStateException(
+                "Edição cancelada: outro APK foi aberto. Abra o arquivo no projeto atual.");
+        return editPlan.applyTextEdit(path, original, replacement);
+    }
+
+    /** Restores only into the original, still-open project session. */
+    void restoreEditPlanForSession(EditSession session,
+            java.util.Map<String, String> changes) {
+        if (!isCurrentEditSession(session))
+            throw new IllegalStateException(
+                "Recuperação cancelada: outro APK foi aberto.");
+        editPlan.replaceAllValidated(changes);
+        render();
+    }
+
     private static final String[] CATEGORIES = {
         "Todos", "Smali", "Recursos", "Imagens", "XML",
         "Código DEX", "Bibliotecas", "Assets", "Assinaturas/metadados",
@@ -283,6 +333,9 @@ public final class ExplorerView {
     }
 
     public void setFiles(JSONArray array, java.io.File apkFile) {
+        // Called when a candidate APK is accepted (or when the workspace is
+        // cleared). Never let an older edit dialog mutate this new binding.
+        projectGeneration++;
         this.apkFile = apkFile;
         this.indexFile = null;
         indexUnavailable = false; // A new APK starts a fresh browsing session.
@@ -631,22 +684,25 @@ public final class ExplorerView {
 
     private void inspectEntry(String path) {
         if (apkFile == null || !apkFile.isFile()) return;
-        final java.io.File source = apkFile;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String details;
             try { details = ApkEntryInspector.inspect(source, path); }
             catch (Exception error) { details = "Inspeção indisponível: " + error.getMessage(); }
             final String message = details;
-            activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Propriedades do arquivo")
-                .setMessage(message)
-                .setPositiveButton("Fechar", null)
-                .setNeutralButton("Copiar dados", (dialog, which) -> {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
-                        activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null) clipboard.setPrimaryClip(
-                        android.content.ClipData.newPlainText("Dados do arquivo", message));
-                }).show());
+            activity.runOnUiThread(() -> showForCurrentSession(session, () ->
+                new android.app.AlertDialog.Builder(activity)
+                    .setTitle("Propriedades do arquivo")
+                    .setMessage(message)
+                    .setPositiveButton("Fechar", null)
+                    .setNeutralButton("Copiar dados", (dialog, which) -> {
+                        android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) activity.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE);
+                        if (clipboard != null) clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText("Dados do arquivo", message));
+                    }).show()));
         }).start();
     }
 
@@ -655,16 +711,24 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("Edição textual ainda não suportada para este formato.").setPositiveButton("OK", null).show();
             return;
         }
-        if (apkFile == null || !apkFile.exists()) return;
-        final java.io.File source = apkFile;
+        if (apkFile == null || !apkFile.isFile()) return;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String original;
             try { original = ApkPreview.readText(source, path); }
             catch (Exception error) {
-                activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show());
+                activity.runOnUiThread(() -> showForCurrentSession(session, () ->
+                    new android.app.AlertDialog.Builder(activity)
+                        .setMessage(error.getMessage())
+                        .setPositiveButton("OK", null).show()));
                 return;
             }
             activity.runOnUiThread(() -> {
+                // The import might have committed while the worker read ZIP.
+                // In that case never present an editor for the old project.
+                if (!isCurrentEditSession(session)
+                        || activity.isFinishing() || activity.isDestroyed()) return;
                 EditText editor = new EditText(activity);
                 editor.setText(editPlan.contains(path) ? editPlan.get(path) : original);
                 editor.setTextColor(NegrescoTheme.TEXT);
@@ -687,8 +751,10 @@ public final class ExplorerView {
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
                         try {
                             String replacement = editor.getText().toString();
+                            // Re-check when saving: a new APK might have
+                            // opened while the old edit dialog was visible.
                             EditPlan.EditResult result =
-                                editPlan.applyTextEdit(path, original, replacement);
+                                applyTextEditForSession(session, path, original, replacement);
                             render();
                             String title;
                             String description;
@@ -727,13 +793,14 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("APK temporário indisponível. Analise o arquivo novamente.").setPositiveButton("OK", null).show();
             return;
         }
-        final java.io.File source = apkFile;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String value;
             try { value = ApkPreview.readText(source, path); }
             catch (Exception error) { value = "Não foi possível visualizar: " + error.getMessage(); }
             final String text = value;
-            activity.runOnUiThread(() -> {
+            activity.runOnUiThread(() -> showForCurrentSession(session, () -> {
                 ScrollView scroll = new ScrollView(activity);
                 TextView content = new TextView(activity);
                 content.setText(text);
@@ -745,7 +812,7 @@ public final class ExplorerView {
                 content.setPadding(24, 20, 24, 20);
                 scroll.addView(content);
                 new android.app.AlertDialog.Builder(activity).setTitle(path).setView(scroll).setPositiveButton("Fechar", null).show();
-            });
+            }));
         }).start();
     }
 

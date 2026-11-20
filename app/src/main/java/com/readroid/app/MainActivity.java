@@ -22,6 +22,12 @@ import java.util.zip.ZipFile;
 
 public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    // F1.23: SAF streams can block inside an external DocumentsProvider.
+    // Keep imports off the shared export/recovery executor and bound them.
+    private final ImportWorkerLane importWorkers = new ImportWorkerLane();
+    // F1.25: owns ONLY uncommitted import staging in this Activity instance.
+    // A new Activity after rotation receives a separate ownership scope.
+    private ImportActivityScope importScope;
     private TextView output;
     private Button share;
     private Button ai;
@@ -34,6 +40,13 @@ public class MainActivity extends Activity {
     private Button localIdentity;
     private Button signingTest;
     private Button apkAdvisor;
+    // Exists only in this app process. Unlike Bundle URIs, it is not restored
+    // after Android terminates and recreates the process.
+    private static final String PROCESS_EPOCH = java.util.UUID.randomUUID().toString();
+    // F1.26: a rotation is NOT a process restart. Sweep abandoned SAF partials
+    // only on the first Activity creation of a fresh app process.
+    private static final java.util.concurrent.atomic.AtomicBoolean COLD_IMPORT_SWEEP =
+        new java.util.concurrent.atomic.AtomicBoolean();
     private static final int REQUEST_EXPORT_APK = 2;
     private static final int REQUEST_COMPARE_APK = 3;
     private static final int REQUEST_EXPORT_APPEARANCE = 41;
@@ -80,6 +93,29 @@ public class MainActivity extends Activity {
     /** A replacement is staged independently until its analysis succeeds. */
     private Uri pendingApkUri;
     private volatile int analysisSequence = 0;
+    // Separate atomic generations: a newer import cancels its own stale worker
+    // without accidentally revoking unrelated UI/export state.
+    private final ExportSessionGuard importSessions = new ExportSessionGuard();
+    private final ExportSessionGuard exportSessions = new ExportSessionGuard();
+    // An ACTION_CREATE_DOCUMENT callback must never attach to a newer APK.
+    private PendingExport pendingExport;
+
+    private static final class PendingExport {
+        final File source;
+        final Uri importedDocument;
+        final String expectedSha256;
+        final Map<String, String> changes;
+        final ExportSessionGuard.Token token;
+
+        PendingExport(File source, Uri importedDocument, String expectedSha256,
+                Map<String, String> changes, ExportSessionGuard.Token token) {
+            this.source = source;
+            this.importedDocument = importedDocument;
+            this.expectedSha256 = expectedSha256;
+            this.changes = Collections.unmodifiableMap(new LinkedHashMap<>(changes));
+            this.token = token;
+        }
+    }
 
     /** Keep worker output separate from the Activity's current project. */
     private static final class AnalyzedApk {
@@ -176,6 +212,13 @@ public class MainActivity extends Activity {
             ? android.R.style.Theme_Material_Light_NoActionBar
             : android.R.style.Theme_Material_NoActionBar);
         super.onCreate(state);
+        if (COLD_IMPORT_SWEEP.compareAndSet(false, true)) {
+            ImportCrashJanitor.Report residues = ImportCrashJanitor.sweep(getCacheDir());
+            android.util.Log.i("ReaDroidImportCrash",
+                "pendingRemoved=" + residues.deleted + " errors=" + residues.errors
+                + " incomplete=" + residues.incomplete);
+        }
+        importScope = new ImportActivityScope(getCacheDir());
         if (state != null && state.containsKey("p7_icon_export")) {
             int[] selected = state.getIntArray("p7_icon_export");
             if (selected != null && selected.length == 3) {
@@ -1047,34 +1090,73 @@ public class MainActivity extends Activity {
                 return;
             }
             final File source = currentApk;
+            final Uri importedDocument = selectedApkUri;
+            final int projectGeneration = analysisSequence;
+            final String reportHash = report.optString("sha256", "");
+            final ExplorerView.EditSession recoverySession =
+                explorerView.captureEditSession();
             executor.execute(() -> {
                 try {
+                    // F1.18: do not trust a retained cache file or a restored
+                    // Activity state without SHA and ZIP content verification.
+                    final RecoveryResumeGate.Proof proof =
+                        RecoveryResumeGate.attest(source, reportHash);
                     final Map<String, String> changes =
                         new RecoveryVault(this).loadForSource(source);
+                    RecoveryResumeGate.revalidate(proof, source, reportHash);
                     runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed() || source != currentApk) return;
+                        if (!isRecoveryTargetCurrent(source, importedDocument,
+                                projectGeneration, reportHash, recoverySession))
+                            return;
                         new android.app.AlertDialog.Builder(this)
                             .setTitle("Recuperar " + changes.size() + " alterações?")
                             .setMessage("A cópia foi autenticada e pertence a este APK "
-                                + "(SHA-256 conferido). Recuperar substituirá todas "
-                                + "as alterações atualmente pendentes; o APK original "
-                                + "não será modificado.")
+                                + "(SHA-256 e conteúdo ZIP conferidos). Recuperar substituirá "
+                                + "todas as alterações pendentes; o APK original não será modificado.")
                             .setNegativeButton("Cancelar", null)
                             .setPositiveButton("Substituir plano", (dialog, which) -> {
-                                if (source != currentApk) return;
-                                EditPlan plan = explorerView.getEditPlan();
-                                plan.clear();
-                                for (Map.Entry<String, String> edit : changes.entrySet())
-                                    plan.addTextReplacement(edit.getKey(), edit.getValue());
-                                explorerView.refresh();
-                                new android.app.AlertDialog.Builder(this)
-                                    .setMessage("Plano recuperado. Revise as alterações antes "
-                                        + "de exportar um APK modificado.")
-                                    .setPositiveButton("OK", null).show();
+                                if (!isRecoveryTargetCurrent(source, importedDocument,
+                                        projectGeneration, reportHash, recoverySession)) {
+                                    showRecoveryError("Recuperação cancelada",
+                                        new IOException("O projeto ou as edições mudaram."));
+                                    return;
+                                }
+                                // Consent is not enough: hash and ZIP may have
+                                // changed while this confirmation was open.
+                                executor.execute(() -> {
+                                    try {
+                                        RecoveryResumeGate.revalidate(proof, source, reportHash);
+                                        runOnUiThread(() -> {
+                                            if (!isRecoveryTargetCurrent(source, importedDocument,
+                                                    projectGeneration, reportHash, recoverySession))
+                                                return;
+                                            try {
+                                                explorerView.restoreEditPlanForSession(
+                                                    recoverySession, changes);
+                                                new android.app.AlertDialog.Builder(this)
+                                                    .setMessage("Plano recuperado. Revise as alterações "
+                                                        + "antes de exportar um APK modificado.")
+                                                    .setPositiveButton("OK", null).show();
+                                            } catch (RuntimeException invalid) {
+                                                showRecoveryError("Recuperação cancelada", invalid);
+                                            }
+                                        });
+                                    } catch (Exception error) {
+                                        runOnUiThread(() -> {
+                                            if (isRecoveryTargetCurrent(source, importedDocument,
+                                                    projectGeneration, reportHash, recoverySession))
+                                                showRecoveryError("Recuperação bloqueada", error);
+                                        });
+                                    }
+                                });
                             }).show();
                     });
                 } catch (Exception error) {
-                    showRecoveryError("Recuperação bloqueada", error);
+                    runOnUiThread(() -> {
+                        if (isRecoveryTargetCurrent(source, importedDocument,
+                                projectGeneration, reportHash, recoverySession))
+                            showRecoveryError("Recuperação bloqueada", error);
+                    });
                 }
             });
         });
@@ -1185,11 +1267,34 @@ public class MainActivity extends Activity {
                 new android.app.AlertDialog.Builder(this).setMessage("Primeiro registre uma alteração textual no explorador.").setPositiveButton("OK", null).show();
                 return;
             }
+            // The dialog itself can outlive its originating project.
+            final File sourceAtPrompt = currentApk;
+            final Uri documentAtPrompt = selectedApkUri;
+            final String hashAtPrompt = report == null
+                ? "" : report.optString("sha256", "");
+            final Map<String, String> editsAtPrompt =
+                explorerView.getEditPlan().snapshot();
+            final int analysisAtPrompt = analysisSequence;
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Reconstrução experimental")
                 .setMessage("O resultado NÃO estará assinado e pode não instalar ou funcionar. O APK original será preservado. Continuar?")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Escolher destino", (dialog, which) -> {
+                    if (isFinishing() || isDestroyed()
+                            || analysisAtPrompt != analysisSequence
+                            || sourceAtPrompt != currentApk
+                            || !Objects.equals(documentAtPrompt, selectedApkUri)) {
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Exportação cancelada")
+                            .setMessage("O projeto mudou enquanto a confirmação estava aberta. "
+                                + "Inicie uma nova exportação no projeto atual.")
+                            .setPositiveButton("OK", null).show();
+                        return;
+                    }
+                    // Freeze the originally-confirmed project and edit snapshot
+                    // before launching the external Android document picker.
+                    pendingExport = new PendingExport(sourceAtPrompt, documentAtPrompt,
+                        hashAtPrompt, editsAtPrompt, exportSessions.begin());
                     Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     create.addCategory(Intent.CATEGORY_OPENABLE);
                     create.setType("application/vnd.android.package-archive");
@@ -1272,15 +1377,47 @@ public class MainActivity extends Activity {
         showSection(state == null ? 0 : state.getInt("active_studio_section", 0));
         boolean retained = restoreWorkspace();
         if (state != null) {
-            selectedApkUri = state.getParcelable("selected_apk_uri");
-            Uri interruptedImport = state.getParcelable("pending_apk_uri");
-            // A rotation must not lose the user's already-authorized request
-            // or replace the retained old project with an unfinished import.
-            if (interruptedImport != null) analyzeSelectedApk(interruptedImport);
-            else if (!retained && selectedApkUri != null)
-                analyzeSelectedApk(selectedApkUri);
+            Uri accepted = state.getParcelable("selected_apk_uri");
+            Uri interrupted = state.getParcelable("pending_apk_uri");
+            // F1.19: saved Bundle URIs are not read permissions. On process
+            // death replay ONLY a previously accepted, persistently granted
+            // document. Never replay an unfinished import as a new project.
+            boolean sameProcessRecreation =
+                PROCESS_EPOCH.equals(state.getString("f119_process_epoch"));
+            // F1.20: permission and URI are insufficient to prove the
+            // previously accepted APK has the same bytes after process death.
+            SavedProjectResume.Decision resume = SavedProjectResume.decide(
+                accepted, interrupted, retained, sameProcessRecreation,
+                state.getString("f120_accepted_sha256"),
+                uri -> P7ProjectHistory.hasPermission(this, uri));
+            selectedApkUri = resume.acceptedReference;
+            if (resume.reimport != null)
+                analyzeSelectedApk(resume.reimport, resume.expectedSha256);
+            else if (resume.requiresReselection && !retained) {
+                output.setText("A identidade ou o acesso ao APK anterior não "
+                    + "pôde ser confirmado. Abra novamente o arquivo pelo "
+                    + "seletor Android; nenhuma edição foi restaurada automaticamente.");
+                apkSummary.setText("REABRIR APK PARA CONTINUAR");
+            }
         }
         refreshRecentProjects();
+        // F1.16: a process death can leave staging behind. Prune only exact,
+        // sufficiently old export-temp names from our private cache, off UI.
+        // Never touch imported readroid_ APKs or active tracked files.
+        final File privateCache = getCacheDir();
+        executor.execute(() -> {
+            RebuildTempJanitor.sweep(privateCache);
+            // F1.17 is strictly read-only. It cannot infer that a cache APK
+            // without a SQLite index is orphaned, nor auto-delete it.
+            ImportCacheAudit.Report audit = ImportCacheAudit.inspect(
+                privateCache, currentApk, currentIndex);
+            android.util.Log.i("ReaDroidImportAudit",
+                "imports=" + audit.importedApks
+                + " indexes=" + audit.sqliteIndexes
+                + " indexesMissingSource=" + audit.indexWithoutApk
+                + " oldForReview=" + audit.oldCandidates
+                + " incomplete=" + audit.incomplete);
+        });
     }
 
     /** The same report renderer is used for fresh APKs and retained workspaces. */
@@ -1349,6 +1486,17 @@ public class MainActivity extends Activity {
         homeOverview.update(report, explorerView.getEditPlan().size());
         showSection(workspace.activeSection);
         return true;
+    }
+
+    private boolean isRecoveryTargetCurrent(File source, Uri document,
+            int generation, String expectedSha256, ExplorerView.EditSession editSession) {
+        return !isFinishing() && !isDestroyed()
+            && generation == analysisSequence
+            && source == currentApk
+            && Objects.equals(document, selectedApkUri)
+            && report != null
+            && expectedSha256.equals(report.optString("sha256", ""))
+            && explorerView.isCurrentEditSession(editSession);
     }
 
     private void showRecoveryError(String title, Exception error) {
@@ -1650,8 +1798,29 @@ public class MainActivity extends Activity {
             return;
         }
 
+        if (request == REQUEST_EXPORT_APK) {
+            PendingExport intent = pendingExport;
+            pendingExport = null;
+            if (result != RESULT_OK || data == null || data.getData() == null) {
+                if (intent != null && intent.token.isActive())
+                    exportSessions.invalidate();
+                return;
+            }
+            if (intent == null || !intent.token.isActive()
+                    || intent.source != currentApk
+                    || !Objects.equals(intent.importedDocument, selectedApkUri)) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Exportação cancelada")
+                    .setMessage("O projeto ou a tela mudou enquanto você escolhia "
+                        + "o destino. Nenhum APK foi gravado. Abra a exportação "
+                        + "novamente no projeto atual.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
+            exportRebuilt(data.getData(), intent);
+            return;
+        }
         if (result != RESULT_OK || data == null || data.getData() == null) return;
-        if (request == REQUEST_EXPORT_APK) { exportRebuilt(data.getData()); return; }
         if (request == REQUEST_COMPARE_APK) { compareApk(data.getData()); return; }
         if (request != 1) return;
         selectApkWithConfirmation(data.getData(), true);
@@ -1664,7 +1833,8 @@ public class MainActivity extends Activity {
     }
 
     private void openRecentProject(P7ProjectHistory.Entry item) {
-        if (!P7ProjectHistory.hasPermission(this, item.uri)) {
+        if (!SavedProjectResume.permitted(item.uri,
+                uri -> P7ProjectHistory.hasPermission(this, uri))) {
             refreshRecentProjects();
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Permissão expirada")
@@ -1754,6 +1924,17 @@ public class MainActivity extends Activity {
             return;
         }
         Runnable open = () -> {
+            // A recent-project grant can expire while the confirmation
+            // dialog is still open; re-check immediately before any import.
+            if (!fromPicker && !SavedProjectResume.permitted(uri,
+                    candidate -> P7ProjectHistory.hasPermission(this, candidate))) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Permissão expirada")
+                    .setMessage("O acesso ao APK foi revogado. Selecione o arquivo "
+                        + "novamente. O projeto aberto e suas edições foram preservados.")
+                    .setPositiveButton("OK", null).show();
+                return;
+            }
             if (fromPicker) {
                 try {
                     getContentResolver().takePersistableUriPermission(uri,
@@ -1782,6 +1963,16 @@ public class MainActivity extends Activity {
     }
 
     private void analyzeSelectedApk(Uri uri) {
+        analyzeSelectedApk(uri, null);
+    }
+
+    private void analyzeSelectedApk(Uri uri, String expectedResumeSha256) {
+        // Starting a different analysis revokes in-flight export immediately,
+        // even if that candidate later fails to replace the current project.
+        exportSessions.invalidate();
+        // F1.22: invalidate the old worker immediately on the UI thread,
+        // even if the previous DocumentsProvider is still inside read().
+        final ExportSessionGuard.Token importToken = importSessions.begin();
         final int sequence = ++analysisSequence;
         pendingApkUri = uri;
         final boolean previousProjectIsUsable =
@@ -1804,20 +1995,52 @@ public class MainActivity extends Activity {
             signatureInfo.setEnabled(false);
             explorerView.setFiles(null, null);
         } else {
+            rebuild.setEnabled(false);
             android.widget.Toast.makeText(this,
                 "Verificando novo APK. Seu projeto atual será preservado até a validação.",
                 android.widget.Toast.LENGTH_LONG).show();
         }
-        executor.execute(() -> {
+        // This flag is written by the UI before any posted start callback
+        // can run on the UI thread. A stale request cannot clear the new
+        // request's queue notice.
+        final java.util.concurrent.atomic.AtomicBoolean wasQueued =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+        try {
+            ImportWorkerLane.Submission admission = importWorkers.submit(() -> {
+            // A blocked SAF provider may delay this callback indefinitely:
+            // never pretend it has started until this worker actually runs.
+            runOnUiThread(() -> {
+                if (!wasQueued.get() || !importToken.isActive()
+                        || sequence != analysisSequence || isFinishing() || isDestroyed())
+                    return;
+                if (previousProjectIsUsable) {
+                    android.widget.Toast.makeText(this,
+                        "Leitura SAF retomada. Seu projeto anterior continua protegido.",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                } else {
+                    output.setText("Analisando...");
+                    apkSummary.setText("ANÁLISE EM ANDAMENTO");
+                    projectMetrics.setText("ESTRUTURA   •   Analisando...");
+                }
+            });
             try {
-                AnalyzedApk candidate = analyze(uri);
+                importToken.requireActive();
+                AnalyzedApk candidate = analyze(uri, expectedResumeSha256, importToken);
+                importToken.requireActive();
                 // Validation alone is not an accepted import. The history and
                 // icon cache must not change until the UI commits this candidate.
                 runOnUiThread(() -> {
-                    if (sequence != analysisSequence || isFinishing() || isDestroyed()) {
-                        candidate.file.delete();
-                        if (candidate.indexFile != null)
-                            android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate.indexFile);
+                    if (!importToken.isActive() || sequence != analysisSequence
+                            || isFinishing() || isDestroyed()) {
+                        try {
+                            candidate.file.delete();
+                            if (candidate.indexFile != null)
+                                android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate.indexFile);
+                        } finally {
+                            ImportCacheAudit.release(candidate.file);
+                            ImportCacheAudit.release(candidate.indexFile);
+                            importScope.release(candidate.file);
+                        }
                         return;
                     }
                     File previousApk = currentApk;
@@ -1841,12 +2064,18 @@ public class MainActivity extends Activity {
                         previousApk.delete();
                     if (previousIndex != null && previousIndex != candidate.indexFile)
                         android.database.sqlite.SQLiteDatabase.deleteDatabase(previousIndex);
+                    // Ownership transferred from the import worker to this UI.
+                    ImportCacheAudit.release(candidate.file);
+                    ImportCacheAudit.release(candidate.indexFile);
+                    importScope.release(candidate.file);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    if (sequence != analysisSequence || isFinishing() || isDestroyed()) return;
+                    if (!importToken.isActive() || sequence != analysisSequence
+                            || isFinishing() || isDestroyed()) return;
                     pendingApkUri = null;
                     if (previousProjectIsUsable) {
+                        rebuild.setEnabled(true);
                         new android.app.AlertDialog.Builder(this)
                             .setTitle("Falha ao abrir outro APK")
                             .setMessage("Não foi possível validar o novo arquivo: "
@@ -1855,13 +2084,52 @@ public class MainActivity extends Activity {
                                 + "pendentes foram preservados.")
                             .setPositiveButton("Entendi", null).show();
                     } else {
+                        // A process-death reimport might have lost its grant
+                        // between the saved-state check and the provider read.
+                        // Never retain a failed URI as an accepted project.
+                        selectedApkUri = null;
                         output.setText("Erro: " + error.getMessage());
                         apkSummary.setText("FALHA AO ABRIR PROJETO");
                         projectMetrics.setText("ESTRUTURA   •   Indisponível");
                     }
                 });
             }
-        });
+            });
+            wasQueued.set(admission.waiting);
+            if (admission.waiting && importToken.isActive()
+                    && sequence == analysisSequence && !isFinishing() && !isDestroyed()) {
+                // Bounded: at most two reads active and one latest selection
+                // waiting. No automatic retry loop or extra threads.
+                if (previousProjectIsUsable) {
+                    android.widget.Toast.makeText(this,
+                        "Dois leitores SAF ocupados. Novo APK na fila; "
+                            + "projeto e edições atuais preservados.",
+                        android.widget.Toast.LENGTH_LONG).show();
+                } else {
+                    output.setText("Aguardando liberação de um leitor SAF. "
+                        + "O APK será analisado assim que um trabalhador ficar livre.");
+                    apkSummary.setText("AGUARDANDO LEITURA SAF");
+                    projectMetrics.setText("ESTRUTURA   •   Aguardando leitura...");
+                }
+            }
+        } catch (java.util.concurrent.RejectedExecutionException unavailable) {
+            // Bounded lane is closed or temporarily unable to accept work.
+            // Never strand a pending URI or discard an accepted workspace.
+            if (sequence == analysisSequence && !isFinishing() && !isDestroyed()) {
+                pendingApkUri = null;
+                if (previousProjectIsUsable) {
+                    rebuild.setEnabled(true);
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Importação indisponível")
+                        .setMessage("A fila de leitura SAF está ocupada. "
+                            + "Seu projeto e suas edições foram preservados.")
+                        .setPositiveButton("OK", null).show();
+                } else {
+                    output.setText("Importação indisponível. Selecione o APK novamente.");
+                    apkSummary.setText("FALHA AO ABRIR PROJETO");
+                }
+            }
+        }
     }
 
     /**
@@ -2000,39 +2268,55 @@ public class MainActivity extends Activity {
             .setPositiveButton("Concluir", null).show();
     }
 
-    private void exportRebuilt(Uri destination) {
-        if (currentApk == null) return;
-        final File source = currentApk;
-        final Map<String, String> changes = explorerView.getEditPlan().snapshot();
-        if (changes.isEmpty()) return;
-        final String originalImportHash = report == null
-            ? "" : report.optString("sha256", "");
+    private void exportRebuilt(Uri destination, PendingExport request) {
+        if (request == null || request.changes.isEmpty()) return;
+        final File source = request.source;
+        final Uri importedDocument = request.importedDocument;
+        final String originalImportHash = request.expectedSha256;
+        final Map<String, String> changes = request.changes;
+        final ExportSessionGuard.Token session = request.token;
+        if (!session.isActive() || source != currentApk
+                || !Objects.equals(importedDocument, selectedApkUri)) return;
         rebuild.setEnabled(false);
         executor.execute(() -> {
             File temp = null;
             try {
-                // The cached original must match the imported APK, and cannot
-                // change while the export is being reconstructed or verified.
-                ApkIntegrity.confirmExpected(source, originalImportHash);
+                session.requireActive();
+                // User-selected document identity and cached APK must be
+                // validated before creating any staging or writing to SAF.
+                SafExportVerifier.ensureDistinctDocument(importedDocument, destination);
+                ApkIntegrity.confirmExpected(source, originalImportHash, session);
+                session.requireActive();
                 temp = File.createTempFile("readroid_unsigned_", ".apk", getCacheDir());
-                ApkRebuilder.rebuild(source, temp, changes);
+                RebuildTempJanitor.track(temp);
+                ApkRebuilder.rebuild(source, temp, changes, session);
+                session.requireActive();
                 final String verification = RebuildVerifier.verifyAgainstOriginal(
-                    source, temp, changes);
+                    source, temp, changes, session);
+                session.requireActive();
                 final String preflight = SigningPreflight.inspect(temp);
-                final String rebuiltSha256 = ApkIntegrity.sha256(temp);
-                // Check again immediately before and after read-back from SAF.
-                ApkIntegrity.confirmExpected(source, originalImportHash);
-                final long exportedBytes = SafExportVerifier.copyAndVerify(
-                    getContentResolver(), temp, destination);
-                ApkIntegrity.confirmExpected(source, originalImportHash);
+                session.requireActive();
+                final String rebuiltSha256 = ApkIntegrity.sha256(temp, session);
+                ApkIntegrity.confirmExpected(source, originalImportHash, session);
+                session.requireActive();
+                // F1.14: the provider checks the same session before every
+                // read/write and again after readback, not just at the end.
+                final long exportedBytes = SafExportVerifier.copyAndVerifyBound(
+                    getContentResolver(), temp, destination, importedDocument, session);
+                session.requireActive();
+                ApkIntegrity.confirmExpected(source, originalImportHash, session);
+                session.requireActive();
                 runOnUiThread(() -> {
-                    if (!isFinishing() && !isDestroyed())
+                    if (!isFinishing() && !isDestroyed() && session.isActive()
+                            && source == currentApk
+                            && Objects.equals(importedDocument, selectedApkUri))
                         showExportSuccess(exportedBytes, verification, preflight,
                             originalImportHash, rebuiltSha256);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) return;
+                    if (isFinishing() || isDestroyed() || !session.isActive()
+                            || source != currentApk) return;
                     new android.app.AlertDialog.Builder(this)
                         .setTitle("Falha ao exportar")
                         .setMessage(error.getMessage()
@@ -2041,45 +2325,54 @@ public class MainActivity extends Activity {
                         .setPositiveButton("OK", null).show();
                 });
             } finally {
-                if (temp != null) temp.delete();
+                if (temp != null) {
+                    try { temp.delete(); }
+                    finally { RebuildTempJanitor.release(temp); }
+                }
                 runOnUiThread(() -> {
-                    if (!isFinishing() && !isDestroyed()) rebuild.setEnabled(true);
+                    if (!isFinishing() && !isDestroyed() && session.isActive()
+                            && source == currentApk)
+                        rebuild.setEnabled(true);
                 });
             }
         });
     }
 
     private AnalyzedApk analyze(Uri uri) throws Exception {
+        return analyze(uri, null);
+    }
+
+    private AnalyzedApk analyze(Uri uri, String expectedResumeSha256) throws Exception {
+        return analyze(uri, expectedResumeSha256, null);
+    }
+
+    private AnalyzedApk analyze(Uri uri, String expectedResumeSha256,
+            ExportSessionGuard.Token importToken) throws Exception {
+        ExportSessionGuard.check(importToken);
         // Reserve private storage before copying the untrusted document.
         // The provider may lie about its size: streaming checks remain required.
         ApkImportPreflight.beforeCopy(this, uri);
-        File file = File.createTempFile("readroid_", ".apk", getCacheDir());
+        ExportSessionGuard.check(importToken);
+        // F1.21: one transaction owns the fresh cache candidate. A SAF
+        // exception on open/read/close deletes it before any project change.
+        final ApkImportStaging.Result imported = ApkImportStaging.copy(
+            getCacheDir(), () -> getContentResolver().openInputStream(uri),
+            () -> ApkImportPreflight.availableBytes(this), importToken, importScope);
+        File file = imported.candidate;
+        File diskIndex = null;
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            long size = 0;
-            try (InputStream in = getContentResolver().openInputStream(uri);
-                 OutputStream out = new FileOutputStream(file)) {
-                if (in == null) throw new IOException("Arquivo inacessível");
-                byte[] buffer = new byte[65536];
-                int count;
-                long lastStorageCheck = 0;
-                while ((count = in.read(buffer)) != -1) {
-                    if (Thread.currentThread().isInterrupted())
-                        throw new java.io.InterruptedIOException("Análise interrompida");
-                    size += count;
-                    if (size > ApkImportPreflight.MAX_APK_BYTES)
-                        throw new IOException("Limite seguro atual de 1 GiB excedido.");
-                    digest.update(buffer, 0, count);
-                    out.write(buffer, 0, count);
-                    if (ApkImportPreflight.shouldRecheck(size, lastStorageCheck)) {
-                        ApkImportPreflight.checkProgress(size,
-                            ApkImportPreflight.availableBytes(this));
-                        lastStorageCheck = size;
-                    }
-                }
-            }
-            StringBuilder hash = new StringBuilder();
-            for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
+            final ApkImportPreflight.CopyResult copied = imported.copied;
+            ExportSessionGuard.check(importToken);
+            // F1.20: even an authorized SAF URI may now serve another APK.
+            // A cold resume must match the previously accepted digest before
+            // parsing, indexing, or committing a candidate project.
+            if (expectedResumeSha256 != null)
+                SavedProjectResume.requireExpectedSha256(
+                    expectedResumeSha256, copied.sha256);
+            // F1.6: reject damaged internal payloads before exposing a new project.
+            ApkZipIntegrity.Result zipIntegrity = ApkZipIntegrity.verify(file, importToken);
+            long size = copied.sizeBytes;
+            String hash = copied.sha256;
             JSONArray dex = new JSONArray();
             JSONArray libraries = new JSONArray();
             int entries = 0, assets = 0;
@@ -2087,8 +2380,7 @@ public class MainActivity extends Activity {
             try (ZipFile zip = new ZipFile(file)) {
                 Enumeration<? extends ZipEntry> items = zip.entries();
                 while (items.hasMoreElements()) {
-                    if (Thread.currentThread().isInterrupted())
-                        throw new java.io.InterruptedIOException("Análise interrompida");
+                    ExportSessionGuard.check(importToken);
                     ZipEntry entry = items.nextElement();
                     String name = entry.getName();
                     if (++entries > 150000) throw new IOException("Entradas demais");
@@ -2098,6 +2390,7 @@ public class MainActivity extends Activity {
                     if (name.equals("AndroidManifest.xml")) manifest = true;
                 }
             }
+            ExportSessionGuard.check(importToken);
             JSONObject json = new JSONObject();
             FileHeaderProbe.Result header = FileHeaderProbe.inspect(file);
             JSONObject formatHint = new JSONObject();
@@ -2107,33 +2400,62 @@ public class MainActivity extends Activity {
             formatHint.put("recognized", header.recognized);
             json.put("fileHeader", formatHint);
             json.put("manifestAnalysis", ManifestInspector.inspect(this, file));
+            ExportSessionGuard.check(importToken);
             json.put("explorer", ApkExplorer.inspect(file));
+            ExportSessionGuard.check(importToken);
             json.put("sizeBytes", size);
-            json.put("sha256", hash.toString());
+            json.put("sha256", hash);
+            JSONObject zipAudit = new JSONObject();
+            zipAudit.put("crc32Verified", true);
+            zipAudit.put("filesVerified", zipIntegrity.verifiedFiles);
+            zipAudit.put("uncompressedBytes", zipIntegrity.uncompressedBytes);
+            json.put("zipIntegrity", zipAudit);
             json.put("entries", entries);
             json.put("dexFiles", dex);
             json.put("nativeLibraries", libraries);
             json.put("assets", assets);
             json.put("hasManifest", manifest);
             try (ZipFile securityZip = new ZipFile(file)) { json.put("security", SecurityScanner.scan(securityZip)); }
+            ExportSessionGuard.check(importToken);
             json.put("intelligence", ApkIntelligence.inspect(json));
             json.put("note", "Análise estática preliminar: não decodifica manifesto binário nem valida assinatura.");
-            if (Thread.currentThread().isInterrupted())
-                throw new java.io.InterruptedIOException("Análise interrompida");
+            ExportSessionGuard.check(importToken);
             // Experimental UI indexing only; legacy JSON analysis retained.
-            File diskIndex = null;
             if (entries >= 200) {
                 File candidate = new File(file.getAbsolutePath() + ".idx.db");
+                ImportCacheAudit.track(candidate);
                 try {
-                    ApkDiskIndex.build(file, candidate);
+                    ApkDiskIndex.build(file, candidate, importToken);
+                    ExportSessionGuard.check(importToken);
                     diskIndex = candidate;
                 } catch (IOException optionalIndexError) {
-                    android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate);
+                    try { android.database.sqlite.SQLiteDatabase.deleteDatabase(candidate); }
+                    finally { ImportCacheAudit.release(candidate); }
+                    // Cancelled indexing is not an optional index failure:
+                    // abandon the whole stale import, not just the index.
+                    ExportSessionGuard.check(importToken);
                 }
             }
+            // F1.7: validate actual private-cache bytes after *all* analysis.
+            // A copied stream hash alone cannot prove the final file identity.
+            ApkCacheAdmission.verify(file, copied.sizeBytes, copied.sha256, importToken);
+            if (expectedResumeSha256 != null) {
+                // Independent cache hash after ZIP inspection and indexing;
+                // an import source cannot change during resume unnoticed.
+                ApkIntegrity.confirmExpected(file, expectedResumeSha256);
+            }
+            ExportSessionGuard.check(importToken);
             return new AnalyzedApk(json, file, diskIndex);
         } catch (Exception error) {
-            file.delete();
+            try {
+                if (diskIndex != null)
+                    android.database.sqlite.SQLiteDatabase.deleteDatabase(diskIndex);
+                file.delete();
+            } finally {
+                ImportCacheAudit.release(diskIndex);
+                ImportCacheAudit.release(file);
+                importScope.release(file);
+            }
             throw error;
         }
     }
@@ -2172,6 +2494,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle outState) {
+        outState.putString("f119_process_epoch", PROCESS_EPOCH);
         outState.putInt("active_studio_section", selectedSection);
         if (sectionNavigationInitialized && pendingScrollSection != selectedSection)
             sectionScrollPositions[selectedSection] =
@@ -2190,12 +2513,27 @@ public class MainActivity extends Activity {
                 Integer.toString(pendingLogoExport.color),
                 Integer.toString(pendingLogoExport.background) });
         if (selectedApkUri != null) outState.putParcelable("selected_apk_uri", selectedApkUri);
+        // Save only the SHA-256 of a fully accepted project, never the edit
+        // plan, cached APK bytes, or an unaccepted pending import.
+        if (selectedApkUri != null && currentApk != null
+                && currentApk.isFile() && report != null) {
+            String acceptedSha256 = report.optString("sha256", "");
+            if (SavedProjectResume.validSha256(acceptedSha256))
+                outState.putString("f120_accepted_sha256", acceptedSha256);
+        }
         if (pendingApkUri != null) outState.putParcelable("pending_apk_uri", pendingApkUri);
         super.onSaveInstanceState(outState);
     }
 
     @Override protected void onDestroy() {
+        importSessions.invalidate();
+        // Unlink this Activity's private unaccepted candidate immediately,
+        // even when its SAF provider ignores interruption while blocked.
+        if (importScope != null) importScope.close();
+        exportSessions.invalidate();
+        pendingExport = null;
         analysisSequence++;
+        importWorkers.shutdownNow();
         executor.shutdownNow();
         // The new Activity owns this cache file after a configuration change.
         if (!isChangingConfigurations()) {

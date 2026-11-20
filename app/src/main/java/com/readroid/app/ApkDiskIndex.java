@@ -79,6 +79,12 @@ public final class ApkDiskIndex {
      * modifying a previous project's data. A failed build deletes its index.
      */
     public static Stats build(File archive, File indexFile) throws IOException {
+        return build(archive, indexFile, null);
+    }
+
+    static Stats build(File archive, File indexFile,
+            ExportSessionGuard.Token token) throws IOException {
+        ExportSessionGuard.check(token);
         if (archive == null || !archive.isFile() || indexFile == null)
             throw new IOException("Arquivo ou destino de índice inválido");
         if (indexFile.exists())
@@ -121,8 +127,7 @@ public final class ApkDiskIndex {
                 db.beginTransaction();
                 try {
                     while (entries.hasMoreElements()) {
-                        if (Thread.currentThread().isInterrupted())
-                            throw new java.io.InterruptedIOException("Indexação cancelada");
+                        ExportSessionGuard.check(token);
                         ZipEntry entry = entries.nextElement();
                         if (++seen > MAX_ENTRIES)
                             throw new IOException("Arquivo ZIP excede 150 mil entradas");
@@ -159,6 +164,7 @@ public final class ApkDiskIndex {
                     if (db.inTransaction()) db.endTransaction();
                 }
             }
+            ExportSessionGuard.check(token);
             // Detect changes during the index build. Not a cryptographic source
             // identity check; the private workspace will own the cache file.
             try (Cursor m = db.rawQuery("SELECT source_bytes, source_modified FROM meta", null)) {
@@ -170,6 +176,7 @@ public final class ApkDiskIndex {
             db = null;
             if (indexFile.length() > MAX_INDEX_BYTES)
                 throw new IOException("Índice acima do limite de armazenamento");
+            ExportSessionGuard.check(token);
             finished = true;
             return new Stats(files, dirs, uncompressed, indexFile.length());
         } catch (android.database.SQLException invalid) {

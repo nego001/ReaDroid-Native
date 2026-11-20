@@ -3,11 +3,16 @@ package com.readroid.app;
 import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructStat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -59,10 +64,23 @@ public final class RecoveryVault {
     private final File storage;
     private final String alias;
     private final BeforeCommit beforeCommit;
+    private final RecoveryStorageBudget.FreeSpace freeSpace;
+    private final StageReadObserver stageReadObserver;
+    private final BeforeMove beforeMove;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
         void run(File staged) throws IOException;
+    }
+
+    /** Package-private CI seam: observe a verified chunk, no user callback. */
+    interface StageReadObserver {
+        void onChunk(int bytesVerified, int totalBytes) throws IOException;
+    }
+
+    /** F1.36 pre-move fault injection: only package-private instrumentation. */
+    interface BeforeMove {
+        void run(File verifiedStage) throws IOException;
     }
 
     public RecoveryVault(Context context) {
@@ -76,11 +94,42 @@ public final class RecoveryVault {
 
     /** Test-only seam to simulate failure after durable write and before commit. */
     RecoveryVault(File storage, String alias, BeforeCommit beforeCommit) {
-        if (storage == null || alias == null || alias.isEmpty() || beforeCommit == null)
+        this(storage, alias, beforeCommit,
+            RecoveryStorageBudget.forDirectory(storage));
+    }
+
+    /** Deterministic free-space changes are injected only by instrumentation. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace) {
+        this(storage, alias, beforeCommit, freeSpace,
+            (verified, total) -> {});
+    }
+
+    /**
+     * Package-private seam for deterministic stage-verification interruption
+     * in isolated Android tests. Production always uses the no-op observer.
+     */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            stage -> {});
+    }
+
+    /** F1.36 test seam; production has a no-op before-move observer. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove) {
+        if (storage == null || alias == null || alias.isEmpty()
+                || beforeCommit == null || freeSpace == null
+                || stageReadObserver == null || beforeMove == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
         this.beforeCommit = beforeCommit;
+        this.freeSpace = freeSpace;
+        this.stageReadObserver = stageReadObserver;
+        this.beforeMove = beforeMove;
     }
 
     public boolean hasCheckpoint() {
@@ -146,6 +195,9 @@ public final class RecoveryVault {
             encoded = buffer.array();
             if (!storage.isDirectory() && !storage.mkdirs())
                 throw new IOException("Não foi possível criar o diretório privado");
+            // Refuse low-space saves BEFORE staging new ciphertext. Never
+            // touch an already committed checkpoint on budget failure.
+            RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
             pruneAbandonedStages(storage, System.currentTimeMillis());
             temporary = File.createTempFile("checkpoint-", ".tmp", storage);
             try (FileOutputStream out = new FileOutputStream(temporary)) {
@@ -159,6 +211,27 @@ public final class RecoveryVault {
             beforeCommit.run(temporary);
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Gravação da recuperação interrompida");
+            // Recheck AFTER fsync and callback, just before atomic promotion:
+            // free space may have vanished while the encrypted file was saved.
+            RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
+            // F1.34: a synced temporary is not necessarily an intact one.
+            // Re-read the exact encrypted bytes before replacing the last
+            // usable recovery checkpoint, and refuse swapped symlinks.
+            verifyStagedCiphertext(temporary, encoded, stageReadObserver);
+            // F1.36: remember the actual inode, not just the path's bytes.
+            // An identical-byte replacement must not silently inherit the
+            // permission to become the new recovery checkpoint.
+            final StageIdentity verifiedIdentity = stageIdentity(temporary);
+            beforeMove.run(temporary);
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Confirmação da recuperação interrompida");
+            // Recheck AFTER any intervening work and directly BEFORE rename.
+            // No untrusted callback may run between this second read and move.
+            verifyStagedCiphertext(temporary, encoded, (verified, total) -> {});
+            if (!verifiedIdentity.sameFile(stageIdentity(temporary)))
+                throw new IOException("Arquivo temporário substituído antes da confirmação");
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Confirmação da recuperação interrompida");
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -171,6 +244,134 @@ public final class RecoveryVault {
             Arrays.fill(plaintext, (byte) 0);
             if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
             if (encoded != null) Arrays.fill(encoded, (byte) 0);
+        }
+    }
+
+    /**
+     * F1.34: verify staged encrypted bytes against those actually produced by
+     * AES-GCM, before the atomic rename. This covers truncated / tampered /
+     * vanished temporary files, and does not follow symlinks even if the
+     * symlink points to matching bytes.
+     *
+     * A process-local transaction lock still guards concurrent vault calls.
+     * This is not a power-loss proof or a defense against processes with
+     * filesystem write access racing the final rename.
+     */
+    private static void verifyStagedCiphertext(File stage, byte[] expected,
+            StageReadObserver observer) throws IOException {
+        if (stage == null || expected == null || expected.length < 33)
+            throw new IOException("Estágio criptografado inválido");
+        Path path = stage.toPath();
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(path) != expected.length)
+            throw new IOException("Estágio criptografado incompleto ou substituído");
+        byte[] chunk = new byte[8192];
+        int mismatch = 0;
+        int offset = 0;
+        // F1.37: O_NOFOLLOW binds the read to ONE inode. Merely testing
+        // Files.isRegularFile(path) before Files.newInputStream(path) leaves
+        // a gap in which an identical-byte replacement could become the
+        // stream source without being noticed by the path-only checks.
+        try (FileInputStream in = new FileInputStream(Os.open(
+                stage.getAbsolutePath(),
+                OsConstants.O_RDONLY | OsConstants.O_CLOEXEC
+                    | OsConstants.O_NOFOLLOW, 0))) {
+            StageIdentity opened = stageIdentity(in.getFD());
+            if (!opened.sameFile(stageIdentity(stage))
+                    || opened.size != expected.length)
+                throw new IOException("Arquivo de estágio substituído na abertura");
+            while (offset < expected.length) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Verificação do estágio interrompida");
+                int n = in.read(chunk, 0, Math.min(chunk.length,
+                    expected.length - offset));
+                if (n <= 0)
+                    throw new IOException("Leitura incompleta do estágio criptografado");
+                for (int i = 0; i < n; i++)
+                    mismatch |= chunk[i] ^ expected[offset + i];
+                offset += n;
+                // F1.35 still observes real first-block reads. F1.37
+                // additionally catches path swaps AND new hardlinks made
+                // while this pinned descriptor is held open.
+                observer.onChunk(offset, expected.length);
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException(
+                        "Verificação do estágio interrompida");
+            }
+            if (in.read() != -1)
+                throw new IOException("Estágio criptografado cresceu durante a leitura");
+            if (!opened.sameFile(stageIdentity(in.getFD()))
+                    || !opened.sameFile(stageIdentity(stage)))
+                throw new IOException("Identidade do estágio mudou durante a leitura");
+        } catch (ErrnoException unreadable) {
+            throw new IOException("Não foi possível abrir estágio sem seguir links",
+                unreadable);
+        } finally {
+            Arrays.fill(chunk, (byte) 0);
+        }
+        if (mismatch != 0
+                || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(path) != expected.length)
+            throw new IOException("Conteúdo do estágio criptografado foi alterado");
+    }
+
+    /**
+     * Linux device/inode identity is reliable on Android's private filesystems.
+     * Requiring it supplements byte equality: a newly renamed file containing
+     * identical bytes must still be rejected after initial verification.
+     * A fully hostile same-UID actor racing between final stat and rename
+     * remains outside this guarantee.
+     */
+    private static StageIdentity stageIdentity(File staged) throws IOException {
+        try {
+            StructStat stat = Os.lstat(staged.getAbsolutePath());
+            if (!Files.isRegularFile(staged.toPath(), LinkOption.NOFOLLOW_LINKS))
+                throw new IOException("Estágio deixou de ser arquivo regular");
+            return checkedStageIdentity(stat);
+        } catch (ErrnoException badStage) {
+            throw new IOException("Não foi possível conferir identidade do estágio",
+                badStage);
+        }
+    }
+
+    private static StageIdentity stageIdentity(FileDescriptor openDescriptor)
+            throws IOException {
+        try {
+            return checkedStageIdentity(Os.fstat(openDescriptor));
+        } catch (ErrnoException badStage) {
+            throw new IOException("Não foi possível conferir descritor do estágio",
+                badStage);
+        }
+    }
+
+    private static StageIdentity checkedStageIdentity(StructStat stat)
+            throws IOException {
+        // A second hardlink aliases this ciphertext under another path.
+        // A same-UID writer could mutate that alias AFTER the move and
+        // destroy the user's last recoverable checkpoint. Fail closed.
+        if (!OsConstants.S_ISREG(stat.st_mode))
+            throw new IOException("Estágio criptografado não é arquivo regular");
+        requireSingleStageLinkCount(stat.st_nlink);
+        return new StageIdentity(stat.st_dev, stat.st_ino, stat.st_size);
+    }
+
+    /** Pure link-count policy, exercised even if an emulator forbids hardlink(). */
+    static void requireSingleStageLinkCount(long count) throws IOException {
+        if (count != 1L)
+            throw new IOException("Estágio não regular ou com múltiplos links");
+    }
+
+    private static final class StageIdentity {
+        final long device;
+        final long inode;
+        final long size;
+        StageIdentity(long device, long inode, long size) {
+            this.device = device;
+            this.inode = inode;
+            this.size = size;
+        }
+        boolean sameFile(StageIdentity other) {
+            return other != null && device == other.device && inode == other.inode;
         }
     }
 

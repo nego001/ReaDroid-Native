@@ -189,6 +189,323 @@ public final class ProjectRecreationInstrumentedTest {
         }
     }
 
+    @Test public void f119RevokedRecentPermissionLeavesCurrentProjectUnchanged()
+            throws Exception {
+        File apk = File.createTempFile("f119_previous_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            byte[] before = Files.readAllBytes(apk.toPath());
+            Uri selected = Uri.parse("content://com.readroid.app.f119/original.apk");
+            Uri revoked = Uri.parse("content://com.readroid.app.revoked/other.apk");
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        setField(activity, "selectedApkUri", selected);
+                        int generation = (Integer) field(activity, "analysisSequence");
+                        P7ProjectHistory.Entry entry = new P7ProjectHistory.Entry(
+                            revoked, "Revoked", "com.example.revoked", 0L);
+                        Method reopen = MainActivity.class.getDeclaredMethod(
+                            "openRecentProject", P7ProjectHistory.Entry.class);
+                        reopen.setAccessible(true);
+                        reopen.invoke(activity, entry);
+                        assertWorkspace(activity, apk);
+                        assertEquals(selected, field(activity, "selectedApkUri"));
+                        assertNull(field(activity, "pendingApkUri"));
+                        assertEquals(generation, field(activity, "analysisSequence"));
+                        // ActivityScenario.close() calls onDestroy(), which
+                        // legitimately deletes its privately owned APK cache.
+                        // Assert source integrity BEFORE lifecycle teardown.
+                        assertArrayEquals(before, Files.readAllBytes(apk.toPath()));
+                    } catch (Exception error) {
+                        throw new AssertionError(error);
+                    }
+                });
+            }
+        } finally { apk.delete(); }
+    }
+
+    @Test public void f120SavedStateRecordsAcceptedApkDigestWithoutSavingEdits()
+            throws Exception {
+        File apk = File.createTempFile("f120_state_fixture_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry("AndroidManifest.xml"));
+                out.write("test".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        Uri accepted = Uri.parse(
+                            "content://com.readroid.app.f120/document/accepted.apk");
+                        setField(activity, "selectedApkUri", accepted);
+                        String digest = ApkIntegrity.sha256(apk);
+                        ((JSONObject) field(activity, "report")).put("sha256", digest);
+                        android.os.Bundle saved = new android.os.Bundle();
+                        Method save = MainActivity.class.getDeclaredMethod(
+                            "onSaveInstanceState", android.os.Bundle.class);
+                        save.setAccessible(true);
+                        save.invoke(activity, saved);
+                        assertEquals(accepted, saved.getParcelable("selected_apk_uri"));
+                        assertEquals(digest, saved.getString("f120_accepted_sha256"));
+                        assertFalse("Edits must not appear in saved Activity state",
+                            saved.toString().contains(CHANGE));
+                        assertWorkspace(activity, apk);
+                    } catch (Exception error) {
+                        throw new AssertionError(error);
+                    }
+                });
+            }
+        } finally { apk.delete(); }
+    }
+
+    @Test public void f120PendingImportNeverReceivesAnAcceptedHashWithoutProject()
+            throws Exception {
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                try {
+                    setField(activity, "currentApk", null);
+                    setField(activity, "report", null);
+                    setField(activity, "selectedApkUri", null);
+                    setField(activity, "pendingApkUri", Uri.parse(
+                        "content://com.readroid.app.f120/document/pending.apk"));
+                    android.os.Bundle saved = new android.os.Bundle();
+                    Method save = MainActivity.class.getDeclaredMethod(
+                        "onSaveInstanceState", android.os.Bundle.class);
+                    save.setAccessible(true);
+                    save.invoke(activity, saved);
+                    assertNull(saved.getString("f120_accepted_sha256"));
+                    assertNull(saved.getParcelable("selected_apk_uri"));
+                    assertNotNull(saved.getParcelable("pending_apk_uri"));
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+        }
+    }
+
+    private static void awaitPendingImportSettled(ActivityScenario<MainActivity> scenario)
+            throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        final boolean[] cleared = {false};
+        while (System.nanoTime() < deadline) {
+            scenario.onActivity(activity -> {
+                try {
+                    cleared[0] = field(activity, "pendingApkUri") == null;
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+            if (cleared[0]) return;
+            Thread.sleep(30);
+        }
+        fail("The newest SAF import did not settle in 20 seconds");
+    }
+
+    @Test public void f125RotationWithBlockedOldSafWorkerPreservesNewActivityAndEdits()
+            throws Exception {
+        File accepted = File.createTempFile("f125_accepted_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> outcome =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        final ImportActivityScope[] previousScope = {null};
+        final ExportSessionGuard.Token[] previousToken = {null};
+        try {
+            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(accepted))) {
+                zip.putNextEntry(new ZipEntry(PATH));
+                zip.write("original".getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+            byte[] unchanged = Files.readAllBytes(accepted.toPath());
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, accepted);
+                        ImportActivityScope scope =
+                            (ImportActivityScope) field(activity, "importScope");
+                        previousScope[0] = scope;
+                        ExportSessionGuard sessions =
+                            (ExportSessionGuard) field(activity, "importSessions");
+                        ExportSessionGuard.Token token = sessions.begin();
+                        previousToken[0] = token;
+                        ImportWorkerLane workers =
+                            (ImportWorkerLane) field(activity, "importWorkers");
+                        File cache = activity.getCacheDir();
+                        workers.execute(() -> {
+                            try {
+                                ApkImportStaging.copy(cache, () ->
+                                    new java.io.ByteArrayInputStream(new byte[2048]) {
+                                        @Override public synchronized int read(
+                                                byte[] bytes, int off, int len) {
+                                            entered.countDown();
+                                            while (release.getCount() != 0) {
+                                                try { release.await(1, TimeUnit.SECONDS); }
+                                                catch (InterruptedException ignored) {
+                                                    // Provider ignores worker interrupt.
+                                                }
+                                            }
+                                            return super.read(bytes, off, len);
+                                        }
+                                    }, () -> 128L * 1024 * 1024, token, scope);
+                                outcome.set(new AssertionError(
+                                    "Destroyed Activity accepted a late provider result"));
+                            } catch (Throwable failure) {
+                                outcome.set(failure);
+                            } finally { completed.countDown(); }
+                        });
+                    } catch (Exception e) { throw new AssertionError(e); }
+                });
+                assertTrue("Provider must block before rotation",
+                    entered.await(10, TimeUnit.SECONDS));
+                assertEquals(1, previousScope[0].pendingCount());
+                scenario.recreate();
+                assertTrue(previousScope[0].isClosed());
+                assertEquals(0, previousScope[0].pendingCount());
+                assertFalse(previousToken[0].isActive());
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, accepted);
+                        ImportActivityScope fresh =
+                            (ImportActivityScope) field(activity, "importScope");
+                        assertNotSame("New Activity must own a fresh scope",
+                            previousScope[0], fresh);
+                        assertFalse(fresh.isClosed());
+                        assertArrayEquals(unchanged, Files.readAllBytes(accepted.toPath()));
+                    } catch (Exception e) { throw new AssertionError(e); }
+                });
+                release.countDown();
+                assertTrue("Old provider must eventually leave its worker",
+                    completed.await(10, TimeUnit.SECONDS));
+                assertTrue("Late completion must be rejected",
+                    outcome.get() instanceof java.io.InterruptedIOException);
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, accepted);
+                    } catch (Exception e) { throw new AssertionError(e); }
+                });
+            }
+        } finally {
+            release.countDown();
+            accepted.delete();
+        }
+    }
+
+    @Test public void f124SaturatedLaneDisplaysWaitThenSafelyResumesNewestImport()
+            throws Exception {
+        CountDownLatch running = new CountDownLatch(2);
+        CountDownLatch unblock = new CountDownLatch(1);
+        try (ActivityScenario<MainActivity> scenario =
+                ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                try {
+                    ImportWorkerLane lane = (ImportWorkerLane) field(activity, "importWorkers");
+                    Runnable blockedProvider = () -> {
+                        running.countDown();
+                        try { unblock.await(10, TimeUnit.SECONDS); }
+                        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    };
+                    lane.execute(blockedProvider);
+                    lane.execute(blockedProvider);
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+            assertTrue("Both SAF readers must be occupied", running.await(10, TimeUnit.SECONDS));
+            scenario.onActivity(activity -> {
+                try {
+                    Method open = MainActivity.class.getDeclaredMethod(
+                        "analyzeSelectedApk", Uri.class);
+                    open.setAccessible(true);
+                    Uri stale = Uri.parse("content://com.readroid.f124.invalid/stale.apk");
+                    Uri latest = Uri.parse("content://com.readroid.f124.invalid/latest.apk");
+                    open.invoke(activity, stale);
+                    open.invoke(activity, latest);
+                    assertEquals(latest, field(activity, "pendingApkUri"));
+                    ImportWorkerLane lane = (ImportWorkerLane) field(activity, "importWorkers");
+                    assertEquals(1, lane.pendingCount());
+                    TextView summary = (TextView) field(activity, "apkSummary");
+                    assertEquals("AGUARDANDO LEITURA SAF", summary.getText().toString());
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+            unblock.countDown();
+            awaitPendingImportSettled(scenario);
+            scenario.onActivity(activity -> {
+                try {
+                    assertNull(field(activity, "pendingApkUri"));
+                    assertNull(field(activity, "currentApk"));
+                    TextView summary = (TextView) field(activity, "apkSummary");
+                    assertEquals("FALHA AO ABRIR PROJETO", summary.getText().toString());
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+        } finally { unblock.countDown(); }
+    }
+
+    @Test public void f122TwoFailedImportsCannotReplacePriorWorkspaceOrEdits()
+            throws Exception {
+        File apk = File.createTempFile("f122_previous_", ".apk",
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(apk))) {
+                out.putNextEntry(new ZipEntry(PATH));
+                out.write("original".getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+            byte[] previousBytes = Files.readAllBytes(apk.toPath());
+            Uri oldUri = Uri.parse("content://com.readroid.app.f122/project/previous.apk");
+            Uri first = Uri.parse("content://com.readroid.app.f122.invalid/first.apk");
+            Uri second = Uri.parse("content://com.readroid.app.f122.invalid/second.apk");
+
+            try (ActivityScenario<MainActivity> scenario =
+                    ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        injectTestWorkspace(activity, apk);
+                        setField(activity, "selectedApkUri", oldUri);
+                        int before = (Integer) field(activity, "analysisSequence");
+                        Method open = MainActivity.class.getDeclaredMethod(
+                            "analyzeSelectedApk", Uri.class);
+                        open.setAccessible(true);
+                        open.invoke(activity, first);
+                        open.invoke(activity, second);
+                        assertWorkspace(activity, apk);
+                        assertEquals(before + 2, field(activity, "analysisSequence"));
+                        assertEquals(second, field(activity, "pendingApkUri"));
+
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+                // Imports use a separate bounded lane. A barrier on the
+                // shared export executor no longer waits for SAF work.
+                awaitPendingImportSettled(scenario);
+                scenario.onActivity(activity -> {
+                    try {
+                        assertWorkspace(activity, apk);
+                        assertEquals(oldUri, field(activity, "selectedApkUri"));
+                        assertNull("Last failed import must clear pending URI",
+                            field(activity, "pendingApkUri"));
+                        assertArrayEquals("Old project bytes changed after two failures",
+                            previousBytes, Files.readAllBytes(apk.toPath()));
+                    } catch (Exception error) { throw new AssertionError(error); }
+                });
+            }
+        } finally { apk.delete(); }
+    }
+
     @Test public void failedReplacementRetainsOldApkAndUnsavedEdits()
             throws Exception {
         File apk = File.createTempFile("p7_previous_project_", ".apk",
@@ -202,7 +519,7 @@ public final class ProjectRecreationInstrumentedTest {
             byte[] originalBytes = Files.readAllBytes(apk.toPath());
             Uri previousUri = Uri.parse("content://com.readroid.app.original/project.apk");
             Uri brokenUri = Uri.parse("content://com.readroid.app.invalid/new.apk");
-            CountDownLatch analyzed = new CountDownLatch(1);
+
             try (ActivityScenario<MainActivity> scenario =
                     ActivityScenario.launch(MainActivity.class)) {
                 scenario.onActivity(activity -> {
@@ -216,14 +533,10 @@ public final class ProjectRecreationInstrumentedTest {
                         open.setAccessible(true);
                         open.invoke(activity, brokenUri);
                         assertWorkspace(activity, apk);
-                        ExecutorService worker = (ExecutorService) field(activity,
-                            "executor");
-                        worker.execute(analyzed::countDown);
+
                     } catch (Exception error) { throw new AssertionError(error); }
                 });
-                assertTrue("Failed import worker did not complete",
-                    analyzed.await(20, TimeUnit.SECONDS));
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                awaitPendingImportSettled(scenario);
                 scenario.onActivity(activity -> {
                     try {
                         assertWorkspace(activity, apk);
