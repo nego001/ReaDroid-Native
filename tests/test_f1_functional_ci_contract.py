@@ -677,10 +677,15 @@ class FunctionalCIContract(unittest.TestCase):
             "f137HardlinkAfterFirstVerificationRejected",
             "f137HardlinkBeforeFirstVerificationRejected",
             "f137UnaliasedStageStillCommitsAndDecrypts",
+            "f137LinkCountPolicyRejectsAliasesWithoutKernelSupport",
         ):
             self.assertIn(method, tests)
         self.assertIn("Files.createLink(", tests)
         self.assertIn("Files.createSymbolicLink(", tests)
+        self.assertIn("Assume.assumeTrue(", tests)
+        self.assertIn("assumeHardlinksSupported(f)", tests)
+        self.assertIn("RecoveryVault.requireSingleStageLinkCount", tests)
+        self.assertIn("requireSingleStageLinkCount(stat.st_nlink)", vault)
         self.assertIn("KeyStore.getInstance(\"AndroidKeyStore\")", tests)
         self.assertNotIn("pm clear", tests)
         self.assertNotIn("rm -rf", tests)

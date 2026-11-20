@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.junit.Test;
+import org.junit.Assume;
 import org.junit.runner.RunWith;
 
 import java.io.File;
@@ -52,6 +53,63 @@ public final class F137DescriptorPinnedStageInstrumentedTest {
         } catch (android.system.ErrnoException invalid) {
             throw new IOException("Cannot stat isolated CI stage", invalid);
         }
+    }
+
+    /**
+     * Android kernels / SELinux configurations may forbid hardlink() even
+     * within private app storage. Probe a SEPARATE CI-owned file before
+     * starting each attack. Skip only that unavailable kernel scenario;
+     * the link-count guard is tested independently below.
+     */
+    private static void assumeHardlinksSupported(Fixture f) throws Exception {
+        File target = new File(f.root, "f137_hardlink_probe_target.bin");
+        File alias = new File(f.root, "f137_hardlink_probe_alias.bin");
+        String reason = "";
+        boolean supported = false;
+        try {
+            Files.write(target.toPath(), "ci-hardlink-probe".getBytes(
+                StandardCharsets.US_ASCII));
+            try {
+                Files.createLink(alias.toPath(), target.toPath());
+                supported = Files.isSameFile(alias.toPath(), target.toPath());
+            } catch (IOException | UnsupportedOperationException restricted) {
+                reason = restricted.getClass().getSimpleName()
+                    + ": " + restricted.getMessage();
+            }
+        } finally {
+            Files.deleteIfExists(alias.toPath());
+            Files.deleteIfExists(target.toPath());
+        }
+        Assume.assumeTrue("Kernel/SELinux blocks actual hardlink creation: "
+            + reason, supported);
+    }
+
+    @Test public void f137LinkCountPolicyRejectsAliasesWithoutKernelSupport()
+            throws Exception {
+        RecoveryVault.requireSingleStageLinkCount(1);
+        for (long invalid : new long[] {0L, 2L, 3L, Long.MAX_VALUE}) {
+            try {
+                RecoveryVault.requireSingleStageLinkCount(invalid);
+                fail("Link count " + invalid + " must never be promoted");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("múltiplos links"));
+            }
+        }
+    }
+
+    private static void rejectHardlinkedStage(Fixture f, RecoveryVault candidate)
+            throws Exception {
+        try {
+            candidate.save(f.source, edits(largeCandidate()));
+            fail("A hardlinked encrypted stage must never be committed");
+        } catch (IOException expected) {
+            assertTrue("The real single-link guard must reject this stage: "
+                + expected, expected.getMessage() != null
+                    && expected.getMessage().contains("múltiplos links"));
+        }
+        f.assertOldUntouched();
+        assertTrue("Test hardlink must actually exist after stage cleanup",
+            f.aliasFile.isFile());
     }
 
     private static final class Fixture implements AutoCloseable {
@@ -171,8 +229,9 @@ public final class F137DescriptorPinnedStageInstrumentedTest {
     @Test public void f137HardlinkCreatedDuringReadRejected()
             throws Exception {
         try (Fixture f = new Fixture()) {
+            assumeHardlinksSupported(f);
             final int[] calls = {0};
-            reject(f, f.withStreamingMutation((verified, total) -> {
+            rejectHardlinkedStage(f, f.withStreamingMutation((verified, total) -> {
                 if (calls[0]++ != 0) return;
                 assertTrue(verified < total);
                 File stage = lastPending(f.vaultDir);
@@ -181,31 +240,29 @@ public final class F137DescriptorPinnedStageInstrumentedTest {
                     inode(stage), inode(f.aliasFile));
             }));
             assertTrue(calls[0] > 0);
-            assertTrue("Only disposable alias may remain after rejection",
-                f.aliasFile.isFile());
         }
     }
 
     @Test public void f137HardlinkAfterFirstVerificationRejected()
             throws Exception {
         try (Fixture f = new Fixture()) {
+            assumeHardlinksSupported(f);
             final int[] calls = {0};
-            reject(f, f.withPreMoveMutation(stage -> {
+            rejectHardlinkedStage(f, f.withPreMoveMutation(stage -> {
                 calls[0]++;
                 Files.createLink(f.aliasFile.toPath(), stage.toPath());
             }));
             assertEquals(1, calls[0]);
-            assertTrue(f.aliasFile.isFile());
         }
     }
 
     @Test public void f137HardlinkBeforeFirstVerificationRejected()
             throws Exception {
         try (Fixture f = new Fixture()) {
+            assumeHardlinksSupported(f);
             RecoveryVault aliased = new RecoveryVault(f.vaultDir, f.keyAlias,
                 stage -> Files.createLink(f.aliasFile.toPath(), stage.toPath()));
-            reject(f, aliased);
-            assertTrue(f.aliasFile.isFile());
+            rejectHardlinkedStage(f, aliased);
         }
     }
 

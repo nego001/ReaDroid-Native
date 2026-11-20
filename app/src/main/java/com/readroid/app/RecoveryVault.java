@@ -349,9 +349,16 @@ public final class RecoveryVault {
         // A second hardlink aliases this ciphertext under another path.
         // A same-UID writer could mutate that alias AFTER the move and
         // destroy the user's last recoverable checkpoint. Fail closed.
-        if (!OsConstants.S_ISREG(stat.st_mode) || stat.st_nlink != 1)
-            throw new IOException("Estágio não regular ou com múltiplos links");
+        if (!OsConstants.S_ISREG(stat.st_mode))
+            throw new IOException("Estágio criptografado não é arquivo regular");
+        requireSingleStageLinkCount(stat.st_nlink);
         return new StageIdentity(stat.st_dev, stat.st_ino, stat.st_size);
+    }
+
+    /** Pure link-count policy, exercised even if an emulator forbids hardlink(). */
+    static void requireSingleStageLinkCount(long count) throws IOException {
+        if (count != 1L)
+            throw new IOException("Estágio não regular ou com múltiplos links");
     }
 
     private static final class StageIdentity {
