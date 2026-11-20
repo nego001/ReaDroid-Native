@@ -664,7 +664,7 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("stageIdentity(in.getFD())", vault)
         self.assertIn("Os.fstat(openDescriptor)", vault)
         self.assertIn("Os.lstat(staged.getAbsolutePath())", vault)
-        self.assertIn("stat.st_nlink != 1", vault)
+        self.assertIn("requireSingleStageLinkCount(stat.st_nlink)", vault)
         self.assertIn("!opened.sameFile(stageIdentity(stage))", vault)
         self.assertIn("!opened.sameFile(stageIdentity(in.getFD()))", vault)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F137DescriptorPinnedStageInstrumentedTest.java", self.workflow)
