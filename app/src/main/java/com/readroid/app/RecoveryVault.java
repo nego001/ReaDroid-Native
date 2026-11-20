@@ -5,12 +5,14 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.system.OsConstants;
 import android.system.StructStat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -266,7 +268,18 @@ public final class RecoveryVault {
         byte[] chunk = new byte[8192];
         int mismatch = 0;
         int offset = 0;
-        try (InputStream in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
+        // F1.37: O_NOFOLLOW binds the read to ONE inode. Merely testing
+        // Files.isRegularFile(path) before Files.newInputStream(path) leaves
+        // a gap in which an identical-byte replacement could become the
+        // stream source without being noticed by the path-only checks.
+        try (FileInputStream in = new FileInputStream(Os.open(
+                stage.getAbsolutePath(),
+                OsConstants.O_RDONLY | OsConstants.O_CLOEXEC
+                    | OsConstants.O_NOFOLLOW, 0))) {
+            StageIdentity opened = stageIdentity(in.getFD());
+            if (!opened.sameFile(stageIdentity(stage))
+                    || opened.size != expected.length)
+                throw new IOException("Arquivo de estágio substituído na abertura");
             while (offset < expected.length) {
                 if (Thread.currentThread().isInterrupted())
                     throw new InterruptedIOException("Verificação do estágio interrompida");
@@ -277,10 +290,9 @@ public final class RecoveryVault {
                 for (int i = 0; i < n; i++)
                     mismatch |= chunk[i] ^ expected[offset + i];
                 offset += n;
-                // F1.35: process death can now be triggered mid-verification
-                // on a real emulator, while unverified bytes still remain.
-                // Production uses a no-op observer; the checkpoint is never
-                // promoted while this callback is pending.
+                // F1.35 still observes real first-block reads. F1.37
+                // additionally catches path swaps AND new hardlinks made
+                // while this pinned descriptor is held open.
                 observer.onChunk(offset, expected.length);
                 if (Thread.currentThread().isInterrupted())
                     throw new InterruptedIOException(
@@ -288,6 +300,12 @@ public final class RecoveryVault {
             }
             if (in.read() != -1)
                 throw new IOException("Estágio criptografado cresceu durante a leitura");
+            if (!opened.sameFile(stageIdentity(in.getFD()))
+                    || !opened.sameFile(stageIdentity(stage)))
+                throw new IOException("Identidade do estágio mudou durante a leitura");
+        } catch (ErrnoException unreadable) {
+            throw new IOException("Não foi possível abrir estágio sem seguir links",
+                unreadable);
         } finally {
             Arrays.fill(chunk, (byte) 0);
         }
@@ -309,19 +327,41 @@ public final class RecoveryVault {
             StructStat stat = Os.lstat(staged.getAbsolutePath());
             if (!Files.isRegularFile(staged.toPath(), LinkOption.NOFOLLOW_LINKS))
                 throw new IOException("Estágio deixou de ser arquivo regular");
-            return new StageIdentity(stat.st_dev, stat.st_ino);
+            return checkedStageIdentity(stat);
         } catch (ErrnoException badStage) {
             throw new IOException("Não foi possível conferir identidade do estágio",
                 badStage);
         }
     }
 
+    private static StageIdentity stageIdentity(FileDescriptor openDescriptor)
+            throws IOException {
+        try {
+            return checkedStageIdentity(Os.fstat(openDescriptor));
+        } catch (ErrnoException badStage) {
+            throw new IOException("Não foi possível conferir descritor do estágio",
+                badStage);
+        }
+    }
+
+    private static StageIdentity checkedStageIdentity(StructStat stat)
+            throws IOException {
+        // A second hardlink aliases this ciphertext under another path.
+        // A same-UID writer could mutate that alias AFTER the move and
+        // destroy the user's last recoverable checkpoint. Fail closed.
+        if (!OsConstants.S_ISREG(stat.st_mode) || stat.st_nlink != 1)
+            throw new IOException("Estágio não regular ou com múltiplos links");
+        return new StageIdentity(stat.st_dev, stat.st_ino, stat.st_size);
+    }
+
     private static final class StageIdentity {
         final long device;
         final long inode;
-        StageIdentity(long device, long inode) {
+        final long size;
+        StageIdentity(long device, long inode, long size) {
             this.device = device;
             this.inode = inode;
+            this.size = size;
         }
         boolean sameFile(StageIdentity other) {
             return other != null && device == other.device && inode == other.inode;

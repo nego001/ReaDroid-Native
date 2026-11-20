@@ -46,6 +46,7 @@ ANDROID_TESTS = {
     "F134RecoveryStageIntegrityInstrumentedTest",
     "F135StageVerificationInstrumentedTest",
     "F136PreMoveRaceInstrumentedTest",
+    "F137DescriptorPinnedStageInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -561,7 +562,7 @@ class FunctionalCIContract(unittest.TestCase):
         vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
         tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F134RecoveryStageIntegrityInstrumentedTest.java").read_text(encoding="utf-8")
         self.assertIn("verifyStagedCiphertext(temporary, encoded, stageReadObserver);", vault)
-        self.assertIn("Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)", vault)
+        self.assertIn("OsConstants.O_NOFOLLOW", vault)
         self.assertIn("Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)", vault)
         self.assertIn("mismatch |= chunk[i] ^ expected[offset + i]", vault)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F134RecoveryStageIntegrityInstrumentedTest.java", self.workflow)
@@ -654,6 +655,35 @@ class FunctionalCIContract(unittest.TestCase):
             self.assertNotIn("rm -rf", script)
             self.assertNotIn("adb uninstall", script)
             self.assertIn(path, self.workflow)
+
+    def test_f137_pins_stage_descriptor_and_rejects_hardlinks(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F137DescriptorPinnedStageInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("OsConstants.O_NOFOLLOW", vault)
+        self.assertIn("OsConstants.O_CLOEXEC", vault)
+        self.assertIn("stageIdentity(in.getFD())", vault)
+        self.assertIn("Os.fstat(openDescriptor)", vault)
+        self.assertIn("Os.lstat(staged.getAbsolutePath())", vault)
+        self.assertIn("stat.st_nlink != 1", vault)
+        self.assertIn("!opened.sameFile(stageIdentity(stage))", vault)
+        self.assertIn("!opened.sameFile(stageIdentity(in.getFD()))", vault)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F137DescriptorPinnedStageInstrumentedTest.java", self.workflow)
+        self.assertIn("com.readroid.app.F137DescriptorPinnedStageInstrumentedTest",
+                      self.workflow)
+        for method in (
+            "f137SameBytesDifferentInodeDuringReadRejected",
+            "f137SymlinkReplacementDuringReadRejected",
+            "f137HardlinkCreatedDuringReadRejected",
+            "f137HardlinkAfterFirstVerificationRejected",
+            "f137HardlinkBeforeFirstVerificationRejected",
+            "f137UnaliasedStageStillCommitsAndDecrypts",
+        ):
+            self.assertIn(method, tests)
+        self.assertIn("Files.createLink(", tests)
+        self.assertIn("Files.createSymbolicLink(", tests)
+        self.assertIn("KeyStore.getInstance(\"AndroidKeyStore\")", tests)
+        self.assertNotIn("pm clear", tests)
+        self.assertNotIn("rm -rf", tests)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
