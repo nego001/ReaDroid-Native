@@ -135,9 +135,9 @@ public final class F137DescriptorPinnedStageInstrumentedTest {
         try (Fixture f = new Fixture()) {
             final int[] observed = {0};
             reject(f, f.withStreamingMutation((verified, total) -> {
+                if (observed[0]++ != 0) return;
                 assertTrue("Swap must occur while unread blocks remain",
                     total > 8192 && verified < total);
-                if (observed[0]++ != 0) return;
                 File stage = lastPending(f.vaultDir);
                 byte[] bytes = Files.readAllBytes(stage.toPath());
                 long oldInode = inode(stage);
@@ -156,8 +156,8 @@ public final class F137DescriptorPinnedStageInstrumentedTest {
         try (Fixture f = new Fixture()) {
             final int[] calls = {0};
             reject(f, f.withStreamingMutation((verified, total) -> {
-                assertTrue(verified < total);
                 if (calls[0]++ != 0) return;
+                assertTrue(verified < total);
                 File stage = lastPending(f.vaultDir);
                 byte[] bytes = Files.readAllBytes(stage.toPath());
                 Files.write(f.aliasFile.toPath(), bytes);
@@ -173,8 +173,8 @@ public final class F137DescriptorPinnedStageInstrumentedTest {
         try (Fixture f = new Fixture()) {
             final int[] calls = {0};
             reject(f, f.withStreamingMutation((verified, total) -> {
-                assertTrue(verified < total);
                 if (calls[0]++ != 0) return;
+                assertTrue(verified < total);
                 File stage = lastPending(f.vaultDir);
                 Files.createLink(f.aliasFile.toPath(), stage.toPath());
                 assertEquals("A hardlink must preserve the inode",
