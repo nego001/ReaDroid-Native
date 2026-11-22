@@ -50,6 +50,7 @@ ANDROID_TESTS = {
     "F137DescriptorPinnedStageInstrumentedTest",
     "F138DirectoryCommitInstrumentedTest",
     "F139PostMoveBoundaryInstrumentedTest",
+    "F140PostSyncIntegrityInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -761,6 +762,56 @@ class FunctionalCIContract(unittest.TestCase):
             self.assertIn(path, self.workflow)
         self.assertIn("com.readroid.app.F139PostMoveBoundaryInstrumentedTest",
                       self.workflow)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f140_post_fsync_crashes_and_final_ciphertext_attestation(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        debug_manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        production_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        debug = (ROOT / "app/src/debug/java/com/readroid/app/F140PostSyncCrashHarnessActivity.java").read_text(encoding="utf-8")
+        unit = (ROOT / "app/src/androidTest/java/com/readroid/app/F140PostSyncIntegrityInstrumentedTest.java").read_text(encoding="utf-8")
+        recovery = (ROOT / "app/src/androidTest/java/com/readroid/app/F140PostSyncCrashInstrumentedTest.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f140_postsync_process_death.sh").read_text(encoding="utf-8")
+        self.assertIn("interface AfterDirectorySync", vault)
+        self.assertIn("afterDirectorySync.run(promotedCheckpoint)", vault)
+        sync = vault.index("pinnedDirectory.syncAfterRename();")
+        hook = vault.index("afterDirectorySync.run(promotedCheckpoint)", sync)
+        stat = vault.index("StageIdentity promoted = stageIdentity(promotedCheckpoint)", hook)
+        verify = vault.index("verifyStagedCiphertext(promotedCheckpoint, encoded,", stat)
+        self.assertLess(sync, hook)
+        self.assertLess(hook, stat)
+        self.assertLess(stat, verify)
+        self.assertIn("F140PostSyncCrashHarnessActivity", debug_manifest)
+        self.assertNotIn("F140PostSyncCrashHarnessActivity", production_manifest)
+        self.assertIn("Thread.sleep(60000)", debug)
+        self.assertIn("checkpoint -> {}, promoted -> {", debug)
+        self.assertIn("PROMOTED_B_POST_SYNC", debug)
+        self.assertIn("PROMOTED_C_POST_SYNC", debug)
+        for method in (
+            "f140PostSyncExceptionLeavesNewCheckpointRecoverable",
+            "f140PostSyncSameLengthBitFlipIsDetected",
+            "f140PostSyncDifferentInodeWithSameBytesIsRejected",
+            "f140NormalSyncedPromotionIsFullyAttested",
+        ):
+            self.assertIn(method, unit)
+        for method in (
+            "f140FirstPostSyncKillRecoversPromotedB",
+            "f140SecondPostSyncKillRecoversPromotedC",
+            "f140CleanCommitAfterTwoCrashesRecoversD",
+        ):
+            self.assertIn(method, recovery)
+        self.assertIn("ro.kernel.qemu", script)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("F140_POSTSYNC_PROCESS_DEATH_PASS", script)
+        self.assertIn("bash tests/f140_postsync_process_death.sh", self.workflow)
+        self.assertIn("com.readroid.app.F140PostSyncIntegrityInstrumentedTest",
+                      self.workflow)
+        for path in ("app/src/debug/java/com/readroid/app/F140PostSyncCrashHarnessActivity.java", "app/src/androidTest/java/com/readroid/app/F140PostSyncIntegrityInstrumentedTest.java", "app/src/androidTest/java/com/readroid/app/F140PostSyncCrashInstrumentedTest.java", "tests/f140_postsync_process_death.sh"):
+            self.assertIn(path, self.workflow)
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
         self.assertNotIn("upload-artifact@", self.workflow)

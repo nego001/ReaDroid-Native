@@ -68,6 +68,7 @@ public final class RecoveryVault {
     private final StageReadObserver stageReadObserver;
     private final BeforeMove beforeMove;
     private final AfterAtomicMove afterAtomicMove;
+    private final AfterDirectorySync afterDirectorySync;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
@@ -90,6 +91,15 @@ public final class RecoveryVault {
      * The previous checkpoint is already replaced at this boundary.
      */
     interface AfterAtomicMove {
+        void run(File promotedCheckpoint) throws IOException;
+    }
+
+    /**
+     * F1.40 package-private CI probe. Fires only AFTER directory fsync
+     * returns, and BEFORE final content/inode verification. Production
+     * installs a no-op observer; never exposed to user input.
+     */
+    interface AfterDirectorySync {
         void run(File promotedCheckpoint) throws IOException;
     }
 
@@ -139,10 +149,19 @@ public final class RecoveryVault {
             RecoveryStorageBudget.FreeSpace freeSpace,
             StageReadObserver stageReadObserver, BeforeMove beforeMove,
             AfterAtomicMove afterAtomicMove) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            beforeMove, afterAtomicMove, checkpoint -> {});
+    }
+
+    /** F1.40 isolated post-fsync injection. Not used by production callers. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync) {
         if (storage == null || alias == null || alias.isEmpty()
                 || beforeCommit == null || freeSpace == null
                 || stageReadObserver == null || beforeMove == null
-                || afterAtomicMove == null)
+                || afterAtomicMove == null || afterDirectorySync == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
@@ -151,6 +170,7 @@ public final class RecoveryVault {
         this.stageReadObserver = stageReadObserver;
         this.beforeMove = beforeMove;
         this.afterAtomicMove = afterAtomicMove;
+        this.afterDirectorySync = afterDirectorySync;
     }
 
     public boolean hasCheckpoint() {
@@ -273,10 +293,20 @@ public final class RecoveryVault {
             // has not been invoked. An exception cannot roll back this move.
             afterAtomicMove.run(new File(storage, FILE_NAME));
             pinnedDirectory.syncAfterRename();
-            StageIdentity promoted = stageIdentity(new File(storage, FILE_NAME));
+            // F1.40: a force-stop at this test-only callback occurs AFTER
+            // the directory fsync, not at the F1.39 pre-sync boundary.
+            File promotedCheckpoint = new File(storage, FILE_NAME);
+            afterDirectorySync.run(promotedCheckpoint);
+            pinnedDirectory.requireSameDirectory();
+            StageIdentity promoted = stageIdentity(promotedCheckpoint);
             if (!verifiedIdentity.sameFile(promoted)
                     || promoted.size != encoded.length)
                 throw new IOException("Identidade do checkpoint promovido divergiu");
+            // Inode and length alone cannot detect a same-size bit flip
+            // after fsync. Reopen with O_NOFOLLOW and attest all ciphertext.
+            // A failure here is POST-commit: it must never claim rollback.
+            verifyStagedCiphertext(promotedCheckpoint, encoded,
+                (verified, total) -> {});
         } finally {
             if (!committed && temporary != null) temporary.delete();
             try {

@@ -17,5 +17,8 @@
         <!-- F1.39 post-rename/pre-fsync process-kill probe; debug only. -->
         <activity android:name=".F139PostRenameCrashHarnessActivity"
             android:exported="true" />
+        <!-- F1.40 only-debug post-fsync real process termination. -->
+        <activity android:name=".F140PostSyncCrashHarnessActivity"
+            android:exported="true" />
     </application>
 </manifest>
