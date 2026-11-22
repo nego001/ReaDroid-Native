@@ -77,10 +77,17 @@ kill_staged_writer() {
     verify_staged "$expected"
     adb shell am force-stop "$PKG"
     [[ -z "$(pid)" ]] || fail "process survived external force-stop"
-    adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
-    new_pid=$(pid)
+    local launch
+    launch=$(adb shell am start -W -n "$PKG/.MainActivity" 2>&1) ||
+        fail "could not start MainActivity after force-stop: $launch"
+    new_pid=""
+    for _ in $(seq 1 12); do
+        new_pid=$(pid)
+        if [[ -n "$new_pid" && "$new_pid" != "$old_pid" ]]; then break; fi
+        sleep 1
+    done
     [[ -n "$new_pid" && "$new_pid" != "$old_pid" ]] ||
-        fail "cold restart must have different PID"
+        fail "cold start never produced a distinct PID (old=$old_pid observed=$new_pid launch=$launch)"
     echo "F132_COLD_RESTART old_pid=$old_pid new_pid=$new_pid"
 }
 

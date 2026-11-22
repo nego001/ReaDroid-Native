@@ -72,10 +72,17 @@ force_stop_verifier() {
         fail "last committed ciphertext disappeared"
     adb shell am force-stop "$APP"
     [[ -z "$(pid)" ]] || fail "verifier process survived force-stop"
-    adb shell am start -W -n "$APP/.MainActivity" >/dev/null
-    new=$(pid)
+    local launch
+    launch=$(adb shell am start -W -n "$APP/.MainActivity" 2>&1) ||
+        fail "could not start MainActivity after force-stop: $launch"
+    new=""
+    for _ in $(seq 1 12); do
+        new=$(pid)
+        if [[ -n "$new" && "$new" != "$old" ]]; then break; fi
+        sleep 1
+    done
     [[ -n "$new" && "$new" != "$old" ]] ||
-        fail "cold restart requires a fresh OS process"
+        fail "verifier cold start never produced fresh PID (old=$old observed=$new launch=$launch)"
     echo "F135_REAL_VERIFIER_KILL old_pid=$old new_pid=$new"
 }
 

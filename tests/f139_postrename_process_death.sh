@@ -75,10 +75,17 @@ kill_after_move() {
         fail "atomic promotion left $numStages pending stages"
     adb shell am force-stop "$APP"
     [[ -z "$(pid)" ]] || fail "app survived real external force-stop"
-    adb shell am start -W -n "$APP/.MainActivity" >/dev/null
-    newPID=$(pid)
+    local launch
+    launch=$(adb shell am start -W -n "$APP/.MainActivity" 2>&1) ||
+        fail "could not start MainActivity after force-stop: $launch"
+    newPID=""
+    for _ in $(seq 1 12); do
+        newPID=$(pid)
+        if [[ -n "$newPID" && "$newPID" != "$oldPID" ]]; then break; fi
+        sleep 1
+    done
     [[ -n "$newPID" && "$newPID" != "$oldPID" ]] ||
-        fail "cold process restart requires different PID"
+        fail "post-rename cold start never produced fresh PID (old=$oldPID observed=$newPID launch=$launch)"
     echo "F139_POSTRENAME_COLD_START old_pid=$oldPID new_pid=$newPID"
 }
 
