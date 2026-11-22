@@ -39,8 +39,8 @@ final class RecoveryDirectoryGuard implements AutoCloseable {
         boolean returned = false;
         try {
             fd = Os.open(directory.getAbsolutePath(),
-                OsConstants.O_RDONLY | OsConstants.O_DIRECTORY
-                    | OsConstants.O_NOFOLLOW | OsConstants.O_CLOEXEC, 0);
+                OsConstants.O_RDONLY | OsConstants.O_NOFOLLOW
+                    | OsConstants.O_CLOEXEC, 0);
             StructStat stat = Os.fstat(fd);
             if (!OsConstants.S_ISDIR(stat.st_mode))
                 throw new IOException("Recuperação exige diretório privado real");
