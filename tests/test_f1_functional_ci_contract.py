@@ -18,6 +18,7 @@ PRODUCTION = {
     "ExplorerView.java",
     "EditPlan.java",
     "RecoveryVault.java",
+    "RecoveryDirectoryGuard.java",
     "RecoveryStorageBudget.java",
     "RecoveryResumeGate.java",
     "ApkImportPreflight.java",
@@ -47,6 +48,7 @@ ANDROID_TESTS = {
     "F135StageVerificationInstrumentedTest",
     "F136PreMoveRaceInstrumentedTest",
     "F137DescriptorPinnedStageInstrumentedTest",
+    "F138DirectoryCommitInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -687,6 +689,35 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("RecoveryVault.requireSingleStageLinkCount", tests)
         self.assertIn("requireSingleStageLinkCount(stat.st_nlink)", vault)
         self.assertIn("KeyStore.getInstance(\"AndroidKeyStore\")", tests)
+        self.assertNotIn("pm clear", tests)
+        self.assertNotIn("rm -rf", tests)
+
+    def test_f138_pinned_private_directory_and_durable_atomic_commit(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        guard = (ROOT / "app/src/main/java/com/readroid/app/RecoveryDirectoryGuard.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F138DirectoryCommitInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("RecoveryDirectoryGuard.open(storage)", vault)
+        self.assertIn("pinnedDirectory.requireSameDirectory()", vault)
+        self.assertIn("pinnedDirectory.syncAfterRename()", vault)
+        self.assertIn("StageIdentity promoted = stageIdentity(new File(storage, FILE_NAME))", vault)
+        self.assertIn("committed = true;", vault)
+        self.assertIn("OsConstants.O_DIRECTORY", guard)
+        self.assertIn("OsConstants.O_NOFOLLOW", guard)
+        self.assertIn("Os.fstat(descriptor)", guard)
+        self.assertIn("Os.lstat(root.getAbsolutePath())", guard)
+        self.assertIn("Os.fsync(descriptor)", guard)
+        self.assertIn("Os.close(descriptor)", guard)
+        for method in (
+            "f138RejectsSymlinkedVaultDirectoryBeforeStaging",
+            "f138DirectoryRebindingBeforeRenameIsRejected",
+            "f138PinnedDirectoryDetectsRebindingIndependently",
+            "f138ValidAtomicMoveKeepsStageInodeAndDecrypts",
+            "f138DirectoryFdSyncSucceedsOnPrivateEmulatorStorage",
+        ):
+            self.assertIn(method, tests)
+        self.assertIn("app/src/main/java/com/readroid/app/RecoveryDirectoryGuard.java", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F138DirectoryCommitInstrumentedTest.java", self.workflow)
+        self.assertIn("com.readroid.app.F138DirectoryCommitInstrumentedTest", self.workflow)
         self.assertNotIn("pm clear", tests)
         self.assertNotIn("rm -rf", tests)
 

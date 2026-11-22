@@ -176,6 +176,7 @@ public final class RecoveryVault {
         byte[] encrypted = null;
         byte[] encoded = null;
         File temporary = null;
+        RecoveryDirectoryGuard pinnedDirectory = null;
         boolean committed = false;
         // This finally must cover oversize, Keystore/crypto, folder creation
         // and atomic-move errors, not only the final file write.
@@ -195,6 +196,9 @@ public final class RecoveryVault {
             encoded = buffer.array();
             if (!storage.isDirectory() && !storage.mkdirs())
                 throw new IOException("Não foi possível criar o diretório privado");
+            // Pin THIS directory before staging bytes, refuse symlink roots.
+            // The final path may not be rebound during the transaction.
+            pinnedDirectory = RecoveryDirectoryGuard.open(storage);
             // Refuse low-space saves BEFORE staging new ciphertext. Never
             // touch an already committed checkpoint on budget failure.
             RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
@@ -225,11 +229,13 @@ public final class RecoveryVault {
             beforeMove.run(temporary);
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Confirmação da recuperação interrompida");
+            pinnedDirectory.requireSameDirectory();
             // Recheck AFTER any intervening work and directly BEFORE rename.
             // No untrusted callback may run between this second read and move.
             verifyStagedCiphertext(temporary, encoded, (verified, total) -> {});
             if (!verifiedIdentity.sameFile(stageIdentity(temporary)))
                 throw new IOException("Arquivo temporário substituído antes da confirmação");
+            pinnedDirectory.requireSameDirectory();
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Confirmação da recuperação interrompida");
             try {
@@ -238,12 +244,23 @@ public final class RecoveryVault {
             } catch (AtomicMoveNotSupportedException unavailable) {
                 throw new IOException("Armazenamento sem troca atômica segura", unavailable);
             }
+            // An atomic move is the commit boundary: never automatically
+            // roll back or delete the new checkpoint on post-move errors.
             committed = true;
+            pinnedDirectory.syncAfterRename();
+            StageIdentity promoted = stageIdentity(new File(storage, FILE_NAME));
+            if (!verifiedIdentity.sameFile(promoted)
+                    || promoted.size != encoded.length)
+                throw new IOException("Identidade do checkpoint promovido divergiu");
         } finally {
             if (!committed && temporary != null) temporary.delete();
-            Arrays.fill(plaintext, (byte) 0);
-            if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
-            if (encoded != null) Arrays.fill(encoded, (byte) 0);
+            try {
+                if (pinnedDirectory != null) pinnedDirectory.close();
+            } finally {
+                Arrays.fill(plaintext, (byte) 0);
+                if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
+                if (encoded != null) Arrays.fill(encoded, (byte) 0);
+            }
         }
     }
 
