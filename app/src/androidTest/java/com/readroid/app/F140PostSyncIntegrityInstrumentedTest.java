@@ -141,8 +141,9 @@ public final class F140PostSyncIntegrityInstrumentedTest {
                 Map<String, String> recovered = f.vault.loadForSource(f.source);
                 assertNotEquals("Corrupt AES-GCM must not yield plan B",
                     edits("B"), recovered);
-            } catch (IOException expected) {
-                // Rejecting AES-GCM tampering with an IOException is valid.
+            } catch (IOException | java.security.GeneralSecurityException expected) {
+                // The Android Keystore may report AES-GCM tampering as a
+                // cryptographic exception rather than an IOException.
             }
             f.assertSourceUnchanged();
             f.assertNoStages();
