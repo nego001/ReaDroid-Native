@@ -14,5 +14,8 @@
         <!-- F1.35 emulator-only verifier interruption, debug build only. -->
         <activity android:name=".F135VerifierCrashHarnessActivity"
             android:exported="true" />
+        <!-- F1.39 post-rename/pre-fsync process-kill probe; debug only. -->
+        <activity android:name=".F139PostRenameCrashHarnessActivity"
+            android:exported="true" />
     </application>
 </manifest>

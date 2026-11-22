@@ -67,6 +67,7 @@ public final class RecoveryVault {
     private final RecoveryStorageBudget.FreeSpace freeSpace;
     private final StageReadObserver stageReadObserver;
     private final BeforeMove beforeMove;
+    private final AfterAtomicMove afterAtomicMove;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
@@ -81,6 +82,15 @@ public final class RecoveryVault {
     /** F1.36 pre-move fault injection: only package-private instrumentation. */
     interface BeforeMove {
         void run(File verifiedStage) throws IOException;
+    }
+
+    /**
+     * F1.39 CI-only seam, called AFTER successful ATOMIC_MOVE and BEFORE
+     * directory fsync. Production installs a no-op; never user controlled.
+     * The previous checkpoint is already replaced at this boundary.
+     */
+    interface AfterAtomicMove {
+        void run(File promotedCheckpoint) throws IOException;
     }
 
     public RecoveryVault(Context context) {
@@ -120,9 +130,19 @@ public final class RecoveryVault {
     RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
             RecoveryStorageBudget.FreeSpace freeSpace,
             StageReadObserver stageReadObserver, BeforeMove beforeMove) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            beforeMove, checkpoint -> {});
+    }
+
+    /** Isolated F1.39 fault injection; all production constructors use no-op. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove) {
         if (storage == null || alias == null || alias.isEmpty()
                 || beforeCommit == null || freeSpace == null
-                || stageReadObserver == null || beforeMove == null)
+                || stageReadObserver == null || beforeMove == null
+                || afterAtomicMove == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
@@ -130,6 +150,7 @@ public final class RecoveryVault {
         this.freeSpace = freeSpace;
         this.stageReadObserver = stageReadObserver;
         this.beforeMove = beforeMove;
+        this.afterAtomicMove = afterAtomicMove;
     }
 
     public boolean hasCheckpoint() {
@@ -247,6 +268,10 @@ public final class RecoveryVault {
             // An atomic move is the commit boundary: never automatically
             // roll back or delete the new checkpoint on post-move errors.
             committed = true;
+            // F1.39: deliberately terminate a disposable CI process HERE:
+            // the new ciphertext is already promoted, but directory fsync
+            // has not been invoked. An exception cannot roll back this move.
+            afterAtomicMove.run(new File(storage, FILE_NAME));
             pinnedDirectory.syncAfterRename();
             StageIdentity promoted = stageIdentity(new File(storage, FILE_NAME));
             if (!verifiedIdentity.sameFile(promoted)

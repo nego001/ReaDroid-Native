@@ -49,6 +49,7 @@ ANDROID_TESTS = {
     "F136PreMoveRaceInstrumentedTest",
     "F137DescriptorPinnedStageInstrumentedTest",
     "F138DirectoryCommitInstrumentedTest",
+    "F139PostMoveBoundaryInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -721,6 +722,48 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("com.readroid.app.F138DirectoryCommitInstrumentedTest", self.workflow)
         self.assertNotIn("pm clear", tests)
         self.assertNotIn("rm -rf", tests)
+
+    def test_f139_real_process_termination_after_atomic_move_before_fsync(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
+            encoding="utf-8")
+        harness = (ROOT / "app/src/debug/java/com/readroid/app/F139PostRenameCrashHarnessActivity.java").read_text(encoding="utf-8")
+        unit = (ROOT / "app/src/androidTest/java/com/readroid/app/F139PostMoveBoundaryInstrumentedTest.java").read_text(encoding="utf-8")
+        recovery = (ROOT / "app/src/androidTest/java/com/readroid/app/F139PostRenameCrashInstrumentedTest.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f139_postrename_process_death.sh").read_text(encoding="utf-8")
+        self.assertIn("interface AfterAtomicMove", vault)
+        self.assertIn("afterAtomicMove.run(new File(storage, FILE_NAME));", vault)
+        move = vault.index("Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath()")
+        committed = vault.index("committed = true;", move)
+        hook = vault.index("afterAtomicMove.run(new File(storage, FILE_NAME));", committed)
+        sync = vault.index("pinnedDirectory.syncAfterRename();", hook)
+        self.assertLess(move, committed)
+        self.assertLess(committed, hook)
+        self.assertLess(hook, sync)
+        self.assertIn("F139PostRenameCrashHarnessActivity", manifest)
+        self.assertNotIn("F139PostRenameCrashHarnessActivity", production)
+        self.assertIn("new RecoveryVault(folder(), ALIAS,", harness)
+        self.assertIn("Thread.sleep(60000)", harness)
+        self.assertIn("PROMOTED_B_PRE_SYNC", harness)
+        self.assertIn("PROMOTED_C_PRE_SYNC", harness)
+        self.assertIn("f139PostMoveFailureCannotRollbackAlreadyPromotedB", unit)
+        self.assertIn("f139NormalPostMoveBoundaryStillSyncsAndRecovers", unit)
+        self.assertIn("f139FirstPostRenameKillRecoversPromotedB", recovery)
+        self.assertIn("f139SecondPostRenameKillRecoversPromotedC", recovery)
+        self.assertIn("f139CleanCommitAfterTwoCrashesRecoversD", recovery)
+        self.assertIn("ro.kernel.qemu", script)
+        self.assertIn("adb shell am force-stop", script)
+        self.assertIn("F139_POSTRENAME_PROCESS_DEATH_PASS", script)
+        self.assertIn("bash tests/f139_postrename_process_death.sh", self.workflow)
+        for path in ("app/src/debug/java/com/readroid/app/F139PostRenameCrashHarnessActivity.java", "app/src/androidTest/java/com/readroid/app/F139PostMoveBoundaryInstrumentedTest.java", "app/src/androidTest/java/com/readroid/app/F139PostRenameCrashInstrumentedTest.java", "tests/f139_postrename_process_death.sh"):
+            self.assertIn(path, self.workflow)
+        self.assertIn("com.readroid.app.F139PostMoveBoundaryInstrumentedTest",
+                      self.workflow)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+        self.assertNotIn("upload-artifact@", self.workflow)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
