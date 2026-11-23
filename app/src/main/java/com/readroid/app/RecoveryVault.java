@@ -231,13 +231,23 @@ public final class RecoveryVault {
     }
 
     public void save(File sourceApk, Map<String, String> changes) throws Exception {
+        save(sourceApk, changes, null);
+    }
+
+    /**
+     * F1.43: Activity-bound save, canceled before promotion if the project
+     * changes. The ordinary public overload preserves the existing behavior.
+     */
+    void save(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token) throws Exception {
         synchronized (IN_PROCESS_LOCK) {
-            saveSerialized(sourceApk, changes);
+            saveSerialized(sourceApk, changes, token);
         }
     }
 
-    private void saveSerialized(File sourceApk, Map<String, String> changes)
-            throws Exception {
+    private void saveSerialized(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token) throws Exception {
+        ExportSessionGuard.check(token);
         String fingerprint = sha256(sourceApk);
         if (changes == null || changes.isEmpty() || changes.size() > MAX_CHANGES)
             throw new IllegalArgumentException("O plano deve ter de 1 a 100 alterações");
@@ -293,6 +303,7 @@ public final class RecoveryVault {
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Gravação da recuperação interrompida");
             beforeCommit.run(temporary);
+            ExportSessionGuard.check(token);
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Gravação da recuperação interrompida");
             // Recheck AFTER fsync and callback, just before atomic promotion:
@@ -302,11 +313,13 @@ public final class RecoveryVault {
             // Re-read the exact encrypted bytes before replacing the last
             // usable recovery checkpoint, and refuse swapped symlinks.
             verifyStagedCiphertext(temporary, encoded, stageReadObserver);
+            ExportSessionGuard.check(token);
             // F1.36: remember the actual inode, not just the path's bytes.
             // An identical-byte replacement must not silently inherit the
             // permission to become the new recovery checkpoint.
             final StageIdentity verifiedIdentity = stageIdentity(temporary);
             beforeMove.run(temporary);
+            ExportSessionGuard.check(token);
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Confirmação da recuperação interrompida");
             pinnedDirectory.requireSameDirectory();
@@ -318,6 +331,9 @@ public final class RecoveryVault {
             pinnedDirectory.requireSameDirectory();
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Confirmação da recuperação interrompida");
+            // Final cancellation boundary: stale sessions cannot intentionally
+            // replace the last accepted checkpoint after the final stage read.
+            ExportSessionGuard.check(token);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

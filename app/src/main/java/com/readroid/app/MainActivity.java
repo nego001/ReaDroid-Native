@@ -97,6 +97,10 @@ public class MainActivity extends Activity {
     // without accidentally revoking unrelated UI/export state.
     private final ExportSessionGuard importSessions = new ExportSessionGuard();
     private final ExportSessionGuard exportSessions = new ExportSessionGuard();
+    // F1.43: independent generation for asynchronous encrypted checkpoint saves.
+    // New accepted projects, Activity destruction and later save requests
+    // cancel queued/staged saves BEFORE the atomic replacement boundary.
+    private final ExportSessionGuard recoverySaveSessions = new ExportSessionGuard();
     // An ACTION_CREATE_DOCUMENT callback must never attach to a newer APK.
     private PendingExport pendingExport;
 
@@ -1044,6 +1048,22 @@ public class MainActivity extends Activity {
                     .setPositiveButton("OK", null).show();
                 return;
             }
+            // F1.43: bind the prompt to the currently accepted APK AND its
+            // edits, before the dialog can outlive the project.
+            final File sourceAtPrompt = currentApk;
+            final Uri documentAtPrompt = selectedApkUri;
+            final int generationAtPrompt = analysisSequence;
+            final String hashAtPrompt = report.optString("sha256", "");
+            final ExplorerView.EditSession sessionAtPrompt =
+                explorerView.captureEditSession();
+            final Map<String, String> editsAtPrompt =
+                Collections.unmodifiableMap(new LinkedHashMap<>(
+                    explorerView.getEditPlan().snapshot()));
+            if (!SavedProjectResume.validSha256(hashAtPrompt)) {
+                showRecoveryError("Salvamento bloqueado",
+                    new IOException("Identidade SHA-256 do APK não verificada."));
+                return;
+            }
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Salvar plano neste aparelho?")
                 .setMessage("O plano será criptografado com Android Keystore e guardado "
@@ -1052,13 +1072,29 @@ public class MainActivity extends Activity {
                     + "Para recuperar, será necessário abrir novamente o mesmo APK.")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Criptografar e salvar", (dialog, which) -> {
-                    final File source = currentApk;
-                    final Map<String, String> changes = explorerView.getEditPlan().snapshot();
+                    if (!isRecoverySaveRequestCurrent(sourceAtPrompt, documentAtPrompt,
+                            generationAtPrompt, hashAtPrompt, sessionAtPrompt,
+                            editsAtPrompt)) {
+                        showRecoveryError("Salvamento cancelado",
+                            new IOException("O projeto ou as alterações mudaram. "
+                                + "Abra Salvar novamente para conferir o plano atual."));
+                        return;
+                    }
+                    final ExportSessionGuard.Token token = recoverySaveSessions.begin();
                     executor.execute(() -> {
                         try {
-                            new RecoveryVault(this).save(source, changes);
+                            token.requireActive();
+                            // A stale cache file or substituted APK cannot
+                            // overwrite the single-slot recovery checkpoint.
+                            RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);
+                            token.requireActive();
+                            new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt, token);
                             runOnUiThread(() -> {
-                                if (isFinishing() || isDestroyed()) return;
+                                if (!token.isActive()
+                                        || !isRecoveryTargetCurrent(sourceAtPrompt,
+                                            documentAtPrompt, generationAtPrompt,
+                                            hashAtPrompt, sessionAtPrompt))
+                                    return;
                                 new android.app.AlertDialog.Builder(this)
                                     .setTitle("Cópia protegida")
                                     .setMessage("Plano salvo localmente com criptografia. "
@@ -1066,7 +1102,13 @@ public class MainActivity extends Activity {
                                     .setPositiveButton("OK", null).show();
                             });
                         } catch (Exception error) {
-                            showRecoveryError("Falha ao salvar cópia", error);
+                            runOnUiThread(() -> {
+                                if (token.isActive()
+                                        && isRecoveryTargetCurrent(sourceAtPrompt,
+                                            documentAtPrompt, generationAtPrompt,
+                                            hashAtPrompt, sessionAtPrompt))
+                                    showRecoveryError("Falha ao salvar cópia", error);
+                            });
                         }
                     });
                 }).show();
@@ -1497,6 +1539,16 @@ public class MainActivity extends Activity {
             && report != null
             && expectedSha256.equals(report.optString("sha256", ""))
             && explorerView.isCurrentEditSession(editSession);
+    }
+
+    /** F1.43: UI-thread-only consent gate; rejects stale dialog or edited plan. */
+    private boolean isRecoverySaveRequestCurrent(File source, Uri document,
+            int generation, String expectedSha256, ExplorerView.EditSession session,
+            Map<String, String> snapshotAtPrompt) {
+        return isRecoveryTargetCurrent(source, document, generation,
+                expectedSha256, session)
+            && snapshotAtPrompt != null && !snapshotAtPrompt.isEmpty()
+            && snapshotAtPrompt.equals(explorerView.getEditPlan().snapshot());
     }
 
     private void showRecoveryError(String title, Exception error) {
@@ -2045,6 +2097,9 @@ public class MainActivity extends Activity {
                     }
                     File previousApk = currentApk;
                     File previousIndex = currentIndex;
+                    // F1.43: cancel queued/staged saves against the previous
+                    // accepted project before touching the shared workspace.
+                    recoverySaveSessions.invalidate();
                     // Commit the replacement only when a complete, validated
                     // report and private file/index are ready to display.
                     explorerView.getEditPlan().clear();
@@ -2531,6 +2586,7 @@ public class MainActivity extends Activity {
         // even when its SAF provider ignores interruption while blocked.
         if (importScope != null) importScope.close();
         exportSessions.invalidate();
+        recoverySaveSessions.invalidate();
         pendingExport = null;
         analysisSequence++;
         importWorkers.shutdownNow();

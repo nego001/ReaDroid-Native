@@ -53,6 +53,7 @@ ANDROID_TESTS = {
     "F140PostSyncIntegrityInstrumentedTest",
     "F141FinalReadInstrumentedTest",
     "F142PostAttestationInstrumentedTest",
+    "F143RecoverySaveBindingInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -915,6 +916,36 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("bash tests/f142_post_attestation_process_death.sh", self.workflow)
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f143_recovery_save_consent_and_checkpoint_commit_are_bound(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        suite = (ROOT / "app/src/androidTest/java/com/readroid/app/F143RecoverySaveBindingInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("private final ExportSessionGuard recoverySaveSessions", activity)
+        self.assertIn("final File sourceAtPrompt = currentApk;", activity)
+        self.assertIn("final Map<String, String> editsAtPrompt =", activity)
+        self.assertIn("isRecoverySaveRequestCurrent(sourceAtPrompt, documentAtPrompt,", activity)
+        self.assertIn("RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);", activity)
+        self.assertIn("new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt, token);", activity)
+        self.assertIn("recoverySaveSessions.invalidate();", activity)
+        self.assertIn("snapshotAtPrompt.equals(explorerView.getEditPlan().snapshot())", activity)
+        self.assertIn("ExportSessionGuard.check(token);", vault)
+        final_check = vault.index("ExportSessionGuard.check(token);\\n            try {".replace("\\n", "\n"))
+        rename = vault.index("Files.move(temporary.toPath()", final_check)
+        self.assertLess(final_check, rename)
+        for method in (
+            "f143StalePromptRejectsNewProject",
+            "f143SameSourceRebindingRejectsPrompt",
+            "f143EditedPlanRejectsPrompt",
+            "f143InvalidatedBeforeAtomicMovePreservesA",
+            "f143CurrentTokenStillSavesB",
+        ):
+            self.assertIn(method, suite)
+        self.assertIn("com.readroid.app.F143RecoverySaveBindingInstrumentedTest",
+                      self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F143RecoverySaveBindingInstrumentedTest.java",
+                      self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
 
     def test_pr_scope_and_no_installer_publication(self):
