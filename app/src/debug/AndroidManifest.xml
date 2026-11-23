@@ -20,5 +20,8 @@
         <!-- F1.40 only-debug post-fsync real process termination. -->
         <activity android:name=".F140PostSyncCrashHarnessActivity"
             android:exported="true" />
+        <!-- F1.41 debug-only final ciphertext read interruption. -->
+        <activity android:name=".F141FinalReadCrashHarnessActivity"
+            android:exported="true" />
     </application>
 </manifest>

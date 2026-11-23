@@ -69,6 +69,7 @@ public final class RecoveryVault {
     private final BeforeMove beforeMove;
     private final AfterAtomicMove afterAtomicMove;
     private final AfterDirectorySync afterDirectorySync;
+    private final StageReadObserver finalReadObserver;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
@@ -158,10 +159,25 @@ public final class RecoveryVault {
             RecoveryStorageBudget.FreeSpace freeSpace,
             StageReadObserver stageReadObserver, BeforeMove beforeMove,
             AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            beforeMove, afterAtomicMove, afterDirectorySync, (verified, total) -> {});
+    }
+
+    /**
+     * F1.41 CI-only observer of the FINAL ciphertext reread after directory
+     * fsync, distinct from the pre-move staging observer. All production
+     * constructors install a no-op. This never exposes a new app API.
+     */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync,
+            StageReadObserver finalReadObserver) {
         if (storage == null || alias == null || alias.isEmpty()
                 || beforeCommit == null || freeSpace == null
                 || stageReadObserver == null || beforeMove == null
-                || afterAtomicMove == null || afterDirectorySync == null)
+                || afterAtomicMove == null || afterDirectorySync == null
+                || finalReadObserver == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
@@ -171,6 +187,7 @@ public final class RecoveryVault {
         this.beforeMove = beforeMove;
         this.afterAtomicMove = afterAtomicMove;
         this.afterDirectorySync = afterDirectorySync;
+        this.finalReadObserver = finalReadObserver;
     }
 
     public boolean hasCheckpoint() {
@@ -305,8 +322,11 @@ public final class RecoveryVault {
             // Inode and length alone cannot detect a same-size bit flip
             // after fsync. Reopen with O_NOFOLLOW and attest all ciphertext.
             // A failure here is POST-commit: it must never claim rollback.
+            // F1.41: stop a disposable CI writer inside the FINAL read,
+            // with ciphertext still unread. After the move there is no
+            // automatic rollback, even if verification is interrupted.
             verifyStagedCiphertext(promotedCheckpoint, encoded,
-                (verified, total) -> {});
+                finalReadObserver);
         } finally {
             if (!committed && temporary != null) temporary.delete();
             try {

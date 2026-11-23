@@ -51,6 +51,7 @@ ANDROID_TESTS = {
     "F138DirectoryCommitInstrumentedTest",
     "F139PostMoveBoundaryInstrumentedTest",
     "F140PostSyncIntegrityInstrumentedTest",
+    "F141FinalReadInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -813,6 +814,48 @@ class FunctionalCIContract(unittest.TestCase):
                       self.workflow)
         for path in ("app/src/debug/java/com/readroid/app/F140PostSyncCrashHarnessActivity.java", "app/src/androidTest/java/com/readroid/app/F140PostSyncIntegrityInstrumentedTest.java", "app/src/androidTest/java/com/readroid/app/F140PostSyncCrashInstrumentedTest.java", "tests/f140_postsync_process_death.sh"):
             self.assertIn(path, self.workflow)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f141_mid_final_read_crash_and_recovery_are_emulator_only(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(encoding="utf-8")
+        prod = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        harness = (ROOT / "app/src/debug/java/com/readroid/app/F141FinalReadCrashHarnessActivity.java").read_text(encoding="utf-8")
+        unit = (ROOT / "app/src/androidTest/java/com/readroid/app/F141FinalReadInstrumentedTest.java").read_text(encoding="utf-8")
+        recovery = (ROOT / "app/src/androidTest/java/com/readroid/app/F141FinalReadCrashInstrumentedTest.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f141_final_read_process_death.sh").read_text(encoding="utf-8")
+        self.assertIn("private final StageReadObserver finalReadObserver;", vault)
+        self.assertIn("finalReadObserver);", vault)
+        self.assertIn("F141FinalReadCrashHarnessActivity", manifest)
+        self.assertNotIn("F141FinalReadCrashHarnessActivity", prod)
+        self.assertIn("verified == 8192", harness)
+        self.assertIn("total > verified", harness)
+        self.assertIn("Thread.sleep(60000)", harness)
+        for name in (
+            "f141InterruptedFinalReadKeepsPromotedBRecoverable",
+            "f141UnreadCiphertextTamperingIsDetected",
+            "f141NormalFinalReadCompletesAllChunks",
+        ):
+            self.assertIn(name, unit)
+        for name in (
+            "f141FirstFinalReadKillRecoversPromotedB",
+            "f141SecondFinalReadKillRecoversPromotedC",
+            "f141NormalSaveAfterTwoCrashesRecoversD",
+        ):
+            self.assertIn(name, recovery)
+        for check in ("ro.kernel.qemu", "adb shell am force-stop",
+                      "F141_FINAL_READ_PROCESS_DEATH_PASS", "old_pid=", "new_pid="):
+            self.assertIn(check, script)
+        for path in (
+            "app/src/debug/java/com/readroid/app/F141FinalReadCrashHarnessActivity.java",
+            "app/src/androidTest/java/com/readroid/app/F141FinalReadInstrumentedTest.java",
+            "app/src/androidTest/java/com/readroid/app/F141FinalReadCrashInstrumentedTest.java",
+            "tests/f141_final_read_process_death.sh",
+        ):
+            self.assertIn(path, self.workflow)
+        self.assertIn("bash tests/f141_final_read_process_death.sh", self.workflow)
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
         self.assertNotIn("upload-artifact@", self.workflow)
