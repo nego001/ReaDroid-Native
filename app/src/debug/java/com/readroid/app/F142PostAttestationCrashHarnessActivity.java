@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Emulator-only F1.41. No production APK, aliases, files or physical devices. */
+/** F1.42 debug-only: force-stop after full ciphertext attestation, before return. */
 public final class F142PostAttestationCrashHarnessActivity extends Activity {
     static final String LAB = "f142_ci_post_attestation_lab";
     static final String ALIAS = "negrescodroid.f142.ci.postattestation.v1";

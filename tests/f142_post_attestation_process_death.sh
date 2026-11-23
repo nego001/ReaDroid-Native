@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# F1.41: force-stop WHILE the final post-fsync ciphertext read has bytes left.
+# F1.42: force-stop AFTER full final attestation, BEFORE save() returns.
 # This tests process termination; it does NOT emulate a power outage.
 set -euo pipefail
 
@@ -61,8 +61,11 @@ test_method() {
         fail "F142 $method instrumentation failed"
     fi
 }
-kill_during_post_attestation() {
-    local lastSHA oldPID newPID numStages
+kill_after_attestation() {
+    local expected_version=$1 oldPID newPID numStages
+    # The test host must observe that the caller has NOT acknowledged B/C.
+    [[ "$(run_as "cat $LAB/accepted.version")" == "$expected_version" ]] ||
+        fail "writer acknowledged revision before host killed the process"
     oldPID=$(pid)
     [[ -n "$oldPID" ]] || fail "writer process already absent before kill"
     run_as "test -s $LAB/vault/edit-plan-checkpoint.v1" ||
@@ -93,10 +96,10 @@ start_phase seed SEEDED_A
 run_as "test -s $LAB/accepted.sha256" ||
     fail "initial committed checkpoint hash absent"
 start_phase promote_b ATTESTED_B
-kill_during_post_attestation
+kill_after_attestation A
 test_method f142FirstPostAttestationKillRecoversPromotedB
 start_phase promote_c ATTESTED_C
-kill_during_post_attestation
+kill_after_attestation B
 test_method f142SecondPostAttestationKillRecoversPromotedC
 start_phase commit_d COMMITTED_D
 test_method f142NormalSaveAfterTwoCrashesRecoversD
