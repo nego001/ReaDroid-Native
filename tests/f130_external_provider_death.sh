@@ -82,16 +82,31 @@ adb shell am force-stop "$FIXTURE"
 [[ -z "$(pid_for "$REMOTE_PROCESS" || true)" ]] ||
     fail "remote provider survived force-stop"
 
-new_owner_pid=$(pid_for "$APP" || true)
-if [[ "$new_owner_pid" != "$owner_pid" ]]; then
+owner_after_provider=$(pid_for "$APP" || true)
+new_owner_pid="$owner_after_provider"
+if [[ "$owner_after_provider" != "$owner_pid" ]]; then
     # Android can kill an importer that holds a *stable* ContentProvider
     # reference when that provider dies. This is a real platform cascade,
     # not an in-process catchable IOException. Reopen the app, exercising
     # F1.26's ImportCrashJanitor on the FIRST Activity of a new process.
-    adb shell am start -W -n "$APP/.MainActivity" >/dev/null
-    new_owner_pid=$(pid_for "$APP")
-    [[ -n "$new_owner_pid" && "$new_owner_pid" != "$owner_pid" ]] ||
+    # Activity launch can complete before pidof observes the new process.
+    # Accept only a NEW PID, never an empty result or the original PID.
+    launch=$(adb shell am start -W -n "$APP/.MainActivity" 2>&1) ||
+        fail "could not launch consumer after provider death: $launch"
+    new_owner_pid=""
+    for attempt in $(seq 1 15); do
+        new_owner_pid=$(pid_for "$APP")
+        if [[ -n "$new_owner_pid" && "$new_owner_pid" != "$owner_pid" ]]; then
+            break
+        fi
+        sleep 1
+    done
+    if [[ -z "$new_owner_pid" || "$new_owner_pid" == "$owner_pid" ]]; then
+        echo "F130 cold-start diagnostic: old=$owner_pid initial=$owner_after_provider observed=$new_owner_pid launch=$launch" >&2
+        adb shell logcat -d -t 80 -s AndroidRuntime:E ActivityTaskManager:W 2>/dev/null |
+            tail -n 40 >&2 || true
         fail "consumer process did not restart after cascading provider death"
+    fi
     verdict=PASS_CASCADE_COLD_START
 else
     verdict=""

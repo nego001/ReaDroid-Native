@@ -463,6 +463,11 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn('run_as "wc -c $ROOT/readroid_*.apk.pending"', script)
         self.assertIn('PASS_CASCADE_COLD_START', script)
         self.assertIn('adb shell am start -W -n "$APP/.MainActivity"', script)
+        # F1.41 API29: activity startup may precede pidof observation.
+        self.assertIn("for attempt in $(seq 1 15); do", script)
+        self.assertIn('[[ -n "$new_owner_pid" && "$new_owner_pid" != "$owner_pid" ]]', script)
+        self.assertIn('if [[ -z "$new_owner_pid" || "$new_owner_pid" == "$owner_pid" ]]', script)
+        self.assertIn('fail "consumer process did not restart after cascading provider death"', script)
         self.assertIn('getCacheDir()', harness)
         self.assertIn('ImportCrashJanitor', (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8"))
         self.assertIn('run_as "test -f $ROOT/readroid_F130accepted123.apk"', script)
