@@ -32,8 +32,12 @@ public final class F141FinalReadCrashInstrumentedTest {
             StandardCharsets.US_ASCII);
     }
     private static Map<String, String> edits(char c) {
+        // Independently reconstruct expected text; do not load a debug
+        // Activity class from the instrumentation APK's class loader.
+        char[] chars = new char[24000];
+        java.util.Arrays.fill(chars, c);
         return Collections.singletonMap(ENTRY,
-            F141FinalReadCrashHarnessActivity.revision(c));
+            "F141:" + c + ":" + new String(chars));
     }
     private static int stages() throws Exception {
         int count = 0;
