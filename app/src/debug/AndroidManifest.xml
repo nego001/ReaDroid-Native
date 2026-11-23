@@ -23,5 +23,8 @@
         <!-- F1.41 debug-only final ciphertext read interruption. -->
         <activity android:name=".F141FinalReadCrashHarnessActivity"
             android:exported="true" />
+        <!-- F1.42 debug-only post-attestation / pre-return death probe. -->
+        <activity android:name=".F142PostAttestationCrashHarnessActivity"
+            android:exported="true" />
     </application>
 </manifest>

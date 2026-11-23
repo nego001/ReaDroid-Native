@@ -70,6 +70,7 @@ public final class RecoveryVault {
     private final AfterAtomicMove afterAtomicMove;
     private final AfterDirectorySync afterDirectorySync;
     private final StageReadObserver finalReadObserver;
+    private final AfterFinalAttestation afterFinalAttestation;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
@@ -102,6 +103,15 @@ public final class RecoveryVault {
      */
     interface AfterDirectorySync {
         void run(File promotedCheckpoint) throws IOException;
+    }
+
+    /**
+     * F1.42 isolated test callback AFTER final descriptor/inode/ciphertext
+     * attestation finishes and BEFORE save() returns to its caller.
+     * On production paths this is ALWAYS a no-op.
+     */
+    interface AfterFinalAttestation {
+        void run(File attestedCheckpoint) throws IOException;
     }
 
     public RecoveryVault(Context context) {
@@ -173,11 +183,22 @@ public final class RecoveryVault {
             StageReadObserver stageReadObserver, BeforeMove beforeMove,
             AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync,
             StageReadObserver finalReadObserver) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver, beforeMove,
+            afterAtomicMove, afterDirectorySync, finalReadObserver, checkpoint -> {});
+    }
+
+    /** F1.42 end-of-attestation test probe. Never available to app callers. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync,
+            StageReadObserver finalReadObserver,
+            AfterFinalAttestation afterFinalAttestation) {
         if (storage == null || alias == null || alias.isEmpty()
                 || beforeCommit == null || freeSpace == null
                 || stageReadObserver == null || beforeMove == null
                 || afterAtomicMove == null || afterDirectorySync == null
-                || finalReadObserver == null)
+                || finalReadObserver == null || afterFinalAttestation == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
@@ -188,6 +209,7 @@ public final class RecoveryVault {
         this.afterAtomicMove = afterAtomicMove;
         this.afterDirectorySync = afterDirectorySync;
         this.finalReadObserver = finalReadObserver;
+        this.afterFinalAttestation = afterFinalAttestation;
     }
 
     public boolean hasCheckpoint() {
@@ -327,6 +349,10 @@ public final class RecoveryVault {
             // automatic rollback, even if verification is interrupted.
             verifyStagedCiphertext(promotedCheckpoint, encoded,
                 finalReadObserver);
+            // F1.42: the checkpoint is committed and fully attested, but
+            // save() has not returned. A disposable CI process is terminated
+            // here; NEVER delete/roll back an already-promoted checkpoint.
+            afterFinalAttestation.run(promotedCheckpoint);
         } finally {
             if (!committed && temporary != null) temporary.delete();
             try {

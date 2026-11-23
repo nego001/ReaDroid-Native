@@ -67,6 +67,10 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/F141FinalReadCrashInstrumentedTest.java'
       - 'app/src/debug/java/com/readroid/app/F141FinalReadCrashHarnessActivity.java'
       - 'tests/f141_final_read_process_death.sh'
+      - 'app/src/androidTest/java/com/readroid/app/F142PostAttestationInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/F142PostAttestationCrashInstrumentedTest.java'
+      - 'app/src/debug/java/com/readroid/app/F142PostAttestationCrashHarnessActivity.java'
+      - 'tests/f142_post_attestation_process_death.sh'
       - 'tests/f140_postsync_process_death.sh'
       - 'app/src/androidTest/java/com/readroid/app/F139PostMoveBoundaryInstrumentedTest.java'
       - 'app/src/androidTest/java/com/readroid/app/F139PostRenameCrashInstrumentedTest.java'
@@ -139,7 +143,7 @@ jobs:
             # Separate disposable Android application: own UID and remote provider.
             gradle --no-daemon :f130fixture:assembleDebug
             adb install -r f130fixture/build/outputs/apk/debug/f130fixture-debug.apk
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.F133RecoverySpaceConcurrencyInstrumentedTest,com.readroid.app.F134RecoveryStageIntegrityInstrumentedTest,com.readroid.app.F135StageVerificationInstrumentedTest,com.readroid.app.F136PreMoveRaceInstrumentedTest,com.readroid.app.F137DescriptorPinnedStageInstrumentedTest,com.readroid.app.F138DirectoryCommitInstrumentedTest,com.readroid.app.F139PostMoveBoundaryInstrumentedTest,com.readroid.app.F140PostSyncIntegrityInstrumentedTest,com.readroid.app.F141FinalReadInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ImportWorkerLaneInstrumentedTest,com.readroid.app.ImportActivityScopeInstrumentedTest,com.readroid.app.ImportCrashJanitorInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.F129RealProviderInstrumentedTest,com.readroid.app.F130ProviderDeathInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.EditPlanStateInstrumentedTest,com.readroid.app.RecoveryVaultInstrumentedTest,com.readroid.app.F133RecoverySpaceConcurrencyInstrumentedTest,com.readroid.app.F134RecoveryStageIntegrityInstrumentedTest,com.readroid.app.F135StageVerificationInstrumentedTest,com.readroid.app.F136PreMoveRaceInstrumentedTest,com.readroid.app.F137DescriptorPinnedStageInstrumentedTest,com.readroid.app.F138DirectoryCommitInstrumentedTest,com.readroid.app.F139PostMoveBoundaryInstrumentedTest,com.readroid.app.F140PostSyncIntegrityInstrumentedTest,com.readroid.app.F141FinalReadInstrumentedTest,com.readroid.app.F142PostAttestationInstrumentedTest,com.readroid.app.RecoveryResumeGateInstrumentedTest,com.readroid.app.ProjectRecreationInstrumentedTest,com.readroid.app.ApkImportPreflightInstrumentedTest,com.readroid.app.ApkImportStagingInstrumentedTest,com.readroid.app.ImportConcurrencyInstrumentedTest,com.readroid.app.ImportWorkerLaneInstrumentedTest,com.readroid.app.ImportActivityScopeInstrumentedTest,com.readroid.app.ImportCrashJanitorInstrumentedTest,com.readroid.app.ApkZipIntegrityInstrumentedTest,com.readroid.app.ApkCacheAdmissionInstrumentedTest,com.readroid.app.SavedProjectResumeInstrumentedTest,com.readroid.app.F129RealProviderInstrumentedTest,com.readroid.app.F130ProviderDeathInstrumentedTest,com.readroid.app.ImportCacheAuditInstrumentedTest,com.readroid.app.ApkRebuilderInstrumentedTest,com.readroid.app.RebuildTempJanitorInstrumentedTest,com.readroid.app.RebuildStorageBudgetInstrumentedTest,com.readroid.app.SafExportVerifierInstrumentedTest,com.readroid.app.ExportSessionGuardInstrumentedTest
             echo "F1_FUNCTIONAL_REGRESSIONS_PASS api=${{ matrix.api }}"
             # F1.27: host-driven real app process termination; run AFTER
             # the normal in-process instrumentation has finished.
@@ -170,3 +174,6 @@ jobs:
             # F1.41: kill the process DURING the post-fsync final ciphertext read.
             bash tests/f141_final_read_process_death.sh
             echo "F141_FINAL_READ_PROCESS_DEATH_PASS api=${{ matrix.api }}"
+            # F1.42: full attestation completed, but save() not returned.
+            bash tests/f142_post_attestation_process_death.sh
+            echo "F142_POST_ATTESTATION_PROCESS_DEATH_PASS api=${{ matrix.api }}"

@@ -52,6 +52,7 @@ ANDROID_TESTS = {
     "F139PostMoveBoundaryInstrumentedTest",
     "F140PostSyncIntegrityInstrumentedTest",
     "F141FinalReadInstrumentedTest",
+    "F142PostAttestationInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -861,6 +862,57 @@ class FunctionalCIContract(unittest.TestCase):
         ):
             self.assertIn(path, self.workflow)
         self.assertIn("bash tests/f141_final_read_process_death.sh", self.workflow)
+        self.assertNotIn("pm clear", script)
+        self.assertNotIn("rm -rf", script)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f142_completed_ciphertext_attestation_before_acknowledgement(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        manifest = (ROOT / "app/src/debug/AndroidManifest.xml").read_text(encoding="utf-8")
+        production = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        harness = (ROOT / "app/src/debug/java/com/readroid/app/F142PostAttestationCrashHarnessActivity.java").read_text(encoding="utf-8")
+        unit = (ROOT / "app/src/androidTest/java/com/readroid/app/F142PostAttestationInstrumentedTest.java").read_text(encoding="utf-8")
+        recovered = (ROOT / "app/src/androidTest/java/com/readroid/app/F142PostAttestationCrashInstrumentedTest.java").read_text(encoding="utf-8")
+        script = (ROOT / "tests/f142_post_attestation_process_death.sh").read_text(encoding="utf-8")
+        verify = vault.index("verifyStagedCiphertext(promotedCheckpoint, encoded,\\n                finalReadObserver);".replace("\\n", "\n"))
+        callback = vault.index("afterFinalAttestation.run(promotedCheckpoint);", verify)
+        cleanup = vault.index("} finally {", callback)
+        self.assertLess(verify, callback)
+        self.assertLess(callback, cleanup)
+        self.assertIn("interface AfterFinalAttestation", vault)
+        self.assertIn("private final AfterFinalAttestation afterFinalAttestation;", vault)
+        self.assertIn("finalReadObserver, checkpoint -> {});", vault)
+        self.assertIn("F142PostAttestationCrashHarnessActivity", manifest)
+        self.assertNotIn("F142PostAttestationCrashHarnessActivity", production)
+        self.assertIn("last[0] != totalSeen[0]", harness)
+        self.assertIn("Thread.sleep(60000)", harness)
+        self.assertIn('status("ATTESTED_" + next)', harness)
+        for case in (
+            "f142PostAttestationExceptionKeepsPromotedBRecoverable",
+            "f142SuccessfulAttestationPrecedesSaveReturn",
+            "f142FinalReadFailurePreventsAttestationCallback",
+        ):
+            self.assertIn(case, unit)
+        for case in (
+            "f142FirstPostAttestationKillRecoversPromotedB",
+            "f142SecondPostAttestationKillRecoversPromotedC",
+            "f142NormalSaveAfterTwoCrashesRecoversD",
+        ):
+            self.assertIn(case, recovered)
+        for check in (
+            "ro.kernel.qemu", "adb shell am force-stop",
+            "F142_POST_ATTESTATION_PROCESS_DEATH_PASS", "old_pid=", "new_pid=",
+            "kill_after_attestation A", "kill_after_attestation B",
+        ):
+            self.assertIn(check, script)
+        for path in (
+            "app/src/debug/java/com/readroid/app/F142PostAttestationCrashHarnessActivity.java",
+            "app/src/androidTest/java/com/readroid/app/F142PostAttestationInstrumentedTest.java",
+            "app/src/androidTest/java/com/readroid/app/F142PostAttestationCrashInstrumentedTest.java",
+            "tests/f142_post_attestation_process_death.sh",
+        ):
+            self.assertIn(path, self.workflow)
+        self.assertIn("bash tests/f142_post_attestation_process_death.sh", self.workflow)
         self.assertNotIn("pm clear", script)
         self.assertNotIn("rm -rf", script)
         self.assertNotIn("upload-artifact@", self.workflow)
