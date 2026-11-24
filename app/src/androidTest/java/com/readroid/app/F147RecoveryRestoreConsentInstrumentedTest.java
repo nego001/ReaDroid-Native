@@ -463,4 +463,42 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
             assertEquals(plan("A"), f.vault.loadForSource(f.source));
         }
     }
+
+    @Test public void f155StaleSaveProofCannotOverwriteSamePlanResave() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof stale = f.vault.captureDeletionProof();
+            f.vault.save(f.source, plan("A"));
+            byte[] newer = Files.readAllBytes(f.checkpoint.toPath());
+            String hash = ApkIntegrity.sha256(f.source);
+            try {
+                f.vault.save(f.source, plan("B"), new ExportSessionGuard().begin(), hash, stale);
+                fail("Stale save consent must not overwrite the new ciphertext");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou"));
+                assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
+            }
+            f.vault.save(f.source, plan("B"), new ExportSessionGuard().begin(),
+                hash, f.vault.captureDeletionProof());
+            assertEquals(plan("B"), f.vault.loadForSource(f.source));
+        }
+    }
+
+    @Test public void f155SlotChangeDuringStagingRejectsPromotion() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof offered = f.vault.captureDeletionProof();
+            byte[] original = Files.readAllBytes(f.checkpoint.toPath());
+            byte[] changed = original.clone();
+            changed[changed.length - 1] ^= 1;
+            RecoveryVault writer = new RecoveryVault(f.folder, f.alias,
+                staged -> Files.write(f.checkpoint.toPath(), changed));
+            try {
+                writer.save(f.source, plan("B"), new ExportSessionGuard().begin(),
+                    ApkIntegrity.sha256(f.source), offered);
+                fail("Changed slot during staging must not be overwritten");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou"));
+                assertArrayEquals(changed, Files.readAllBytes(f.checkpoint.toPath()));
+            }
+        }
+    }
 }

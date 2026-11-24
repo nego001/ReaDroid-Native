@@ -101,6 +101,7 @@ public class MainActivity extends Activity {
     // New accepted projects, Activity destruction and later save requests
     // cancel queued/staged saves BEFORE the atomic replacement boundary.
     private final ExportSessionGuard recoverySaveSessions = new ExportSessionGuard();
+    private final ExportSessionGuard recoverySaveOffers = new ExportSessionGuard();
     // F1.47: a restore confirmation belongs to one request. Save, clear,
     // replacement import, a newer restore, or destruction revokes it.
     private final ExportSessionGuard recoveryRestoreSessions = new ExportSessionGuard();
@@ -1043,7 +1044,7 @@ public class MainActivity extends Activity {
             "Salvar cópia de recuperação criptografada", false);
         buildSection.addView(saveRecovery);
         saveRecovery.setOnClickListener(v -> {
-            if (currentApk == null || !currentApk.isFile() || report == null
+            if (currentApk == null || report == null
                 || explorerView.getEditPlan().size() == 0) {
                 new android.app.AlertDialog.Builder(this)
                     .setMessage("Abra um APK e registre pelo menos uma alteração antes "
@@ -1068,65 +1069,95 @@ public class MainActivity extends Activity {
                     new IOException("Identidade SHA-256 do APK não verificada."));
                 return;
             }
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Salvar plano neste aparelho?")
-                .setMessage("O plano será criptografado com Android Keystore e guardado "
-                    + "apenas no armazenamento privado. Substitui a cópia anterior; "
-                    + "não inclui o APK original, não usa nuvem e não é salvamento automático. "
-                    + "Para recuperar, será necessário abrir novamente o mesmo APK.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Criptografar e salvar", (dialog, which) -> {
-                    if (!isRecoverySaveRequestCurrent(sourceAtPrompt, documentAtPrompt,
-                            generationAtPrompt, hashAtPrompt, sessionAtPrompt,
-                            editsAtPrompt, revisionAtPrompt)) {
-                        showRecoveryError("Salvamento cancelado",
-                            new IOException("O projeto ou as alterações mudaram. "
-                                + "Abra Salvar novamente para conferir o plano atual."));
-                        return;
-                    }
-                    recoveryRestoreSessions.invalidate();
-                    final ExportSessionGuard.Token token = recoverySaveSessions.begin();
-                    executor.execute(() -> {
-                        try {
-                            token.requireActive();
-                            // A stale cache file or substituted APK cannot
-                            // overwrite the single-slot recovery checkpoint.
-                            final RecoveryResumeGate.Proof preSaveProof =
-                                RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);
-                            token.requireActive();
-                            new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt,
-                                token, hashAtPrompt);
-                            // F1.46: the save has RETURNED, so its commit is
-                            // already complete. Reattest the original's ZIP
-                            // and SHA before posting a success notification.
-                            RecoverySaveAcknowledgementGate.revalidate(
-                                preSaveProof, sourceAtPrompt, hashAtPrompt);
-                            runOnUiThread(() -> {
-                                if (!token.isActive()
-                                        || !isRecoveryTargetCurrent(sourceAtPrompt,
-                                            documentAtPrompt, generationAtPrompt,
-                                            hashAtPrompt, sessionAtPrompt))
-                                    return;
-                                new android.app.AlertDialog.Builder(this)
-                                    .setTitle("Cópia protegida")
-                                    .setMessage("Plano salvo localmente com criptografia. "
-                                        + "Novas edições não entram na cópia até salvar outra vez.")
-                                    .setPositiveButton("OK", null).show();
-                            });
-                        } catch (Exception error) {
-                            runOnUiThread(() -> {
-                                if (token.isActive()
-                                        && isRecoveryTargetCurrent(sourceAtPrompt,
-                                            documentAtPrompt, generationAtPrompt,
-                                            hashAtPrompt, sessionAtPrompt))
-                                    showRecoveryError(
-                                        error instanceof RecoveryVault.PostCommitSourceException
-                                            ? "Cópia gravada; origem não confirmada"
-                                            : "Falha ao salvar cópia", error);
-                            });
+            final ExportSessionGuard.Token offerToken = recoverySaveOffers.begin();
+            executor.execute(() -> {
+                try {
+                    offerToken.requireActive();
+                    final RecoveryVault.DeletionProof checkpointAtOffer =
+                        new RecoveryVault(this).captureDeletionProof();
+                    offerToken.requireActive();
+                    runOnUiThread(() -> {
+                        if (!offerToken.isActive()) return;
+                        if (!isRecoverySaveRequestCurrent(sourceAtPrompt, documentAtPrompt,
+                                generationAtPrompt, hashAtPrompt, sessionAtPrompt,
+                                editsAtPrompt, revisionAtPrompt)) {
+                            if (isRecoveryTargetCurrent(sourceAtPrompt, documentAtPrompt,
+                                    generationAtPrompt, hashAtPrompt, sessionAtPrompt))
+                                showRecoveryError("Salvamento cancelado",
+                                    new IOException("As alterações mudaram. Solicite o salvamento novamente."));
+                            return;
                         }
+                        new android.app.AlertDialog.Builder(this)
+                            .setTitle("Salvar plano neste aparelho?")
+                            .setMessage("O plano será criptografado com Android Keystore e guardado "
+                                + "apenas no armazenamento privado. Substitui a cópia anterior; "
+                                + "não inclui o APK original, não usa nuvem e não é salvamento automático. "
+                                + "Para recuperar, será necessário abrir novamente o mesmo APK.")
+                            .setNegativeButton("Cancelar", null)
+                            .setPositiveButton("Criptografar e salvar", (dialog, which) -> {
+                                if (!offerToken.isActive()) return;
+                                recoverySaveOffers.invalidate();
+                                if (!isRecoverySaveRequestCurrent(sourceAtPrompt, documentAtPrompt,
+                                        generationAtPrompt, hashAtPrompt, sessionAtPrompt,
+                                        editsAtPrompt, revisionAtPrompt)) {
+                                    showRecoveryError("Salvamento cancelado",
+                                        new IOException("O projeto ou as alterações mudaram. "
+                                            + "Abra Salvar novamente para conferir o plano atual."));
+                                    return;
+                                }
+                                recoveryRestoreSessions.invalidate();
+                                final ExportSessionGuard.Token token = recoverySaveSessions.begin();
+                                executor.execute(() -> {
+                                    try {
+                                        token.requireActive();
+                                        // A stale cache file or substituted APK cannot
+                                        // overwrite the single-slot recovery checkpoint.
+                                        final RecoveryResumeGate.Proof preSaveProof =
+                                            RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);
+                                        token.requireActive();
+                                        new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt,
+                                            token, hashAtPrompt, checkpointAtOffer);
+                                        // F1.46: the save has RETURNED, so its commit is
+                                        // already complete. Reattest the original's ZIP
+                                        // and SHA before posting a success notification.
+                                        RecoverySaveAcknowledgementGate.revalidate(
+                                            preSaveProof, sourceAtPrompt, hashAtPrompt);
+                                        runOnUiThread(() -> {
+                                            if (!token.isActive()
+                                                    || !isRecoveryTargetCurrent(sourceAtPrompt,
+                                                        documentAtPrompt, generationAtPrompt,
+                                                        hashAtPrompt, sessionAtPrompt))
+                                                return;
+                                            new android.app.AlertDialog.Builder(this)
+                                                .setTitle("Cópia protegida")
+                                                .setMessage("Plano salvo localmente com criptografia. "
+                                                    + "Novas edições não entram na cópia até salvar outra vez.")
+                                                .setPositiveButton("OK", null).show();
+                                        });
+                                    } catch (Exception error) {
+                                        runOnUiThread(() -> {
+                                            if (token.isActive()
+                                                    && isRecoveryTargetCurrent(sourceAtPrompt,
+                                                        documentAtPrompt, generationAtPrompt,
+                                                        hashAtPrompt, sessionAtPrompt))
+                                                showRecoveryError(
+                                                    error instanceof RecoveryVault.PostCommitSourceException
+                                                        ? "Cópia gravada; origem não confirmada"
+                                                        : "Falha ao salvar cópia", error);
+                                        });
+                                    }
+                                });
+                            }).show();
                     });
-                }).show();
+                } catch (Exception error) {
+                    runOnUiThread(() -> {
+                        if (offerToken.isActive()
+                                && isRecoveryTargetCurrent(sourceAtPrompt, documentAtPrompt,
+                                    generationAtPrompt, hashAtPrompt, sessionAtPrompt))
+                            showRecoveryError("Salvamento bloqueado", error);
+                    });
+                }
+            });
         });
 
         Button restoreRecovery = NegrescoTheme.action(this,
@@ -2198,6 +2229,7 @@ public class MainActivity extends Activity {
                     // F1.43: cancel queued/staged saves against the previous
                     // accepted project before touching the shared workspace.
                     recoverySaveSessions.invalidate();
+                    recoverySaveOffers.invalidate();
                     recoveryRestoreSessions.invalidate();
                     // Commit the replacement only when a complete, validated
                     // report and private file/index are ready to display.
@@ -2686,6 +2718,7 @@ public class MainActivity extends Activity {
         if (importScope != null) importScope.close();
         exportSessions.invalidate();
         recoverySaveSessions.invalidate();
+        recoverySaveOffers.invalidate();
         recoveryRestoreSessions.invalidate();
         pendingExport = null;
         analysisSequence++;

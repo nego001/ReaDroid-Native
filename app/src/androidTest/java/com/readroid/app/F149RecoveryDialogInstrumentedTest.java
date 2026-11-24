@@ -468,4 +468,41 @@ public final class F149RecoveryDialogInstrumentedTest {
             }
         }
     }
+
+    @Test public void f155ActualSaveDialogRejectsNewCheckpoint() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, SAVE);
+                f.waitForText("Salvar plano neste aparelho?");
+                f.vault.save(f.source, plan("F155 newer checkpoint"));
+                byte[] newer = Files.readAllBytes(f.checkpoint.toPath());
+                f.clickDialogButton("Criptografar e salvar");
+                f.waitForText("Falha ao salvar cópia");
+                assertPending(scenario, PENDING);
+                assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
+                assertEquals(plan("F155 newer checkpoint"), f.vault.loadForSource(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f155ActualSaveDialogRejectsCheckpointCreatedAfterEmptyOffer() throws Exception {
+        try (Fixture f = new Fixture()) {
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, SAVE);
+                f.waitForText("Salvar plano neste aparelho?");
+                f.seed();
+                byte[] newer = Files.readAllBytes(f.checkpoint.toPath());
+                f.clickDialogButton("Criptografar e salvar");
+                f.waitForText("Falha ao salvar cópia");
+                assertPending(scenario, PENDING);
+                assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
+                assertEquals(plan(STORED), f.vault.loadForSource(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
 }

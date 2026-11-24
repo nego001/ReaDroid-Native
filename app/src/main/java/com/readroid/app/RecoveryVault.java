@@ -394,15 +394,36 @@ public final class RecoveryVault {
             throws Exception {
         lockInterruptibly();
         try {
-            saveSerialized(sourceApk, changes, token, expectedSourceSha256);
+            saveSerialized(sourceApk, changes, token, expectedSourceSha256, null);
         } finally {
             IN_PROCESS_LOCK.unlock();
         }
     }
 
+    /** F1.55: a confirmation to replace one slot version is not permission
+     * to overwrite a later checkpoint. Absence is also an explicit proof. */
+    void save(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token, String expectedSourceSha256,
+            DeletionProof offered) throws Exception {
+        lockInterruptibly();
+        try {
+            ExportSessionGuard.check(token);
+            requireSaveSlot(offered);
+            saveSerialized(sourceApk, changes, token, expectedSourceSha256, offered);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    private void requireSaveSlot(DeletionProof offered) throws IOException {
+        if (offered == null || !offered.matches(captureDeletionProofLocked()))
+            throw new IOException("A cópia de recuperação mudou. "
+                + "Solicite o salvamento novamente.");
+    }
+
     private void saveSerialized(File sourceApk, Map<String, String> changes,
-            ExportSessionGuard.Token token, String expectedSourceSha256)
-            throws Exception {
+            ExportSessionGuard.Token token, String expectedSourceSha256,
+            DeletionProof offered) throws Exception {
         ExportSessionGuard.check(token);
         String fingerprint = sha256(sourceApk);
         if (expectedSourceSha256 != null
@@ -500,6 +521,7 @@ public final class RecoveryVault {
             if (expectedSourceSha256 != null
                     && !expectedSourceSha256.equals(sha256(sourceApk)))
                 throw new IOException("APK original mudou durante o salvamento protegido");
+            if (offered != null) requireSaveSlot(offered);
             ExportSessionGuard.check(token);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
