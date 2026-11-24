@@ -58,6 +58,7 @@ ANDROID_TESTS = {
     "F145PostCommitSourceInstrumentedTest",
     "F146RecoveryAcknowledgementInstrumentedTest",
     "F147RecoveryRestoreConsentInstrumentedTest",
+    "F149RecoveryDialogInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -1075,6 +1076,26 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("must not resurrect old consent", restore)
         self.assertIn("f148RevisionAdvancesOnlyForActualContentChanges", state)
         self.assertIn("f148ValidatedReplacementAndClearTrackRevision", state)
+
+    def test_f149_real_recovery_dialogs_preserve_pending_edits(self):
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("f149DisposableVault=true", self.workflow)
+        self.assertIn('getString("f149DisposableVault")', tests)
+        self.assertIn('executeShellCommand("getprop ro.kernel.qemu")', tests)
+        self.assertIn("F149 refuses to run on a physical device", tests)
+        self.assertIn("Refuse an existing recovery directory", tests)
+        self.assertIn("Refuse an existing recovery key", tests)
+        self.assertIn("button.performClick()", tests)
+        self.assertIn("button.click()", tests)
+        self.assertIn("UiDevice.getInstance", tests)
+        self.assertIn("CountDownLatch", tests)
+        self.assertIn("f149ActualSaveDialogRejectsUndoBeforeConsent", tests)
+        self.assertIn("f149ActualSaveDialogCommitsAuthorizedPlan", tests)
+        self.assertIn("f149ActualRestoreDialogRejectsEditAfterConsent", tests)
+        self.assertIn("f149ActualRestoreDialogAppliesAuthenticatedPlan", tests)
+        self.assertIn("f149ActualRestoreDialogRejectsDeletedCheckpoint", tests)
+        self.assertIn("com.readroid.app.F149RecoveryDialogInstrumentedTest", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java", self.workflow)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
