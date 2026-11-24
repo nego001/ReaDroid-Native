@@ -313,4 +313,40 @@ public final class F149RecoveryDialogInstrumentedTest {
             }
         }
     }
+
+    @Test public void f150ActualDeleteDialogRejectsNewCheckpoint() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Excluir cópia de recuperação local");
+                f.waitForText("Excluir a cópia protegida?");
+                f.vault.save(f.source, plan("F150 replacement"));
+                byte[] newer = Files.readAllBytes(f.checkpoint.toPath());
+                f.clickDialogButton("Excluir cópia");
+                f.waitForText("Não foi possível excluir");
+                assertPending(scenario, PENDING);
+                assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
+                assertEquals(plan("F150 replacement"), f.vault.loadForSource(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f150ActualDeleteDialogRemovesAuthorizedCopyOnly() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Excluir cópia de recuperação local");
+                f.waitForText("Excluir a cópia protegida?");
+                f.clickDialogButton("Excluir cópia");
+                f.waitForText("Cópia de recuperação removida.");
+                assertFalse(f.vault.hasCheckpoint());
+                assertPending(scenario, PENDING);
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
 }

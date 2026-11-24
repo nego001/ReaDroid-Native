@@ -242,6 +242,91 @@ public final class RecoveryVault {
         }
     }
 
+    /**
+     * F1.50: consent to delete one specific ciphertext, not merely the
+     * single-slot filename. No plaintext or Keystore key is needed.
+     */
+    static final class DeletionProof {
+        private final File location;
+        private final StageIdentity identity;
+        private final byte[] digest;
+
+        private DeletionProof(File location, StageIdentity identity, byte[] digest) {
+            this.location = location;
+            this.identity = identity;
+            this.digest = digest;
+        }
+
+        private boolean matches(DeletionProof current) {
+            if (!location.equals(current.location)) return false;
+            if (identity == null || current.identity == null)
+                return identity == null && current.identity == null;
+            return identity.sameFile(current.identity)
+                && identity.size == current.identity.size
+                && MessageDigest.isEqual(digest, current.digest);
+        }
+    }
+
+    /** Worker-only; snapshot current ciphertext or explicitly absent slot. */
+    DeletionProof captureDeletionProof() throws IOException {
+        synchronized (IN_PROCESS_LOCK) {
+            return captureDeletionProofLocked();
+        }
+    }
+
+    private DeletionProof captureDeletionProofLocked() throws IOException {
+        ExportSessionGuard.check(null);
+        File backup = new File(storage, FILE_NAME).getAbsoluteFile();
+        Path path = backup.toPath();
+        if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
+            return new DeletionProof(backup, null, null);
+        // No symlink following, no plaintext, and bounded memory even when
+        // the checkpoint is corrupted. Refuse ambiguous filesystem state.
+        StageIdentity before = stageIdentity(backup);
+        byte[] encoded = null;
+        try (FileInputStream input = new FileInputStream(Os.open(
+                backup.getAbsolutePath(), OsConstants.O_RDONLY
+                    | OsConstants.O_CLOEXEC | OsConstants.O_NOFOLLOW, 0))) {
+            StageIdentity opened = stageIdentity(input.getFD());
+            if (!before.sameFile(opened) || before.size != opened.size)
+                throw new IOException("Cópia de recuperação mudou durante a leitura");
+            encoded = readBounded(input);
+            StageIdentity after = stageIdentity(backup);
+            StageIdentity descriptor = stageIdentity(input.getFD());
+            if (!opened.sameFile(after) || !opened.sameFile(descriptor)
+                    || opened.size != after.size || opened.size != descriptor.size
+                    || encoded.length != opened.size)
+                throw new IOException("Cópia de recuperação mudou durante a leitura");
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(encoded);
+            return new DeletionProof(backup, after, digest);
+        } catch (ErrnoException | java.security.NoSuchAlgorithmException error) {
+            throw new IOException("Não foi possível identificar a cópia de recuperação", error);
+        } finally {
+            if (encoded != null) Arrays.fill(encoded, (byte) 0);
+        }
+    }
+
+    /**
+     * Compare and clear under the existing transaction lock. An old dialog
+     * cannot delete a replacement saved by another vault in this process.
+     * Not an OS-level lock against hostile external filesystem writers.
+     */
+    void clearIfCurrent(DeletionProof offered) throws IOException {
+        synchronized (IN_PROCESS_LOCK) {
+            if (offered == null || !offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou. "
+                    + "Solicite a exclusão novamente.");
+            clearEncryptedStages(storage);
+            if (!offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou. "
+                    + "Solicite a exclusão novamente.");
+            ExportSessionGuard.check(null);
+            File backup = new File(storage, FILE_NAME);
+            if (backup.exists() && !backup.delete())
+                throw new IOException("Não foi possível remover a cópia de recuperação");
+        }
+    }
+
     public void save(File sourceApk, Map<String, String> changes) throws Exception {
         save(sourceApk, changes, null);
     }

@@ -1097,6 +1097,29 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("com.readroid.app.F149RecoveryDialogInstrumentedTest", self.workflow)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java", self.workflow)
 
+    def test_f150_delete_consent_is_bound_to_exact_ciphertext(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        unit = (ROOT / "app/src/androidTest/java/com/readroid/app/RecoveryVaultInstrumentedTest.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        start = activity.index("removeRecovery.setOnClickListener")
+        capture = activity.index("captureDeletionProof()", start)
+        consent = activity.index('setPositiveButton("Excluir cópia"', capture)
+        deletion = activity.index("clearIfCurrent(offered)", consent)
+        self.assertLess(capture, consent)
+        self.assertLess(consent, deletion)
+        self.assertIn("MessageDigest.isEqual(digest, current.digest)", vault)
+        self.assertIn("void clearIfCurrent(DeletionProof offered)", vault)
+        self.assertIn("offered.matches(captureDeletionProofLocked())", vault)
+        for name in (
+            "f150OldDeletionProofCannotDeleteResavedSamePlan",
+            "f150AbsentDeletionProofCannotDeleteLaterSave",
+            "f150ChangedCiphertextRejectsOldDeletionProof",
+        ):
+            self.assertIn(name, unit)
+        self.assertIn("f150ActualDeleteDialogRejectsNewCheckpoint", ui)
+        self.assertIn("f150ActualDeleteDialogRemovesAuthorizedCopyOnly", ui)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

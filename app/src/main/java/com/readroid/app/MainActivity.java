@@ -1248,30 +1248,43 @@ public class MainActivity extends Activity {
         Button removeRecovery = NegrescoTheme.action(this,
             "Excluir cópia de recuperação local", false);
         buildSection.addView(removeRecovery);
-        removeRecovery.setOnClickListener(v ->
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Excluir a cópia protegida?")
-                .setMessage("Esta ação não altera o APK nem as edições abertas, "
-                    + "mas remove o ponto de recuperação salvo no aparelho.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Excluir cópia", (dialog, which) -> {
-                    recoveryRestoreSessions.invalidate();
-                    // Same single-thread executor as Save/Restore: a deletion
-                    // cannot be undone by a previously queued background save.
-                    executor.execute(() -> {
-                        try {
-                            new RecoveryVault(this).clear();
-                            runOnUiThread(() -> {
-                                if (isFinishing() || isDestroyed()) return;
-                                new android.app.AlertDialog.Builder(this)
-                                    .setMessage("Cópia de recuperação removida.")
-                                    .setPositiveButton("OK", null).show();
+        removeRecovery.setOnClickListener(v -> executor.execute(() -> {
+            try {
+                // F1.50: capture the exact encrypted slot before asking
+                // consent. Do not bind deletion to a mutable filename alone.
+                final RecoveryVault.DeletionProof offered =
+                    new RecoveryVault(this).captureDeletionProof();
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Excluir a cópia protegida?")
+                        .setMessage("Esta ação não altera o APK nem as edições abertas, "
+                            + "mas remove o ponto de recuperação salvo no aparelho.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Excluir cópia", (dialog, which) -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            recoveryRestoreSessions.invalidate();
+                            // Same worker as Save/Restore; proof comparison
+                            // and deletion are serialized by RecoveryVault.
+                            executor.execute(() -> {
+                                try {
+                                    new RecoveryVault(this).clearIfCurrent(offered);
+                                    runOnUiThread(() -> {
+                                        if (isFinishing() || isDestroyed()) return;
+                                        new android.app.AlertDialog.Builder(this)
+                                            .setMessage("Cópia de recuperação removida.")
+                                            .setPositiveButton("OK", null).show();
+                                    });
+                                } catch (Exception error) {
+                                    showRecoveryError("Não foi possível excluir", error);
+                                }
                             });
-                        } catch (Exception error) {
-                            showRecoveryError("Não foi possível excluir", error);
-                        }
-                    });
-                }).show());
+                        }).show();
+                });
+            } catch (Exception error) {
+                showRecoveryError("Não foi possível conferir a cópia", error);
+            }
+        }));
 
         signatureInfo = NegrescoTheme.action(this, "", false);
         signatureInfo.setText("Ver certificado de assinatura");
