@@ -201,7 +201,7 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
             Map<String, String> offered = f.vault.loadForSource(f.source, proof);
             byte[] before = Files.readAllBytes(f.checkpoint.toPath());
             Map<String, String> verified = RecoveryRestoreConsent.reauthenticate(
-                f.vault, f.source, offered, proof, new ExportSessionGuard().begin());
+                f.vault, f.source, offered, proof, new ExportSessionGuard().begin()).changes();
             assertEquals(plan("A"), verified);
             assertNotSame(offered, verified);
             assertArrayEquals(before, Files.readAllBytes(f.checkpoint.toPath()));
@@ -229,7 +229,7 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
             }
             RecoveryVault.DeletionProof fresh = f.vault.captureDeletionProof();
             assertEquals(offered, RecoveryRestoreConsent.reauthenticate(f.vault, f.source,
-                offered, fresh, new ExportSessionGuard().begin()));
+                offered, fresh, new ExportSessionGuard().begin()).changes());
             assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
         }
     }
@@ -256,6 +256,130 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
             } catch (IOException expected) {
                 assertEquals(plan("A"), f.vault.loadForSource(f.source));
                 assertEquals(plan("A"), other.vault.loadForSource(other.source));
+            }
+        }
+    }
+
+    @Test public void f152PostAuthenticationSaveInvalidatesApplication() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
+            ExportSessionGuard.Token token = new ExportSessionGuard().begin();
+            RecoveryVault.RestoreApplication application =
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof, token);
+            f.vault.save(f.source, plan("B"));
+            EditPlan live = new EditPlan();
+            live.addTextReplacement(PATH, "pending");
+            try {
+                application.applyIfCurrent(token, () -> live.replaceAllValidated(application.changes()));
+                fail("New save must invalidate the authenticated application");
+            } catch (IOException expected) {
+                assertEquals(plan("pending"), live.snapshot());
+                assertEquals(plan("B"), f.vault.loadForSource(f.source));
+            }
+        }
+    }
+
+    @Test public void f152PostAuthenticationClearInvalidatesApplication() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
+            ExportSessionGuard.Token token = new ExportSessionGuard().begin();
+            RecoveryVault.RestoreApplication application =
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof, token);
+            f.vault.clearIfCurrent(proof);
+            try {
+                application.applyIfCurrent(token, () -> fail("Deleted checkpoint applied"));
+                fail("Expected invalidated application");
+            } catch (IOException expected) {
+                assertFalse(f.vault.hasCheckpoint());
+            }
+        }
+    }
+
+    @Test public void f152CurrentApplicationIsSingleUse() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
+            ExportSessionGuard.Token token = new ExportSessionGuard().begin();
+            RecoveryVault.RestoreApplication application =
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof, token);
+            EditPlan live = new EditPlan();
+            application.applyIfCurrent(token, () -> live.replaceAllValidated(application.changes()));
+            assertEquals(offered, live.snapshot());
+            try {
+                application.applyIfCurrent(token, () -> fail("Consumed ticket applied again"));
+                fail("Expected consumed application rejection");
+            } catch (IOException expected) {
+                assertEquals(offered, live.snapshot());
+            }
+        }
+    }
+
+    @Test public void f152BusyVaultRejectsApplicationWithoutWaitingForWriter()
+            throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
+            ExportSessionGuard.Token token = new ExportSessionGuard().begin();
+            RecoveryVault.RestoreApplication application =
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof, token);
+            java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            RecoveryVault writer = new RecoveryVault(f.folder, f.alias, staged -> {
+                entered.countDown();
+                try {
+                    if (!release.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                        throw new IOException("F152 writer barrier timed out");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new InterruptedIOException("F152 writer interrupted");
+                }
+            });
+            java.util.concurrent.ExecutorService worker =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+            java.util.concurrent.Future<?> save = worker.submit(() -> {
+                writer.save(f.source, plan("B"));
+                return null;
+            });
+            try {
+                assertTrue("Real writer never acquired the vault lock",
+                    entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                // Real main-thread invocation while another thread owns the
+                // lock; no disk access or blocking lock acquisition permitted.
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    try {
+                        application.applyIfCurrent(token, () -> fail("Busy vault applied plan"));
+                        fail("Busy vault must reject immediately");
+                    } catch (IOException expected) {
+                        assertTrue(expected.getMessage().contains("em uso"));
+                        assertEquals(1L, release.getCount());
+                        assertFalse(save.isDone());
+                    }
+                });
+            } finally {
+                release.countDown();
+                try { save.get(20, java.util.concurrent.TimeUnit.SECONDS); }
+                finally { worker.shutdownNow(); }
+            }
+            assertEquals(plan("B"), f.vault.loadForSource(f.source));
+        }
+    }
+
+    @Test public void f152RevokedApplicationTokenCannotMutatePlan() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
+            ExportSessionGuard guard = new ExportSessionGuard();
+            ExportSessionGuard.Token token = guard.begin();
+            RecoveryVault.RestoreApplication application =
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof, token);
+            guard.invalidate();
+            try {
+                application.applyIfCurrent(token, () -> fail("Revoked application mutated plan"));
+                fail("Expected revoked token rejection");
+            } catch (InterruptedIOException expected) {
+                assertEquals(offered, f.vault.loadForSource(f.source));
             }
         }
     }

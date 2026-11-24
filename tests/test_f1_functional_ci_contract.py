@@ -1045,7 +1045,7 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("pendingAtRequest.equals(explorerView.getEditPlan().snapshot())", activity)
         self.assertIn("recoveryRestoreSessions.begin()", activity)
         self.assertGreaterEqual(activity.count("recoveryRestoreSessions.invalidate();"), 5)
-        self.assertIn("vault.loadForSource(source, checkpointAtOffer)", gate)
+        self.assertIn("vault.prepareRestoreApplication(source, checkpointAtOffer, token)", gate)
         self.assertIn("offered.equals(current)", gate)
         self.assertGreaterEqual(gate.count("token.requireActive();"), 2)
         for case in (
@@ -1133,7 +1133,7 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertLess(capture, read)
         self.assertLess(read, consent)
         self.assertIn("changes, checkpointAtOffer, restoreToken", activity)
-        self.assertIn("vault.loadForSource(source, checkpointAtOffer)", gate)
+        self.assertIn("vault.prepareRestoreApplication(source, checkpointAtOffer, token)", gate)
         self.assertIn("loadSerialized(sourceApk, offered)", vault)
         self.assertIn("MessageDigest.isEqual(offered.digest,", vault)
         self.assertIn("digest(encoded)", vault)
@@ -1141,6 +1141,24 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f151OldProofCannotAuthenticateReplacementAtInitialOffer", tests)
         self.assertIn("f151ProofFromDifferentVaultRejectsSameSource", tests)
         self.assertIn("f151ActualRestoreDialogRejectsResavedIdenticalPlan", ui)
+
+    def test_f152_application_ticket_rejects_intervening_vault_writes(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        gate = (ROOT / "app/src/main/java/com/readroid/app/RecoveryRestoreConsent.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("IN_PROCESS_LOCK.tryLock()", vault)
+        self.assertIn("consumed || checkpointRevision != revision", vault)
+        self.assertEqual(vault.count("checkpointRevision++;"), 3)
+        self.assertIn("new RestoreApplication(checkpointRevision, changes)", vault)
+        self.assertIn("vault.prepareRestoreApplication(source, checkpointAtOffer, token)", gate)
+        self.assertIn("verified.applyIfCurrent(restoreToken,", activity)
+        self.assertIn("recoverySession, verified.changes(), false", activity)
+        self.assertIn("f152PostAuthenticationSaveInvalidatesApplication", tests)
+        self.assertIn("f152PostAuthenticationClearInvalidatesApplication", tests)
+        self.assertIn("f152CurrentApplicationIsSingleUse", tests)
+        self.assertIn("f152BusyVaultRejectsApplicationWithoutWaitingForWriter", tests)
+        self.assertIn("f152RevokedApplicationTokenCannotMutatePlan", tests)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

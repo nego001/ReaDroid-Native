@@ -57,7 +57,11 @@ public final class RecoveryVault {
     private static final int MAX_STAGE_SCAN = 256;
     // All vault instances share one application process and Keystore identity.
     // Serialize full save/load/clear transactions, not just their file moves.
-    private static final Object IN_PROCESS_LOCK = new Object();
+    private static final java.util.concurrent.locks.ReentrantLock IN_PROCESS_LOCK =
+        new java.util.concurrent.locks.ReentrantLock();
+    // F1.52: process-wide, conservative revision. All vault writes invalidate
+    // previously authenticated application tickets, including post-move errors.
+    private static long checkpointRevision;
     private static final byte[] AAD = "NegrescoDroid:recovery:v1"
         .getBytes(StandardCharsets.US_ASCII);
 
@@ -225,13 +229,18 @@ public final class RecoveryVault {
     }
 
     public boolean hasCheckpoint() {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             return new File(storage, FILE_NAME).isFile();
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
     public void clear() throws IOException {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
+            checkpointRevision++;
             // Explicit user deletion also removes encrypted, possibly recent
             // staging files. Never report success if cleanup is incomplete.
             // The old checkpoint remains available if cleanup fails.
@@ -239,6 +248,8 @@ public final class RecoveryVault {
             File backup = new File(storage, FILE_NAME);
             if (backup.exists() && !backup.delete())
                 throw new IOException("Não foi possível remover a cópia de recuperação");
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
@@ -269,8 +280,11 @@ public final class RecoveryVault {
 
     /** Worker-only; snapshot current ciphertext or explicitly absent slot. */
     DeletionProof captureDeletionProof() throws IOException {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             return captureDeletionProofLocked();
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
@@ -312,10 +326,12 @@ public final class RecoveryVault {
      * Not an OS-level lock against hostile external filesystem writers.
      */
     void clearIfCurrent(DeletionProof offered) throws IOException {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             if (offered == null || !offered.matches(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou. "
                     + "Solicite a exclusão novamente.");
+            checkpointRevision++;
             clearEncryptedStages(storage);
             if (!offered.matches(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou. "
@@ -324,6 +340,8 @@ public final class RecoveryVault {
             File backup = new File(storage, FILE_NAME);
             if (backup.exists() && !backup.delete())
                 throw new IOException("Não foi possível remover a cópia de recuperação");
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
@@ -348,8 +366,11 @@ public final class RecoveryVault {
     void save(File sourceApk, Map<String, String> changes,
             ExportSessionGuard.Token token, String expectedSourceSha256)
             throws Exception {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             saveSerialized(sourceApk, changes, token, expectedSourceSha256);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
@@ -463,6 +484,7 @@ public final class RecoveryVault {
             // An atomic move is the commit boundary: never automatically
             // roll back or delete the new checkpoint on post-move errors.
             committed = true;
+            checkpointRevision++;
             // F1.39: deliberately terminate a disposable CI process HERE:
             // the new ciphertext is already promoted, but directory fsync
             // has not been invoked. An exception cannot roll back this move.
@@ -653,8 +675,11 @@ public final class RecoveryVault {
 
     /** Pure read/verification: caller must get consent before modifying live EditPlan. */
     public Map<String, String> loadForSource(File sourceApk) throws Exception {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             return loadSerialized(sourceApk, null);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
@@ -665,7 +690,8 @@ public final class RecoveryVault {
      */
     Map<String, String> loadForSource(File sourceApk, DeletionProof offered)
             throws Exception {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             if (offered == null || offered.identity == null
                     || !offered.matches(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou. "
@@ -674,6 +700,60 @@ public final class RecoveryVault {
             if (!offered.matches(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou durante a leitura.");
             return changes;
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    /** F1.52: authenticated data plus a one-shot, in-process application ticket. */
+    static final class RestoreApplication {
+        private final long revision;
+        private final Map<String, String> changes;
+        private boolean consumed;
+
+        private RestoreApplication(long revision, Map<String, String> changes) {
+            this.revision = revision;
+            this.changes = java.util.Collections.unmodifiableMap(
+                new java.util.LinkedHashMap<>(changes));
+        }
+
+        Map<String, String> changes() { return changes; }
+
+        /**
+         * UI thread: never wait for filesystem I/O or a busy vault. The
+         * caller supplies ONLY the in-memory plan mutation, not rendering.
+         * The lock excludes concurrent in-process saves/clears until it ends.
+         */
+        void applyIfCurrent(ExportSessionGuard.Token token, Runnable apply)
+                throws IOException {
+            token.requireActive();
+            if (!IN_PROCESS_LOCK.tryLock())
+                throw new IOException("Cópia de recuperação em uso. "
+                    + "Solicite a recuperação novamente.");
+            try {
+                token.requireActive();
+                if (consumed || checkpointRevision != revision)
+                    throw new IOException("A cópia de recuperação mudou. "
+                        + "Solicite a recuperação novamente.");
+                consumed = true;
+                apply.run();
+            } finally {
+                IN_PROCESS_LOCK.unlock();
+            }
+        }
+    }
+
+    /** Worker-only: capture revision atomically with authenticated data. */
+    RestoreApplication prepareRestoreApplication(File source, DeletionProof offered,
+            ExportSessionGuard.Token token) throws Exception {
+        IN_PROCESS_LOCK.lock();
+        try {
+            token.requireActive();
+            Map<String, String> changes = loadForSource(source, offered);
+            token.requireActive();
+            return new RestoreApplication(checkpointRevision, changes);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 

@@ -2,8 +2,6 @@ package com.readroid.app;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Reauthenticate the current checkpoint after explicit user consent. */
@@ -16,16 +14,18 @@ final class RecoveryRestoreConsent {
      * exact encrypted checkpoint, even if a new save contains identical edits.
      * UI request cancellation is checked separately.
      */
-    static Map<String, String> reauthenticate(RecoveryVault vault, File source,
+    static RecoveryVault.RestoreApplication reauthenticate(RecoveryVault vault, File source,
             Map<String, String> offered, RecoveryVault.DeletionProof checkpointAtOffer,
             ExportSessionGuard.Token token)
             throws Exception {
         token.requireActive();
-        Map<String, String> current = vault.loadForSource(source, checkpointAtOffer);
+        RecoveryVault.RestoreApplication application =
+            vault.prepareRestoreApplication(source, checkpointAtOffer, token);
+        Map<String, String> current = application.changes();
         token.requireActive();
         if (offered == null || offered.isEmpty() || !offered.equals(current))
             throw new IOException("A cópia de recuperação mudou. "
                 + "Solicite a recuperação novamente.");
-        return Collections.unmodifiableMap(new LinkedHashMap<>(current));
+        return application;
     }
 }

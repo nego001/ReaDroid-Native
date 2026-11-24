@@ -1199,7 +1199,7 @@ public class MainActivity extends Activity {
                                     try {
                                         // Authenticate the CURRENT checkpoint, not
                                         // just the map previously displayed.
-                                        final Map<String, String> verified =
+                                        final RecoveryVault.RestoreApplication verified =
                                             RecoveryRestoreConsent.reauthenticate(
                                                 new RecoveryVault(this), source,
                                                 changes, checkpointAtOffer, restoreToken);
@@ -1214,15 +1214,17 @@ public class MainActivity extends Activity {
                                                 return;
                                             }
                                             try {
-                                                explorerView.restoreEditPlanForSession(
-                                                    recoverySession, verified);
+                                                verified.applyIfCurrent(restoreToken,
+                                                    () -> explorerView.restoreEditPlanForSession(
+                                                        recoverySession, verified.changes(), false));
                                                 // A confirmation can be consumed only once.
                                                 recoveryRestoreSessions.invalidate();
+                                                explorerView.refresh();
                                                 new android.app.AlertDialog.Builder(this)
                                                     .setMessage("Plano recuperado. Revise as alterações "
                                                         + "antes de exportar um APK modificado.")
                                                     .setPositiveButton("OK", null).show();
-                                            } catch (RuntimeException invalid) {
+                                            } catch (IOException | RuntimeException invalid) {
                                                 showRecoveryError("Recuperação cancelada", invalid);
                                             }
                                         });

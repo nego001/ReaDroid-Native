@@ -86,11 +86,17 @@ public final class ExplorerView {
     /** Restores only into the original, still-open project session. */
     void restoreEditPlanForSession(EditSession session,
             java.util.Map<String, String> changes) {
+        restoreEditPlanForSession(session, changes, true);
+    }
+
+    /** F1.52: allow the caller to refresh outside the vault transaction lock. */
+    void restoreEditPlanForSession(EditSession session,
+            java.util.Map<String, String> changes, boolean refreshNow) {
         if (!isCurrentEditSession(session))
             throw new IllegalStateException(
                 "Recuperação cancelada: outro APK foi aberto.");
         editPlan.replaceAllValidated(changes);
-        render();
+        if (refreshNow) render();
     }
 
     private static final String[] CATEGORIES = {
