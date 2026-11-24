@@ -501,4 +501,43 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
             }
         }
     }
+
+    @Test public void f156AbsentSaveProofCannotSurviveSaveClearCycle() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.clear();
+            RecoveryVault.DeletionProof absent = f.vault.captureDeletionProof();
+            f.vault.save(f.source, plan("B"));
+            f.vault.clear();
+            assertFalse(f.vault.hasCheckpoint());
+            try {
+                f.vault.save(f.source, plan("C"), new ExportSessionGuard().begin(),
+                    ApkIntegrity.sha256(f.source), absent);
+                fail("Absent slot proof must not survive save and clear");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou"));
+                assertFalse(f.vault.hasCheckpoint());
+            }
+            f.vault.save(f.source, plan("C"), new ExportSessionGuard().begin(),
+                ApkIntegrity.sha256(f.source), f.vault.captureDeletionProof());
+            assertEquals(plan("C"), f.vault.loadForSource(f.source));
+        }
+    }
+
+    @Test public void f156AbsentDeleteProofCannotSurviveSaveClearCycle() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.clear();
+            RecoveryVault.DeletionProof absent = f.vault.captureDeletionProof();
+            f.vault.save(f.source, plan("B"));
+            f.vault.clear();
+            try {
+                f.vault.clearIfCurrent(absent);
+                fail("Old absent deletion consent must remain stale");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou"));
+                assertFalse(f.vault.hasCheckpoint());
+            }
+            f.vault.clearIfCurrent(f.vault.captureDeletionProof());
+            assertFalse(f.vault.hasCheckpoint());
+        }
+    }
 }

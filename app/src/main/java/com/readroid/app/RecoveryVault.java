@@ -287,14 +287,23 @@ public final class RecoveryVault {
         private final File location;
         private final StageIdentity identity;
         private final byte[] digest;
+        private final long revision;
 
-        private DeletionProof(File location, StageIdentity identity, byte[] digest) {
+        private DeletionProof(File location, StageIdentity identity, byte[] digest,
+                long revision) {
             this.location = location;
             this.identity = identity;
             this.digest = digest;
+            this.revision = revision;
         }
 
+        // F1.56: an empty slot is not the same authorization after a
+        // save/clear cycle. Conservatively invalidate on any vault mutation.
         private boolean matches(DeletionProof current) {
+            return revision == current.revision && matchesCiphertext(current);
+        }
+
+        private boolean matchesCiphertext(DeletionProof current) {
             if (!location.equals(current.location)) return false;
             if (identity == null || current.identity == null)
                 return identity == null && current.identity == null;
@@ -319,7 +328,7 @@ public final class RecoveryVault {
         File backup = new File(storage, FILE_NAME).getAbsoluteFile();
         Path path = backup.toPath();
         if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
-            return new DeletionProof(backup, null, null);
+            return new DeletionProof(backup, null, null, checkpointRevision);
         // No symlink following, no plaintext, and bounded memory even when
         // the checkpoint is corrupted. Refuse ambiguous filesystem state.
         StageIdentity before = stageIdentity(backup);
@@ -338,7 +347,7 @@ public final class RecoveryVault {
                     || encoded.length != opened.size)
                 throw new IOException("Cópia de recuperação mudou durante a leitura");
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(encoded);
-            return new DeletionProof(backup, after, digest);
+            return new DeletionProof(backup, after, digest, checkpointRevision);
         } catch (ErrnoException | java.security.NoSuchAlgorithmException error) {
             throw new IOException("Não foi possível identificar a cópia de recuperação", error);
         } finally {
@@ -357,9 +366,11 @@ public final class RecoveryVault {
             if (offered == null || !offered.matches(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou. "
                     + "Solicite a exclusão novamente.");
+            // This admitted clear itself advances the revision. Its
+            // second comparison checks the ciphertext, not its old revision.
             checkpointRevision++;
             clearEncryptedStages(storage);
-            if (!offered.matches(captureDeletionProofLocked()))
+            if (!offered.matchesCiphertext(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou. "
                     + "Solicite a exclusão novamente.");
             ExportSessionGuard.check(null);

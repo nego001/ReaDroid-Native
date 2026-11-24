@@ -1205,6 +1205,19 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f155StaleSaveProofCannotOverwriteSamePlanResave", tests)
         self.assertIn("f155SlotChangeDuringStagingRejectsPromotion", tests)
 
+    def test_f156_slot_proofs_do_not_survive_mutation_cycles(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("revision == current.revision && matchesCiphertext(current)", vault)
+        self.assertIn("new DeletionProof(backup, null, null, checkpointRevision)", vault)
+        self.assertIn("new DeletionProof(backup, after, digest, checkpointRevision)", vault)
+        self.assertIn("offered.matchesCiphertext(captureDeletionProofLocked())", vault)
+        self.assertIn("f156AbsentSaveProofCannotSurviveSaveClearCycle", tests)
+        self.assertIn("f156AbsentDeleteProofCannotSurviveSaveClearCycle", tests)
+        self.assertIn("f156ActualSaveDialogRejectsAbsentSaveClearCycle", ui)
+        self.assertIn("f156ActualDeleteDialogRejectsAbsentSaveClearCycle", ui)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

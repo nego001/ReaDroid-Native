@@ -505,4 +505,48 @@ public final class F149RecoveryDialogInstrumentedTest {
             }
         }
     }
+
+    @Test public void f156ActualSaveDialogRejectsAbsentSaveClearCycle() throws Exception {
+        try (Fixture f = new Fixture()) {
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, SAVE);
+                f.waitForText("Salvar plano neste aparelho?");
+                f.seed();
+                f.vault.clear();
+                f.clickDialogButton("Criptografar e salvar");
+                f.waitForText("Falha ao salvar cópia");
+                assertPending(scenario, PENDING);
+                assertFalse(f.vault.hasCheckpoint());
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f156ActualDeleteDialogRejectsAbsentSaveClearCycle() throws Exception {
+        try (Fixture f = new Fixture()) {
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Excluir cópia de recuperação local");
+                f.waitForText("Excluir a cópia protegida?");
+                f.seed();
+                f.vault.clear();
+                f.clickDialogButton("Excluir cópia");
+                f.waitForText("Não foi possível excluir");
+                assertPending(scenario, PENDING);
+                assertFalse(f.vault.hasCheckpoint());
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+                // A new consent to the currently empty slot remains legal.
+                open(scenario, "Excluir cópia de recuperação local");
+                f.waitForText("Excluir a cópia protegida?");
+                f.clickDialogButton("Excluir cópia");
+                f.waitForText("Cópia de recuperação removida.");
+                assertPending(scenario, PENDING);
+                assertFalse(f.vault.hasCheckpoint());
+                f.clickDialogButton("OK");
+            }
+        }
+    }
 }
