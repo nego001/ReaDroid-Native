@@ -1160,7 +1160,7 @@ public class MainActivity extends Activity {
                 try {
                     restoreToken.requireActive();
                     final RecoveryVault recoveryVault = new RecoveryVault(this);
-                    if (!recoveryVault.hasCheckpoint()) {
+                    if (!recoveryVault.hasCheckpointInterruptibly()) {
                         restoreToken.requireActive();
                         runOnUiThread(() -> {
                             if (isRecoveryRestoreRequestCurrent(source, importedDocument,

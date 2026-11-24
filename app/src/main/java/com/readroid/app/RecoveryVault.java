@@ -228,6 +228,7 @@ public final class RecoveryVault {
         this.afterFinalAttestation = afterFinalAttestation;
     }
 
+    // Retain the legacy no-throws query for existing callers.
     public boolean hasCheckpoint() {
         IN_PROCESS_LOCK.lock();
         try {
@@ -237,9 +238,34 @@ public final class RecoveryVault {
         }
     }
 
-    public void clear() throws IOException {
-        IN_PROCESS_LOCK.lock();
+    /** Worker-only acquisition: interrupted Activity workers never wait
+     * indefinitely for another recovery operation to release the vault. */
+    private static void lockInterruptibly() throws InterruptedIOException {
         try {
+            IN_PROCESS_LOCK.lockInterruptibly();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            InterruptedIOException error =
+                new InterruptedIOException("Espera pelo cofre de recuperação interrompida");
+            error.initCause(interrupted);
+            throw error;
+        }
+    }
+
+    boolean hasCheckpointInterruptibly() throws IOException {
+        lockInterruptibly();
+        try {
+            ExportSessionGuard.check(null);
+            return new File(storage, FILE_NAME).isFile();
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    public void clear() throws IOException {
+        lockInterruptibly();
+        try {
+            ExportSessionGuard.check(null);
             checkpointRevision++;
             // Explicit user deletion also removes encrypted, possibly recent
             // staging files. Never report success if cleanup is incomplete.
@@ -280,7 +306,7 @@ public final class RecoveryVault {
 
     /** Worker-only; snapshot current ciphertext or explicitly absent slot. */
     DeletionProof captureDeletionProof() throws IOException {
-        IN_PROCESS_LOCK.lock();
+        lockInterruptibly();
         try {
             return captureDeletionProofLocked();
         } finally {
@@ -326,7 +352,7 @@ public final class RecoveryVault {
      * Not an OS-level lock against hostile external filesystem writers.
      */
     void clearIfCurrent(DeletionProof offered) throws IOException {
-        IN_PROCESS_LOCK.lock();
+        lockInterruptibly();
         try {
             if (offered == null || !offered.matches(captureDeletionProofLocked()))
                 throw new IOException("A cópia de recuperação mudou. "
@@ -366,7 +392,7 @@ public final class RecoveryVault {
     void save(File sourceApk, Map<String, String> changes,
             ExportSessionGuard.Token token, String expectedSourceSha256)
             throws Exception {
-        IN_PROCESS_LOCK.lock();
+        lockInterruptibly();
         try {
             saveSerialized(sourceApk, changes, token, expectedSourceSha256);
         } finally {
@@ -675,7 +701,7 @@ public final class RecoveryVault {
 
     /** Pure read/verification: caller must get consent before modifying live EditPlan. */
     public Map<String, String> loadForSource(File sourceApk) throws Exception {
-        IN_PROCESS_LOCK.lock();
+        lockInterruptibly();
         try {
             return loadSerialized(sourceApk, null);
         } finally {
@@ -690,7 +716,7 @@ public final class RecoveryVault {
      */
     Map<String, String> loadForSource(File sourceApk, DeletionProof offered)
             throws Exception {
-        IN_PROCESS_LOCK.lock();
+        lockInterruptibly();
         try {
             if (offered == null || offered.identity == null
                     || !offered.matches(captureDeletionProofLocked()))
@@ -746,7 +772,7 @@ public final class RecoveryVault {
     /** Worker-only: capture revision atomically with authenticated data. */
     RestoreApplication prepareRestoreApplication(File source, DeletionProof offered,
             ExportSessionGuard.Token token) throws Exception {
-        IN_PROCESS_LOCK.lock();
+        lockInterruptibly();
         try {
             token.requireActive();
             Map<String, String> changes = loadForSource(source, offered);

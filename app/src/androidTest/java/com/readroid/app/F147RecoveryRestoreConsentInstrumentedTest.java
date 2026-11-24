@@ -383,4 +383,84 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
             }
         }
     }
+
+    @Test public void f154InterruptedVaultWaitDoesNotMutateCheckpoint() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            byte[] original = Files.readAllBytes(f.checkpoint.toPath());
+            java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            RecoveryVault writer = new RecoveryVault(f.folder, f.alias, staged -> {
+                entered.countDown();
+                try {
+                    if (!release.await(20, java.util.concurrent.TimeUnit.SECONDS))
+                        throw new IOException("F154 writer barrier timed out");
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new InterruptedIOException("F154 writer interrupted");
+                }
+                // Deliberately abort the staged write, retaining original.
+                throw new IOException("F154 controlled writer abort");
+            });
+            java.util.concurrent.ExecutorService worker =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+            java.util.concurrent.Future<?> writerResult = worker.submit(() -> {
+                try {
+                    writer.save(f.source, plan("B"));
+                    fail("Controlled writer must abort before promotion");
+                } catch (IOException expected) {
+                    assertEquals("F154 controlled writer abort", expected.getMessage());
+                }
+                return null;
+            });
+            try {
+                assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                java.util.List<java.util.concurrent.Callable<?>> operations =
+                    java.util.Arrays.asList(
+                        () -> f.vault.hasCheckpointInterruptibly(),
+                        () -> f.vault.captureDeletionProof(),
+                        () -> f.vault.loadForSource(f.source, proof),
+                        () -> { f.vault.clearIfCurrent(proof); return null; },
+                        () -> { f.vault.save(f.source, plan("C")); return null; });
+                for (java.util.concurrent.Callable<?> operation : operations) {
+                    java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
+                    java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+                    java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                        new java.util.concurrent.atomic.AtomicReference<>();
+                    Thread waiter = new Thread(() -> {
+                        started.countDown();
+                        try {
+                            operation.call();
+                            failure.set(new AssertionError("Interrupted operation succeeded"));
+                        } catch (InterruptedIOException expected) {
+                            if (!Thread.currentThread().isInterrupted())
+                                failure.set(new AssertionError("Interrupt status was lost"));
+                        } catch (Throwable ex) {
+                            failure.set(ex);
+                        } finally {
+                            finished.countDown();
+                        }
+                    }, "f154-vault-waiter");
+                    waiter.start();
+                    try {
+                        assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                        waiter.interrupt();
+                        assertTrue("Interrupted waiter did not return while writer held the lock",
+                            finished.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                        assertNull(failure.get());
+                        assertFalse(writerResult.isDone());
+                        assertArrayEquals(original, Files.readAllBytes(f.checkpoint.toPath()));
+                    } finally {
+                        waiter.interrupt();
+                    }
+                }
+            } finally {
+                release.countDown();
+                try { writerResult.get(25, java.util.concurrent.TimeUnit.SECONDS); }
+                finally { worker.shutdownNow(); }
+            }
+            assertArrayEquals(original, Files.readAllBytes(f.checkpoint.toPath()));
+            assertEquals(plan("A"), f.vault.loadForSource(f.source));
+        }
+    }
 }

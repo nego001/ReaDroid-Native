@@ -1167,14 +1167,23 @@ class FunctionalCIContract(unittest.TestCase):
         end = activity.index("Button removeRecovery", start)
         listener = activity[start:end]
         worker = listener.index("executor.execute(() ->")
-        check = listener.index("recoveryVault.hasCheckpoint()")
+        check = listener.index("recoveryVault.hasCheckpointInterruptibly()")
         self.assertLess(worker, check)
-        self.assertNotIn("hasCheckpoint()", listener[:worker])
+        self.assertNotIn("hasCheckpoint", listener[:worker])
         self.assertNotIn("currentApk.isFile()", listener[:worker])
         self.assertIn("Nenhuma cópia de recuperação foi encontrada.", listener)
         self.assertIn("f153RestoreActionDoesNotWaitOnUiForBusyVault", ui)
         self.assertIn("f153AbsentCheckpointShowsNoticeWithoutChangingPendingPlan", ui)
         self.assertIn("f153StaleMissingCheckpointNoticeIsSuppressed", ui)
+
+    def test_f154_recovery_vault_worker_lock_is_interruptible(self):
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("IN_PROCESS_LOCK.lockInterruptibly()", vault)
+        self.assertIn("Thread.currentThread().interrupt()", vault)
+        self.assertEqual(vault.count("IN_PROCESS_LOCK.lock();"), 1)
+        self.assertIn("boolean hasCheckpointInterruptibly()", vault)
+        self.assertIn("f154InterruptedVaultWaitDoesNotMutateCheckpoint", tests)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
