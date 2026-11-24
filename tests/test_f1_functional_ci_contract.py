@@ -57,6 +57,7 @@ ANDROID_TESTS = {
     "F144RecoverySourceBindingInstrumentedTest",
     "F145PostCommitSourceInstrumentedTest",
     "F146RecoveryAcknowledgementInstrumentedTest",
+    "F147RecoveryRestoreConsentInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -1027,6 +1028,37 @@ class FunctionalCIContract(unittest.TestCase):
         ):
             self.assertIn(path, self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f147_restore_consent_reauthenticates_and_preserves_pending_plan(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        gate = (ROOT / "app/src/main/java/com/readroid/app/RecoveryRestoreConsent.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java").read_text(encoding="utf-8")
+        start = activity.index("restoreRecovery.setOnClickListener")
+        offer = activity.index("final Map<String, String> pendingAtRequest", start)
+        consent = activity.index('setPositiveButton("Substituir plano"', offer)
+        check = activity.index("RecoveryRestoreConsent.reauthenticate(", consent)
+        apply = activity.index("explorerView.restoreEditPlanForSession(", check)
+        self.assertLess(offer, consent)
+        self.assertLess(consent, check)
+        self.assertLess(check, apply)
+        self.assertIn("pendingAtRequest.equals(explorerView.getEditPlan().snapshot())", activity)
+        self.assertIn("recoveryRestoreSessions.begin()", activity)
+        self.assertGreaterEqual(activity.count("recoveryRestoreSessions.invalidate();"), 5)
+        self.assertIn("vault.loadForSource(source)", gate)
+        self.assertIn("offered.equals(current)", gate)
+        self.assertGreaterEqual(gate.count("token.requireActive();"), 2)
+        for case in (
+            "f147LiveEditAfterPromptRejectsConsentEvenFromEmptyPlan",
+            "f147NewRequestAndRebindingInvalidateOldConsent",
+            "f147ReplacedCheckpointCannotRestoreOfferedA",
+            "f147DeletedCheckpointCannotRestoreOfferedA",
+            "f147RevokedTokenRejectsUnchangedCheckpoint",
+            "f147CurrentConsentReturnsAuthenticatedPlanWithoutWriting",
+        ):
+            self.assertIn(case, tests)
+        self.assertIn("com.readroid.app.F147RecoveryRestoreConsentInstrumentedTest", self.workflow)
+        self.assertIn("app/src/main/java/com/readroid/app/RecoveryRestoreConsent.java", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java", self.workflow)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

@@ -101,6 +101,9 @@ public class MainActivity extends Activity {
     // New accepted projects, Activity destruction and later save requests
     // cancel queued/staged saves BEFORE the atomic replacement boundary.
     private final ExportSessionGuard recoverySaveSessions = new ExportSessionGuard();
+    // F1.47: a restore confirmation belongs to one request. Save, clear,
+    // replacement import, a newer restore, or destruction revokes it.
+    private final ExportSessionGuard recoveryRestoreSessions = new ExportSessionGuard();
     // An ACTION_CREATE_DOCUMENT callback must never attach to a newer APK.
     private PendingExport pendingExport;
 
@@ -1080,6 +1083,7 @@ public class MainActivity extends Activity {
                                 + "Abra Salvar novamente para conferir o plano atual."));
                         return;
                     }
+                    recoveryRestoreSessions.invalidate();
                     final ExportSessionGuard.Token token = recoverySaveSessions.begin();
                     executor.execute(() -> {
                         try {
@@ -1147,19 +1151,31 @@ public class MainActivity extends Activity {
             final String reportHash = report.optString("sha256", "");
             final ExplorerView.EditSession recoverySession =
                 explorerView.captureEditSession();
+            // F1.47: capture even an EMPTY pending plan. Consent to replace
+            // this snapshot never authorizes discarding a later edit.
+            final Map<String, String> pendingAtRequest =
+                Collections.unmodifiableMap(new LinkedHashMap<>(
+                    explorerView.getEditPlan().snapshot()));
+            final ExportSessionGuard.Token restoreToken =
+                recoveryRestoreSessions.begin();
             executor.execute(() -> {
                 try {
-                    // F1.18: do not trust a retained cache file or a restored
-                    // Activity state without SHA and ZIP content verification.
+                    restoreToken.requireActive();
                     final RecoveryResumeGate.Proof proof =
                         RecoveryResumeGate.attest(source, reportHash);
                     final Map<String, String> changes =
-                        new RecoveryVault(this).loadForSource(source);
+                        Collections.unmodifiableMap(new LinkedHashMap<>(
+                            new RecoveryVault(this).loadForSource(source)));
                     RecoveryResumeGate.revalidate(proof, source, reportHash);
+                    restoreToken.requireActive();
                     runOnUiThread(() -> {
-                        if (!isRecoveryTargetCurrent(source, importedDocument,
-                                projectGeneration, reportHash, recoverySession))
+                        if (!isRecoveryRestoreRequestCurrent(source, importedDocument,
+                                projectGeneration, reportHash, recoverySession,
+                                pendingAtRequest, restoreToken)) {
+                            reportStaleRecoveryRequest(source, importedDocument,
+                                projectGeneration, reportHash, recoverySession, restoreToken);
                             return;
+                        }
                         new android.app.AlertDialog.Builder(this)
                             .setTitle("Recuperar " + changes.size() + " alterações?")
                             .setMessage("A cópia foi autenticada e pertence a este APK "
@@ -1167,24 +1183,36 @@ public class MainActivity extends Activity {
                                 + "todas as alterações pendentes; o APK original não será modificado.")
                             .setNegativeButton("Cancelar", null)
                             .setPositiveButton("Substituir plano", (dialog, which) -> {
-                                if (!isRecoveryTargetCurrent(source, importedDocument,
-                                        projectGeneration, reportHash, recoverySession)) {
-                                    showRecoveryError("Recuperação cancelada",
-                                        new IOException("O projeto ou as edições mudaram."));
+                                if (!isRecoveryRestoreRequestCurrent(source, importedDocument,
+                                        projectGeneration, reportHash, recoverySession,
+                                        pendingAtRequest, restoreToken)) {
+                                    reportStaleRecoveryRequest(source, importedDocument,
+                                        projectGeneration, reportHash, recoverySession, restoreToken);
                                     return;
                                 }
-                                // Consent is not enough: hash and ZIP may have
-                                // changed while this confirmation was open.
                                 executor.execute(() -> {
                                     try {
+                                        // Authenticate the CURRENT checkpoint, not
+                                        // just the map previously displayed.
+                                        final Map<String, String> verified =
+                                            RecoveryRestoreConsent.reauthenticate(
+                                                new RecoveryVault(this), source,
+                                                changes, restoreToken);
                                         RecoveryResumeGate.revalidate(proof, source, reportHash);
+                                        restoreToken.requireActive();
                                         runOnUiThread(() -> {
-                                            if (!isRecoveryTargetCurrent(source, importedDocument,
-                                                    projectGeneration, reportHash, recoverySession))
+                                            if (!isRecoveryRestoreRequestCurrent(source, importedDocument,
+                                                    projectGeneration, reportHash, recoverySession,
+                                                    pendingAtRequest, restoreToken)) {
+                                                reportStaleRecoveryRequest(source, importedDocument,
+                                                    projectGeneration, reportHash, recoverySession, restoreToken);
                                                 return;
+                                            }
                                             try {
                                                 explorerView.restoreEditPlanForSession(
-                                                    recoverySession, changes);
+                                                    recoverySession, verified);
+                                                // A confirmation can be consumed only once.
+                                                recoveryRestoreSessions.invalidate();
                                                 new android.app.AlertDialog.Builder(this)
                                                     .setMessage("Plano recuperado. Revise as alterações "
                                                         + "antes de exportar um APK modificado.")
@@ -1195,8 +1223,9 @@ public class MainActivity extends Activity {
                                         });
                                     } catch (Exception error) {
                                         runOnUiThread(() -> {
-                                            if (isRecoveryTargetCurrent(source, importedDocument,
-                                                    projectGeneration, reportHash, recoverySession))
+                                            if (restoreToken.isActive()
+                                                    && isRecoveryTargetCurrent(source, importedDocument,
+                                                        projectGeneration, reportHash, recoverySession))
                                                 showRecoveryError("Recuperação bloqueada", error);
                                         });
                                     }
@@ -1205,8 +1234,9 @@ public class MainActivity extends Activity {
                     });
                 } catch (Exception error) {
                     runOnUiThread(() -> {
-                        if (isRecoveryTargetCurrent(source, importedDocument,
-                                projectGeneration, reportHash, recoverySession))
+                        if (restoreToken.isActive()
+                                && isRecoveryTargetCurrent(source, importedDocument,
+                                    projectGeneration, reportHash, recoverySession))
                             showRecoveryError("Recuperação bloqueada", error);
                     });
                 }
@@ -1222,7 +1252,8 @@ public class MainActivity extends Activity {
                 .setMessage("Esta ação não altera o APK nem as edições abertas, "
                     + "mas remove o ponto de recuperação salvo no aparelho.")
                 .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Excluir cópia", (dialog, which) ->
+                .setPositiveButton("Excluir cópia", (dialog, which) -> {
+                    recoveryRestoreSessions.invalidate();
                     // Same single-thread executor as Save/Restore: a deletion
                     // cannot be undone by a previously queued background save.
                     executor.execute(() -> {
@@ -1237,7 +1268,8 @@ public class MainActivity extends Activity {
                         } catch (Exception error) {
                             showRecoveryError("Não foi possível excluir", error);
                         }
-                    })).show());
+                    });
+                }).show());
 
         signatureInfo = NegrescoTheme.action(this, "", false);
         signatureInfo.setText("Ver certificado de assinatura");
@@ -1549,6 +1581,28 @@ public class MainActivity extends Activity {
             && report != null
             && expectedSha256.equals(report.optString("sha256", ""))
             && explorerView.isCurrentEditSession(editSession);
+    }
+
+    /** F1.47: UI-thread-only restore gate, including the pending plan. */
+    private boolean isRecoveryRestoreRequestCurrent(File source, Uri importedDocument,
+            int generation, String expectedSha256, ExplorerView.EditSession session,
+            Map<String, String> pendingAtRequest, ExportSessionGuard.Token token) {
+        return token != null && token.isActive()
+            && isRecoveryTargetCurrent(source, importedDocument, generation,
+                expectedSha256, session)
+            && pendingAtRequest != null
+            && pendingAtRequest.equals(explorerView.getEditPlan().snapshot());
+    }
+
+    private void reportStaleRecoveryRequest(File source, Uri importedDocument,
+            int generation, String expectedSha256, ExplorerView.EditSession session,
+            ExportSessionGuard.Token token) {
+        if (token.isActive()
+                && isRecoveryTargetCurrent(source, importedDocument, generation,
+                    expectedSha256, session))
+            showRecoveryError("Recuperação cancelada",
+                new IOException("As alterações pendentes mudaram. "
+                    + "Revise o plano e solicite a recuperação novamente."));
     }
 
     /** F1.43: UI-thread-only consent gate; rejects stale dialog or edited plan. */
@@ -2110,6 +2164,7 @@ public class MainActivity extends Activity {
                     // F1.43: cancel queued/staged saves against the previous
                     // accepted project before touching the shared workspace.
                     recoverySaveSessions.invalidate();
+                    recoveryRestoreSessions.invalidate();
                     // Commit the replacement only when a complete, validated
                     // report and private file/index are ready to display.
                     explorerView.getEditPlan().clear();
@@ -2597,6 +2652,7 @@ public class MainActivity extends Activity {
         if (importScope != null) importScope.close();
         exportSessions.invalidate();
         recoverySaveSessions.invalidate();
+        recoveryRestoreSessions.invalidate();
         pendingExport = null;
         analysisSequence++;
         importWorkers.shutdownNow();
