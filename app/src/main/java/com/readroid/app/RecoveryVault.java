@@ -114,6 +114,18 @@ public final class RecoveryVault {
         void run(File attestedCheckpoint) throws IOException;
     }
 
+    /**
+     * F1.45: the atomic promotion already happened, but the source became
+     * different or could not be verified before the save acknowledgement.
+     * No automatic rollback is possible or attempted in this state.
+     */
+    static final class PostCommitSourceException extends IOException {
+        PostCommitSourceException(String message) { super(message); }
+        PostCommitSourceException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     public RecoveryVault(Context context) {
         this(new File(context.getFilesDir(), "v3-private-recovery"), KEY_ALIAS);
     }
@@ -392,6 +404,28 @@ public final class RecoveryVault {
             // save() has not returned. A disposable CI process is terminated
             // here; NEVER delete/roll back an already-promoted checkpoint.
             afterFinalAttestation.run(promotedCheckpoint);
+            // F1.45: a source can change AFTER the last pre-commit hash check
+            // and the atomic promotion. Never claim normal save success if
+            // the original APK is already different at acknowledgement.
+            // The new encrypted checkpoint remains promoted: an error HERE
+            // must communicate uncertainty, not an imaginary rollback.
+            if (expectedSourceSha256 != null) {
+                final String afterCommitSha256;
+                try {
+                    afterCommitSha256 = sha256(sourceApk);
+                } catch (Exception unavailable) {
+                    throw new PostCommitSourceException(
+                        "Cópia criptografada já gravada, mas não foi possível "
+                            + "conferir o APK original após a gravação. "
+                            + "Reabra o APK original antes de recuperar o plano.",
+                        unavailable);
+                }
+                if (!expectedSourceSha256.equals(afterCommitSha256))
+                    throw new PostCommitSourceException(
+                        "Cópia criptografada já gravada, mas o APK original "
+                            + "mudou após a confirmação dos dados. "
+                            + "Reabra o APK original antes de recuperar o plano.");
+            }
         } finally {
             if (!committed && temporary != null) temporary.delete();
             try {

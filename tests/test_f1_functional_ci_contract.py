@@ -55,6 +55,7 @@ ANDROID_TESTS = {
     "F142PostAttestationInstrumentedTest",
     "F143RecoverySaveBindingInstrumentedTest",
     "F144RecoverySourceBindingInstrumentedTest",
+    "F145PostCommitSourceInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -971,6 +972,29 @@ class FunctionalCIContract(unittest.TestCase):
                       self.workflow)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F144RecoverySourceBindingInstrumentedTest.java",
                       self.workflow)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f145_post_commit_source_mismatch_never_claims_rollback(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F145PostCommitSourceInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("static final class PostCommitSourceException", vault)
+        self.assertIn("error instanceof RecoveryVault.PostCommitSourceException", activity)
+        self.assertIn("Cópia gravada; origem não confirmada", activity)
+        callback = vault.index("afterFinalAttestation.run(promotedCheckpoint);")
+        after = vault.index("afterCommitSha256 = sha256(sourceApk);", callback)
+        cleanup = vault.index("} finally {", after)
+        self.assertLess(callback, after)
+        self.assertLess(after, cleanup)
+        for case in (
+            "f145ChangedSourceAfterPromotionReportsCommittedCheckpoint",
+            "f145MissingSourceAfterPromotionReportsCommittedCheckpoint",
+            "f145StableSourceReturnsNormalSuccess",
+            "f145LegacySaveWithoutExpectedHashRemainsCompatible",
+        ):
+            self.assertIn(case, tests)
+        self.assertIn("com.readroid.app.F145PostCommitSourceInstrumentedTest", self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F145PostCommitSourceInstrumentedTest.java", self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
 
     def test_pr_scope_and_no_installer_publication(self):

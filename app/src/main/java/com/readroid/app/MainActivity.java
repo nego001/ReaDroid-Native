@@ -1108,7 +1108,10 @@ public class MainActivity extends Activity {
                                         && isRecoveryTargetCurrent(sourceAtPrompt,
                                             documentAtPrompt, generationAtPrompt,
                                             hashAtPrompt, sessionAtPrompt))
-                                    showRecoveryError("Falha ao salvar cópia", error);
+                                    showRecoveryError(
+                                        error instanceof RecoveryVault.PostCommitSourceException
+                                            ? "Cópia gravada; origem não confirmada"
+                                            : "Falha ao salvar cópia", error);
                             });
                         }
                     });
