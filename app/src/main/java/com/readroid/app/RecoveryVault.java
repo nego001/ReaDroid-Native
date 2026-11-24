@@ -240,15 +240,30 @@ public final class RecoveryVault {
      */
     void save(File sourceApk, Map<String, String> changes,
             ExportSessionGuard.Token token) throws Exception {
+        save(sourceApk, changes, token, null);
+    }
+
+    /**
+     * F1.44: bind an Activity save to the SHA already accepted by the UI.
+     * Reject a changed source both before staging and immediately before
+     * promotion. Existing public saves retain their original semantics.
+     */
+    void save(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token, String expectedSourceSha256)
+            throws Exception {
         synchronized (IN_PROCESS_LOCK) {
-            saveSerialized(sourceApk, changes, token);
+            saveSerialized(sourceApk, changes, token, expectedSourceSha256);
         }
     }
 
     private void saveSerialized(File sourceApk, Map<String, String> changes,
-            ExportSessionGuard.Token token) throws Exception {
+            ExportSessionGuard.Token token, String expectedSourceSha256)
+            throws Exception {
         ExportSessionGuard.check(token);
         String fingerprint = sha256(sourceApk);
+        if (expectedSourceSha256 != null
+                && !expectedSourceSha256.equals(fingerprint))
+            throw new IOException("APK original mudou antes do salvamento protegido");
         if (changes == null || changes.isEmpty() || changes.size() > MAX_CHANGES)
             throw new IllegalArgumentException("O plano deve ter de 1 a 100 alterações");
         EditPlan plan = new EditPlan();
@@ -333,6 +348,14 @@ public final class RecoveryVault {
                 throw new InterruptedIOException("Confirmação da recuperação interrompida");
             // Final cancellation boundary: stale sessions cannot intentionally
             // replace the last accepted checkpoint after the final stage read.
+            ExportSessionGuard.check(token);
+            // F1.44: an initially valid source APK may change during staging.
+            // Recompute the digest while the last-good checkpoint is still
+            // untouched; abort if the accepted report no longer matches.
+            // This is a last-moment check, not an OS-level source-file lock.
+            if (expectedSourceSha256 != null
+                    && !expectedSourceSha256.equals(sha256(sourceApk)))
+                throw new IOException("APK original mudou durante o salvamento protegido");
             ExportSessionGuard.check(token);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),

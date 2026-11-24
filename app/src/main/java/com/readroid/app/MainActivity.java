@@ -1088,7 +1088,8 @@ public class MainActivity extends Activity {
                             // overwrite the single-slot recovery checkpoint.
                             RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);
                             token.requireActive();
-                            new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt, token);
+                            new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt,
+                                token, hashAtPrompt);
                             runOnUiThread(() -> {
                                 if (!token.isActive()
                                         || !isRecoveryTargetCurrent(sourceAtPrompt,

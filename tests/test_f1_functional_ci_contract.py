@@ -54,6 +54,7 @@ ANDROID_TESTS = {
     "F141FinalReadInstrumentedTest",
     "F142PostAttestationInstrumentedTest",
     "F143RecoverySaveBindingInstrumentedTest",
+    "F144RecoverySourceBindingInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -945,6 +946,29 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("com.readroid.app.F143RecoverySaveBindingInstrumentedTest",
                       self.workflow)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F143RecoverySaveBindingInstrumentedTest.java",
+                      self.workflow)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f144_recovery_source_hash_is_checked_before_atomic_replacement(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F144RecoverySourceBindingInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("token, hashAtPrompt);", activity)
+        self.assertIn("String expectedSourceSha256", vault)
+        self.assertIn("expectedSourceSha256.equals(fingerprint)", vault)
+        self.assertIn("expectedSourceSha256.equals(sha256(sourceApk))", vault)
+        self.assertLess(
+            vault.index("expectedSourceSha256.equals(sha256(sourceApk))"),
+            vault.index("Files.move(temporary.toPath()"))
+        for test_case in (
+            "f144SourceChangeDuringStagePreservesPreviousA",
+            "f144SourceMismatchBeforeStagingPreservesPreviousA",
+            "f144CurrentSourceAndTokenStillCommitB",
+        ):
+            self.assertIn(test_case, tests)
+        self.assertIn("com.readroid.app.F144RecoverySourceBindingInstrumentedTest",
+                      self.workflow)
+        self.assertIn("app/src/androidTest/java/com/readroid/app/F144RecoverySourceBindingInstrumentedTest.java",
                       self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
 
