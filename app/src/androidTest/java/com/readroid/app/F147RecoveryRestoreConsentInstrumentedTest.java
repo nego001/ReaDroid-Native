@@ -41,13 +41,13 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
     }
     private static boolean isCurrent(MainActivity a, File source, int generation,
             String hash, ExplorerView.EditSession session, Map<String, String> baseline,
-            ExportSessionGuard.Token token) throws Exception {
+            long revision, ExportSessionGuard.Token token) throws Exception {
         Method m = MainActivity.class.getDeclaredMethod("isRecoveryRestoreRequestCurrent",
             File.class, Uri.class, int.class, String.class, ExplorerView.EditSession.class,
-            Map.class, ExportSessionGuard.Token.class);
+            Map.class, long.class, ExportSessionGuard.Token.class);
         m.setAccessible(true);
         return (Boolean) m.invoke(a, source, null, generation, hash, session,
-            baseline, token);
+            baseline, revision, token);
     }
 
     @Test public void f147LiveEditAfterPromptRejectsConsentEvenFromEmptyPlan()
@@ -69,12 +69,19 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
                     ExportSessionGuard.Token token = guard.begin();
                     ExplorerView.EditSession session = e.captureEditSession();
                     Map<String, String> baseline = e.getEditPlan().snapshot();
+                    long revision = e.getEditPlan().revision();
                     assertTrue(baseline.isEmpty());
-                    assertTrue(isCurrent(a, source, generation, hash, session, baseline, token));
+                    assertTrue(isCurrent(a, source, generation, hash, session, baseline, revision, token));
                     e.getEditPlan().addTextReplacement(PATH, "new unsaved text");
                     assertFalse("Consent must not discard a later edit",
-                        isCurrent(a, source, generation, hash, session, baseline, token));
+                        isCurrent(a, source, generation, hash, session, baseline, revision, token));
                     assertEquals(plan("new unsaved text"), e.getEditPlan().snapshot());
+                    e.getEditPlan().remove(PATH);
+                    assertEquals(baseline, e.getEditPlan().snapshot());
+                    assertFalse("Empty→edited→empty must not resurrect old consent",
+                        isCurrent(a, source, generation, hash, session, baseline, revision, token));
+                    assertTrue(isCurrent(a, source, generation, hash, session, baseline,
+                        e.getEditPlan().revision(), token));
                 } catch (Exception ex) { throw new AssertionError(ex); }
             });
         } finally { source.delete(); }
@@ -99,13 +106,14 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
                     ExportSessionGuard guard = (ExportSessionGuard) get(a, "recoveryRestoreSessions");
                     ExplorerView.EditSession session = e.captureEditSession();
                     Map<String, String> baseline = e.getEditPlan().snapshot();
+                    long revision = e.getEditPlan().revision();
                     ExportSessionGuard.Token old = guard.begin();
-                    assertTrue(isCurrent(a, source, generation, hash, session, baseline, old));
+                    assertTrue(isCurrent(a, source, generation, hash, session, baseline, revision, old));
                     ExportSessionGuard.Token fresh = guard.begin();
-                    assertFalse(isCurrent(a, source, generation, hash, session, baseline, old));
-                    assertTrue(isCurrent(a, source, generation, hash, session, baseline, fresh));
+                    assertFalse(isCurrent(a, source, generation, hash, session, baseline, revision, old));
+                    assertTrue(isCurrent(a, source, generation, hash, session, baseline, revision, fresh));
                     e.setFiles(new JSONArray(), source);
-                    assertFalse(isCurrent(a, source, generation, hash, session, baseline, fresh));
+                    assertFalse(isCurrent(a, source, generation, hash, session, baseline, revision, fresh));
                 } catch (Exception ex) { throw new AssertionError(ex); }
             });
         } finally { source.delete(); }

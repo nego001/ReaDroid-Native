@@ -41,13 +41,13 @@ public final class F143RecoverySaveBindingInstrumentedTest {
     }
     private static boolean current(MainActivity activity, File source, Uri document,
             int generation, String hash, ExplorerView.EditSession session,
-            Map<String, String> changes) throws Exception {
+            Map<String, String> changes, long revision) throws Exception {
         Method m = MainActivity.class.getDeclaredMethod("isRecoverySaveRequestCurrent",
             File.class, Uri.class, int.class, String.class,
-            ExplorerView.EditSession.class, Map.class);
+            ExplorerView.EditSession.class, Map.class, long.class);
         m.setAccessible(true);
         return (Boolean) m.invoke(activity, source, document,
-            generation, hash, session, changes);
+            generation, hash, session, changes, revision);
     }
     private static JSONObject report(String hash) throws Exception {
         return new JSONObject().put("sha256", hash);
@@ -68,14 +68,15 @@ public final class F143RecoverySaveBindingInstrumentedTest {
                     int generation = (Integer) get(activity, "analysisSequence");
                     ExplorerView.EditSession old = explorer.captureEditSession();
                     Map<String, String> changes = explorer.getEditPlan().snapshot();
+                    long revision = explorer.getEditPlan().revision();
                     assertTrue(current(activity, a, null, generation, repeat('a'),
-                        old, changes));
+                        old, changes, revision));
                     set(activity, "currentApk", b);
                     set(activity, "report", report(repeat('b')));
                     explorer.getEditPlan().clear();
                     explorer.setFiles(new JSONArray(), b);
                     assertFalse("Old dialog must not save current project B",
-                        current(activity, a, null, generation, repeat('a'), old, changes));
+                        current(activity, a, null, generation, repeat('a'), old, changes, revision));
                     assertEquals(0, explorer.getEditPlan().size());
                 } catch (Exception e) { throw new AssertionError(e); }
             });
@@ -96,11 +97,12 @@ public final class F143RecoverySaveBindingInstrumentedTest {
                     int generation = (Integer) get(activity, "analysisSequence");
                     ExplorerView.EditSession old = explorer.captureEditSession();
                     Map<String, String> changes = explorer.getEditPlan().snapshot();
+                    long revision = explorer.getEditPlan().revision();
                     assertTrue(current(activity, source, null, generation,
-                        repeat('a'), old, changes));
+                        repeat('a'), old, changes, revision));
                     explorer.setFiles(new JSONArray(), source);
                     assertFalse(current(activity, source, null, generation,
-                        repeat('a'), old, changes));
+                        repeat('a'), old, changes, revision));
                 } catch (Exception e) { throw new AssertionError(e); }
             });
         } finally { source.delete(); }
@@ -120,12 +122,21 @@ public final class F143RecoverySaveBindingInstrumentedTest {
                     int generation = (Integer) get(activity, "analysisSequence");
                     ExplorerView.EditSession session = explorer.captureEditSession();
                     Map<String, String> snapshot = explorer.getEditPlan().snapshot();
+                    long revision = explorer.getEditPlan().revision();
                     assertTrue(current(activity, source, null, generation,
-                        repeat('a'), session, snapshot));
+                        repeat('a'), session, snapshot, revision));
                     explorer.getEditPlan().addTextReplacement(ENTRY, "new edit after prompt");
                     assertFalse("Edits changed before consent must invalidate old plan",
                         current(activity, source, null, generation,
-                            repeat('a'), session, snapshot));
+                            repeat('a'), session, snapshot, revision));
+                    // F1.48: equality alone cannot authorize a stale A→B→A prompt.
+                    explorer.getEditPlan().addTextReplacement(ENTRY, CHANGE);
+                    assertEquals(snapshot, explorer.getEditPlan().snapshot());
+                    assertFalse("Old prompt must stay invalid after undo",
+                        current(activity, source, null, generation,
+                            repeat('a'), session, snapshot, revision));
+                    assertTrue(current(activity, source, null, generation,
+                        repeat('a'), session, snapshot, explorer.getEditPlan().revision()));
                 } catch (Exception e) { throw new AssertionError(e); }
             });
         } finally { source.delete(); }

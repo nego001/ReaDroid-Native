@@ -409,4 +409,53 @@ public final class EditPlanStateInstrumentedTest {
             assertEquals(0, plan.size());
         }
     }
+
+    @Test public void f148RevisionAdvancesOnlyForActualContentChanges() {
+        EditPlan p = new EditPlan();
+        long start = p.revision();
+        p.clear();
+        assertFalse(p.remove(PATH));
+        assertEquals(start, p.revision());
+        p.addTextReplacement(PATH, "A");
+        long a = p.revision();
+        assertTrue(a > start);
+        p.addTextReplacement(PATH, "A");
+        assertEquals(EditPlan.EditResult.UNCHANGED, p.applyTextEdit(PATH, "original", "A"));
+        assertEquals(a, p.revision());
+        assertEquals(EditPlan.EditResult.UPDATED, p.applyTextEdit(PATH, "original", "B"));
+        long b = p.revision();
+        assertTrue(b > a);
+        p.addTextReplacement(PATH, "A");
+        long undo = p.revision();
+        assertTrue(undo > b);
+        assertEquals("A", p.get(PATH));
+        assertEquals(EditPlan.EditResult.REMOVED, p.applyTextEdit(PATH, "original", "original"));
+        assertTrue(p.revision() > undo);
+        long empty = p.revision();
+        assertEquals(EditPlan.EditResult.UNCHANGED, p.applyTextEdit(PATH, "original", "original"));
+        assertEquals(empty, p.revision());
+    }
+
+    @Test public void f148ValidatedReplacementAndClearTrackRevision() {
+        EditPlan p = new EditPlan();
+        p.addTextReplacement(PATH, "A");
+        long a = p.revision();
+        p.replaceAllValidated(java.util.Collections.singletonMap(PATH, "A"));
+        assertEquals(a, p.revision());
+        try {
+            p.replaceAllValidated(java.util.Collections.singletonMap("../bad.txt", "B"));
+            fail("Invalid recovery must not mutate revision");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(a, p.revision());
+            assertEquals("A", p.get(PATH));
+        }
+        p.replaceAllValidated(java.util.Collections.singletonMap(PATH, "B"));
+        long b = p.revision();
+        assertTrue(b > a);
+        p.clear();
+        assertTrue(p.revision() > b);
+        long cleared = p.revision();
+        p.clear();
+        assertEquals(cleared, p.revision());
+    }
 }

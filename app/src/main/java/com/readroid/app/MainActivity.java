@@ -1062,6 +1062,7 @@ public class MainActivity extends Activity {
             final Map<String, String> editsAtPrompt =
                 Collections.unmodifiableMap(new LinkedHashMap<>(
                     explorerView.getEditPlan().snapshot()));
+            final long revisionAtPrompt = explorerView.getEditPlan().revision();
             if (!SavedProjectResume.validSha256(hashAtPrompt)) {
                 showRecoveryError("Salvamento bloqueado",
                     new IOException("Identidade SHA-256 do APK não verificada."));
@@ -1077,7 +1078,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Criptografar e salvar", (dialog, which) -> {
                     if (!isRecoverySaveRequestCurrent(sourceAtPrompt, documentAtPrompt,
                             generationAtPrompt, hashAtPrompt, sessionAtPrompt,
-                            editsAtPrompt)) {
+                            editsAtPrompt, revisionAtPrompt)) {
                         showRecoveryError("Salvamento cancelado",
                             new IOException("O projeto ou as alterações mudaram. "
                                 + "Abra Salvar novamente para conferir o plano atual."));
@@ -1156,6 +1157,7 @@ public class MainActivity extends Activity {
             final Map<String, String> pendingAtRequest =
                 Collections.unmodifiableMap(new LinkedHashMap<>(
                     explorerView.getEditPlan().snapshot()));
+            final long revisionAtRequest = explorerView.getEditPlan().revision();
             final ExportSessionGuard.Token restoreToken =
                 recoveryRestoreSessions.begin();
             executor.execute(() -> {
@@ -1171,7 +1173,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(() -> {
                         if (!isRecoveryRestoreRequestCurrent(source, importedDocument,
                                 projectGeneration, reportHash, recoverySession,
-                                pendingAtRequest, restoreToken)) {
+                                pendingAtRequest, revisionAtRequest, restoreToken)) {
                             reportStaleRecoveryRequest(source, importedDocument,
                                 projectGeneration, reportHash, recoverySession, restoreToken);
                             return;
@@ -1185,7 +1187,7 @@ public class MainActivity extends Activity {
                             .setPositiveButton("Substituir plano", (dialog, which) -> {
                                 if (!isRecoveryRestoreRequestCurrent(source, importedDocument,
                                         projectGeneration, reportHash, recoverySession,
-                                        pendingAtRequest, restoreToken)) {
+                                        pendingAtRequest, revisionAtRequest, restoreToken)) {
                                     reportStaleRecoveryRequest(source, importedDocument,
                                         projectGeneration, reportHash, recoverySession, restoreToken);
                                     return;
@@ -1203,7 +1205,7 @@ public class MainActivity extends Activity {
                                         runOnUiThread(() -> {
                                             if (!isRecoveryRestoreRequestCurrent(source, importedDocument,
                                                     projectGeneration, reportHash, recoverySession,
-                                                    pendingAtRequest, restoreToken)) {
+                                                    pendingAtRequest, revisionAtRequest, restoreToken)) {
                                                 reportStaleRecoveryRequest(source, importedDocument,
                                                     projectGeneration, reportHash, recoverySession, restoreToken);
                                                 return;
@@ -1586,11 +1588,13 @@ public class MainActivity extends Activity {
     /** F1.47: UI-thread-only restore gate, including the pending plan. */
     private boolean isRecoveryRestoreRequestCurrent(File source, Uri importedDocument,
             int generation, String expectedSha256, ExplorerView.EditSession session,
-            Map<String, String> pendingAtRequest, ExportSessionGuard.Token token) {
+            Map<String, String> pendingAtRequest, long revisionAtRequest,
+            ExportSessionGuard.Token token) {
         return token != null && token.isActive()
             && isRecoveryTargetCurrent(source, importedDocument, generation,
                 expectedSha256, session)
             && pendingAtRequest != null
+            && revisionAtRequest == explorerView.getEditPlan().revision()
             && pendingAtRequest.equals(explorerView.getEditPlan().snapshot());
     }
 
@@ -1608,10 +1612,11 @@ public class MainActivity extends Activity {
     /** F1.43: UI-thread-only consent gate; rejects stale dialog or edited plan. */
     private boolean isRecoverySaveRequestCurrent(File source, Uri document,
             int generation, String expectedSha256, ExplorerView.EditSession session,
-            Map<String, String> snapshotAtPrompt) {
+            Map<String, String> snapshotAtPrompt, long revisionAtPrompt) {
         return isRecoveryTargetCurrent(source, document, generation,
                 expectedSha256, session)
             && snapshotAtPrompt != null && !snapshotAtPrompt.isEmpty()
+            && revisionAtPrompt == explorerView.getEditPlan().revision()
             && snapshotAtPrompt.equals(explorerView.getEditPlan().snapshot());
     }
 

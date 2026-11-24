@@ -10,6 +10,10 @@ import java.util.Map;
 public final class EditPlan {
     private static final int MAX_REPLACEMENT_BYTES = 128 * 1024;
     private final LinkedHashMap<String, String> replacements = new LinkedHashMap<>();
+    // F1.48: in-memory content revision, independent of APK binding.
+    // UI-thread confined for the live Explorer plan; temporary plans are local.
+    private long revision;
+    long revision() { return revision; }
 
     /**
      * Reject over-budget text and malformed UTF-16 (unpaired surrogates).
@@ -37,7 +41,9 @@ public final class EditPlan {
         if (!isEditable(path)) throw new IllegalArgumentException("Tipo de arquivo não suportado para edição textual");
         if (invalidReplacement(replacement))
             throw new IllegalArgumentException("Texto inválido ou acima de 128 KiB em UTF-8");
+        if (replacement.equals(replacements.get(path))) return;
         replacements.put(path, replacement);
+        revision++;
     }
 
     /** The functional result of an edit, separate from visual presentation. */
@@ -56,7 +62,7 @@ public final class EditPlan {
             || !isEditable(path) || invalidReplacement(replacement))
             throw new IllegalArgumentException("Caminho ou edição inválida (UTF-8, máximo 128 KiB)");
         if (replacement.equals(original))
-            return replacements.remove(path) == null ? EditResult.UNCHANGED : EditResult.REMOVED;
+            return remove(path) ? EditResult.REMOVED : EditResult.UNCHANGED;
         String previous = replacements.get(path);
         if (replacement.equals(previous)) return EditResult.UNCHANGED;
         addTextReplacement(path, replacement);
@@ -72,7 +78,11 @@ public final class EditPlan {
 
     public int size() { return replacements.size(); }
 
-    public boolean remove(String path) { return replacements.remove(path) != null; }
+    public boolean remove(String path) {
+        if (replacements.remove(path) == null) return false;
+        revision++;
+        return true;
+    }
 
     public boolean contains(String path) { return replacements.containsKey(path); }
 
@@ -80,7 +90,11 @@ public final class EditPlan {
 
     public Map<String, String> snapshot() { return new LinkedHashMap<>(replacements); }
 
-    public void clear() { replacements.clear(); }
+    public void clear() {
+        if (replacements.isEmpty()) return;
+        replacements.clear();
+        revision++;
+    }
 
     /**
      * Restore a recovery snapshot atomically. Validate every entry in a
@@ -102,8 +116,10 @@ public final class EditPlan {
             throw new IllegalArgumentException("Cópia de recuperação sem alterações");
         // No validation after this point: the current plan cannot be left
         // partially cleared by a malformed path, Unicode value or size.
+        if (replacements.equals(candidate.replacements)) return;
         replacements.clear();
         replacements.putAll(candidate.replacements);
+        revision++;
     }
 
     public JSONObject toJson() throws Exception {

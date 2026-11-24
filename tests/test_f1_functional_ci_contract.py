@@ -1060,6 +1060,22 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("app/src/main/java/com/readroid/app/RecoveryRestoreConsent.java", self.workflow)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java", self.workflow)
 
+    def test_f148_recovery_consent_tracks_edit_revision_even_after_undo(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        plan = (ROOT / "app/src/main/java/com/readroid/app/EditPlan.java").read_text(encoding="utf-8")
+        save = (ROOT / "app/src/androidTest/java/com/readroid/app/F143RecoverySaveBindingInstrumentedTest.java").read_text(encoding="utf-8")
+        restore = (ROOT / "app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java").read_text(encoding="utf-8")
+        state = (ROOT / "app/src/androidTest/java/com/readroid/app/EditPlanStateInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("private long revision;", plan)
+        self.assertEqual(plan.count("revision++;"), 4)
+        self.assertIn("revisionAtPrompt == explorerView.getEditPlan().revision()", activity)
+        self.assertIn("revisionAtRequest == explorerView.getEditPlan().revision()", activity)
+        self.assertEqual(activity.count("pendingAtRequest, revisionAtRequest, restoreToken))"), 3)
+        self.assertIn("Old prompt must stay invalid after undo", save)
+        self.assertIn("must not resurrect old consent", restore)
+        self.assertIn("f148RevisionAdvancesOnlyForActualContentChanges", state)
+        self.assertIn("f148ValidatedReplacementAndClearTrackRevision", state)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",
