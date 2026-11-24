@@ -147,11 +147,12 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
 
     @Test public void f147ReplacedCheckpointCannotRestoreOfferedA() throws Exception {
         try (Fixture f = new Fixture()) {
-            Map<String, String> offered = f.vault.loadForSource(f.source);
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
             f.vault.save(f.source, plan("B"));
             byte[] before = Files.readAllBytes(f.checkpoint.toPath());
             try {
-                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered,
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof,
                     new ExportSessionGuard().begin());
                 fail("Replaced checkpoint must require a new consent");
             } catch (IOException expected) {
@@ -164,10 +165,11 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
 
     @Test public void f147DeletedCheckpointCannotRestoreOfferedA() throws Exception {
         try (Fixture f = new Fixture()) {
-            Map<String, String> offered = f.vault.loadForSource(f.source);
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
             f.vault.clear();
             try {
-                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered,
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof,
                     new ExportSessionGuard().begin());
                 fail("Deleted checkpoint must not restore an old in-memory plan");
             } catch (IOException expected) {
@@ -178,12 +180,13 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
 
     @Test public void f147RevokedTokenRejectsUnchangedCheckpoint() throws Exception {
         try (Fixture f = new Fixture()) {
-            Map<String, String> offered = f.vault.loadForSource(f.source);
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
             ExportSessionGuard guard = new ExportSessionGuard();
             ExportSessionGuard.Token token = guard.begin();
             guard.invalidate();
             try {
-                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, token);
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, proof, token);
                 fail("Revoked consent must fail closed");
             } catch (InterruptedIOException expected) {
                 assertEquals(plan("A"), f.vault.loadForSource(f.source));
@@ -194,10 +197,11 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
     @Test public void f147CurrentConsentReturnsAuthenticatedPlanWithoutWriting()
             throws Exception {
         try (Fixture f = new Fixture()) {
-            Map<String, String> offered = f.vault.loadForSource(f.source);
+            RecoveryVault.DeletionProof proof = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, proof);
             byte[] before = Files.readAllBytes(f.checkpoint.toPath());
             Map<String, String> verified = RecoveryRestoreConsent.reauthenticate(
-                f.vault, f.source, offered, new ExportSessionGuard().begin());
+                f.vault, f.source, offered, proof, new ExportSessionGuard().begin());
             assertEquals(plan("A"), verified);
             assertNotSame(offered, verified);
             assertArrayEquals(before, Files.readAllBytes(f.checkpoint.toPath()));
@@ -206,6 +210,52 @@ public final class F147RecoveryRestoreConsentInstrumentedTest {
                 fail("Verified snapshot must be immutable");
             } catch (UnsupportedOperationException expected) {
                 assertEquals(plan("A"), verified);
+            }
+        }
+    }
+
+    @Test public void f151ResavedIdenticalPlanRequiresNewRestoreConsent() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof old = f.vault.captureDeletionProof();
+            Map<String, String> offered = f.vault.loadForSource(f.source, old);
+            f.vault.save(f.source, offered);
+            byte[] newer = Files.readAllBytes(f.checkpoint.toPath());
+            try {
+                RecoveryRestoreConsent.reauthenticate(f.vault, f.source, offered, old,
+                    new ExportSessionGuard().begin());
+                fail("Identical plaintext does not authorize a new ciphertext");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou"));
+            }
+            RecoveryVault.DeletionProof fresh = f.vault.captureDeletionProof();
+            assertEquals(offered, RecoveryRestoreConsent.reauthenticate(f.vault, f.source,
+                offered, fresh, new ExportSessionGuard().begin()));
+            assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
+        }
+    }
+
+    @Test public void f151OldProofCannotAuthenticateReplacementAtInitialOffer() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof old = f.vault.captureDeletionProof();
+            f.vault.save(f.source, plan("B"));
+            try {
+                f.vault.loadForSource(f.source, old);
+                fail("Initial offer must not combine an old proof with a new plan");
+            } catch (IOException expected) {
+                assertEquals(plan("B"), f.vault.loadForSource(f.source));
+            }
+        }
+    }
+
+    @Test public void f151ProofFromDifferentVaultRejectsSameSource() throws Exception {
+        try (Fixture f = new Fixture(); Fixture other = new Fixture()) {
+            RecoveryVault.DeletionProof foreign = other.vault.captureDeletionProof();
+            try {
+                f.vault.loadForSource(f.source, foreign);
+                fail("Proof belongs to a different vault");
+            } catch (IOException expected) {
+                assertEquals(plan("A"), f.vault.loadForSource(f.source));
+                assertEquals(plan("A"), other.vault.loadForSource(other.source));
             }
         }
     }

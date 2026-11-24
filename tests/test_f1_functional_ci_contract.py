@@ -1045,7 +1045,7 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("pendingAtRequest.equals(explorerView.getEditPlan().snapshot())", activity)
         self.assertIn("recoveryRestoreSessions.begin()", activity)
         self.assertGreaterEqual(activity.count("recoveryRestoreSessions.invalidate();"), 5)
-        self.assertIn("vault.loadForSource(source)", gate)
+        self.assertIn("vault.loadForSource(source, checkpointAtOffer)", gate)
         self.assertIn("offered.equals(current)", gate)
         self.assertGreaterEqual(gate.count("token.requireActive();"), 2)
         for case in (
@@ -1119,6 +1119,28 @@ class FunctionalCIContract(unittest.TestCase):
             self.assertIn(name, unit)
         self.assertIn("f150ActualDeleteDialogRejectsNewCheckpoint", ui)
         self.assertIn("f150ActualDeleteDialogRemovesAuthorizedCopyOnly", ui)
+
+    def test_f151_restore_consent_is_bound_to_exact_ciphertext(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        vault = (ROOT / "app/src/main/java/com/readroid/app/RecoveryVault.java").read_text(encoding="utf-8")
+        gate = (ROOT / "app/src/main/java/com/readroid/app/RecoveryRestoreConsent.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F147RecoveryRestoreConsentInstrumentedTest.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        start = activity.index("restoreRecovery.setOnClickListener")
+        capture = activity.index("recoveryVault.captureDeletionProof()", start)
+        read = activity.index("recoveryVault.loadForSource(source, checkpointAtOffer)", capture)
+        consent = activity.index('setPositiveButton("Substituir plano"', read)
+        self.assertLess(capture, read)
+        self.assertLess(read, consent)
+        self.assertIn("changes, checkpointAtOffer, restoreToken", activity)
+        self.assertIn("vault.loadForSource(source, checkpointAtOffer)", gate)
+        self.assertIn("loadSerialized(sourceApk, offered)", vault)
+        self.assertIn("MessageDigest.isEqual(offered.digest,", vault)
+        self.assertIn("digest(encoded)", vault)
+        self.assertIn("f151ResavedIdenticalPlanRequiresNewRestoreConsent", tests)
+        self.assertIn("f151OldProofCannotAuthenticateReplacementAtInitialOffer", tests)
+        self.assertIn("f151ProofFromDifferentVaultRejectsSameSource", tests)
+        self.assertIn("f151ActualRestoreDialogRejectsResavedIdenticalPlan", ui)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

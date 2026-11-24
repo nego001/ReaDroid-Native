@@ -12,14 +12,16 @@ final class RecoveryRestoreConsent {
 
     /**
      * Worker-only. A changed, deleted, or invalid checkpoint must not supply
-     * an earlier authenticated plan. Equality is about the authorized content,
-     * not the random GCM IV. UI request cancellation is checked separately.
+     * an earlier authenticated plan. F1.51 also binds the offer to the
+     * exact encrypted checkpoint, even if a new save contains identical edits.
+     * UI request cancellation is checked separately.
      */
     static Map<String, String> reauthenticate(RecoveryVault vault, File source,
-            Map<String, String> offered, ExportSessionGuard.Token token)
+            Map<String, String> offered, RecoveryVault.DeletionProof checkpointAtOffer,
+            ExportSessionGuard.Token token)
             throws Exception {
         token.requireActive();
-        Map<String, String> current = vault.loadForSource(source);
+        Map<String, String> current = vault.loadForSource(source, checkpointAtOffer);
         token.requireActive();
         if (offered == null || offered.isEmpty() || !offered.equals(current))
             throw new IOException("A cópia de recuperação mudou. "

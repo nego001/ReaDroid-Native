@@ -349,4 +349,23 @@ public final class F149RecoveryDialogInstrumentedTest {
             }
         }
     }
+
+    @Test public void f151ActualRestoreDialogRejectsResavedIdenticalPlan() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, RESTORE);
+                f.waitForText(OFFER);
+                f.vault.save(f.source, plan(STORED));
+                byte[] newer = Files.readAllBytes(f.checkpoint.toPath());
+                f.clickDialogButton(POSITIVE);
+                f.waitForText("Recuperação bloqueada");
+                assertPending(scenario, PENDING);
+                assertArrayEquals(newer, Files.readAllBytes(f.checkpoint.toPath()));
+                assertEquals(plan(STORED), f.vault.loadForSource(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
 }

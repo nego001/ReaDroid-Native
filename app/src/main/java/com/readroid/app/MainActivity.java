@@ -1165,9 +1165,12 @@ public class MainActivity extends Activity {
                     restoreToken.requireActive();
                     final RecoveryResumeGate.Proof proof =
                         RecoveryResumeGate.attest(source, reportHash);
+                    final RecoveryVault recoveryVault = new RecoveryVault(this);
+                    final RecoveryVault.DeletionProof checkpointAtOffer =
+                        recoveryVault.captureDeletionProof();
                     final Map<String, String> changes =
                         Collections.unmodifiableMap(new LinkedHashMap<>(
-                            new RecoveryVault(this).loadForSource(source)));
+                            recoveryVault.loadForSource(source, checkpointAtOffer)));
                     RecoveryResumeGate.revalidate(proof, source, reportHash);
                     restoreToken.requireActive();
                     runOnUiThread(() -> {
@@ -1199,7 +1202,7 @@ public class MainActivity extends Activity {
                                         final Map<String, String> verified =
                                             RecoveryRestoreConsent.reauthenticate(
                                                 new RecoveryVault(this), source,
-                                                changes, restoreToken);
+                                                changes, checkpointAtOffer, restoreToken);
                                         RecoveryResumeGate.revalidate(proof, source, reportHash);
                                         restoreToken.requireActive();
                                         runOnUiThread(() -> {

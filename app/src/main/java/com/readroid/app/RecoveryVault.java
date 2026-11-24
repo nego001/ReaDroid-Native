@@ -654,11 +654,31 @@ public final class RecoveryVault {
     /** Pure read/verification: caller must get consent before modifying live EditPlan. */
     public Map<String, String> loadForSource(File sourceApk) throws Exception {
         synchronized (IN_PROCESS_LOCK) {
-            return loadSerialized(sourceApk);
+            return loadSerialized(sourceApk, null);
         }
     }
 
-    private Map<String, String> loadSerialized(File sourceApk) throws Exception {
+    /**
+     * F1.51: authenticate only the ciphertext version offered to the user.
+     * Compare the actual bytes being decrypted, not just the surrounding
+     * filename observations. The transaction lock excludes other vault writes.
+     */
+    Map<String, String> loadForSource(File sourceApk, DeletionProof offered)
+            throws Exception {
+        synchronized (IN_PROCESS_LOCK) {
+            if (offered == null || offered.identity == null
+                    || !offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou. "
+                    + "Solicite a recuperação novamente.");
+            Map<String, String> changes = loadSerialized(sourceApk, offered);
+            if (!offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou durante a leitura.");
+            return changes;
+        }
+    }
+
+    private Map<String, String> loadSerialized(File sourceApk, DeletionProof offered)
+            throws Exception {
         String fingerprint = sha256(sourceApk);
         File file = new File(storage, FILE_NAME);
         if (!file.isFile() || file.length() < 4 + 1 + 12 + 16
@@ -674,6 +694,11 @@ public final class RecoveryVault {
         byte[] ciphertext = null;
         byte[] plaintext = null;
         try {
+            // F1.51: match the exact bounded bytes that will be authenticated.
+            if (offered != null && (encoded.length != offered.identity.size
+                    || !MessageDigest.isEqual(offered.digest,
+                        MessageDigest.getInstance("SHA-256").digest(encoded))))
+                throw new IOException("A cópia de recuperação mudou durante a leitura.");
             // Recheck after reading in case the file changed since length().
             if (encoded.length < MAGIC.length + 1 + 12 + 16
                 || encoded.length > MAX_FILE)
