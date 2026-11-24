@@ -1133,13 +1133,9 @@ public class MainActivity extends Activity {
             "Recuperar plano salvo neste aparelho", false);
         buildSection.addView(restoreRecovery);
         restoreRecovery.setOnClickListener(v -> {
-            if (!new RecoveryVault(this).hasCheckpoint()) {
-                new android.app.AlertDialog.Builder(this)
-                    .setMessage("Nenhuma cópia de recuperação foi encontrada.")
-                    .setPositiveButton("OK", null).show();
-                return;
-            }
-            if (currentApk == null || !currentApk.isFile() || report == null) {
+            // F1.53: the vault lock can be held by a long-running save.
+            // Never consult the recovery filesystem on the UI thread.
+            if (currentApk == null || report == null) {
                 new android.app.AlertDialog.Builder(this)
                     .setMessage("Abra novamente o APK original para verificar sua "
                         + "identidade antes de recuperar as alterações.")
@@ -1163,9 +1159,24 @@ public class MainActivity extends Activity {
             executor.execute(() -> {
                 try {
                     restoreToken.requireActive();
+                    final RecoveryVault recoveryVault = new RecoveryVault(this);
+                    if (!recoveryVault.hasCheckpoint()) {
+                        restoreToken.requireActive();
+                        runOnUiThread(() -> {
+                            if (isRecoveryRestoreRequestCurrent(source, importedDocument,
+                                    projectGeneration, reportHash, recoverySession,
+                                    pendingAtRequest, revisionAtRequest, restoreToken)) {
+                                recoveryRestoreSessions.invalidate();
+                                new android.app.AlertDialog.Builder(this)
+                                    .setMessage("Nenhuma cópia de recuperação foi encontrada.")
+                                    .setPositiveButton("OK", null).show();
+                            }
+                        });
+                        return;
+                    }
+                    restoreToken.requireActive();
                     final RecoveryResumeGate.Proof proof =
                         RecoveryResumeGate.attest(source, reportHash);
-                    final RecoveryVault recoveryVault = new RecoveryVault(this);
                     final RecoveryVault.DeletionProof checkpointAtOffer =
                         recoveryVault.captureDeletionProof();
                     final Map<String, String> changes =

@@ -368,4 +368,104 @@ public final class F149RecoveryDialogInstrumentedTest {
             }
         }
     }
+
+    @Test public void f153RestoreActionDoesNotWaitOnUiForBusyVault() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                CountDownLatch entered = new CountDownLatch(1);
+                CountDownLatch release = new CountDownLatch(1);
+                RecoveryVault writer = new RecoveryVault(f.folder, KEY, staged -> {
+                    entered.countDown();
+                    try {
+                        if (!release.await(20, TimeUnit.SECONDS))
+                            throw new java.io.IOException("F153 writer barrier timed out");
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new java.io.InterruptedIOException("F153 writer interrupted");
+                    }
+                });
+                ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+                java.util.concurrent.Future<?> save = worker.submit(() -> {
+                    writer.save(f.source, plan("F153 concurrent checkpoint"));
+                    return null;
+                });
+                try {
+                    assertTrue("Writer did not acquire vault lock", entered.await(5, TimeUnit.SECONDS));
+                    open(scenario, RESTORE);
+                    // open() runs the real button listener on the UI thread.
+                    // A synchronous vault query would wait until the writer
+                    // timed out, failing the future below instead of returning.
+                    assertFalse("UI action waited for the writer", save.isDone());
+                    assertPending(scenario, PENDING);
+                } finally {
+                    release.countDown();
+                    try { save.get(25, TimeUnit.SECONDS); }
+                    finally { worker.shutdownNow(); }
+                }
+                f.waitForText(OFFER);
+                f.clickDialogButton(POSITIVE);
+                f.waitForText("Plano recuperado.");
+                assertPending(scenario, "F153 concurrent checkpoint");
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f153AbsentCheckpointShowsNoticeWithoutChangingPendingPlan() throws Exception {
+        try (Fixture f = new Fixture()) {
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, RESTORE);
+                f.waitForText("Nenhuma cópia de recuperação foi encontrada.");
+                assertPending(scenario, PENDING);
+                assertFalse(f.vault.hasCheckpoint());
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f153StaleMissingCheckpointNoticeIsSuppressed() throws Exception {
+        try (Fixture f = new Fixture()) {
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                CountDownLatch entered = new CountDownLatch(1);
+                CountDownLatch release = new CountDownLatch(1);
+                CountDownLatch drained = new CountDownLatch(1);
+                scenario.onActivity(a -> {
+                    try {
+                        ((ExecutorService) get(a, "executor")).execute(() -> {
+                            entered.countDown();
+                            try {
+                                if (!release.await(20, TimeUnit.SECONDS))
+                                    throw new AssertionError("F153 queue barrier timed out");
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+                    } catch (Exception ex) { throw new AssertionError(ex); }
+                });
+                try {
+                    assertTrue(entered.await(5, TimeUnit.SECONDS));
+                    open(scenario, RESTORE);
+                    edit(scenario, "newer pending F153");
+                    scenario.onActivity(a -> {
+                        try {
+                            ((ExecutorService) get(a, "executor")).execute(drained::countDown);
+                        } catch (Exception ex) { throw new AssertionError(ex); }
+                    });
+                } finally {
+                    release.countDown();
+                }
+                assertTrue("Recovery request did not drain", drained.await(10, TimeUnit.SECONDS));
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertNull("Stale absence notice must not appear",
+                    f.device.findObject(By.textContains("Nenhuma cópia de recuperação foi encontrada.")));
+                assertPending(scenario, "newer pending F153");
+                assertFalse(f.vault.hasCheckpoint());
+            }
+        }
+    }
 }

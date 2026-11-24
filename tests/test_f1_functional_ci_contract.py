@@ -1071,7 +1071,7 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertEqual(plan.count("revision++;"), 4)
         self.assertIn("revisionAtPrompt == explorerView.getEditPlan().revision()", activity)
         self.assertIn("revisionAtRequest == explorerView.getEditPlan().revision()", activity)
-        self.assertEqual(activity.count("pendingAtRequest, revisionAtRequest, restoreToken))"), 3)
+        self.assertEqual(activity.count("pendingAtRequest, revisionAtRequest, restoreToken))"), 4)
         self.assertIn("Old prompt must stay invalid after undo", save)
         self.assertIn("must not resurrect old consent", restore)
         self.assertIn("f148RevisionAdvancesOnlyForActualContentChanges", state)
@@ -1159,6 +1159,22 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f152CurrentApplicationIsSingleUse", tests)
         self.assertIn("f152BusyVaultRejectsApplicationWithoutWaitingForWriter", tests)
         self.assertIn("f152RevokedApplicationTokenCannotMutatePlan", tests)
+
+    def test_f153_restore_preflight_is_worker_only(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        start = activity.index("restoreRecovery.setOnClickListener")
+        end = activity.index("Button removeRecovery", start)
+        listener = activity[start:end]
+        worker = listener.index("executor.execute(() ->")
+        check = listener.index("recoveryVault.hasCheckpoint()")
+        self.assertLess(worker, check)
+        self.assertNotIn("hasCheckpoint()", listener[:worker])
+        self.assertNotIn("currentApk.isFile()", listener[:worker])
+        self.assertIn("Nenhuma cópia de recuperação foi encontrada.", listener)
+        self.assertIn("f153RestoreActionDoesNotWaitOnUiForBusyVault", ui)
+        self.assertIn("f153AbsentCheckpointShowsNoticeWithoutChangingPendingPlan", ui)
+        self.assertIn("f153StaleMissingCheckpointNoticeIsSuppressed", ui)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
