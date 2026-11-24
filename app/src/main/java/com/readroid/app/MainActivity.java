@@ -1086,10 +1086,16 @@ public class MainActivity extends Activity {
                             token.requireActive();
                             // A stale cache file or substituted APK cannot
                             // overwrite the single-slot recovery checkpoint.
-                            RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);
+                            final RecoveryResumeGate.Proof preSaveProof =
+                                RecoveryResumeGate.attest(sourceAtPrompt, hashAtPrompt);
                             token.requireActive();
                             new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt,
                                 token, hashAtPrompt);
+                            // F1.46: the save has RETURNED, so its commit is
+                            // already complete. Reattest the original's ZIP
+                            // and SHA before posting a success notification.
+                            RecoverySaveAcknowledgementGate.revalidate(
+                                preSaveProof, sourceAtPrompt, hashAtPrompt);
                             runOnUiThread(() -> {
                                 if (!token.isActive()
                                         || !isRecoveryTargetCurrent(sourceAtPrompt,

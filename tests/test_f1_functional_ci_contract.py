@@ -56,6 +56,7 @@ ANDROID_TESTS = {
     "F143RecoverySaveBindingInstrumentedTest",
     "F144RecoverySourceBindingInstrumentedTest",
     "F145PostCommitSourceInstrumentedTest",
+    "F146RecoveryAcknowledgementInstrumentedTest",
     "RecoveryResumeGateInstrumentedTest",
     "ProjectRecreationInstrumentedTest",
     "ApkImportPreflightInstrumentedTest",
@@ -995,6 +996,36 @@ class FunctionalCIContract(unittest.TestCase):
             self.assertIn(case, tests)
         self.assertIn("com.readroid.app.F145PostCommitSourceInstrumentedTest", self.workflow)
         self.assertIn("app/src/androidTest/java/com/readroid/app/F145PostCommitSourceInstrumentedTest.java", self.workflow)
+        self.assertNotIn("upload-artifact@", self.workflow)
+
+    def test_f146_worker_reattests_source_after_checkpoint_save_returns(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        gate = (ROOT / "app/src/main/java/com/readroid/app/RecoverySaveAcknowledgementGate.java").read_text(encoding="utf-8")
+        tests = (ROOT / "app/src/androidTest/java/com/readroid/app/F146RecoveryAcknowledgementInstrumentedTest.java").read_text(encoding="utf-8")
+        proof = activity.index("final RecoveryResumeGate.Proof preSaveProof =")
+        save = activity.index("new RecoveryVault(this).save(sourceAtPrompt, editsAtPrompt,", proof)
+        verify = activity.index("RecoverySaveAcknowledgementGate.revalidate(", save)
+        notification = activity.index('setTitle("Cópia protegida")', verify)
+        self.assertLess(proof, save)
+        self.assertLess(save, verify)
+        self.assertLess(verify, notification)
+        self.assertIn("RecoveryResumeGate.revalidate(preSaveProof, originalSource,", gate)
+        self.assertIn("new RecoveryVault.PostCommitSourceException(", gate)
+        self.assertIn("error instanceof RecoveryVault.PostCommitSourceException", activity)
+        for test_case in (
+            "f146SourceChangedAfterSaveBeforeNoticeRejectsAck",
+            "f146SourceRemovedAfterSaveBeforeNoticeRejectsAck",
+            "f146ReboundProofAfterSaveRejectsAck",
+            "f146StableSourceConfirmsCommittedCheckpoint",
+        ):
+            self.assertIn(test_case, tests)
+        self.assertIn("com.readroid.app.F146RecoveryAcknowledgementInstrumentedTest",
+                      self.workflow)
+        for path in (
+            "app/src/main/java/com/readroid/app/RecoverySaveAcknowledgementGate.java",
+            "app/src/androidTest/java/com/readroid/app/F146RecoveryAcknowledgementInstrumentedTest.java",
+        ):
+            self.assertIn(path, self.workflow)
         self.assertNotIn("upload-artifact@", self.workflow)
 
     def test_pr_scope_and_no_installer_publication(self):
