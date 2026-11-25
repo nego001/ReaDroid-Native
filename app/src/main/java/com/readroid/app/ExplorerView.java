@@ -46,6 +46,9 @@ public final class ExplorerView {
     // Every accepted project binding invalidates edits opened against the
     // previous APK, including dialogs and in-flight background reads.
     private long projectGeneration;
+    // At most one image decode across Explorer instances, including recreation.
+    private static final java.util.concurrent.atomic.AtomicBoolean IMAGE_PREVIEW_BUSY =
+        new java.util.concurrent.atomic.AtomicBoolean();
 
     static final class EditSession {
         final java.io.File source;
@@ -660,16 +663,23 @@ public final class ExplorerView {
 
     private void showFileActions(String label, String path, String category,
             long sizeBytes, boolean editable) {
-        String[] choices = editable
-            ? new String[]{"Ver texto", "Planejar edição", "Detalhes técnicos",
-                "Copiar caminho"}
-            : new String[]{"Ver texto", "Detalhes técnicos", "Copiar caminho"};
-        new android.app.AlertDialog.Builder(activity)
-            .setTitle(label)
-            .setMessage("Tipo: " + category + "  •  " + formatBytes(sizeBytes))
-            .setItems(choices, (dialog, selected) -> {
+        boolean image = ApkImagePreview.supports(path);
+        final EditSession menuSession = captureEditSession();
+        String[] choices = image
+            ? new String[]{"Visualizar imagem", "Detalhes técnicos", "Copiar caminho"}
+            : editable
+                ? new String[]{"Ver texto", "Planejar edição", "Detalhes técnicos",
+                    "Copiar caminho"}
+                : new String[]{"Ver texto", "Detalhes técnicos", "Copiar caminho"};
+        android.app.AlertDialog.Builder menu = new android.app.AlertDialog.Builder(activity)
+            .setTitle(label);
+        // Native AlertDialog message and list compete for the content panel.
+        // The image action must appear in the real list, not behind a message.
+        if (!image) menu.setMessage("Tipo: " + category + "  •  " + formatBytes(sizeBytes));
+        menu.setItems(choices, (dialog, selected) -> {
                 String action = choices[selected];
-                if ("Ver texto".equals(action)) preview(path);
+                if ("Visualizar imagem".equals(action)) previewImage(menuSession, path);
+                else if ("Ver texto".equals(action)) preview(path);
                 else if ("Planejar edição".equals(action)) planEdit(path);
                 else if ("Detalhes técnicos".equals(action)) inspectEntry(path);
                 else copyPath(path);
@@ -687,6 +697,62 @@ public final class ExplorerView {
     public EditPlan getEditPlan() { return editPlan; }
 
     public void refresh() { render(); }
+
+    private void previewImage(EditSession session, String path) {
+        if (!isCurrentEditSession(session) || activity.isFinishing() || activity.isDestroyed())
+            return;
+        if (!IMAGE_PREVIEW_BUSY.compareAndSet(false, true)) {
+            new android.app.AlertDialog.Builder(activity)
+                .setMessage("Uma prévia já está sendo processada.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        try {
+            new Thread(() -> {
+                ApkImagePreview.Result decoded = null;
+                String error = null;
+                try { decoded = ApkImagePreview.read(session.source, path); }
+                catch (Exception failure) { error = failure.getMessage(); }
+                catch (OutOfMemoryError failure) { error = "Memória insuficiente para a prévia."; }
+                final ApkImagePreview.Result result = decoded;
+                final String message = error;
+                activity.runOnUiThread(() -> {
+                    try {
+                        boolean shown = showForCurrentSession(session, () -> {
+                            if (result == null) {
+                                new android.app.AlertDialog.Builder(activity)
+                                    .setTitle("Prévia indisponível")
+                                    .setMessage(message == null ? "Imagem inválida." : message)
+                                    .setPositiveButton("OK", null).show();
+                                return;
+                            }
+                            LinearLayout content = new LinearLayout(activity);
+                            content.setOrientation(LinearLayout.VERTICAL);
+                            TextView info = new TextView(activity);
+                            info.setText(result.width + " × " + result.height + " px • "
+                                + result.mime + "\nPrévia estática, somente leitura");
+                            info.setPadding(16, 12, 16, 12);
+                            content.addView(info);
+                            android.widget.ImageView view = new android.widget.ImageView(activity);
+                            view.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                            view.setImageBitmap(result.bitmap);
+                            view.setContentDescription("Imagem do APK: " + path);
+                            content.addView(view, new LinearLayout.LayoutParams(-1,
+                                NegrescoTheme.dp(activity, 240)));
+                            new android.app.AlertDialog.Builder(activity)
+                                .setTitle("Prévia da imagem")
+                                .setView(content)
+                                .setPositiveButton("Fechar", null).show();
+                        });
+                        if (!shown && result != null) result.bitmap.recycle();
+                    } finally { IMAGE_PREVIEW_BUSY.set(false); }
+                });
+            }, "apk-image-preview").start();
+        } catch (RuntimeException failure) {
+            IMAGE_PREVIEW_BUSY.set(false);
+            throw failure;
+        }
+    }
 
     private void inspectEntry(String path) {
         if (apkFile == null || !apkFile.isFile()) return;

@@ -16,6 +16,7 @@ WORKFLOW = ROOT / ".github/workflows/f1-edit-session-validation.yml"
 PRODUCTION = {
     "MainActivity.java",
     "ExplorerView.java",
+    "ApkImagePreview.java",
     "EditPlan.java",
     "RecoveryVault.java",
     "RecoveryDirectoryGuard.java",
@@ -42,6 +43,7 @@ PRODUCTION = {
 }
 ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
+    "ApkImagePreviewInstrumentedTest",
     "RecoveryVaultInstrumentedTest",
     "F133RecoverySpaceConcurrencyInstrumentedTest",
     "F134RecoveryStageIntegrityInstrumentedTest",
