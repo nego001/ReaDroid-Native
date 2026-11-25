@@ -32,3 +32,6 @@ and test offline with the same lock on all three operating systems before integr
 
 ## U1.3 candidate — bounded format hints
 Magic-byte triage reads at most 512 prefix bytes and four extra PE signature bytes. No extension-based inference, archive extraction or structural validation. ZIP/APK/JAR/MSIX, OLE/MSI, and ar/DEB remain unresolved container families; CAFEBABE is ambiguous. Ten new tests cover signatures, bounds, malformed pointers, budget, cancellation and truncation. Structural validation, parser capability registry, snapshot identity and provenance remain future work.
+
+## U1.4 candidate — bounded source inventory
+Logical source keys separate root scope, relative physical path and nested member paths. Deterministic ordering, duplicate rejection, bounded entry count/path payload, explicit coverage, and consistency between observed length and digest. No automatic filesystem traversal, extraction, absolute paths, SQLite, stable source attestation or report serialization. Logical paths are not safe extraction permissions; case and Unicode aliases are not resolved. Path payload budget does not measure total heap. Eight additional tests.

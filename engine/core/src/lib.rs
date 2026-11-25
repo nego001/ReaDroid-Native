@@ -2,6 +2,7 @@
 //! Universal read-only byte source foundation. No format parser or JNI yet.
 pub mod evidence;
 pub mod format;
+pub mod inventory;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
