@@ -8,6 +8,7 @@ pub mod orchestration;
 pub mod reporting;
 pub mod capabilities;
 pub mod structural;
+pub mod discovery;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
