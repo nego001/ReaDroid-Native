@@ -1,7 +1,7 @@
 name: JNI host laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback]
+    branches: [validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
@@ -42,10 +42,13 @@ jobs:
             engine/android-bridge/tests/java/NativeHexContract.java \
             app/src/main/java/com/readroid/app/ApkHexPreview.java \
             app/src/main/java/com/readroid/app/NativeHexBackend.java \
-            engine/core/tests/java/BuildConfig.java
+            engine/core/tests/java/BuildConfig.java \
+            app/src/main/java/com/readroid/app/NativeHexSession.java \
+            engine/android-bridge/tests/java/NativeHexSessionContract.java
           cc -std=c11 -Wall -Wextra -Werror -fPIC -shared \
             -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I"$work/headers" \
             engine/android-bridge/src/jni_hex.c \
             engine/android-bridge/target/release/libnegrodroid_jni_bridge.a \
             -ldl -lpthread -lm -o "$work/libnegrodroid_hex.so"
           java -Xcheck:jni -cp "$work/classes" com.readroid.app.NativeHexContract "$work/libnegrodroid_hex.so"
+          java -Xcheck:jni -cp "$work/classes" com.readroid.app.NativeHexSessionContract

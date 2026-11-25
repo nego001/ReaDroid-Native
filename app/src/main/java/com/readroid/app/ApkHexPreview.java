@@ -59,7 +59,10 @@ final class ApkHexPreview {
             }
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Prévia interrompida");
-            NativeHexBackend.Selection selected = NativeHexBackend.select(bytes, format(bytes), BuildConfig.NATIVE_HEX_ENABLED);
+            NativeHexBackend.Selection selected;
+            try (NativeHexSession session = NativeHexSession.open()) {
+                selected = session.format(bytes, format(bytes), BuildConfig.NATIVE_HEX_ENABLED);
+            }
             if (Thread.currentThread().isInterrupted())
                 throw new java.io.InterruptedIOException("Prévia interrompida");
             return new Result(size, bytes.length, selected.dump, selected.nativeUsed);

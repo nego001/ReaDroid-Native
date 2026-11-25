@@ -12,7 +12,7 @@ BACKEND=JAVA.with_name("NativeHexBackend.java")
 BRIDGE=ROOT/"engine/android-bridge/java/com/readroid/app/NativeHexBridge.java"
 CONFIG=CORE/"tests/java/BuildConfig.java"
 with tempfile.TemporaryDirectory() as output:
-    subprocess.run(["javac","-encoding","UTF-8","-d",output,str(JAVA),str(FIXTURE),str(BACKEND),str(BRIDGE),str(CONFIG)],check=True)
+    subprocess.run(["javac","-encoding","UTF-8","-d",output,str(JAVA),str(FIXTURE),str(BACKEND),str(BRIDGE),str(CONFIG),str(JAVA.with_name("NativeHexSession.java"))],check=True)
     for mode in ("empty","single","boundary","all","max"):
         j=subprocess.check_output(["java","-cp",output,"com.readroid.app.HexParityFixture",mode])
         r=subprocess.check_output(["cargo","+1.85.1","run","--quiet","--locked","--offline","--example","hex_fixture","--",mode],cwd=CORE)

@@ -1,13 +1,15 @@
 name: Android hex integration laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-4-hex-fallback]
+    branches: [validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
       - 'engine/android-bridge/**'
       - 'engine/core/**'
       - 'app/src/main/java/com/readroid/app/NativeHexBackend.java'
+      - 'app/src/main/java/com/readroid/app/NativeHexSession.java'
+      - 'app/src/androidTest/java/com/readroid/app/NativeHexSessionInstrumentedTest.java'
       - 'app/src/main/java/com/readroid/app/ApkHexPreview.java'
       - 'app/src/androidTest/java/com/readroid/app/NativeHexIntegrationInstrumentedTest.java'
       - 'app/build.gradle.kts'
@@ -61,9 +63,9 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
-            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
             python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk false
             adb shell am force-stop com.readroid.app
-            gradle --no-daemon :app:connectedDebugAndroidTest "-PnegrodroidNativeHexDir=$NATIVE_HEX_DIR" -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=true -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
+            gradle --no-daemon :app:connectedDebugAndroidTest "-PnegrodroidNativeHexDir=$NATIVE_HEX_DIR" -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=true -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
             python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk true
             echo "U2_4_ANDROID_HEX_INTEGRATION_PASS api=${{ matrix.api }}"
