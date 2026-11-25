@@ -2,7 +2,7 @@
 //! Recognition is a hint, never proof of structure or authorization to act.
 use crate::format::FormatHint;
 
-pub const REGISTRY_VERSION: u32 = 2;
+pub const REGISTRY_VERSION: u32 = 3;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
     ProbeSignature, ReadRaw, HashDeclaredBytes, ExportEvidence,
@@ -72,7 +72,7 @@ pub fn support(hint: FormatHint, operation: Operation) -> Support {
     match operation {
         ProbeSignature => Support::HintOnly,
         ReadRaw | HashDeclaredBytes | ExportEvidence => Support::GenericBytes,
-        InspectHeader if matches!(hint, FormatHint::Elf | FormatHint::Png) => Support::HeaderOnly,
+        InspectHeader if matches!(hint, FormatHint::Elf | FormatHint::Png | FormatHint::PortableExecutable | FormatHint::Dex | FormatHint::Zip) => Support::HeaderOnly,
         InspectHeader => Support::Unsupported,
         ValidateStructure | ListMembers | InterpretResources | InterpretCode |
         Edit | Rebuild | VerifyStructure => Support::Unsupported,

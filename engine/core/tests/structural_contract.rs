@@ -73,7 +73,7 @@ fn png_fields_and_crc_checked(){
 #[test]
 fn unsupported_does_not_read_and_supported_obeys_budget(){
     let b=elf64();let mut s=ReadSession::new(Cursor::new(&b),64,0,Cancellation::default());
-    assert_eq!(inspect(&mut s,FormatHint::Zip).unwrap(),Verdict::Unsupported);
+    assert_eq!(inspect(&mut s,FormatHint::Jpeg).unwrap(),Verdict::Unsupported);
     assert!(inspect(&mut s,FormatHint::Elf).is_err());
 }
 #[test]

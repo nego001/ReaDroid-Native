@@ -48,15 +48,15 @@ fn family_ids_are_not_specific_container_claims() {
 }
 #[test]
 fn registry_version_and_matrix_dimensions() {
-    assert_eq!(REGISTRY_VERSION,2);
+    assert_eq!(REGISTRY_VERSION,3);
     assert_eq!(ALL_OPERATIONS.len(),13);
     assert_eq!(ALL_HINTS.len(),19);
 }
 
 #[test]
-fn only_elf_and_png_have_header_checks_not_full_validation(){
+fn five_families_have_header_checks_not_full_validation(){
     for h in ALL_HINTS {
-        let expected=if matches!(h,FormatHint::Elf|FormatHint::Png){Support::HeaderOnly}else{Support::Unsupported};
+        let expected=if matches!(h,FormatHint::Elf|FormatHint::Png|FormatHint::PortableExecutable|FormatHint::Dex|FormatHint::Zip){Support::HeaderOnly}else{Support::Unsupported};
         assert_eq!(support(h,Operation::InspectHeader),expected);
         assert_eq!(support(h,Operation::ValidateStructure),Support::Unsupported);
     }
