@@ -11,6 +11,7 @@ pub mod structural;
 pub mod discovery;
 pub mod context;
 pub mod classification;
+pub mod segmentation;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
