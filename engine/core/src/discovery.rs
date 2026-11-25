@@ -2,7 +2,7 @@
 //! This portable path-based walk is not a security boundary against concurrent
 //! path replacement, untrusted ancestors, mount points or filesystem aliases.
 use crate::{Cancellation,format::FormatHint,inventory::{Coverage,Entry,Inventory,SourceKey,IndexError,MAX_PATH_BYTES,MAX_INDEX_PATH_BYTES,MAX_INDEX_ENTRIES}};
-use std::{fs,io,path::Path};
+use std::{fs,io,path::{Path,PathBuf,Component}};
 
 pub const MAX_DEPTH:usize=32;
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -35,13 +35,30 @@ pub fn discover(root:&Path,root_id:u64,limits:Limits,cancel:&Cancellation)->Resu
         limits.max_depth>MAX_DEPTH || limits.max_path_bytes==0 ||
         limits.max_path_bytes>MAX_INDEX_PATH_BYTES {return Err(Error::InvalidLimits);}
     check(cancel)?;
-    if !root.is_absolute(){return Err(Error::InvalidRoot);}
-    let m=fs::symlink_metadata(root).map_err(io_error)?;
+    let root=normalized_root(root)?;
+    let m=fs::symlink_metadata(&root).map_err(io_error)?;
     if link_like(&m)||!m.is_dir(){return Err(Error::InvalidRoot);}
     let mut out=Discovery{inventory:Inventory::new(limits.max_entries,limits.max_path_bytes),counts:Counts::default()};
     let mut path_bytes=0;
-    walk(root,"",0,root_id,limits,cancel,&mut out,&mut path_bytes)?;
+    walk(&root,"",0,root_id,limits,cancel,&mut out,&mut path_bytes)?;
     check(cancel)?;
+    Ok(out)
+}
+// Strip lexical trailing separators/dot components before the final
+// metadata check, without resolving symlinks or parent traversal.
+fn normalized_root(root:&Path)->Result<PathBuf,Error>{
+    if !root.is_absolute(){return Err(Error::InvalidRoot);}
+    let mut out=PathBuf::new();
+    for component in root.components(){
+        match component{
+            Component::ParentDir=>return Err(Error::InvalidRoot),
+            Component::CurDir=>continue,
+            #[cfg(windows)]
+            Component::Prefix(p) if !matches!(p.kind(),std::path::Prefix::Disk(_)|std::path::Prefix::UNC(_, _))=>return Err(Error::InvalidRoot),
+            _=>out.push(component.as_os_str()),
+        }
+    }
+    if !out.is_absolute(){return Err(Error::InvalidRoot);}
     Ok(out)
 }
 fn walk(dir:&Path,prefix:&str,depth:usize,root_id:u64,limits:Limits,cancel:&Cancellation,out:&mut Discovery,path_bytes:&mut usize)->Result<(),Error>{

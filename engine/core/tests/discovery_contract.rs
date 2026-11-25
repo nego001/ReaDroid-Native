@@ -93,3 +93,34 @@ fn invalid_utf8_directory_entry_explicitly_skipped(){
     let r=discover(&t.0,1,limits(),&Cancellation::default()).unwrap();
     assert_eq!(r.counts.invalid_names,1);assert!(r.inventory.is_empty());
 }
+
+#[test]
+fn root_parent_traversal_refused_before_io(){
+    let t=Temp::new();let p=t.0.join("missing").join("..");
+    assert!(matches!(discover(&p,1,limits(),&Cancellation::default()),Err(Error::InvalidRoot)));
+}
+#[test]
+fn real_directory_with_trailing_dot_still_works(){
+    let t=Temp::new();fs::write(t.0.join("a"),b"x").unwrap();
+    let r=discover(&t.0.join("."),1,limits(),&Cancellation::default()).unwrap();
+    assert_eq!(r.counts.files,1);
+}
+#[cfg(unix)]
+#[test]
+fn root_symlink_with_separator_or_dot_is_refused(){
+    use std::os::unix::fs::symlink;
+    let t=Temp::new();let outside=Temp::new();fs::write(outside.0.join("secret"),b"x").unwrap();
+    let link=t.0.join("external");symlink(&outside.0,&link).unwrap();
+    let mut slash=link.as_os_str().to_os_string();slash.push("/");
+    for root in [PathBuf::from(slash),link.join("."),link.join("./.")]{
+        assert!(matches!(discover(&root,1,limits(),&Cancellation::default()),Err(Error::InvalidRoot)));
+    }
+}
+#[cfg(unix)]
+#[test]
+fn special_socket_not_opened(){
+    let t=Temp::new();
+    let _socket=std::os::unix::net::UnixListener::bind(t.0.join("sock")).unwrap();
+    let r=discover(&t.0,1,limits(),&Cancellation::default()).unwrap();
+    assert_eq!(r.counts.special,1);assert!(r.inventory.is_empty());
+}

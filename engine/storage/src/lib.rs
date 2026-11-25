@@ -1,12 +1,13 @@
 #![forbid(unsafe_code)]
 //! Candidate local SQLite adapter. Trusted destination only, no source opening.
-//! Fresh schema v3 stores analysis reports and metadata-only discoveries.
+//! Fresh schema v4 stores analysis reports and metadata-only discoveries.
 use negrodroid_core::{capabilities::describe,inventory::{SourceKey,Coverage,MAX_INDEX_ENTRIES},discovery::{Discovery,Counts},format::FormatHint,orchestration::Report,
     parallel::Status,reporting::{export_json,Options,ExportError,Paths,MAX_EXPORT_BYTES}};
 use rusqlite::{params,Connection,OpenFlags,OptionalExtension};
 use std::{fs::OpenOptions,io,path::Path};
 
-const SCHEMA:&str=include_str!("../../core/schema/index_v3.sql");
+const SCHEMA:&str=include_str!("../../core/schema/index_v4.sql");
+const APPLICATION_ID:i64=1313098072;
 const MAX_RUNS:i64=1024;
 const MAX_DOCUMENT_PAYLOAD:i64=128*1024*1024;
 const MAX_REOPEN_BYTES:u64=512*1024*1024;
@@ -44,7 +45,9 @@ impl Store {
         conn.execute_batch(SCHEMA)?;
         let version:i64=conn.query_row("PRAGMA user_version",[],|r|r.get(0))?;
         let foreign:i64=conn.query_row("PRAGMA foreign_keys",[],|r|r.get(0))?;
-        if version!=3||foreign!=1{return Err(Error::Accounting);}
+        let recursive:i64=conn.query_row("PRAGMA recursive_triggers",[],|r|r.get(0))?;
+        let app:i64=conn.query_row("PRAGMA application_id",[],|r|r.get(0))?;
+        if version!=4||foreign!=1||recursive!=1||app!=APPLICATION_ID{return Err(Error::Accounting);}
         Ok(Self{conn})
     }
     pub fn memory()->Result<Self,Error>{Self::initialize(Connection::open_in_memory()?)}
@@ -391,10 +394,12 @@ impl Reader {
         let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
         conn.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON;")?;
         let version:i64=conn.query_row("PRAGMA user_version",[],|r|r.get(0))?;
-        if version!=3{return Err(Error::UnsupportedVersion);}
+        if version!=4{return Err(Error::UnsupportedVersion);}
+        let app:i64=conn.query_row("PRAGMA application_id",[],|r|r.get(0))?;
+        if app!=APPLICATION_ID{return Err(Error::InvalidDatabase);}
         let reference=Store::memory()?;
         if schema_rows(&conn)?!=schema_rows(&reference.conn)?{return Err(Error::InvalidDatabase);}
-        let ok:String=conn.query_row("PRAGMA quick_check(1)",[],|r|r.get(0))?;
+        let ok:String=conn.query_row("PRAGMA integrity_check(1)",[],|r|r.get(0))?;
         if ok!="ok"{return Err(Error::InvalidDatabase);}
         {
             let mut stmt=conn.prepare("PRAGMA foreign_key_check")?;
@@ -500,7 +505,7 @@ mod reopen_tests {
     fn old_version_refused_without_migration(){
         let t=Temp::new();let p=t.path();
         let c=Connection::open(&p).unwrap();
-        c.execute_batch(include_str!("../../core/schema/index_v2.sql")).unwrap();drop(c);
+        c.execute_batch(include_str!("../../core/schema/index_v3.sql")).unwrap();drop(c);
         let before=fs::read(&p).unwrap();
         assert!(matches!(Reader::open_existing(&p),Err(Error::UnsupportedVersion)));
         assert_eq!(fs::read(&p).unwrap(),before);
@@ -678,5 +683,43 @@ mod session_tests{
         let p=s.entries(id,None,1,Paths::Omit).unwrap();assert!(p.rows.is_empty());assert_eq!(p.next,None);
         let id=s.save_discovery(&discovery(),Paths::Omit).unwrap();
         let p=s.entries(id,None,3,Paths::Omit).unwrap();assert_eq!(p.rows.len(),3);assert_eq!(p.next,None);
+    }
+}
+
+#[cfg(test)]
+mod final_guard_tests{
+    use super::*;
+    #[test]
+    fn replace_cannot_unseal_even_without_recursive_triggers(){
+        let s=Store::memory().unwrap();
+        s.conn.execute_batch("PRAGMA recursive_triggers=OFF;
+            INSERT INTO analysis_run(id,kind,path_policy,planned,omissions) VALUES(1,'discovery','omitted',0,0);
+            INSERT INTO discovery_detail VALUES(1,0,0,0,0,0,0,0);
+            UPDATE analysis_run SET sealed=1 WHERE id=1;").unwrap();
+        assert!(s.conn.execute("INSERT OR REPLACE INTO analysis_run(id,kind,path_policy,planned,omissions) VALUES(1,'analysis','omitted',0,0)",[]).is_err());
+        assert_eq!(s.summary(1).unwrap().unwrap().state,"discovery_no_reported_omissions");
+    }
+    #[test]
+    fn duplicate_source_and_detail_cannot_be_replaced_before_sealing(){
+        let s=Store::memory().unwrap();
+        s.conn.execute_batch("PRAGMA recursive_triggers=OFF;
+            INSERT INTO analysis_run(id,kind,path_policy,planned,omissions) VALUES(1,'discovery','logical_opt_in',2,0);
+            INSERT INTO source_entry VALUES(1,1,X'01',X'0000000000000001','unknown','unexamined',NULL,NULL);
+            INSERT INTO discovery_detail VALUES(1,2,2,0,0,0,0,0);").unwrap();
+        for stmt in [
+            "INSERT OR REPLACE INTO source_entry VALUES(1,1,X'02',X'0000000000000002','unknown','unexamined',NULL,NULL)",
+            "INSERT OR REPLACE INTO source_entry VALUES(1,2,X'01',X'0000000000000002','unknown','unexamined',NULL,NULL)",
+            "INSERT OR REPLACE INTO discovery_detail VALUES(1,3,2,1,0,0,0,0)"
+        ]{assert!(s.conn.execute(stmt,[]).is_err());}
+    }
+    #[test]
+    fn invalid_format_and_observation_charge_rejected(){
+        let s=Store::memory().unwrap();
+        s.conn.execute("INSERT INTO analysis_run(id,kind,path_policy,planned,omissions) VALUES(1,'analysis','omitted',1,0)",[]).unwrap();
+        for stmt in [
+            "INSERT INTO source_entry VALUES(1,1,NULL,X'0000000000000001','invented','failed',NULL,X'0000000000000000')",
+            "INSERT INTO source_entry VALUES(1,1,NULL,X'0000000000000001','png','not_started',NULL,X'0000000000000000')",
+            "INSERT INTO source_entry VALUES(1,1,NULL,X'0000000000000002','unknown','observed',zeroblob(32),X'0000000000000001')"
+        ]{assert!(s.conn.execute(stmt,[]).is_err());}
     }
 }
