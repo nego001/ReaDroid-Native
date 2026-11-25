@@ -1,0 +1,38 @@
+name: Android native build laboratory
+on:
+  push:
+    branches: [validation/universal-core-u2-3-android-build]
+  pull_request:
+    branches: [feature/p7-negrecodroid-visual-foundation]
+    paths:
+      - 'engine/android-bridge/**'
+      - 'engine/core/**'
+      - '.github/workflows/android-native-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-elf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Pinned Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.85.1 --profile minimal
+          rustup target add --toolchain 1.85.1 aarch64-linux-android x86_64-linux-android
+          sdkmanager --install "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - name: Build and inspect native libraries without packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          bash engine/android-bridge/android/build.sh "$work"
