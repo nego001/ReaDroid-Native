@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 //! Universal read-only byte source foundation. No format parser or JNI yet.
+pub mod evidence;
+
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};

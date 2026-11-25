@@ -19,3 +19,14 @@ and macOS. Tests use synthetic inputs, a virtual >4 GiB source and a temporary
 small file; they do not prove throughput on real multi-GB files or Android.
 Future stages: evidence identity and stable source attestation, format probing,
 range adapters for archive entries, global scheduler and resource budgets.
+
+## U1.2 candidate — SHA-256 observations
+Stream the declared source or one range through the pinned RustCrypto sha2
+library, consuming the existing session read budget. No custom cryptography.
+The digest describes the bytes actually observed; mutable sources still require
+snapshot/attestation policy. A range alone does not prove membership in a
+previous full hash. No paths or secrets are exported in this milestone.
+Seven additional tests, including standard vectors, chunk boundaries, errors,
+cancellation, and range coordinates. Dependency lock bootstrap is temporary
+on the isolated branch only; commit the resolved Cargo.lock and rerun locked
+CI before integration. U1.1's no-dependencies statement describes U1.1 only.
