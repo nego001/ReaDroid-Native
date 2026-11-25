@@ -1,6 +1,7 @@
 //! Coordinates read-only analysis in bounded batches; not a DAG or persistent scheduler.
 use crate::{Cancellation, inventory::{Inventory, IndexError, SourceKey, MAX_INDEX_PATH_BYTES},
     parallel::{self, BatchError, Task, Status, MAX_BATCH_TASKS}};
+use crate::structural::Verdict;
 use std::{collections::BTreeMap, io::{Read, Seek}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,24 +36,37 @@ impl Summary {
 pub struct Diagnostic {
     pub status: Status,
     pub charged_bytes: u64,
+    pub header: Option<Verdict>,
 }
 pub struct Report {
     pub inventory: Inventory,
     pub diagnostics: BTreeMap<SourceKey, Diagnostic>,
     pub summary: Summary,
+    pub(crate) headers: bool,
 }
+impl Report { pub fn headers_enabled(&self)->bool { self.headers } }
 /// Admit the complete scope before any read, then process deterministic chunks.
 /// A task failure does not suppress later items. Cancellation preserves every
 /// admitted key, including unstarted items. Fatal batch errors return Err, never
 /// a misleading complete report. The caller must provide stable, authorized
 /// independent readers. The scope ceiling is still MAX_BATCH_TASKS; caller
 /// handles, retained results and absolute RSS are not bounded by batch_size.
-pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, config: Config,
+pub fn run<R: Read + Seek + Send>(tasks: Vec<Task<R>>, config: Config,
     cancel: Cancellation) -> Result<Report, RunError> {
+    run_mode(tasks,config,cancel,false)
+}
+/// Opt-in limited structural inspection before full declared-byte hashing.
+/// Malformed headers do not imply a failed hash; I/O errors fail the item.
+pub fn run_with_headers<R: Read + Seek + Send>(tasks:Vec<Task<R>>,config:Config,
+    cancel:Cancellation)->Result<Report,RunError>{
+    run_mode(tasks,config,cancel,true)
+}
+fn run_mode<R: Read + Seek + Send>(mut tasks:Vec<Task<R>>,config:Config,
+    cancel:Cancellation,headers:bool)->Result<Report,RunError>{
     if config.batch_size == 0 || config.batch_size > MAX_BATCH_TASKS {
         return Err(RunError::InvalidBatchSize);
     }
-    let reserved_bytes = parallel::preflight(&mut tasks, config.workers, config.byte_budget)
+    let reserved_bytes = parallel::preflight_mode(&mut tasks, config.workers, config.byte_budget,headers)
         .map_err(RunError::Analysis)?;
     let planned = tasks.len();
     let mut summary = Summary { planned, reserved_bytes, ..Summary::default() };
@@ -63,7 +77,7 @@ pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, config: Config,
     loop {
         let chunk: Vec<_> = input.by_ref().take(config.batch_size).collect();
         if chunk.is_empty() { break; }
-        let batch = parallel::run(chunk, config.workers, remaining, cancel.clone())
+        let batch = parallel::run_mode(chunk, config.workers, remaining, cancel.clone(),headers)
             .map_err(RunError::Analysis)?;
         remaining = remaining.checked_sub(batch.reserved_bytes).ok_or(RunError::Accounting)?;
         summary.batches += 1;
@@ -76,7 +90,7 @@ pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, config: Config,
             }
             summary.charged_bytes = summary.charged_bytes.checked_add(o.charged_bytes)
                 .ok_or(RunError::Accounting)?;
-            let diagnostic = Diagnostic { status: o.status, charged_bytes: o.charged_bytes };
+            let diagnostic = Diagnostic { status: o.status, charged_bytes: o.charged_bytes, header:o.header };
             inventory.insert(o.key.clone(), o.entry).map_err(RunError::Inventory)?;
             if diagnostics.insert(o.key, diagnostic).is_some() { return Err(RunError::Accounting); }
         }
@@ -86,5 +100,5 @@ pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, config: Config,
         || summary.observed + summary.failed + summary.cancelled + summary.not_started != planned {
         return Err(RunError::Accounting);
     }
-    Ok(Report { inventory, diagnostics, summary })
+    Ok(Report { inventory, diagnostics, summary, headers })
 }

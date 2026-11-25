@@ -31,7 +31,7 @@ def load(mode):
     assert 0 < len(raw) <= 16 * 1024 * 1024
     obj = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object,
                      parse_constant=reject_constant)
-    assert obj["schema_version"] == 1
+    assert obj["schema_version"] == (2 if mode == "headers" else 1)
     assert obj["scope"] == "caller_supplied_sources"
     assert "signature_hint_not_structural_validation" in obj["limitations"]
     summary, entries = obj["summary"], obj["entries"]
@@ -45,6 +45,11 @@ def load(mode):
         length = decimal(entry["declared_length"])
         amount = decimal(entry["charged_bytes"])
         maximum = length + min(length, 512) + (4 if length > 512 else 0)
+        if mode == "headers":
+            maximum += min(length, 112)
+            assert "header_inspection" in entry
+        else:
+            assert "header_inspection" not in entry
         assert amount <= maximum
         charged += amount
         reserved += maximum
@@ -91,6 +96,16 @@ def main():
     empty, _ = load("empty")
     assert empty["state"] == "complete_byte_observation"
     assert empty["entries"] == [] and empty["summary"]["batches"] == 0
+    detailed, _ = load("headers")
+    assert detailed["state"] == "complete_byte_observation"
+    assert detailed["summary"]["observed"] == 3
+    a, b, c = detailed["entries"]
+    assert a["header_inspection"] == {"state": "header_checked_only", "metadata": {"kind": "png", "width": 1, "height": 1, "bit_depth": 8, "color_type": 6}}
+    assert b["header_inspection"] == {"state": "malformed_header", "issue": "truncated"}
+    assert c["header_inspection"] == {"state": "unsupported"}
+    assert decimal(detailed["summary"]["reserved_bytes"]) == 120
+    assert decimal(detailed["summary"]["charged_bytes"]) == 117
+    print("U1.9_3_JSON_HEADER_CONSUMER_PASS", flush=True)
     print("U1.7_JSON_INDEPENDENT_CONSUMER_PASS", flush=True)
 
 

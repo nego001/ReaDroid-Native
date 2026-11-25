@@ -1,6 +1,7 @@
 //! Bounded, read-only batch analysis. Callers provide independent stable readers.
 use crate::{Cancellation, ReadSession};
 use crate::evidence::observe_source;
+use crate::structural::{self, Verdict, MAX_HEADER_BYTES};
 use crate::format::{probe, FormatHint, PREFIX_LIMIT};
 use crate::inventory::{Coverage, Entry, SourceKey, MAX_INDEX_PATH_BYTES};
 use std::{io::{self, Read, Seek}, thread};
@@ -24,6 +25,7 @@ pub struct Outcome {
     pub status: Status,
     /// Admitted read requests, including failures; not physical disk I/O.
     pub charged_bytes: u64,
+    pub header: Option<Verdict>,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub struct Batch {
@@ -34,17 +36,22 @@ pub(crate) fn reservation(length: u64) -> Option<u64> {
     length.checked_add(length.min(PREFIX_LIMIT as u64))?
         .checked_add(if length > PREFIX_LIMIT as u64 { 4 } else { 0 })
 }
-fn analyze<R: Read + Seek>(task: Task<R>, cancel: &Cancellation) -> Outcome {
+pub(crate) fn reservation_mode(length:u64, headers:bool)->Option<u64>{
+    reservation(length)?.checked_add(if headers {length.min(MAX_HEADER_BYTES as u64)} else {0})
+}
+fn analyze<R: Read + Seek>(task: Task<R>, cancel: &Cancellation, headers:bool) -> Outcome {
     let Task { key, reader, length } = task;
     let mut entry = Entry { declared_length: Some(length), format_hint: FormatHint::Unknown,
         coverage: Coverage::Unexamined, observation: None };
     if cancel.is_cancelled() {
-        return Outcome { key, entry, status: Status::NotStarted, charged_bytes: 0 };
+        return Outcome { key, entry, status: Status::NotStarted, charged_bytes: 0, header: None };
     }
-    let budget = reservation(length).expect("preflight verified");
+    let budget = reservation_mode(length,headers).expect("preflight verified");
     let mut s = ReadSession::new(reader, length, budget, cancel.clone());
+    let mut header=None;
     let result = probe(&mut s).and_then(|p| {
         entry.format_hint = p.hint;
+        if headers { header=Some(structural::inspect(&mut s,p.hint)?); }
         observe_source(&mut s)
     });
     let status = match result {
@@ -54,16 +61,21 @@ fn analyze<R: Read + Seek>(task: Task<R>, cancel: &Cancellation) -> Outcome {
         }
         Err(e) => { entry.coverage = Coverage::Failed; Status::Failed(e.kind()) }
     };
-    Outcome { key, entry, status, charged_bytes: budget - s.remaining_budget() }
+    if status != Status::Observed {header=None;}
+    Outcome { key, entry, status, charged_bytes: budget - s.remaining_budget(), header }
 }
 /// All-or-nothing admission before reading. Static round-robin partitions,
 /// independent cursors, fixed worker ceiling and key-ordered output.
 /// Reserve worst-case probe + hash per item; unused reservations are not
 /// redistributed. Cancellation is cooperative, not a deadline for OS I/O.
 /// Caller-owned readers, handles and allocations are not bounded by this API.
-pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, workers: usize,
+pub fn run<R: Read + Seek + Send>(tasks: Vec<Task<R>>, workers: usize,
     byte_budget: u64, cancel: Cancellation) -> Result<Batch, BatchError> {
-    let reserved_bytes = preflight(&mut tasks, workers, byte_budget)?;
+    run_mode(tasks,workers,byte_budget,cancel,false)
+}
+pub(crate) fn run_mode<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, workers: usize,
+    byte_budget: u64, cancel: Cancellation, headers:bool) -> Result<Batch, BatchError> {
+    let reserved_bytes = preflight_mode(&mut tasks, workers, byte_budget,headers)?;
     if tasks.is_empty() { return Ok(Batch { reserved_bytes, outcomes: Vec::new() }); }
     let count = workers.min(tasks.len());
     let mut partitions: Vec<Vec<Task<R>>> = (0..count).map(|_| Vec::new()).collect();
@@ -74,7 +86,7 @@ pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, workers: usize,
         for part in partitions {
             let c = cancel.clone();
             match thread::Builder::new().spawn_scoped(scope, move || {
-                part.into_iter().map(|t| analyze(t, &c)).collect::<Vec<_>>()
+                part.into_iter().map(|t| analyze(t, &c, headers)).collect::<Vec<_>>()
             }) {
                 Ok(h) => handles.push(h),
                 Err(_) => { error = Some(BatchError::ThreadSpawn); break; }
@@ -94,7 +106,7 @@ pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, workers: usize,
 }
 
 /// Shared admission checks for a batch or the entire orchestration scope.
-pub(crate) fn preflight<R>(tasks: &mut [Task<R>], workers: usize, byte_budget: u64) -> Result<u64, BatchError> {
+pub(crate) fn preflight_mode<R>(tasks: &mut [Task<R>], workers: usize, byte_budget: u64, headers:bool) -> Result<u64, BatchError> {
     if workers == 0 || workers > MAX_WORKERS { return Err(BatchError::WorkerLimit); }
     if tasks.len() > MAX_BATCH_TASKS { return Err(BatchError::TaskLimit); }
     tasks.sort_unstable_by(|a,b| a.key.cmp(&b.key));
@@ -105,7 +117,7 @@ pub(crate) fn preflight<R>(tasks: &mut [Task<R>], workers: usize, byte_budget: u
         let n = t.key.relative_path().len() + t.key.members().iter().map(String::len).sum::<usize>();
         path_bytes = path_bytes.checked_add(n).ok_or(BatchError::PathBudget)?;
         if path_bytes > MAX_INDEX_PATH_BYTES { return Err(BatchError::PathBudget); }
-        reserved_bytes = reserved_bytes.checked_add(reservation(t.length).ok_or(BatchError::ReadBudget)?)
+        reserved_bytes = reserved_bytes.checked_add(reservation_mode(t.length,headers).ok_or(BatchError::ReadBudget)?)
             .ok_or(BatchError::ReadBudget)?;
         if reserved_bytes > byte_budget { return Err(BatchError::ReadBudget); }
     }
