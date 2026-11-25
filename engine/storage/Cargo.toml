@@ -1,0 +1,10 @@
+[package]
+name = "negrodroid-storage"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+negrodroid-core = { path = "../core" }
+rusqlite = { version = "=0.32.1", features = ["bundled"] }

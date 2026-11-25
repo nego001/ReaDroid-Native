@@ -1,0 +1,29 @@
+name: SQLite native dependency bootstrap
+on:
+  push:
+    branches: [validation/universal-core-u1-11-1]
+permissions:
+  contents: read
+jobs:
+  candidate-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: engine/storage
+    env:
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.85.1 --profile minimal
+      - name: Resolve candidate lock (not a release gate)
+        run: |
+          cargo +1.85.1 generate-lockfile
+          echo NEGRODROID_STORAGE_LOCK_BEGIN
+          cat Cargo.lock
+          echo NEGRODROID_STORAGE_LOCK_END
+      - name: Fetch candidate dependencies
+        run: cargo +1.85.1 fetch --locked
+      - name: Run native SQLite candidate tests
+        run: cargo +1.85.1 test --locked --offline

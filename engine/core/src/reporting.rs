@@ -51,7 +51,7 @@ fn state_name(s: RunState) -> &'static str {
         RunState::WithFailures=>"with_failures", RunState::Cancelled=>"cancelled" }
 }
 /// Report fields are public: validate accounting again before serialization.
-fn validate(r: &Report) -> Result<(), ExportError> {
+pub fn validate_report(r: &Report) -> Result<(), ExportError> {
     let bad = ExportError::InconsistentReport;
     let mut s = Summary { planned: r.inventory.len(), batches: r.summary.batches, ..Summary::default() };
     if s.planned != r.diagnostics.len() || s.planned > parallel::MAX_BATCH_TASKS
@@ -109,7 +109,7 @@ pub fn export_json(r: &Report, options: Options) -> Result<String, ExportError> 
     if options.max_bytes == 0 || options.max_bytes > MAX_EXPORT_BYTES {
         return Err(ExportError::InvalidLimit);
     }
-    validate(r)?;
+    validate_report(r)?;
     let mut w=Bounded { text:String::new(), limit:options.max_bytes };
     render(&mut w,r,options.paths).map_err(|_|ExportError::OutputLimit)?;
     Ok(w.text)
