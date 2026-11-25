@@ -4,6 +4,7 @@ pub mod evidence;
 pub mod format;
 pub mod inventory;
 pub mod parallel;
+pub mod orchestration;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};

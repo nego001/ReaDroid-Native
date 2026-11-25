@@ -1,7 +1,7 @@
 name: Universal Core validation
 on:
   push:
-    branches: [validation/universal-core-u1-1, validation/universal-core-u1-5]
+    branches: [validation/universal-core-u1-1, validation/universal-core-u1-5, validation/universal-core-u1-6]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:

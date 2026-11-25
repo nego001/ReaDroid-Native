@@ -63,20 +63,7 @@ fn analyze<R: Read + Seek>(task: Task<R>, cancel: &Cancellation) -> Outcome {
 /// Caller-owned readers, handles and allocations are not bounded by this API.
 pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, workers: usize,
     byte_budget: u64, cancel: Cancellation) -> Result<Batch, BatchError> {
-    if workers == 0 || workers > MAX_WORKERS { return Err(BatchError::WorkerLimit); }
-    if tasks.len() > MAX_BATCH_TASKS { return Err(BatchError::TaskLimit); }
-    tasks.sort_unstable_by(|a,b| a.key.cmp(&b.key));
-    if tasks.windows(2).any(|w| w[0].key == w[1].key) { return Err(BatchError::Duplicate); }
-    let mut path_bytes = 0usize;
-    let mut reserved_bytes = 0u64;
-    for t in &tasks {
-        let n = t.key.relative_path().len() + t.key.members().iter().map(String::len).sum::<usize>();
-        path_bytes = path_bytes.checked_add(n).ok_or(BatchError::PathBudget)?;
-        if path_bytes > MAX_INDEX_PATH_BYTES { return Err(BatchError::PathBudget); }
-        reserved_bytes = reserved_bytes.checked_add(reservation(t.length).ok_or(BatchError::ReadBudget)?)
-            .ok_or(BatchError::ReadBudget)?;
-        if reserved_bytes > byte_budget { return Err(BatchError::ReadBudget); }
-    }
+    let reserved_bytes = preflight(&mut tasks, workers, byte_budget)?;
     if tasks.is_empty() { return Ok(Batch { reserved_bytes, outcomes: Vec::new() }); }
     let count = workers.min(tasks.len());
     let mut partitions: Vec<Vec<Task<R>>> = (0..count).map(|_| Vec::new()).collect();
@@ -104,4 +91,23 @@ pub fn run<R: Read + Seek + Send>(mut tasks: Vec<Task<R>>, workers: usize,
     })?;
     outcomes.sort_unstable_by(|a,b| a.key.cmp(&b.key));
     Ok(Batch { reserved_bytes, outcomes })
+}
+
+/// Shared admission checks for a batch or the entire orchestration scope.
+pub(crate) fn preflight<R>(tasks: &mut [Task<R>], workers: usize, byte_budget: u64) -> Result<u64, BatchError> {
+    if workers == 0 || workers > MAX_WORKERS { return Err(BatchError::WorkerLimit); }
+    if tasks.len() > MAX_BATCH_TASKS { return Err(BatchError::TaskLimit); }
+    tasks.sort_unstable_by(|a,b| a.key.cmp(&b.key));
+    if tasks.windows(2).any(|w| w[0].key == w[1].key) { return Err(BatchError::Duplicate); }
+    let mut path_bytes = 0usize;
+    let mut reserved_bytes = 0u64;
+    for t in tasks.iter() {
+        let n = t.key.relative_path().len() + t.key.members().iter().map(String::len).sum::<usize>();
+        path_bytes = path_bytes.checked_add(n).ok_or(BatchError::PathBudget)?;
+        if path_bytes > MAX_INDEX_PATH_BYTES { return Err(BatchError::PathBudget); }
+        reserved_bytes = reserved_bytes.checked_add(reservation(t.length).ok_or(BatchError::ReadBudget)?)
+            .ok_or(BatchError::ReadBudget)?;
+        if reserved_bytes > byte_budget { return Err(BatchError::ReadBudget); }
+    }
+    Ok(reserved_bytes)
 }
