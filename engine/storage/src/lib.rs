@@ -14,12 +14,31 @@ const MAX_TOTAL_ENTRIES:i64=100_000;
 const MAX_KEY_PAYLOAD:i64=128*1024*1024;
 #[derive(Debug)]
 pub enum Error { Sql(rusqlite::Error), Io(io::Error), InvalidDestination, InvalidReport(ExportError),
-    RunLimit, PayloadLimit, Accounting, InvalidDatabase, UnsupportedVersion, PhysicalLimit, ActiveSidecar, InvalidDiscovery, EntryLimit, KeyLimit }
+    RunLimit, PayloadLimit, Accounting, InvalidDatabase, UnsupportedVersion, PhysicalLimit, ActiveSidecar, InvalidDiscovery, EntryLimit, KeyLimit, InvalidPage, UnknownSession }
 impl From<rusqlite::Error> for Error{fn from(e:rusqlite::Error)->Self{Self::Sql(e)}}
 impl From<io::Error> for Error{fn from(e:io::Error)->Self{Self::Io(e)}}
 #[derive(Debug,PartialEq,Eq)]
 pub struct Summary {pub entries:i64,pub observed:i64,pub failed:i64,pub cancelled:i64,pub not_started:i64,pub state:String}
 pub struct Store {conn:Connection}
+pub const MAX_PAGE_SIZE:usize=128;
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum SessionKind { Analysis, Discovery }
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum SessionState { CompleteByteObservation, WithFailures, Cancelled, DiscoveryNoReportedOmissions, DiscoveryWithOmissions }
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct SessionRow {
+    pub id:i64,pub kind:SessionKind,pub state:SessionState,pub planned:u32,pub omissions:u32,pub stored_paths:Paths,
+    pub observed:u32,pub failed:u32,pub cancelled:u32,pub not_started:u32,
+}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum EntryStatus { Unexamined, Observed, Failed, Cancelled, NotStarted }
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct EntryRow {
+    pub ordinal:u32,pub declared_length:u64,pub format_hint:FormatHint,pub status:EntryStatus,
+    pub sha256:Option<[u8;32]>,pub charged_bytes:Option<u64>,pub logical_key:Option<SourceKey>
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct Page<T,C>{pub rows:Vec<T>,pub next:Option<C>}
 impl Store {
     fn initialize(conn:Connection)->Result<Self,Error>{
         conn.execute_batch(SCHEMA)?;
@@ -105,6 +124,58 @@ impl Store {
                 special:r.get::<_,u32>(4)? as usize,invalid_names:r.get::<_,u32>(5)? as usize,
                 depth_skipped:r.get::<_,u32>(6)? as usize})).optional()?)
     }
+    /// Ascending keyset pagination of sealed sessions. A live Store may append
+    /// new sessions between pages; a Reader requires a stable closed database.
+    pub fn sessions(&self,after:Option<i64>,limit:usize)->Result<Page<SessionRow,i64>,Error>{
+        let after=page_after(after,limit)?;
+        let mut stmt=self.conn.prepare("SELECT id,kind,state,planned,omissions,path_policy,observed,failed,cancelled,not_started
+            FROM sealed_run_summary WHERE id>?1 ORDER BY id LIMIT ?2")?;
+        let mut rows=stmt.query(params![after,(limit+1) as i64])?;
+        let mut result=Vec::new();
+        while let Some(r)=rows.next()?{
+            let kind=match r.get::<_,String>(1)?.as_str(){
+                "analysis"=>SessionKind::Analysis,"discovery"=>SessionKind::Discovery,_=>return Err(Error::InvalidDatabase)};
+            let state=match r.get::<_,String>(2)?.as_str(){
+                "complete_byte_observation"=>SessionState::CompleteByteObservation,"with_failures"=>SessionState::WithFailures,
+                "cancelled"=>SessionState::Cancelled,"discovery_no_reported_omissions"=>SessionState::DiscoveryNoReportedOmissions,
+                "discovery_with_omissions"=>SessionState::DiscoveryWithOmissions,_=>return Err(Error::InvalidDatabase)};
+            let stored_paths=match r.get::<_,String>(5)?.as_str(){
+                "omitted"=>Paths::Omit,"logical_opt_in"=>Paths::IncludeLogical,_=>return Err(Error::InvalidDatabase)};
+            result.push(SessionRow{id:r.get(0)?,kind,state,planned:r.get(3)?,omissions:r.get(4)?,stored_paths,
+                observed:r.get(6)?,failed:r.get(7)?,cancelled:r.get(8)?,not_started:r.get(9)?});
+        }
+        let next=if result.len()>limit{result.pop();result.last().map(|r|r.id)}else{None};
+        Ok(Page{rows:result,next})
+    }
+    /// Privacy is explicit: Omit avoids even selecting the stored logical key.
+    /// A requested key cannot restore a path that was omitted when saved.
+    /// Only sealed sessions are queryable. Ordinals are local to one session.
+    pub fn entries(&self,id:i64,after:Option<u32>,limit:usize,paths:Paths)->Result<Page<EntryRow,u32>,Error>{
+        let after=page_after(after.map(i64::from),limit)?;
+        if id<=0||after>MAX_TOTAL_ENTRIES{return Err(Error::InvalidPage);}
+        let present:bool=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM analysis_run WHERE id=?1 AND sealed=1)",[id],|r|r.get(0))?;
+        if !present{return Err(Error::UnknownSession);}
+        let sql=match paths{
+            Paths::Omit=>"SELECT ordinal,declared_length,format_hint,status,sha256,charged_bytes,NULL FROM source_entry WHERE run_id=?1 AND ordinal>?2 ORDER BY ordinal LIMIT ?3",
+            Paths::IncludeLogical=>"SELECT ordinal,declared_length,format_hint,status,sha256,charged_bytes,logical_key FROM source_entry WHERE run_id=?1 AND ordinal>?2 ORDER BY ordinal LIMIT ?3"};
+        let mut stmt=self.conn.prepare(sql)?;
+        let mut rows=stmt.query(params![id,after,(limit+1) as i64])?;
+        let mut result=Vec::new();
+        while let Some(r)=rows.next()?{
+            let status=match r.get::<_,String>(3)?.as_str(){
+                "unexamined"=>EntryStatus::Unexamined,"observed"=>EntryStatus::Observed,"failed"=>EntryStatus::Failed,
+                "cancelled"=>EntryStatus::Cancelled,"not_started"=>EntryStatus::NotStarted,_=>return Err(Error::InvalidDatabase)};
+            let hint=r.get::<_,String>(2)?;
+            let format_hint=negrodroid_core::capabilities::ALL_HINTS.iter().copied().find(|&h|describe(h).id==hint).ok_or(Error::InvalidDatabase)?;
+            let length=u64::from_be_bytes(fixed_blob(r.get::<_,Vec<u8>>(1)?)?);
+            let digest=r.get::<_,Option<Vec<u8>>>(4)?.map(fixed_blob::<32>).transpose()?;
+            let charged=r.get::<_,Option<Vec<u8>>>(5)?.map(|b|fixed_blob::<8>(b).map(u64::from_be_bytes)).transpose()?;
+            let key=r.get::<_,Option<Vec<u8>>>(6)?.map(|b|decode_key(&b)).transpose()?;
+            result.push(EntryRow{ordinal:r.get(0)?,declared_length:length,format_hint,status,sha256:digest,charged_bytes:charged,logical_key:key});
+        }
+        let next=if result.len()>limit{result.pop();result.last().map(|r|r.ordinal)}else{None};
+        Ok(Page{rows:result,next})
+    }
     /// Exact exported report from a sealed run; no arbitrary SQL access.
     pub fn document(&self,id:i64)->Result<Option<String>,Error>{
         Ok(self.conn.query_row("SELECT d.payload FROM report_document d JOIN analysis_run r ON r.id=d.run_id WHERE r.sealed=1 AND d.run_id=?1",[id],|r|r.get(0)).optional()?)
@@ -142,6 +213,30 @@ fn admit<'a>(conn:&Connection,n:usize,mut keys:impl Iterator<Item=&'a SourceKey>
         if used.checked_add(extra).is_none_or(|v|v>MAX_KEY_PAYLOAD){return Err(Error::KeyLimit);}
     }
     Ok(())
+}
+fn page_after(after:Option<i64>,limit:usize)->Result<i64,Error>{
+    if limit==0||limit>MAX_PAGE_SIZE||after.is_some_and(|n|n<=0){return Err(Error::InvalidPage);}
+    Ok(after.unwrap_or(0))
+}
+fn fixed_blob<const N:usize>(bytes:Vec<u8>)->Result<[u8;N],Error>{bytes.try_into().map_err(|_|Error::InvalidDatabase)}
+fn decode_key(mut b:&[u8])->Result<SourceKey,Error>{
+    fn take<'a>(b:&mut &'a [u8],n:usize)->Result<&'a [u8],Error>{
+        if n>b.len(){return Err(Error::InvalidDatabase);}
+        let (a,rest)=b.split_at(n);*b=rest;Ok(a)
+    }
+    fn text<'a>(b:&mut &'a [u8])->Result<&'a str,Error>{
+        let n=u32::from_be_bytes(take(b,4)?.try_into().map_err(|_|Error::InvalidDatabase)?) as usize;
+        if n==0||n>negrodroid_core::inventory::MAX_PATH_BYTES{return Err(Error::InvalidDatabase);}
+        std::str::from_utf8(take(b,n)?).map_err(|_|Error::InvalidDatabase)
+    }
+    if b.len()>40000||take(&mut b,1)?!=[1]{return Err(Error::InvalidDatabase);}
+    let root=u64::from_be_bytes(take(&mut b,8)?.try_into().map_err(|_|Error::InvalidDatabase)?);
+    let mut key=SourceKey::physical(root,text(&mut b)?).map_err(|_|Error::InvalidDatabase)?;
+    let n=take(&mut b,1)?[0] as usize;
+    if n>negrodroid_core::inventory::MAX_CONTAINER_DEPTH{return Err(Error::InvalidDatabase);}
+    for _ in 0..n{key=key.member(text(&mut b)?).map_err(|_|Error::InvalidDatabase)?;}
+    if !b.is_empty(){return Err(Error::InvalidDatabase);}
+    Ok(key)
 }
 // Canonical v1 key: version byte, big-endian root, length-prefixed UTF-8 path,
 // member count, then length-prefixed members. No delimiter collisions.
@@ -340,6 +435,8 @@ impl Reader {
         if bad!=0{return Err(Error::InvalidDatabase);}
         Ok(Self{store:Store{conn}})
     }
+    pub fn sessions(&self,after:Option<i64>,limit:usize)->Result<Page<SessionRow,i64>,Error>{self.store.sessions(after,limit)}
+    pub fn entries(&self,id:i64,after:Option<u32>,limit:usize,paths:Paths)->Result<Page<EntryRow,u32>,Error>{self.store.entries(id,after,limit,paths)}
     pub fn discovery_counts(&self,id:i64)->Result<Option<Counts>,Error>{self.store.discovery_counts(id)}
     pub fn summary(&self,id:i64)->Result<Option<Summary>,Error>{self.store.summary(id)}
     pub fn document(&self,id:i64)->Result<Option<String>,Error>{self.store.document(id)}
@@ -502,5 +599,84 @@ mod discovery_storage_tests{
         let id=s.save_discovery(&fixture(),Paths::IncludeLogical).unwrap();
         let n:i64=s.conn.query_row("SELECT count(*) FROM source_entry WHERE run_id=?1 AND logical_key IS NOT NULL",[id],|r|r.get(0)).unwrap();assert_eq!(n,2);
         assert!(s.conn.execute("DELETE FROM discovery_detail WHERE run_id=?1",[id]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod session_tests{
+    use super::*;
+    use negrodroid_core::{inventory::{Inventory,Entry},Cancellation,orchestration::{run,Config},parallel::Task};
+    use std::io::Cursor;
+    fn discovery()->Discovery{
+        let mut inventory=Inventory::new(3,4096);
+        for (name,length) in [("z",1),("private/a",u64::MAX),("b",0)]{
+            inventory.insert(SourceKey::physical(7,name).unwrap(),Entry{declared_length:Some(length),format_hint:FormatHint::Unknown,coverage:Coverage::Unexamined,observation:None}).unwrap();
+        }
+        Discovery{inventory,counts:Counts{visited:3,files:3,..Counts::default()}}
+    }
+    fn analysis()->Report{
+        run(vec![Task{key:SourceKey::physical(9,"a").unwrap().member("b/c").unwrap(),reader:Cursor::new(b"abc"),length:3}],
+            Config{workers:1,batch_size:1,byte_budget:6},Cancellation::default()).unwrap()
+    }
+    #[test]
+    fn session_pages_have_stable_order_and_no_overlap(){
+        let mut s=Store::memory().unwrap();
+        let a=s.save_discovery(&discovery(),Paths::Omit).unwrap();
+        let b=s.save_analysis(&analysis(),Paths::IncludeLogical).unwrap();
+        let c=s.save_discovery(&discovery(),Paths::Omit).unwrap();
+        let first=s.sessions(None,2).unwrap();
+        assert_eq!(first.rows.iter().map(|r|r.id).collect::<Vec<_>>(),vec![a,b]);
+        assert_eq!(first.next,Some(b));assert_eq!(first.rows[0].kind,SessionKind::Discovery);
+        assert_eq!(first.rows[0].state,SessionState::DiscoveryNoReportedOmissions);
+        assert_eq!(first.rows[1].observed,1);assert_eq!(first.rows[1].stored_paths,Paths::IncludeLogical);
+        let last=s.sessions(first.next,2).unwrap();assert_eq!(last.rows[0].id,c);assert_eq!(last.next,None);
+        assert!(s.sessions(Some(c),2).unwrap().rows.is_empty());
+    }
+    #[test]
+    fn entry_pages_exact_unsigned_and_paths_opt_in(){
+        let mut s=Store::memory().unwrap();let id=s.save_discovery(&discovery(),Paths::IncludeLogical).unwrap();
+        let first=s.entries(id,None,2,Paths::Omit).unwrap();
+        assert_eq!(first.next,Some(2));assert_eq!(first.rows[0].declared_length,0);
+        assert_eq!(first.rows[1].declared_length,u64::MAX);
+        assert!(first.rows.iter().all(|r|r.logical_key.is_none()&&r.sha256.is_none()&&r.charged_bytes.is_none()&&r.status==EntryStatus::Unexamined));
+        let last=s.entries(id,first.next,2,Paths::IncludeLogical).unwrap();
+        assert_eq!(last.next,None);assert_eq!(last.rows[0].logical_key.as_ref().unwrap().relative_path(),"z");
+        let id=s.save_discovery(&discovery(),Paths::Omit).unwrap();
+        assert!(s.entries(id,None,3,Paths::IncludeLogical).unwrap().rows.iter().all(|r|r.logical_key.is_none()));
+    }
+    #[test]
+    fn analysis_digest_and_nested_key_round_trip(){
+        let mut s=Store::memory().unwrap();let r=analysis();let id=s.save_analysis(&r,Paths::IncludeLogical).unwrap();
+        let row=s.entries(id,None,1,Paths::IncludeLogical).unwrap().rows.pop().unwrap();
+        let (key,entry)=r.inventory.iter().next().unwrap();
+        assert_eq!(row.logical_key.as_ref(),Some(key));assert_eq!(row.status,EntryStatus::Observed);
+        assert_eq!(row.sha256,Some(*entry.observation.unwrap().sha256.bytes()));assert_eq!(row.charged_bytes,Some(6));
+    }
+    #[test]
+    fn invalid_pages_and_unsealed_sessions_refused(){
+        let mut s=Store::memory().unwrap();
+        for limit in [0,MAX_PAGE_SIZE+1,usize::MAX]{assert!(matches!(s.sessions(None,limit),Err(Error::InvalidPage)));}
+        assert!(matches!(s.sessions(Some(-1),1),Err(Error::InvalidPage)));
+        assert!(matches!(s.entries(99,None,1,Paths::Omit),Err(Error::UnknownSession)));
+        s.conn.execute("INSERT INTO analysis_run(kind,path_policy,planned,omissions) VALUES('discovery','omitted',0,0)",[]).unwrap();
+        let id=s.conn.last_insert_rowid();
+        assert!(s.sessions(None,1).unwrap().rows.is_empty());
+        assert!(matches!(s.entries(id,None,1,Paths::Omit),Err(Error::UnknownSession)));
+    }
+    #[test]
+    fn key_decoder_rejects_truncation_versions_and_trailing_bytes(){
+        let key=SourceKey::physical(u64::MAX,"配置/a").unwrap().member("b").unwrap();
+        let bytes=encode_key(&key);assert_eq!(decode_key(&bytes).unwrap(),key);
+        for n in 0..bytes.len(){assert!(decode_key(&bytes[..n]).is_err());}
+        let mut bad=bytes.clone();bad[0]=2;assert!(decode_key(&bad).is_err());
+        let mut bad=bytes;bad.push(0);assert!(decode_key(&bad).is_err());
+    }
+    #[test]
+    fn empty_session_and_exact_page_boundary(){
+        let mut s=Store::memory().unwrap();
+        let id=s.save_discovery(&Discovery{inventory:Inventory::new(0,0),counts:Counts::default()},Paths::Omit).unwrap();
+        let p=s.entries(id,None,1,Paths::Omit).unwrap();assert!(p.rows.is_empty());assert_eq!(p.next,None);
+        let id=s.save_discovery(&discovery(),Paths::Omit).unwrap();
+        let p=s.entries(id,None,3,Paths::Omit).unwrap();assert_eq!(p.rows.len(),3);assert_eq!(p.next,None);
     }
 }
