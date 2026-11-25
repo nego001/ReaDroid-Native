@@ -1,0 +1,49 @@
+name: JNI host laboratory
+on:
+  push:
+    branches: [validation/universal-core-u2-2-jni]
+  pull_request:
+    branches: [feature/p7-negrecodroid-visual-foundation]
+    paths:
+      - 'engine/android-bridge/**'
+      - 'engine/core/**'
+      - '.github/workflows/jni-host-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Rust bridge locked tests
+        working-directory: engine/android-bridge
+        run: |
+          rustup toolchain install 1.85.1 --profile minimal
+          cargo +1.85.1 fetch --locked
+          cargo +1.85.1 test --locked --offline
+          cargo +1.85.1 build --release --locked --offline
+          git diff --exit-code -- Cargo.lock
+      - name: Real JVM JNI calls
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$PWD"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          mkdir -p "$work/classes" "$work/headers"
+          javac -encoding UTF-8 -h "$work/headers" -d "$work/classes" \
+            engine/android-bridge/java/com/readroid/app/NativeHexBridge.java \
+            engine/android-bridge/tests/java/NativeHexContract.java \
+            app/src/main/java/com/readroid/app/ApkHexPreview.java
+          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared \
+            -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I"$work/headers" \
+            engine/android-bridge/src/jni_hex.c \
+            engine/android-bridge/target/release/libnegrodroid_jni_bridge.a \
+            -ldl -lpthread -lm -o "$work/libnegrodroid_hex.so"
+          java -Xcheck:jni -cp "$work/classes" com.readroid.app.NativeHexContract "$work/libnegrodroid_hex.so"
