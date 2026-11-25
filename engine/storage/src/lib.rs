@@ -9,9 +9,10 @@ use std::{fs::OpenOptions,io,path::Path};
 const SCHEMA:&str=include_str!("../../core/schema/index_v2.sql");
 const MAX_RUNS:i64=1024;
 const MAX_DOCUMENT_PAYLOAD:i64=128*1024*1024;
+const MAX_REOPEN_BYTES:u64=512*1024*1024;
 #[derive(Debug)]
 pub enum Error { Sql(rusqlite::Error), Io(io::Error), InvalidDestination, InvalidReport(ExportError),
-    RunLimit, PayloadLimit, Accounting }
+    RunLimit, PayloadLimit, Accounting, InvalidDatabase, UnsupportedVersion, PhysicalLimit, ActiveSidecar }
 impl From<rusqlite::Error> for Error{fn from(e:rusqlite::Error)->Self{Self::Sql(e)}}
 impl From<io::Error> for Error{fn from(e:io::Error)->Self{Self::Io(e)}}
 #[derive(Debug,PartialEq,Eq)]
@@ -202,5 +203,171 @@ mod tests{
         let state:String=c.query_row("SELECT state FROM sealed_run_summary WHERE id=?1",[id],|r|r.get(0)).unwrap();
         assert_eq!(state,"complete_byte_observation");drop(c);
         fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+/// Read-only access to a closed, trusted database previously created by this
+/// adapter. Not a general-purpose SQLite browser or an authenticity check.
+pub struct Reader {store:Store}
+impl Reader {
+    /// Requires an absolute path in a trusted stable directory, with no active
+    /// SQLite writer, journal/WAL/SHM sidecars or concurrent modification.
+    /// Does not migrate, repair, create or overwrite a database. OS path races,
+    /// malicious SQLite files and hostile storage are outside this contract.
+    pub fn open_existing(path:&Path)->Result<Self,Error>{
+        if !path.is_absolute(){return Err(Error::InvalidDestination);}
+        let m=std::fs::symlink_metadata(path)?;
+        if !m.is_file()||m.file_type().is_symlink(){return Err(Error::InvalidDestination);}
+        #[cfg(windows)]
+        {use std::os::windows::fs::MetadataExt;
+            if m.file_attributes()&0x400!=0{return Err(Error::InvalidDestination);}}
+        if m.len()>MAX_REOPEN_BYTES{return Err(Error::PhysicalLimit);}
+        if m.len()<100{return Err(Error::InvalidDatabase);}
+        for suffix in ["-journal","-wal","-shm"]{
+            let mut p=path.as_os_str().to_os_string();p.push(suffix);
+            match std::fs::symlink_metadata(std::path::PathBuf::from(p)){
+                Ok(_)=>return Err(Error::ActiveSidecar),
+                Err(e) if e.kind()==io::ErrorKind::NotFound=>{},
+                Err(e)=>return Err(Error::Io(e)),
+            }
+        }
+        let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        conn.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON;")?;
+        let version:i64=conn.query_row("PRAGMA user_version",[],|r|r.get(0))?;
+        if version!=2{return Err(Error::UnsupportedVersion);}
+        let reference=Store::memory()?;
+        if schema_rows(&conn)?!=schema_rows(&reference.conn)?{return Err(Error::InvalidDatabase);}
+        let ok:String=conn.query_row("PRAGMA quick_check(1)",[],|r|r.get(0))?;
+        if ok!="ok"{return Err(Error::InvalidDatabase);}
+        {
+            let mut stmt=conn.prepare("PRAGMA foreign_key_check")?;
+            if stmt.exists([])?{return Err(Error::InvalidDatabase);}
+        }
+        let runs:i64=conn.query_row("SELECT count(*) FROM analysis_run",[],|r|r.get(0))?;
+        if runs>MAX_RUNS{return Err(Error::RunLimit);}
+        let used:i64=conn.query_row("SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) FROM report_document",[],|r|r.get(0))?;
+        if used>MAX_DOCUMENT_PAYLOAD{return Err(Error::PayloadLimit);}
+        // A normal adapter never commits an unsealed run. Reject it rather
+        // than pretending a partial database is a clean session history.
+        let bad:i64=conn.query_row(
+            "SELECT count(*) FROM analysis_run r WHERE r.sealed!=1 OR
+             r.planned!=(SELECT count(*) FROM source_entry e WHERE e.run_id=r.id) OR
+             (r.kind='analysis' AND NOT EXISTS(SELECT 1 FROM report_document d WHERE d.run_id=r.id)) OR
+             (r.kind='discovery' AND EXISTS(SELECT 1 FROM report_document d WHERE d.run_id=r.id))",
+             [],|r|r.get(0))?;
+        if bad!=0{return Err(Error::InvalidDatabase);}
+        let bad:i64=conn.query_row(
+            "SELECT count(*) FROM report_document WHERE json_valid(payload)!=1",[],|r|r.get(0))?;
+        if bad!=0{return Err(Error::InvalidDatabase);}
+        let bad:i64=conn.query_row(
+            "SELECT count(*) FROM report_document d JOIN analysis_run r ON r.id=d.run_id
+             WHERE json_extract(d.payload,'$.schema_version') IS NOT d.schema_version
+             OR json_extract(d.payload,'$.path_policy') IS NOT r.path_policy
+             OR json_extract(d.payload,'$.summary.planned') IS NOT r.planned
+             OR json_type(d.payload,'$.entries') IS NOT 'array'
+             OR json_array_length(d.payload,'$.entries') IS NOT r.planned",[],|r|r.get(0))?;
+        if bad!=0{return Err(Error::InvalidDatabase);}
+        Ok(Self{store:Store{conn}})
+    }
+    pub fn summary(&self,id:i64)->Result<Option<Summary>,Error>{self.store.summary(id)}
+    pub fn document(&self,id:i64)->Result<Option<String>,Error>{self.store.document(id)}
+}
+fn schema_rows(conn:&Connection)->Result<Vec<(String,String,String,Option<String>)>,Error>{
+    let mut stmt=conn.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name")?;
+    let mut rows=stmt.query([])?;
+    let mut result=Vec::new();
+    while let Some(row)=rows.next()?{
+        // The compiled schema is small; unexpected objects cannot grow the
+        // comparison result indefinitely.
+        if result.len()>=64{return Err(Error::InvalidDatabase);}
+        result.push((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?));
+    }
+    Ok(result)
+}
+#[cfg(test)]
+mod reopen_tests {
+    use super::*;
+    use negrodroid_core::{Cancellation,orchestration::{run,Config},parallel::Task};
+    use std::{fs,io::Cursor,path::PathBuf,sync::atomic::{AtomicUsize,Ordering}};
+    static NEXT:AtomicUsize=AtomicUsize::new(0);
+    struct Temp(PathBuf);
+    impl Temp{
+        fn new()->Self{
+            loop{
+                let p=std::env::temp_dir().join(format!("negrodroid-reopen-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
+                match fs::create_dir(&p){Ok(())=>return Self(p),Err(e) if e.kind()==io::ErrorKind::AlreadyExists=>continue,Err(e)=>panic!("{e}")}
+            }
+        }
+        fn path(&self)->PathBuf{self.0.join("index.sqlite")}
+    }
+    impl Drop for Temp{fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}}
+    fn fixture(p:&Path)->(i64,String){
+        let r=run(vec![Task{key:SourceKey::physical(1,"x").unwrap(),reader:Cursor::new(b"abc"),length:3}],
+            Config{workers:1,batch_size:1,byte_budget:6},Cancellation::default()).unwrap();
+        let mut s=Store::create_new(p).unwrap();let id=s.save_analysis(&r,Paths::Omit).unwrap();
+        (id,s.document(id).unwrap().unwrap())
+    }
+    #[test]
+    fn public_read_only_reopen_preserves_document_and_disk_bytes(){
+        let t=Temp::new();let p=t.path();let(id,j)=fixture(&p);
+        let before=fs::read(&p).unwrap();
+        let reader=Reader::open_existing(&p).unwrap();
+        assert_eq!(reader.document(id).unwrap(),Some(j));
+        assert_eq!(reader.summary(id).unwrap().unwrap().observed,1);
+        assert_eq!(reader.document(id+1).unwrap(),None);
+        assert!(reader.store.conn.execute("CREATE TABLE forbidden(x)",[]).is_err());
+        drop(reader);assert_eq!(fs::read(&p).unwrap(),before);
+    }
+    #[test]
+    fn missing_relative_and_not_a_database_refused(){
+        let t=Temp::new();let p=t.path();
+        assert!(Reader::open_existing(&p).is_err());assert!(!p.exists());
+        assert!(matches!(Reader::open_existing(Path::new("relative.sqlite")),Err(Error::InvalidDestination)));
+        fs::write(&p,b"invalid").unwrap();
+        assert!(matches!(Reader::open_existing(&p),Err(Error::InvalidDatabase)));
+        assert_eq!(fs::read(&p).unwrap(),b"invalid");
+    }
+    #[test]
+    fn old_version_refused_without_migration(){
+        let t=Temp::new();let p=t.path();
+        let c=Connection::open(&p).unwrap();
+        c.execute_batch(include_str!("../../core/schema/index_v1.sql")).unwrap();drop(c);
+        let before=fs::read(&p).unwrap();
+        assert!(matches!(Reader::open_existing(&p),Err(Error::UnsupportedVersion)));
+        assert_eq!(fs::read(&p).unwrap(),before);
+    }
+    #[test]
+    fn schema_drift_is_rejected(){
+        let t=Temp::new();let p=t.path();fixture(&p);
+        let c=Connection::open(&p).unwrap();c.execute_batch("DROP TRIGGER document_no_update;").unwrap();drop(c);
+        assert!(matches!(Reader::open_existing(&p),Err(Error::InvalidDatabase)));
+    }
+    #[test]
+    fn incomplete_run_rejected(){
+        let t=Temp::new();let p=t.path();fixture(&p);
+        let c=Connection::open(&p).unwrap();
+        c.execute("INSERT INTO analysis_run(kind,path_policy,planned,omissions) VALUES('analysis','omitted',1,0)",[]).unwrap();drop(c);
+        assert!(matches!(Reader::open_existing(&p),Err(Error::InvalidDatabase)));
+    }
+    #[test]
+    fn sidecar_refused_without_removal(){
+        let t=Temp::new();let p=t.path();fixture(&p);
+        let mut side=p.as_os_str().to_os_string();side.push("-wal");let side=PathBuf::from(side);
+        fs::write(&side,b"fixture").unwrap();
+        assert!(matches!(Reader::open_existing(&p),Err(Error::ActiveSidecar)));
+        assert_eq!(fs::read(side).unwrap(),b"fixture");
+    }
+    #[test]
+    fn physical_cap_before_sqlite_open(){
+        let t=Temp::new();let p=t.path();let f=OpenOptions::new().create_new(true).write(true).open(&p).unwrap();
+        f.set_len(MAX_REOPEN_BYTES+1).unwrap();drop(f);
+        assert!(matches!(Reader::open_existing(&p),Err(Error::PhysicalLimit)));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlink_destination_rejected(){
+        let t=Temp::new();let p=t.path();fixture(&p);
+        let link=t.0.join("alias");std::os::unix::fs::symlink(&p,&link).unwrap();
+        assert!(matches!(Reader::open_existing(&link),Err(Error::InvalidDestination)));
     }
 }
