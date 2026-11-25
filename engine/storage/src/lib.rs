@@ -1,16 +1,17 @@
 #![forbid(unsafe_code)]
 //! Candidate local SQLite adapter. Trusted destination only, no source opening.
-//! Initial slice supports byte-observation reports (JSON v1) only.
+//! Fresh schema v2 stores complete bounded JSON v1/v2 plus query rows.
 use negrodroid_core::{capabilities::describe,inventory::SourceKey,orchestration::Report,
-    parallel::Status,reporting::{validate_report,ExportError,Paths}};
+    parallel::Status,reporting::{export_json,Options,ExportError,Paths,MAX_EXPORT_BYTES}};
 use rusqlite::{params,Connection,OpenFlags,OptionalExtension};
 use std::{fs::OpenOptions,io,path::Path};
 
-const SCHEMA:&str=include_str!("../../core/schema/index_v1.sql");
+const SCHEMA:&str=include_str!("../../core/schema/index_v2.sql");
 const MAX_RUNS:i64=1024;
+const MAX_DOCUMENT_PAYLOAD:i64=128*1024*1024;
 #[derive(Debug)]
 pub enum Error { Sql(rusqlite::Error), Io(io::Error), InvalidDestination, InvalidReport(ExportError),
-    UnsupportedHeaders, RunLimit, Accounting }
+    RunLimit, PayloadLimit, Accounting }
 impl From<rusqlite::Error> for Error{fn from(e:rusqlite::Error)->Self{Self::Sql(e)}}
 impl From<io::Error> for Error{fn from(e:io::Error)->Self{Self::Io(e)}}
 #[derive(Debug,PartialEq,Eq)]
@@ -21,7 +22,7 @@ impl Store {
         conn.execute_batch(SCHEMA)?;
         let version:i64=conn.query_row("PRAGMA user_version",[],|r|r.get(0))?;
         let foreign:i64=conn.query_row("PRAGMA foreign_keys",[],|r|r.get(0))?;
-        if version!=1||foreign!=1{return Err(Error::Accounting);}
+        if version!=2||foreign!=1{return Err(Error::Accounting);}
         Ok(Self{conn})
     }
     pub fn memory()->Result<Self,Error>{Self::initialize(Connection::open_in_memory()?)}
@@ -37,15 +38,16 @@ impl Store {
         let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
         Self::initialize(conn)
     }
-    /// Insert and seal in one transaction. Reject header-mode reports instead
-    /// of silently discarding structural evidence; schema v1 lacks those fields.
-    /// Does not persist error-kind, reserved budget or per-run batching metadata.
+    /// Insert and seal query rows and full bounded report JSON in one transaction.
+    /// The document retains error-kind, budgets and header metadata, not raw contents.
     pub fn save_analysis(&mut self,r:&Report,paths:Paths)->Result<i64,Error>{
-        if r.headers_enabled(){return Err(Error::UnsupportedHeaders);}
-        validate_report(r).map_err(Error::InvalidReport)?;
+        let document=export_json(r,Options{max_bytes:MAX_EXPORT_BYTES,paths}).map_err(Error::InvalidReport)?;
+        let schema=if r.headers_enabled(){2}else{1};
         let tx=self.conn.transaction()?;
         let runs:i64=tx.query_row("SELECT count(*) FROM analysis_run",[],|r|r.get(0))?;
         if runs>=MAX_RUNS{return Err(Error::RunLimit);}
+        let used:i64=tx.query_row("SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) FROM report_document",[],|r|r.get(0))?;
+        if used.checked_add(document.len() as i64).is_none_or(|n|n>MAX_DOCUMENT_PAYLOAD){return Err(Error::PayloadLimit);}
         let policy=match paths {Paths::Omit=>"omitted",Paths::IncludeLogical=>"logical_opt_in"};
         tx.execute("INSERT INTO analysis_run(kind,path_policy,planned,omissions) VALUES('analysis',?1,?2,0)",
             params![policy,r.summary.planned as i64])?;
@@ -64,9 +66,14 @@ impl Store {
                     status,digest.as_ref().map(|v|v.as_slice()),charged.as_slice()])?;
             }
         }
+        tx.execute("INSERT INTO report_document(run_id,schema_version,payload) VALUES(?1,?2,?3)",params![id,schema,document])?;
         if tx.execute("UPDATE analysis_run SET sealed=1 WHERE id=?1",[id])?!=1{return Err(Error::Accounting);}
         tx.commit()?;
         Ok(id)
+    }
+    /// Exact exported report from a sealed run; no arbitrary SQL access.
+    pub fn document(&self,id:i64)->Result<Option<String>,Error>{
+        Ok(self.conn.query_row("SELECT d.payload FROM report_document d JOIN analysis_run r ON r.id=d.run_id WHERE r.sealed=1 AND d.run_id=?1",[id],|r|r.get(0)).optional()?)
     }
     pub fn summary(&self,id:i64)->Result<Option<Summary>,Error>{
         Ok(self.conn.query_row("SELECT entries,observed,failed,cancelled,not_started,state FROM sealed_run_summary WHERE id=?1",[id],|r|
@@ -128,12 +135,15 @@ mod tests{
         assert_eq!(s.summary(id).unwrap().unwrap().state,"cancelled");
     }
     #[test]
-    fn rejects_inconsistent_and_header_reports(){
+    fn rejects_inconsistent_report_and_accepts_header_mode(){
         let mut s=Store::memory().unwrap();let mut r=sample();r.summary.observed=0;
         assert!(matches!(s.save_analysis(&r,Paths::Omit),Err(Error::InvalidReport(_))));
         let r=run_with_headers(vec![task("x",b"x",1)],cfg(),Cancellation::default()).unwrap();
-        assert!(matches!(s.save_analysis(&r,Paths::Omit),Err(Error::UnsupportedHeaders)));
         let n:i64=s.conn.query_row("SELECT count(*) FROM analysis_run",[],|r|r.get(0)).unwrap();assert_eq!(n,0);
+        let id=s.save_analysis(&r,Paths::Omit).unwrap();
+        let j=s.document(id).unwrap().unwrap();
+        assert!(j.contains("\"schema_version\":2"));
+        assert!(j.contains("\"header_inspection\""));
     }
     #[test]
     fn injected_sql_error_rolls_back_entire_transaction(){
@@ -141,9 +151,42 @@ mod tests{
         s.conn.execute_batch("CREATE TRIGGER synthetic_fail BEFORE INSERT ON source_entry WHEN NEW.ordinal=2 BEGIN SELECT RAISE(ABORT,'synthetic'); END;").unwrap();
         let r=run(vec![task("a",b"a",1),task("b",b"b",1)],cfg(),Cancellation::default()).unwrap();
         assert!(matches!(s.save_analysis(&r,Paths::Omit),Err(Error::Sql(_))));
-        for table in ["analysis_run","source_entry"]{
+        for table in ["analysis_run","source_entry","report_document"]{
             let n:i64=s.conn.query_row(&format!("SELECT count(*) FROM {table}"),[],|r|r.get(0)).unwrap();assert_eq!(n,0);
         }
+    }
+    #[test]
+    fn full_document_exact_and_privacy_preserved(){
+        let mut s=Store::memory().unwrap();
+        let r=run_with_headers(vec![task("private/png",b"\x89PNG\r\n\x1a\n",8),task("private/fail",b"",1)],cfg(),Cancellation::default()).unwrap();
+        for paths in [Paths::Omit,Paths::IncludeLogical]{
+            let expected=export_json(&r,Options{max_bytes:MAX_EXPORT_BYTES,paths}).unwrap();
+            let id=s.save_analysis(&r,paths).unwrap();
+            let actual=s.document(id).unwrap().unwrap();
+            assert_eq!(actual,expected);assert!(actual.contains("malformed_header"));assert!(actual.contains("UnexpectedEof"));
+            assert_eq!(actual.contains("private/"),paths==Paths::IncludeLogical);
+        }
+    }
+    #[test]
+    fn document_failure_rolls_back_rows_and_run(){
+        let mut s=Store::memory().unwrap();
+        s.conn.execute_batch("CREATE TRIGGER synthetic_doc_fail BEFORE INSERT ON report_document BEGIN SELECT RAISE(ABORT,'synthetic'); END;").unwrap();
+        assert!(matches!(s.save_analysis(&sample(),Paths::Omit),Err(Error::Sql(_))));
+        for table in ["analysis_run","source_entry","report_document"]{
+            let n:i64=s.conn.query_row(&format!("SELECT count(*) FROM {table}"),[],|r|r.get(0)).unwrap();assert_eq!(n,0);
+        }
+    }
+    #[test]
+    fn document_required_and_immutable(){
+        let mut s=Store::memory().unwrap();
+        s.conn.execute("INSERT INTO analysis_run(kind,path_policy,planned,omissions) VALUES('analysis','omitted',0,0)",[]).unwrap();
+        let id=s.conn.last_insert_rowid();
+        assert!(s.conn.execute("UPDATE analysis_run SET sealed=1 WHERE id=?1",[id]).is_err());
+        assert!(s.conn.execute("INSERT INTO report_document VALUES(?1,1,'{}')",[id]).is_err());
+        assert_eq!(s.document(id).unwrap(),None);
+        let id=s.save_analysis(&sample(),Paths::Omit).unwrap();
+        assert!(s.conn.execute("UPDATE report_document SET payload='{}' WHERE run_id=?1",[id]).is_err());
+        assert!(s.conn.execute("DELETE FROM report_document WHERE run_id=?1",[id]).is_err());
     }
     #[test]
     fn fresh_disk_database_reopens_without_overwriting_existing_file(){
