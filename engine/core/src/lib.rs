@@ -10,6 +10,7 @@ pub mod capabilities;
 pub mod structural;
 pub mod discovery;
 pub mod context;
+pub mod classification;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
