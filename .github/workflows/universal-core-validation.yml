@@ -29,3 +29,8 @@ jobs:
         run: cargo +1.85.1 fetch --locked
       - name: Run offline locked tests
         run: cargo +1.85.1 test --locked --offline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate exported JSON with independent consumer
+        run: python tests/validate_report_json.py

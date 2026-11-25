@@ -44,3 +44,6 @@ Shared admission checks validate the entire scope before any read. Fixed-size ch
 
 ## U1.7 candidate — bounded JSON evidence report v1
 Local deterministic JSON with explicit scope, summary, per-item format hints, status, SHA-256 and typed error category. Decimal strings for u64, report-local ordinal IDs, path omission by default (caller must choose policy), explicit logical path opt-in; hashes remain identifying metadata. Revalidate public summary/diagnostics before export; byte cap 16 MiB, reject overflow without returning partial JSON. No raw source contents, absolute paths, upload, files, snapshot attestation, code parsing, Markdown/PDF/ZIP or AI integration. Nine additional tests.
+
+### U1.7 independent consumer gate
+Synthetic Rust example emits mixed success/failure, omitted/opt-in logical paths, cancelled large-u64 and empty reports. Python 3.12 standard library independently parses UTF-8 JSON with duplicate-key/nonfinite rejection, checks counters, exact integer representation, path policy, escaping, SHA-256 via hashlib and deterministic bytes. CI runs the consumer on all three platforms after locked Rust tests. No additional Rust dependency, no real source contents or external upload. This checks representative fixtures, not formal proof of all possible JSON outputs.
