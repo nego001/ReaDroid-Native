@@ -79,10 +79,17 @@ fn observed_links_and_cycles_not_followed(){
 }
 #[cfg(unix)]
 #[test]
-fn invalid_utf8_and_logical_names_explicitly_skipped(){
-    use std::os::unix::ffi::OsStrExt;
-    let t=Temp::new();fs::write(t.0.join(std::ffi::OsStr::from_bytes(b"bad\xff")),b"x").unwrap();
+fn invalid_logical_name_explicitly_skipped(){
+    let t=Temp::new();
     fs::write(t.0.join("bad:name"),b"x").unwrap();
     let r=discover(&t.0,1,limits(),&Cancellation::default()).unwrap();
-    assert_eq!(r.counts.invalid_names,2);assert!(r.inventory.is_empty());
+    assert_eq!(r.counts.invalid_names,1);assert!(r.inventory.is_empty());
+}
+#[cfg(target_os="linux")]
+#[test]
+fn invalid_utf8_directory_entry_explicitly_skipped(){
+    use std::os::unix::ffi::OsStrExt;
+    let t=Temp::new();fs::write(t.0.join(std::ffi::OsStr::from_bytes(b"bad\xff")),b"x").unwrap();
+    let r=discover(&t.0,1,limits(),&Cancellation::default()).unwrap();
+    assert_eq!(r.counts.invalid_names,1);assert!(r.inventory.is_empty());
 }

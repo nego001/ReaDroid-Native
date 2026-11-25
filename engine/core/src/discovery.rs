@@ -54,15 +54,8 @@ fn walk(dir:&Path,prefix:&str,depth:usize,root_id:u64,limits:Limits,cancel:&Canc
         if out.counts.visited>=limits.max_entries{return Err(Error::EntryLimit);}
         out.counts.visited+=1;
         let name=item.file_name();
-        let Some(name)=name.to_str() else {out.counts.invalid_names+=1;continue;};
-        if name.len()>MAX_PATH_BYTES || prefix.len()+name.len()+usize::from(!prefix.is_empty())>MAX_PATH_BYTES{
-            out.counts.invalid_names+=1;continue;
-        }
-        let logical=if prefix.is_empty(){name.to_owned()}else{format!("{prefix}/{name}")};
-        let key=match SourceKey::physical(root_id,&logical){
-            Ok(k)=>k,Err(IndexError::InvalidPath)=>{out.counts.invalid_names+=1;continue;},
-            Err(e)=>return Err(Error::Index(e))
-        };
+        let Some(key)=logical_key(root_id,prefix,&name)? else {out.counts.invalid_names+=1;continue;};
+        let logical=key.relative_path().to_owned();
         *path_bytes=path_bytes.checked_add(logical.len()).ok_or(Error::PathBudget)?;
         if *path_bytes>limits.max_path_bytes{return Err(Error::PathBudget);}
         let path=item.path();
@@ -79,4 +72,42 @@ fn walk(dir:&Path,prefix:&str,depth:usize,root_id:u64,limits:Limits,cancel:&Canc
         }else{out.counts.special+=1;}
     }
     check(cancel)
+}
+
+fn logical_key(root_id:u64,prefix:&str,name:&std::ffi::OsStr)->Result<Option<SourceKey>,Error>{
+    let Some(name)=name.to_str() else{return Ok(None);};
+    if name.len()>MAX_PATH_BYTES || prefix.len()+name.len()+usize::from(!prefix.is_empty())>MAX_PATH_BYTES{
+        return Ok(None);
+    }
+    let logical=if prefix.is_empty(){name.to_owned()}else{format!("{prefix}/{name}")};
+    match SourceKey::physical(root_id,&logical){
+        Ok(k)=>Ok(Some(k)),Err(IndexError::InvalidPath)=>Ok(None),Err(e)=>Err(Error::Index(e))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+    #[test]
+    fn logical_policy_rejects_unrepresentable_paths(){
+        for name in ["bad:name","bad\\name","..",""]{
+            // Empty name with a nonempty prefix also yields an invalid trailing slash.
+            assert!(logical_key(1,"dir",OsStr::new(name)).unwrap().is_none());
+        }
+        let overlong="x".repeat(MAX_PATH_BYTES);
+        assert!(logical_key(1,"dir",OsStr::new(&overlong)).unwrap().is_none());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn raw_invalid_utf8_is_rejected_without_filesystem_assumptions(){
+        use std::os::unix::ffi::OsStrExt;
+        assert!(logical_key(1,"",OsStr::from_bytes(b"bad\xff")).unwrap().is_none());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn unpaired_utf16_surrogate_is_rejected(){
+        use std::os::windows::ffi::OsStringExt;
+        let name=std::ffi::OsString::from_wide(&[0xd800]);
+        assert!(logical_key(1,"",&name).unwrap().is_none());
+    }
 }
