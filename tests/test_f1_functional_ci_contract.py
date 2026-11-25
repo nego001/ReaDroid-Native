@@ -17,6 +17,7 @@ PRODUCTION = {
     "MainActivity.java",
     "ExplorerView.java",
     "ApkImagePreview.java",
+    "ApkHexPreview.java",
     "EditPlan.java",
     "RecoveryVault.java",
     "RecoveryDirectoryGuard.java",
@@ -44,6 +45,7 @@ PRODUCTION = {
 ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
     "ApkImagePreviewInstrumentedTest",
+    "ApkHexPreviewInstrumentedTest",
     "RecoveryVaultInstrumentedTest",
     "F133RecoverySpaceConcurrencyInstrumentedTest",
     "F134RecoveryStageIntegrityInstrumentedTest",

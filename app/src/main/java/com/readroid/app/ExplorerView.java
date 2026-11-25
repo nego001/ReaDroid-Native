@@ -49,6 +49,8 @@ public final class ExplorerView {
     // At most one image decode across Explorer instances, including recreation.
     private static final java.util.concurrent.atomic.AtomicBoolean IMAGE_PREVIEW_BUSY =
         new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean HEX_PREVIEW_BUSY =
+        new java.util.concurrent.atomic.AtomicBoolean();
 
     static final class EditSession {
         final java.io.File source;
@@ -666,19 +668,21 @@ public final class ExplorerView {
         boolean image = ApkImagePreview.supports(path);
         final EditSession menuSession = captureEditSession();
         String[] choices = image
-            ? new String[]{"Visualizar imagem", "Detalhes técnicos", "Copiar caminho"}
+            ? new String[]{"Visualizar imagem", "Ver hexadecimal", "Detalhes técnicos", "Copiar caminho"}
             : editable
-                ? new String[]{"Ver texto", "Planejar edição", "Detalhes técnicos",
-                    "Copiar caminho"}
-                : new String[]{"Ver texto", "Detalhes técnicos", "Copiar caminho"};
+                ? new String[]{"Ver texto", "Planejar edição", "Ver hexadecimal",
+                    "Detalhes técnicos", "Copiar caminho"}
+                : new String[]{"Ver texto", "Ver hexadecimal", "Detalhes técnicos", "Copiar caminho"};
         android.app.AlertDialog.Builder menu = new android.app.AlertDialog.Builder(activity)
             .setTitle(label);
-        // Native AlertDialog message and list compete for the content panel.
-        // The image action must appear in the real list, not behind a message.
-        if (!image) menu.setMessage("Tipo: " + category + "  •  " + formatBytes(sizeBytes));
+        // Keep the native action list visible for every file type. The row
+        // and technical details already show metadata.
         menu.setItems(choices, (dialog, selected) -> {
                 String action = choices[selected];
+                if (!isCurrentEditSession(menuSession)
+                        || activity.isFinishing() || activity.isDestroyed()) return;
                 if ("Visualizar imagem".equals(action)) previewImage(menuSession, path);
+                else if ("Ver hexadecimal".equals(action)) previewHex(menuSession, path);
                 else if ("Ver texto".equals(action)) preview(path);
                 else if ("Planejar edição".equals(action)) planEdit(path);
                 else if ("Detalhes técnicos".equals(action)) inspectEntry(path);
@@ -697,6 +701,68 @@ public final class ExplorerView {
     public EditPlan getEditPlan() { return editPlan; }
 
     public void refresh() { render(); }
+
+    private void previewHex(EditSession session, String path) {
+        if (!HEX_PREVIEW_BUSY.compareAndSet(false, true)) {
+            new android.app.AlertDialog.Builder(activity)
+                .setMessage("Uma prévia hexadecimal já está sendo processada.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        try {
+            new Thread(() -> {
+                ApkHexPreview.Result decoded = null;
+                String error = null;
+                try { decoded = ApkHexPreview.read(session.source, path); }
+                catch (Exception failure) { error = failure.getMessage(); }
+                final ApkHexPreview.Result result = decoded;
+                final String message = error;
+                activity.runOnUiThread(() -> {
+                    try {
+                        showForCurrentSession(session, () -> {
+                            if (result == null) {
+                                new android.app.AlertDialog.Builder(activity)
+                                    .setTitle("Prévia indisponível")
+                                    .setMessage(message == null ? "Entrada inválida." : message)
+                                    .setPositiveButton("OK", null).show();
+                                return;
+                            }
+                            LinearLayout content = new LinearLayout(activity);
+                            content.setOrientation(LinearLayout.VERTICAL);
+                            TextView info = new TextView(activity);
+                            info.setText(result.shown + " de " + result.size
+                                + " bytes • offsets da entrada\n"
+                                + (result.truncated
+                                    ? "Prévia parcial; CRC completo não verificado."
+                                    : "Entrada completa; CRC verificado."));
+                            info.setPadding(16, 12, 16, 12);
+                            content.addView(info);
+                            ScrollView vertical = new ScrollView(activity);
+                            HorizontalScrollView horizontal = new HorizontalScrollView(activity);
+                            TextView dump = new TextView(activity);
+                            dump.setTypeface(android.graphics.Typeface.MONOSPACE);
+                            dump.setTextSize(12);
+                            dump.setTextColor(NegrescoTheme.TEXT);
+                            dump.setTextIsSelectable(true);
+                            dump.setText(result.shown == 0 ? "Entrada vazia" : result.dump);
+                            dump.setPadding(16, 12, 16, 12);
+                            horizontal.addView(dump);
+                            vertical.addView(horizontal);
+                            content.addView(vertical, new LinearLayout.LayoutParams(-1,
+                                NegrescoTheme.dp(activity, 260)));
+                            new android.app.AlertDialog.Builder(activity)
+                                .setTitle("Prévia hexadecimal")
+                                .setView(content)
+                                .setPositiveButton("Fechar", null).show();
+                        });
+                    } finally { HEX_PREVIEW_BUSY.set(false); }
+                });
+            }, "apk-hex-preview").start();
+        } catch (RuntimeException failure) {
+            HEX_PREVIEW_BUSY.set(false);
+            throw failure;
+        }
+    }
 
     private void previewImage(EditSession session, String path) {
         if (!isCurrentEditSession(session) || activity.isFinishing() || activity.isDestroyed())
