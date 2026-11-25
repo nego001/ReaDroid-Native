@@ -1,7 +1,7 @@
 name: Universal Core validation
 on:
   push:
-    branches: [validation/universal-core-u1-1, validation/universal-core-u1-5, validation/universal-core-u1-6, validation/universal-core-u1-7, validation/universal-core-u1-8, validation/universal-core-u1-9, validation/universal-core-u1-9-2, validation/universal-core-u1-9-3, validation/universal-core-u1-10, validation/universal-core-u1-11, validation/universal-core-u1-11-1, validation/universal-core-u1-11-2, validation/universal-core-u1-11-3, validation/universal-core-u1-11-4, validation/universal-core-u1-11-5, validation/universal-core-u1-12-1, validation/universal-core-u1-12-2, validation/universal-core-u1-12-3, validation/universal-core-u1-12-4, validation/universal-core-u1-12-5]
+    branches: [validation/universal-core-u1-1, validation/universal-core-u1-5, validation/universal-core-u1-6, validation/universal-core-u1-7, validation/universal-core-u1-8, validation/universal-core-u1-9, validation/universal-core-u1-9-2, validation/universal-core-u1-9-3, validation/universal-core-u1-10, validation/universal-core-u1-11, validation/universal-core-u1-11-1, validation/universal-core-u1-11-2, validation/universal-core-u1-11-3, validation/universal-core-u1-11-4, validation/universal-core-u1-11-5, validation/universal-core-u1-12-1, validation/universal-core-u1-12-2, validation/universal-core-u1-12-3, validation/universal-core-u1-12-4, validation/universal-core-u1-12-5, validation/universal-core-u1-12-6]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
@@ -36,3 +36,6 @@ jobs:
         run: python tests/validate_report_json.py
       - name: Validate SQLite schema contract
         run: python tests/validate_index_schema.py
+
+      - name: Validate local context JSON with independent consumer
+        run: python tests/validate_context_json.py
