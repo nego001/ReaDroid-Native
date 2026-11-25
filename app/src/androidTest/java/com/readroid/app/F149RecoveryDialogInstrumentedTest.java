@@ -159,6 +159,11 @@ public final class F149RecoveryDialogInstrumentedTest {
                         .contentEquals(button.getContentDescription() == null
                             ? "" : button.getContentDescription()))
                 return button;
+            if ("Revisar alterações pendentes".equals(label)
+                    && "Revisar alterações pendentes. Confira o plano de modificações antes de exportar"
+                        .contentEquals(button.getContentDescription() == null
+                            ? "" : button.getContentDescription()))
+                return button;
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -713,5 +718,76 @@ public final class F149RecoveryDialogInstrumentedTest {
         assertEquals(new String(chars), plan.get(PATH));
         plan.addTextReplacement(PATH, PENDING);
         assertEquals(plan.toJson().toString(2), plan.toShareJson());
+    }
+
+    @Test public void f159StaleClearDialogCannotDiscardReboundPlan() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            byte[] saved = Files.readAllBytes(f.checkpoint.toPath());
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Revisar alterações pendentes");
+                f.waitForText("Alterações pendentes (1)");
+                f.clickDialogButton("Limpar plano");
+                f.waitForText("Descartar todas as alterações?");
+                scenario.onActivity(a -> {
+                    try {
+                        ExplorerView explorer = (ExplorerView) get(a, "explorerView");
+                        explorer.setFiles(new JSONArray(), f.source);
+                        explorer.getEditPlan().addTextReplacement(PATH, "F159 rebound edit");
+                    } catch (Exception ex) { throw new AssertionError(ex); }
+                });
+                f.clickDialogButton("Descartar");
+                f.waitForText("Revisão cancelada");
+                assertPending(scenario, "F159 rebound edit");
+                assertArrayEquals(saved, Files.readAllBytes(f.checkpoint.toPath()));
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f159StaleRemoveDialogRejectsEditUndo() throws Exception {
+        try (Fixture f = new Fixture()) {
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Revisar alterações pendentes");
+                f.waitForText("Alterações pendentes (1)");
+                UiObject2 item = f.device.wait(Until.findObject(By.textContains(PATH + "  •")), 10000);
+                assertNotNull(item);
+                item.click();
+                f.waitForText(PENDING);
+                edit(scenario, "F159 intermediate edit");
+                edit(scenario, PENDING);
+                f.clickDialogButton("Remover alteração");
+                f.waitForText("Revisão cancelada");
+                assertPending(scenario, PENDING);
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            }
+        }
+    }
+
+    @Test public void f159CurrentClearDialogDiscardsOnlyPendingPlan() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.seed();
+            byte[] saved = Files.readAllBytes(f.checkpoint.toPath());
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Revisar alterações pendentes");
+                f.waitForText("Alterações pendentes (1)");
+                f.clickDialogButton("Limpar plano");
+                f.waitForText("Descartar todas as alterações?");
+                f.clickDialogButton("Descartar");
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                scenario.onActivity(a -> {
+                    try {
+                        assertEquals(0, ((ExplorerView) get(a, "explorerView")).getEditPlan().size());
+                    } catch (Exception ex) { throw new AssertionError(ex); }
+                });
+                assertArrayEquals(saved, Files.readAllBytes(f.checkpoint.toPath()));
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+            }
+        }
     }
 }

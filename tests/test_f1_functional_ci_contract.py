@@ -1250,6 +1250,21 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f158LargePlanDoesNotLaunchChooser", ui)
         self.assertIn("f158EscapedJsonCountsTowardShareBudget", ui)
 
+    def test_f159_review_actions_are_bound_to_displayed_plan(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        start = activity.index("private final class ReviewOffer")
+        end = activity.index("private LinearLayout section", start)
+        review = activity[start:end]
+        self.assertIn("isRecoverySaveRequestCurrent(source, document, generation,", review)
+        self.assertIn("hash, session, changes, revision", review)
+        self.assertIn("if (offer.requireCurrent()) reviewChange(paths[index], offer)", review)
+        self.assertEqual(review.count("if (!offer.requireCurrent()) return;"), 3)
+        self.assertIn("String content = offer.changes.get(path)", review)
+        self.assertIn("f159StaleClearDialogCannotDiscardReboundPlan", ui)
+        self.assertIn("f159StaleRemoveDialogRejectsEditUndo", ui)
+        self.assertIn("f159CurrentClearDialogDiscardsOnlyPendingPlan", ui)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",

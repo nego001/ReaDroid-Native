@@ -1715,8 +1715,29 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** F1.59: a review authorizes only the project and plan it displayed. */
+    private final class ReviewOffer {
+        final File source = currentApk;
+        final Uri document = selectedApkUri;
+        final int generation = analysisSequence;
+        final String hash = report == null ? "" : report.optString("sha256", "");
+        final ExplorerView.EditSession session = explorerView.captureEditSession();
+        final Map<String, String> changes = Collections.unmodifiableMap(
+            explorerView.getEditPlan().snapshot());
+        final long revision = explorerView.getEditPlan().revision();
+
+        boolean requireCurrent() {
+            if (isRecoverySaveRequestCurrent(source, document, generation,
+                    hash, session, changes, revision)) return true;
+            showRecoveryError("Revisão cancelada",
+                new IOException("O projeto ou as alterações mudaram. Abra a revisão novamente."));
+            return false;
+        }
+    }
+
     private void reviewEditPlan() {
-        Map<String, String> changes = explorerView.getEditPlan().snapshot();
+        ReviewOffer offer = new ReviewOffer();
+        Map<String, String> changes = offer.changes;
         if (changes.isEmpty()) {
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Plano de alterações")
@@ -1731,23 +1752,28 @@ public class MainActivity extends Activity {
         }
         new android.app.AlertDialog.Builder(this)
             .setTitle("Alterações pendentes (" + paths.length + ")")
-            .setItems(labels, (dialog, index) -> reviewChange(paths[index]))
+            .setItems(labels, (dialog, index) -> {
+                if (offer.requireCurrent()) reviewChange(paths[index], offer);
+            })
             .setNegativeButton("Fechar", null)
-            .setNeutralButton("Limpar plano", (dialog, which) ->
+            .setNeutralButton("Limpar plano", (dialog, which) -> {
+                if (!offer.requireCurrent()) return;
                 new android.app.AlertDialog.Builder(this)
                     .setTitle("Descartar todas as alterações?")
                     .setMessage("O APK original não será modificado.")
                     .setNegativeButton("Cancelar", null)
                     .setPositiveButton("Descartar", (d, w) -> {
+                        if (!offer.requireCurrent()) return;
                         explorerView.getEditPlan().clear();
                         explorerView.refresh();
                     })
-                    .show())
+                    .show();
+            })
             .show();
     }
 
-    private void reviewChange(String path) {
-        String content = explorerView.getEditPlan().get(path);
+    private void reviewChange(String path, ReviewOffer offer) {
+        String content = offer.changes.get(path);
         if (content == null) return;
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         TextView preview = new TextView(this);
@@ -1763,6 +1789,7 @@ public class MainActivity extends Activity {
             .setView(scroll)
             .setPositiveButton("Manter", null)
             .setNegativeButton("Remover alteração", (dialog, which) -> {
+                if (!offer.requireCurrent()) return;
                 explorerView.getEditPlan().remove(path);
                 explorerView.refresh();
                 reviewEditPlan();
