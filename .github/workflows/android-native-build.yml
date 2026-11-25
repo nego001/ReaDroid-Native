@@ -1,7 +1,7 @@
 name: Android native build laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-3-android-build]
+    branches: [validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:

@@ -1,0 +1,69 @@
+name: Android hex integration laboratory
+on:
+  push:
+    branches: [validation/universal-core-u2-4-hex-fallback]
+  pull_request:
+    branches: [feature/p7-negrecodroid-visual-foundation]
+    paths:
+      - 'engine/android-bridge/**'
+      - 'engine/core/**'
+      - 'app/src/main/java/com/readroid/app/NativeHexBackend.java'
+      - 'app/src/main/java/com/readroid/app/ApkHexPreview.java'
+      - 'app/src/androidTest/java/com/readroid/app/NativeHexIntegrationInstrumentedTest.java'
+      - 'app/build.gradle.kts'
+      - '.github/workflows/android-hex-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-hex:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4.0.3
+        with:
+          packages: 'ndk;27.2.12479018 platforms;android-35 build-tools;35.0.0'
+      - name: Build verified native libraries into scratch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.85.1 --profile minimal
+          rustup target add --toolchain 1.85.1 aarch64-linux-android x86_64-linux-android
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          work="$(mktemp -d)"
+          bash engine/android-bridge/android/build.sh "$work"
+          echo "NATIVE_HEX_DIR=$work/libs" >> "$GITHUB_ENV"
+      - name: Enable KVM
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Run default Java and opt-in native previews on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          cores: 2
+          ram-size: 3072M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
+          script: |
+            set -eu
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
+            python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk false
+            adb shell am force-stop com.readroid.app
+            gradle --no-daemon :app:connectedDebugAndroidTest "-PnegrodroidNativeHexDir=$NATIVE_HEX_DIR" -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=true -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
+            python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk true
+            echo "U2_4_ANDROID_HEX_INTEGRATION_PASS api=${{ matrix.api }}"

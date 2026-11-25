@@ -17,11 +17,13 @@ final class ApkHexPreview {
         final int shown;
         final boolean truncated;
         final String dump;
-        Result(long size, int shown, String dump) {
+        final boolean nativeUsed;
+        Result(long size, int shown, String dump, boolean nativeUsed) {
             this.size = size;
             this.shown = shown;
             this.truncated = size > shown;
             this.dump = dump;
+            this.nativeUsed = nativeUsed;
         }
     }
 
@@ -55,7 +57,12 @@ final class ApkHexPreview {
                         throw new IOException("Integridade da entrada ZIP inválida");
                 }
             }
-            return new Result(size, bytes.length, format(bytes));
+            if (Thread.currentThread().isInterrupted())
+                throw new java.io.InterruptedIOException("Prévia interrompida");
+            NativeHexBackend.Selection selected = NativeHexBackend.select(bytes, format(bytes), BuildConfig.NATIVE_HEX_ENABLED);
+            if (Thread.currentThread().isInterrupted())
+                throw new java.io.InterruptedIOException("Prévia interrompida");
+            return new Result(size, bytes.length, selected.dump, selected.nativeUsed);
         }
     }
 

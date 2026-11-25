@@ -1,7 +1,7 @@
 name: JNI host laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build]
+    branches: [validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
@@ -40,7 +40,9 @@ jobs:
           javac -encoding UTF-8 -h "$work/headers" -d "$work/classes" \
             engine/android-bridge/java/com/readroid/app/NativeHexBridge.java \
             engine/android-bridge/tests/java/NativeHexContract.java \
-            app/src/main/java/com/readroid/app/ApkHexPreview.java
+            app/src/main/java/com/readroid/app/ApkHexPreview.java \
+            app/src/main/java/com/readroid/app/NativeHexBackend.java \
+            engine/core/tests/java/BuildConfig.java
           cc -std=c11 -Wall -Wextra -Werror -fPIC -shared \
             -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -I"$work/headers" \
             engine/android-bridge/src/jni_hex.c \
