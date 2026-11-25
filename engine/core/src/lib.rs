@@ -12,6 +12,7 @@ pub mod discovery;
 pub mod context;
 pub mod classification;
 pub mod segmentation;
+pub mod context_budget;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
