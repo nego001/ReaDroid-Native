@@ -122,6 +122,30 @@ public final class EditPlan {
         revision++;
     }
 
+    // Binder's transaction buffer is shared with other transactions. Keep
+    // plaintext text sharing well below it (UTF-16 plus parcel overhead).
+    // This is a conservative application budget, not a Binder guarantee.
+    static final int MAX_SHARE_JSON_CHARS = 128 * 1024;
+
+    String toShareJson() throws Exception {
+        long rawChars = 0;
+        for (Map.Entry<String, String> change : replacements.entrySet()) {
+            rawChars += (long) change.getKey().length() + change.getValue().length();
+            if (rawChars > MAX_SHARE_JSON_CHARS) throw shareTooLarge();
+        }
+        // Escapes and JSON syntax also consume space. Check the actual
+        // serialized text before constructing or dispatching any Intent.
+        String json = toJson().toString(2);
+        if (json.length() > MAX_SHARE_JSON_CHARS) throw shareTooLarge();
+        return json;
+    }
+
+    private static java.io.IOException shareTooLarge() {
+        return new java.io.IOException("Plano grande demais para compartilhar como texto. "
+            + "Reduza as alterações ou use a cópia de recuperação criptografada, "
+            + "se estiver dentro dos limites de recuperação.");
+    }
+
     public JSONObject toJson() throws Exception {
         JSONObject result = new JSONObject();
         result.put("format", "readroid-edit-plan-v1");

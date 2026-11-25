@@ -1225,7 +1225,7 @@ class FunctionalCIContract(unittest.TestCase):
         snapshot = activity.index("final Map<String, String> shareSnapshot", start)
         consent = activity.index('setPositiveButton("Compartilhar"', snapshot)
         gate = activity.index("isRecoverySaveRequestCurrent(shareSource, shareDocument,", consent)
-        serialize = activity.index("explorerView.getEditPlan().toJson()", gate)
+        serialize = activity.index("explorerView.getEditPlan().toShareJson()", gate)
         launch = activity.index("startActivity(Intent.createChooser(send", serialize)
         self.assertLess(snapshot, consent)
         self.assertLess(consent, gate)
@@ -1238,6 +1238,17 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f157ActualShareDialogLaunchesOnlyAuthorizedChooser", ui)
         self.assertIn("Compartilhar plano de alterações. Envie o plano de alterações em JSON", ui)
         self.assertIn("launched.await(5, TimeUnit.SECONDS)", ui)
+
+    def test_f158_plaintext_share_has_a_conservative_payload_budget(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        plan = (ROOT / "app/src/main/java/com/readroid/app/EditPlan.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        self.assertIn("MAX_SHARE_JSON_CHARS = 128 * 1024", plan)
+        self.assertIn("rawChars > MAX_SHARE_JSON_CHARS", plan)
+        self.assertIn("json.length() > MAX_SHARE_JSON_CHARS", plan)
+        self.assertIn("explorerView.getEditPlan().toShareJson()", activity)
+        self.assertIn("f158LargePlanDoesNotLaunchChooser", ui)
+        self.assertIn("f158EscapedJsonCountsTowardShareBudget", ui)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

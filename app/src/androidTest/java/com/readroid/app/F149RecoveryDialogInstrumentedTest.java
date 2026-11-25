@@ -657,4 +657,61 @@ public final class F149RecoveryDialogInstrumentedTest {
             } finally { instrumentation.removeMonitor(chooser); }
         }
     }
+
+    @Test public void f158LargePlanDoesNotLaunchChooser() throws Exception {
+        try (Fixture f = new Fixture()) {
+            android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+            android.app.Instrumentation.ActivityMonitor chooser = instrumentation.addMonitor(
+                new android.content.IntentFilter(android.content.Intent.ACTION_CHOOSER),
+                new android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED, null),
+                true);
+            char[] chars = new char[100 * 1024];
+            java.util.Arrays.fill(chars, 'x');
+            String text = new String(chars);
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                scenario.onActivity(a -> {
+                    try {
+                        EditPlan plan = ((ExplorerView) get(a, "explorerView")).getEditPlan();
+                        plan.addTextReplacement(PATH, text);
+                        plan.addTextReplacement("assets/f158-second.txt", text);
+                    } catch (Exception ex) { throw new AssertionError(ex); }
+                });
+                open(scenario, "Compartilhar plano de alterações");
+                f.waitForText("Compartilhar alterações sem criptografia?");
+                f.clickDialogButton("Compartilhar");
+                f.waitForText("Plano grande demais");
+                assertEquals(0, chooser.getHits());
+                scenario.onActivity(a -> {
+                    try {
+                        EditPlan plan = ((ExplorerView) get(a, "explorerView")).getEditPlan();
+                        assertEquals(2, plan.size());
+                        assertEquals(text, plan.get(PATH));
+                        assertEquals(text, plan.get("assets/f158-second.txt"));
+                    } catch (Exception ex) { throw new AssertionError(ex); }
+                });
+                assertFalse(f.vault.hasCheckpoint());
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            } finally { instrumentation.removeMonitor(chooser); }
+        }
+    }
+
+    @Test public void f158EscapedJsonCountsTowardShareBudget() throws Exception {
+        EditPlan plan = new EditPlan();
+        char[] chars = new char[30 * 1024];
+        java.util.Arrays.fill(chars, (char) 1);
+        plan.addTextReplacement(PATH, new String(chars));
+        assertTrue(plan.get(PATH).length() < EditPlan.MAX_SHARE_JSON_CHARS);
+        assertTrue(plan.toJson().toString(2).length() > EditPlan.MAX_SHARE_JSON_CHARS);
+        try {
+            plan.toShareJson();
+            fail("Escaped JSON must respect the final character budget");
+        } catch (java.io.IOException expected) {
+            assertTrue(expected.getMessage().contains("grande demais"));
+        }
+        assertEquals(new String(chars), plan.get(PATH));
+        plan.addTextReplacement(PATH, PENDING);
+        assertEquals(plan.toJson().toString(2), plan.toShareJson());
+    }
 }

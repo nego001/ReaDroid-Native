@@ -1051,13 +1051,13 @@ public class MainActivity extends Activity {
                     }
                     try {
                         // The gate and serialization run on the same UI thread.
-                        String content = explorerView.getEditPlan().toJson().toString(2);
+                        String content = explorerView.getEditPlan().toShareJson();
                         Intent send = new Intent(Intent.ACTION_SEND);
                         send.setType("text/plain");
                         send.putExtra(Intent.EXTRA_TEXT, content);
                         startActivity(Intent.createChooser(send, "Compartilhar plano"));
                     } catch (Exception error) {
-                        output.setText("Erro ao preparar plano: " + error.getMessage());
+                        showRecoveryError("Não foi possível compartilhar o plano", error);
                     }
                 }).show();
         });
