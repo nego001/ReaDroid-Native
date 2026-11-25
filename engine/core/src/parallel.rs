@@ -30,7 +30,7 @@ pub struct Batch {
     pub reserved_bytes: u64,
     pub outcomes: Vec<Outcome>,
 }
-fn reservation(length: u64) -> Option<u64> {
+pub(crate) fn reservation(length: u64) -> Option<u64> {
     length.checked_add(length.min(PREFIX_LIMIT as u64))?
         .checked_add(if length > PREFIX_LIMIT as u64 { 4 } else { 0 })
 }
