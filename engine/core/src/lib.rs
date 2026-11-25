@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Universal read-only byte source foundation. No format parser or JNI yet.
 pub mod evidence;
+pub mod format;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
