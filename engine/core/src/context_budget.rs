@@ -15,10 +15,27 @@ impl From<ContextError> for Error{fn from(e:ContextError)->Self{Self::Context(e)
 pub struct BudgetedPage{
     page:SegmentedPage,
     encoded_bytes:usize,
+    max_bytes:usize,
 }
 impl BudgetedPage{
     pub fn page(&self)->&SegmentedPage{&self.page}
     pub fn encoded_bytes(&self)->usize{self.encoded_bytes}
+}
+/// Internal-only serialization from an opaque page admitted by budget_report.
+/// No mutable page or user-provided string is accepted.
+pub(crate) fn encode_admitted(p:&BudgetedPage)->Result<String,Error>{
+    struct Sink{value:String,limit:usize}
+    impl Write for Sink{
+        fn write_str(&mut self,s:&str)->fmt::Result{
+            if s.len()>self.limit.saturating_sub(self.value.len()){return Err(fmt::Error);}
+            self.value.push_str(s);Ok(())
+        }
+    }
+    if p.encoded_bytes>p.max_bytes||p.max_bytes>MAX_CONTEXT_BYTES{return Err(Error::InvalidLimit);}
+    let mut sink=Sink{value:String::with_capacity(p.encoded_bytes),limit:p.encoded_bytes};
+    write_page(&mut sink,&p.page).map_err(|_|Error::Context(ContextError::InconsistentReport))?;
+    if sink.value.len()!=p.encoded_bytes{return Err(Error::Context(ContextError::InconsistentReport));}
+    Ok(sink.value)
 }
 struct Counter{used:usize,limit:usize}
 impl Write for Counter{
@@ -83,14 +100,14 @@ fn item(w:&mut impl Write,e:&Evidence)->fmt::Result{
 }
 /// Single canonical writer used for exact measurement and future export.
 /// Input is internal to the budget module; public callers cannot inject strings.
-pub(crate) fn write_page(w:&mut impl Write,p:&SegmentedPage)->fmt::Result{
+fn write_page(w:&mut impl Write,p:&SegmentedPage)->fmt::Result{
     let s=p.summary;let c=p.counts;
     write!(w,r#"{{"wire_version":{},"scope":"static_evidence_only","state":"{}","summary":{{"planned":{},"observed":{},"failed":{},"cancelled":{},"not_started":{},"reserved_bytes":"{}","charged_bytes":"{}","batches":{}}},"page_counts":{{"observed":{},"failed":{},"cancelled":{},"not_started":{},"unknown_hint":{},"family_hint":{},"ambiguous_hint":{},"not_requested":{},"unavailable":{},"unsupported":{},"malformed_subset":{},"checked_subset":{}}},"after":"#,
         WIRE_VERSION,state(p.state),s.planned,s.observed,s.failed,s.cancelled,s.not_started,s.reserved_bytes,s.charged_bytes,s.batches,
         c.observed,c.failed,c.cancelled,c.not_started,c.unknown_hint,c.family_hint,c.ambiguous_hint,c.not_requested,c.unavailable,c.unsupported,c.malformed_subset,c.checked_subset)?;
     cursor(w,p.after)?;
     write!(w,r#","included":{},"next":"#,p.included)?;cursor(w,p.next)?;
-    w.write_str(r#","limitations":["not_full_structure_validation","not_authenticity_or_safety","format_hints_only"],"segments":["#)?;
+    w.write_str(r#","data_role":"untrusted_evidence","authority":"none","source_text":"excluded","limitations":["not_full_structure_validation","not_authenticity_or_safety","format_hints_only"],"segments":["#)?;
     for (i,seg) in p.segments.iter().enumerate(){
         if i>0{w.write_char(',')?;}
         let g=seg.group;
@@ -115,7 +132,7 @@ pub fn budget_report(report:&Report,after:Option<usize>,mut config:Config,max_by
         let mut w=Counter{used:0,limit:max_bytes};
         let fits=write_page(&mut w,&p).is_ok();
         if cancel.is_cancelled(){return Err(ContextError::Cancelled.into());}
-        if fits{return Ok(BudgetedPage{page:p,encoded_bytes:w.used});}
+        if fits{return Ok(BudgetedPage{page:p,encoded_bytes:w.used,max_bytes});}
         if p.included<=1{return Err(Error::BudgetTooSmall);}
         config.page_items=(p.included/2).max(1);
     }
@@ -143,7 +160,7 @@ mod tests{
     #[test]
     fn one_item_exact_boundary_and_no_progress_error(){
         let r=uniform(1);let c=Cancellation::default();let b=budget_report(&r,None,config(),MAX_CONTEXT_BYTES,&c).unwrap();
-        let n=b.encoded_bytes();assert_eq!(budget_report(&r,None,config(),n,&c).unwrap(),b);
+        let n=b.encoded_bytes();assert_eq!(budget_report(&r,None,config(),n,&c).unwrap().encoded_bytes(),b.encoded_bytes());
         assert_eq!(budget_report(&r,None,config(),n-1,&c),Err(Error::BudgetTooSmall));
     }
     #[test]
