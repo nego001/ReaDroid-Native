@@ -102,6 +102,7 @@ public class MainActivity extends Activity {
     // cancel queued/staged saves BEFORE the atomic replacement boundary.
     private final ExportSessionGuard recoverySaveSessions = new ExportSessionGuard();
     private final ExportSessionGuard recoverySaveOffers = new ExportSessionGuard();
+    private final ExportSessionGuard sharePlanOffers = new ExportSessionGuard();
     // F1.47: a restore confirmation belongs to one request. Save, clear,
     // replacement import, a newer restore, or destruction revokes it.
     private final ExportSessionGuard recoveryRestoreSessions = new ExportSessionGuard();
@@ -1014,12 +1015,23 @@ public class MainActivity extends Activity {
         editExport.setText("Compartilhar plano de alterações");
         buildSection.addView(editExport);
         editExport.setOnClickListener(v -> {
-            if (explorerView.getEditPlan().size() == 0) {
+            if (currentApk == null || report == null || explorerView.getEditPlan().size() == 0) {
                 new android.app.AlertDialog.Builder(this)
                     .setMessage("Não há alterações para compartilhar.")
                     .setPositiveButton("OK", null).show();
                 return;
             }
+            // F1.57: plaintext sharing consent authorizes only this project
+            // and this exact plan revision, not whatever is open later.
+            final File shareSource = currentApk;
+            final Uri shareDocument = selectedApkUri;
+            final int shareGeneration = analysisSequence;
+            final String shareHash = report.optString("sha256", "");
+            final ExplorerView.EditSession shareSession = explorerView.captureEditSession();
+            final Map<String, String> shareSnapshot = Collections.unmodifiableMap(
+                new LinkedHashMap<>(explorerView.getEditPlan().snapshot()));
+            final long shareRevision = explorerView.getEditPlan().revision();
+            final ExportSessionGuard.Token shareToken = sharePlanOffers.begin();
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Compartilhar alterações sem criptografia?")
                 .setMessage("Este compartilhamento pode incluir textos internos do APK e "
@@ -1028,7 +1040,17 @@ public class MainActivity extends Activity {
                     + "a recuperação criptografada.")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Compartilhar", (dialog, which) -> {
+                    if (!shareToken.isActive()) return;
+                    sharePlanOffers.invalidate();
+                    if (!isRecoverySaveRequestCurrent(shareSource, shareDocument,
+                            shareGeneration, shareHash, shareSession, shareSnapshot, shareRevision)) {
+                        showRecoveryError("Compartilhamento cancelado",
+                            new IOException("O projeto ou as alterações mudaram. "
+                                + "Solicite o compartilhamento novamente."));
+                        return;
+                    }
                     try {
+                        // The gate and serialization run on the same UI thread.
                         String content = explorerView.getEditPlan().toJson().toString(2);
                         Intent send = new Intent(Intent.ACTION_SEND);
                         send.setType("text/plain");
@@ -2230,6 +2252,7 @@ public class MainActivity extends Activity {
                     // accepted project before touching the shared workspace.
                     recoverySaveSessions.invalidate();
                     recoverySaveOffers.invalidate();
+                    sharePlanOffers.invalidate();
                     recoveryRestoreSessions.invalidate();
                     // Commit the replacement only when a complete, validated
                     // report and private file/index are ready to display.
@@ -2719,6 +2742,7 @@ public class MainActivity extends Activity {
         exportSessions.invalidate();
         recoverySaveSessions.invalidate();
         recoverySaveOffers.invalidate();
+        sharePlanOffers.invalidate();
         recoveryRestoreSessions.invalidate();
         pendingExport = null;
         analysisSequence++;

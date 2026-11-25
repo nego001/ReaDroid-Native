@@ -549,4 +549,98 @@ public final class F149RecoveryDialogInstrumentedTest {
             }
         }
     }
+
+    @Test public void f157ActualShareDialogRejectsEditUndoBeforeConsent() throws Exception {
+        try (Fixture f = new Fixture()) {
+            android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+            android.app.Instrumentation.ActivityMonitor chooser = instrumentation.addMonitor(
+                new android.content.IntentFilter(android.content.Intent.ACTION_CHOOSER),
+                new android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED, null),
+                true);
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Compartilhar plano de alterações");
+                f.waitForText("Compartilhar alterações sem criptografia?");
+                edit(scenario, "F157 intermediate edit");
+                edit(scenario, PENDING);
+                f.clickDialogButton("Compartilhar");
+                f.waitForText("Compartilhamento cancelado");
+                assertEquals(0, chooser.getHits());
+                assertPending(scenario, PENDING);
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+                f.clickDialogButton("OK");
+            } finally { instrumentation.removeMonitor(chooser); }
+        }
+    }
+
+    @Test public void f157ActualShareDialogRejectsReboundProject() throws Exception {
+        try (Fixture f = new Fixture()) {
+            android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+            android.app.Instrumentation.ActivityMonitor chooser = instrumentation.addMonitor(
+                new android.content.IntentFilter(android.content.Intent.ACTION_CHOOSER),
+                new android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED, null),
+                true);
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Compartilhar plano de alterações");
+                f.waitForText("Compartilhar alterações sem criptografia?");
+                scenario.onActivity(a -> {
+                    try {
+                        ExplorerView explorer = (ExplorerView) get(a, "explorerView");
+                        explorer.setFiles(new JSONArray(), f.source);
+                        explorer.getEditPlan().addTextReplacement(PATH, "F157 rebound edit");
+                    } catch (Exception ex) { throw new AssertionError(ex); }
+                });
+                f.clickDialogButton("Compartilhar");
+                f.waitForText("Compartilhamento cancelado");
+                assertEquals(0, chooser.getHits());
+                assertPending(scenario, "F157 rebound edit");
+                f.clickDialogButton("OK");
+            } finally { instrumentation.removeMonitor(chooser); }
+        }
+    }
+
+    @Test public void f157ActualShareDialogLaunchesOnlyAuthorizedChooser() throws Exception {
+        try (Fixture f = new Fixture()) {
+            android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+            java.util.concurrent.atomic.AtomicReference<android.content.Intent> captured =
+                new java.util.concurrent.atomic.AtomicReference<>();
+            // Intercept the actual startActivity request, never deliver plaintext
+            // to another app during an instrumented regression.
+            android.app.Instrumentation.ActivityMonitor chooser =
+                new android.app.Instrumentation.ActivityMonitor() {
+                    @Override public android.app.Instrumentation.ActivityResult onStartActivity(
+                            android.content.Intent intent) {
+                        if (!android.content.Intent.ACTION_CHOOSER.equals(intent.getAction())) return null;
+                        captured.set(intent);
+                        return new android.app.Instrumentation.ActivityResult(
+                            android.app.Activity.RESULT_CANCELED, null);
+                    }
+                };
+            instrumentation.addMonitor(chooser);
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                f.bind(scenario);
+                open(scenario, "Compartilhar plano de alterações");
+                f.waitForText("Compartilhar alterações sem criptografia?");
+                f.clickDialogButton("Compartilhar");
+                instrumentation.waitForIdleSync();
+                android.content.Intent request = captured.get();
+                assertNotNull("Authorized chooser not launched", request);
+                android.content.Intent payload = request.getParcelableExtra(android.content.Intent.EXTRA_INTENT);
+                assertNotNull(payload);
+                assertEquals(android.content.Intent.ACTION_SEND, payload.getAction());
+                assertEquals("text/plain", payload.getType());
+                JSONObject json = new JSONObject(payload.getStringExtra(android.content.Intent.EXTRA_TEXT));
+                assertEquals("readroid-edit-plan-v1", json.getString("format"));
+                assertFalse(json.getBoolean("applied"));
+                JSONArray edits = json.getJSONArray("changes");
+                assertEquals(1, edits.length());
+                assertEquals(PATH, edits.getJSONObject(0).getString("path"));
+                assertEquals(PENDING, edits.getJSONObject(0).getString("replacementText"));
+                assertPending(scenario, PENDING);
+                assertFalse(f.vault.hasCheckpoint());
+                assertEquals(f.sha, ApkIntegrity.sha256(f.source));
+            } finally { instrumentation.removeMonitor(chooser); }
+        }
+    }
 }

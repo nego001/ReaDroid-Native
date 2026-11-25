@@ -1218,6 +1218,25 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f156ActualSaveDialogRejectsAbsentSaveClearCycle", ui)
         self.assertIn("f156ActualDeleteDialogRejectsAbsentSaveClearCycle", ui)
 
+    def test_f157_plaintext_share_is_bound_to_current_plan(self):
+        activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(encoding="utf-8")
+        ui = (ROOT / "app/src/androidTest/java/com/readroid/app/F149RecoveryDialogInstrumentedTest.java").read_text(encoding="utf-8")
+        start = activity.index("editExport.setOnClickListener")
+        snapshot = activity.index("final Map<String, String> shareSnapshot", start)
+        consent = activity.index('setPositiveButton("Compartilhar"', snapshot)
+        gate = activity.index("isRecoverySaveRequestCurrent(shareSource, shareDocument,", consent)
+        serialize = activity.index("explorerView.getEditPlan().toJson()", gate)
+        launch = activity.index("startActivity(Intent.createChooser(send", serialize)
+        self.assertLess(snapshot, consent)
+        self.assertLess(consent, gate)
+        self.assertLess(gate, serialize)
+        self.assertLess(serialize, launch)
+        self.assertIn("shareSnapshot, shareRevision", activity)
+        self.assertIn("sharePlanOffers.begin()", activity)
+        self.assertIn("f157ActualShareDialogRejectsEditUndoBeforeConsent", ui)
+        self.assertIn("f157ActualShareDialogRejectsReboundProject", ui)
+        self.assertIn("f157ActualShareDialogLaunchesOnlyAuthorizedChooser", ui)
+
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("branches: [feature/p7-negrecodroid-visual-foundation]",
