@@ -47,3 +47,6 @@ Local deterministic JSON with explicit scope, summary, per-item format hints, st
 
 ### U1.7 independent consumer gate
 Synthetic Rust example emits mixed success/failure, omitted/opt-in logical paths, cancelled large-u64 and empty reports. Python 3.12 standard library independently parses UTF-8 JSON with duplicate-key/nonfinite rejection, checks counters, exact integer representation, path policy, escaping, SHA-256 via hashlib and deterministic bytes. CI runs the consumer on all three platforms after locked Rust tests. No additional Rust dependency, no real source contents or external upload. This checks representative fixtures, not formal proof of all possible JSON outputs.
+
+## U1.8 candidate — Rust capability registry v1
+Nineteen hint entries including unknown and ambiguous magic, twelve operation categories. Bounded signature hints and generic byte access/hash/evidence export are distinguished from unsupported structural validation, member listing, code/resource interpretation, editing, rebuilding and verification. Execution is outside static core scope. Stable textual IDs are registry identifiers, not format certification or authorization. The registry is Rust-core-only; Android Java functionality is not described. No parser, dispatch, report schema change or external dependency. Eight additional tests.
