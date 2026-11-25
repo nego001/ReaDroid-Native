@@ -21,14 +21,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Pinned Android toolchain
+      - name: Provision Android SDK and pinned NDK
+        uses: android-actions/setup-android@v4.0.3
+        with:
+          packages: 'ndk;27.2.12479018'
+      - name: Verify Android SDK and pinned Rust toolchain
         shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.85.1 --profile minimal
           rustup target add --toolchain 1.85.1 aarch64-linux-android x86_64-linux-android
-          sdkmanager --install "ndk;27.2.12479018"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          command -v sdkmanager
+          sdkmanager --version
+          ndk="$ANDROID_HOME/ndk/27.2.12479018"
+          test -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          test -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
+          grep "^Pkg.Revision" "$ndk/source.properties"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          printf "U2_3_ANDROID_TOOLCHAIN_READY\n"
       - name: Build and inspect native libraries without packaging
         shell: bash
         run: |
