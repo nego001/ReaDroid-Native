@@ -1,0 +1,21 @@
+# Universal Core — U1.1
+First independent Rust library; no production Android integration. F2.2 remains
+the Android baseline. See ../../docs/UNIVERSAL_ENGINE_REQUIREMENTS.md and the
+distributed-read and evidence RFCs in docs/.
+
+Read-only byte windows with u64 offsets, up to 1 MiB per window, cumulative
+per-session read budget, cooperative cancellation at bounded I/O chunks,
+explicit errors and no partial success. No external dependencies, unsafe code,
+network access, execution, extraction, signing or publishing. Caller provides
+an authorized stable source; a path, snapshot, hash or report evidence ID is
+not inferred. The window is an input-relative range for future evidence records.
+Blocking OS I/O cannot be interrupted by the flag; it is checked between reads.
+Budget counts admitted requests even on failure; caller-retained data and total
+parallel budgets are not yet managed. No parser, desktop GUI, JNI, SAF bridge,
+hash attestation, or scheduler yet.
+
+Tests: cargo +1.85.1 test --locked --offline. Dedicated CI for Linux, Windows
+and macOS. Tests use synthetic inputs, a virtual >4 GiB source and a temporary
+small file; they do not prove throughput on real multi-GB files or Android.
+Future stages: evidence identity and stable source attestation, format probing,
+range adapters for archive entries, global scheduler and resource budgets.

@@ -1,0 +1,27 @@
+name: Universal Core validation
+on:
+  pull_request:
+    branches: [feature/p7-negrecodroid-visual-foundation]
+    paths:
+      - 'engine/core/**'
+      - '.github/workflows/universal-core-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust-read-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: engine/core
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.85.1 --profile minimal
+      - name: Run offline locked tests
+        run: cargo +1.85.1 test --locked --offline
