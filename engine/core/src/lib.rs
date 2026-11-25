@@ -7,6 +7,7 @@ pub mod parallel;
 pub mod orchestration;
 pub mod reporting;
 pub mod capabilities;
+pub mod structural;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};

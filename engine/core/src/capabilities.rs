@@ -2,11 +2,11 @@
 //! Recognition is a hint, never proof of structure or authorization to act.
 use crate::format::FormatHint;
 
-pub const REGISTRY_VERSION: u32 = 1;
+pub const REGISTRY_VERSION: u32 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
     ProbeSignature, ReadRaw, HashDeclaredBytes, ExportEvidence,
-    ValidateStructure, ListMembers, InterpretResources, InterpretCode,
+    InspectHeader, ValidateStructure, ListMembers, InterpretResources, InterpretCode,
     Edit, Rebuild, VerifyStructure, Execute,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +15,7 @@ pub enum Support {
     GenericBytes,
     /// Only bounded signature hints, not a validated format.
     HintOnly,
+    HeaderOnly,
     Unsupported,
     /// Outside the scope of the static analysis core.
     OutOfScope,
@@ -32,9 +33,9 @@ pub const ALL_HINTS: [FormatHint; 19] = {
     [Unknown, Zip, DosMz, PortableExecutable, Elf, MachO, MachOFatOrJavaClass,
         Dex, Gzip, Zstd, SevenZip, Rar, OleCompound, Ar, Tar, Pdf, Png, Jpeg, Sqlite]
 };
-pub const ALL_OPERATIONS: [Operation; 12] = {
+pub const ALL_OPERATIONS: [Operation; 13] = {
     use Operation::*;
-    [ProbeSignature, ReadRaw, HashDeclaredBytes, ExportEvidence, ValidateStructure,
+    [ProbeSignature, ReadRaw, HashDeclaredBytes, ExportEvidence, InspectHeader, ValidateStructure,
         ListMembers, InterpretResources, InterpretCode, Edit, Rebuild, VerifyStructure, Execute]
 };
 pub fn describe(hint: FormatHint) -> Descriptor {
@@ -66,11 +67,13 @@ pub fn describe(hint: FormatHint) -> Descriptor {
 /// A capability describes implementation in this Rust library only.
 /// It does not certify inputs or waive authorization, resource limits,
 /// cancellation or export privacy policy. No operation dispatch occurs here.
-pub fn support(_hint: FormatHint, operation: Operation) -> Support {
+pub fn support(hint: FormatHint, operation: Operation) -> Support {
     use Operation::*;
     match operation {
         ProbeSignature => Support::HintOnly,
         ReadRaw | HashDeclaredBytes | ExportEvidence => Support::GenericBytes,
+        InspectHeader if matches!(hint, FormatHint::Elf | FormatHint::Png) => Support::HeaderOnly,
+        InspectHeader => Support::Unsupported,
         ValidateStructure | ListMembers | InterpretResources | InterpretCode |
         Edit | Rebuild | VerifyStructure => Support::Unsupported,
         Execute => Support::OutOfScope,
