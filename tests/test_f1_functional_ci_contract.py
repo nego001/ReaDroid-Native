@@ -1236,6 +1236,8 @@ class FunctionalCIContract(unittest.TestCase):
         self.assertIn("f157ActualShareDialogRejectsEditUndoBeforeConsent", ui)
         self.assertIn("f157ActualShareDialogRejectsReboundProject", ui)
         self.assertIn("f157ActualShareDialogLaunchesOnlyAuthorizedChooser", ui)
+        self.assertIn("Compartilhar plano de alterações. Envie o plano de alterações em JSON", ui)
+        self.assertIn("launched.await(5, TimeUnit.SECONDS)", ui)
 
     def test_pr_scope_and_no_installer_publication(self):
         self.assertIn("pull_request:", self.workflow)

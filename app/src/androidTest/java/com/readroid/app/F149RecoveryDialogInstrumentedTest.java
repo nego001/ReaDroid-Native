@@ -148,8 +148,18 @@ public final class F149RecoveryDialogInstrumentedTest {
     }
 
     private static Button findButton(View view, String label) {
-        if (view instanceof Button && label.contentEquals(((Button) view).getText()))
-            return (Button) view;
+        if (view instanceof Button) {
+            Button button = (Button) view;
+            if (label.contentEquals(button.getText())) return button;
+            // P7 feature cards contain a leading symbol and a second line.
+            // Match the exact accessibility description, not a fuzzy substring
+            // that might click a different action.
+            if ("Compartilhar plano de alterações".equals(label)
+                    && "Compartilhar plano de alterações. Envie o plano de alterações em JSON"
+                        .contentEquals(button.getContentDescription() == null
+                            ? "" : button.getContentDescription()))
+                return button;
+        }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
@@ -605,6 +615,7 @@ public final class F149RecoveryDialogInstrumentedTest {
             android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
             java.util.concurrent.atomic.AtomicReference<android.content.Intent> captured =
                 new java.util.concurrent.atomic.AtomicReference<>();
+            CountDownLatch launched = new CountDownLatch(1);
             // Intercept the actual startActivity request, never deliver plaintext
             // to another app during an instrumented regression.
             android.app.Instrumentation.ActivityMonitor chooser =
@@ -613,6 +624,7 @@ public final class F149RecoveryDialogInstrumentedTest {
                             android.content.Intent intent) {
                         if (!android.content.Intent.ACTION_CHOOSER.equals(intent.getAction())) return null;
                         captured.set(intent);
+                        launched.countDown();
                         return new android.app.Instrumentation.ActivityResult(
                             android.app.Activity.RESULT_CANCELED, null);
                     }
@@ -623,6 +635,8 @@ public final class F149RecoveryDialogInstrumentedTest {
                 open(scenario, "Compartilhar plano de alterações");
                 f.waitForText("Compartilhar alterações sem criptografia?");
                 f.clickDialogButton("Compartilhar");
+                assertTrue("Authorized chooser not intercepted",
+                    launched.await(5, TimeUnit.SECONDS));
                 instrumentation.waitForIdleSync();
                 android.content.Intent request = captured.get();
                 assertNotNull("Authorized chooser not launched", request);
