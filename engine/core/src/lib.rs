@@ -23,6 +23,7 @@ pub mod data_inspector;
 pub mod binary_comparison;
 pub mod virtual_overlay;
 pub mod edit_history;
+pub mod pe_structure;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
