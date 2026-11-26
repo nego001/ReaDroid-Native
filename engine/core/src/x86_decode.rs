@@ -9,6 +9,10 @@ pub enum Mode{X86,X64}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Segment{Es,Cs,Ss,Ds,Fs,Gs}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum StringKind{Movs,Cmps,Stos,Lods,Scas}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Repeat{None,Rep,Repe,Repne}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Base{None,Register(u8),Rip,Eip}
@@ -25,6 +29,7 @@ pub struct Immediate{pub encoded_bits:u8,pub raw:u64,pub value:u64}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Nop,Return,Breakpoint,
+    String{kind:StringKind,width:u8,repeat:Repeat},
     BinaryImmediate{kind:BinaryKind,width:u8,operand:Operand,immediate:Immediate},
     Unary{kind:UnaryKind,width:u8,operand:Operand},
     Binary{kind:BinaryKind,width:u8,destination:Operand,source:Operand},
@@ -40,7 +45,7 @@ pub enum Op{
     Branch{call:bool,condition:Option<u8>,target:Target},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
-pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>}
+pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>,pub locked:bool}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Stop{Complete,Unsupported{offset:usize},Truncated{offset:usize}}
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -153,14 +158,28 @@ fn segment_prefix(b:u8)->Option<Segment>{match b{
     0x26=>Some(Segment::Es),0x2e=>Some(Segment::Cs),0x36=>Some(Segment::Ss),
     0x3e=>Some(Segment::Ds),0x64=>Some(Segment::Fs),0x65=>Some(Segment::Gs),_=>None
 }}
-fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>),Local>{
+fn lockable(op:Op)->bool{
+    fn alu(k:BinaryKind)->bool{matches!(k,BinaryKind::Add|BinaryKind::Or|BinaryKind::Adc|BinaryKind::Sbb|BinaryKind::And|BinaryKind::Sub|BinaryKind::Xor)}
+    match op{
+        Op::Binary{kind,destination:Operand::Memory(_),..}|Op::BinaryImmediate{kind,operand:Operand::Memory(_),..}=>alu(kind),
+        Op::Unary{kind:UnaryKind::Inc|UnaryKind::Dec|UnaryKind::Not|UnaryKind::Neg,operand:Operand::Memory(_),..}=>true,
+        _=>false
+    }
+}
+fn string_kind(opcode:u8)->Option<StringKind>{match opcode{
+    0xa4|0xa5=>Some(StringKind::Movs),0xa6|0xa7=>Some(StringKind::Cmps),
+    0xaa|0xab=>Some(StringKind::Stos),0xac|0xad=>Some(StringKind::Lods),
+    0xae|0xaf=>Some(StringKind::Scas),_=>None
+}}
+fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Local>{
     let mut i=0;
     let mut rex=0u8;
-    let mut override16=false;let mut address_override=false;let mut segment=None;
+    let mut override16=false;let mut address_override=false;let mut segment=None;let mut group1=None;
     while let Some(prefix)=b.get(i){match *prefix{
         0x66 if !override16=>{override16=true;i+=1;},
         0x67 if !address_override=>{address_override=true;i+=1;},
         0x66|0x67=>return Err(Local::Unsupported),
+        v @ (0xf0|0xf2|0xf3)=>{if group1.is_some(){return Err(Local::Unsupported);}group1=Some(v);i+=1;},
         v if segment_prefix(v).is_some()=>{
             let seg=segment_prefix(v).unwrap();
             if segment.is_some()||mode==Mode::X64&&!matches!(seg,Segment::Fs|Segment::Gs){return Err(Local::Unsupported);}
@@ -171,12 +190,31 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>),Local>{
     if mode==Mode::X64&&b.get(i).is_some_and(|v|(0x40..=0x4f).contains(v)){
         rex=b[i];i+=1;
     }
-    let (n,op)=one_opcode(mode,pc,b,i,rex,override16,address_override)?;
-    if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+    let opcode=*b.get(i).ok_or(Local::Truncated)?;
+    let locked=group1==Some(0xf0);
+    let (n,op)=if let Some(kind)=string_kind(opcode){
+        // Conservatively accept only REX.W, not ignored register-extension bits.
+        if rex!=0&&rex!=0x48||locked{return Err(Local::Unsupported);}
+        let compare=matches!(kind,StringKind::Cmps|StringKind::Scas);
+        let repeat=match group1{
+            None=>Repeat::None,Some(0xf3) if compare=>Repeat::Repe,Some(0xf3)=>Repeat::Rep,
+            Some(0xf2) if compare=>Repeat::Repne,_=>return Err(Local::Unsupported)
+        };
+        // Segment override applies to source only, never fixed ES destination.
+        if segment.is_some()&&!matches!(kind,StringKind::Movs|StringKind::Cmps|StringKind::Lods){return Err(Local::Unsupported);}
+        let width=if opcode&1==0{8}else if rex&8!=0{64}else if override16{16}else{32};
+        (i+1,Op::String{kind,width,repeat})
+    }else{
+        if matches!(group1,Some(0xf2|0xf3)){return Err(Local::Unsupported);}
+        let (n,op)=one_opcode(mode,pc,b,i,rex,override16,address_override)?;
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        if locked&&!lockable(op){return Err(Local::Unsupported);}
+        (n,op)
+    };
     let address_width=match (mode,address_override){(Mode::X86,false)|(Mode::X64,true)=>32,(Mode::X86,true)=>16,(Mode::X64,false)=>64};
     // Keep the architectural instruction-length limit explicit.
     if n>15{return Err(Local::Unsupported);}
-    Ok((n,op,address_width,segment))
+    Ok((n,op,address_width,segment,locked))
 }
 fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,address_override:bool)->Result<(usize,Op),Local>{
     let opcode=*b.get(i).ok_or(Local::Truncated)?;i+=1;
@@ -319,8 +357,8 @@ pub fn decode(mode:Mode,pc:u64,bytes:&[u8])->Result<Page,Error>{
     let mut instructions=Vec::new();let mut i=0;
     while i<bytes.len(){
         match one(mode,pc+i as u64,&bytes[i..]){
-            Ok((n,op,address_width,segment_override))=>{
-                instructions.push(Instruction{address:pc+i as u64,bytes:bytes[i..i+n].to_vec(),op,address_width,segment_override});
+            Ok((n,op,address_width,segment_override,locked))=>{
+                instructions.push(Instruction{address:pc+i as u64,bytes:bytes[i..i+n].to_vec(),op,address_width,segment_override,locked});
                 i+=n;
             },
             Err(Local::Unsupported)=>return Ok(Page{instructions,consumed:i,stop:Stop::Unsupported{offset:i}}),
