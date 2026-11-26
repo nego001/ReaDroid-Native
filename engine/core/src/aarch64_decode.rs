@@ -12,6 +12,10 @@ pub enum WideKind{Movn,Movz,Movk}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    PcAddress{page:bool,register:u8,target:Target},
+    LiteralLoad{width:u8,signed:bool,register:u8,target:Target},
+    MemoryImmediate{load:bool,width:u8,scaled:bool,base:u8,register:u8,displacement:i32},
+    MemoryPair{load:bool,width:u8,base:u8,first:u8,second:u8,displacement:i32},
     Branch{link:bool,target:Target},
     Conditional{condition:u8,target:Target},
     CompareBranch{wide:bool,nonzero:bool,register:u8,target:Target},
@@ -26,7 +30,11 @@ pub struct Instruction{pub address:u64,pub word:u32,pub op:Op}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Error{Length,Alignment,AddressOverflow}
 fn target(pc:u64,field:u32,bits:u32)->Target{
-    let signed=((i64::from(field)<<(64-bits))>>(64-bits))*4;
+    scaled_target(pc,field,bits,4)
+}
+fn sign_extend(field:u32,bits:u32)->i64{(i64::from(field)<<(64-bits))>>(64-bits)}
+fn scaled_target(pc:u64,field:u32,bits:u32,scale:i64)->Target{
+    let signed=sign_extend(field,bits)*scale;
     let value=if signed<0{pc.checked_sub(signed.unsigned_abs())}else{pc.checked_add(signed as u64)};
     match value{Some(v)=>Target::Address(v),None=>Target::Overflow}
 }
@@ -64,6 +72,38 @@ fn op(pc:u64,w:u32)->Op{
         return Op::AddSubImmediate{wide:w>>31!=0,subtract:w&(1<<30)!=0,set_flags:w&(1<<29)!=0,
             destination:(w&31) as u8,source:((w>>5)&31) as u8,
             immediate:((w>>10)&0xfff) as u16,shift:if w&(1<<22)!=0{12}else{0}};
+    }
+    // ADR/ADRP: signed immediate split between immhi and immlo.
+    if w&0x1f000000==0x10000000{
+        let page=w>>31!=0;
+        let imm=((w>>5)&0x7ffff)<<2|((w>>29)&3);
+        let base=if page{pc&!0xfff}else{pc};
+        return Op::PcAddress{page,register:(w&31) as u8,
+            target:scaled_target(base,imm,21,if page{4096}else{1})};
+    }
+    // Integer literal loads, excluding SIMD/FP and PRFM.
+    if w&0x3f000000==0x18000000{
+        let (width,signed)=match w>>30{0=>(4,false),1=>(8,false),2=>(4,true),_=>return Op::Unknown};
+        return Op::LiteralLoad{width,signed,register:(w&31) as u8,target:target(pc,(w>>5)&0x7ffff,19)};
+    }
+    // Integer unsigned-scaled and signed-unscaled immediates only.
+    // No signed-extending loads, writeback, unprivileged or register offsets.
+    let scaled=w&0x3f000000==0x39000000;
+    let unscaled=w&0x3f200c00==0x38000000;
+    if scaled||unscaled{
+        let load=match (w>>22)&3{0=>false,1=>true,_=>return Op::Unknown};
+        let width=1u8<<(w>>30);
+        let displacement=if scaled{(((w>>10)&0xfff) as i32)*i32::from(width)}
+            else{sign_extend((w>>12)&0x1ff,9) as i32};
+        return Op::MemoryImmediate{load,width,scaled,base:((w>>5)&31) as u8,
+            register:(w&31) as u8,displacement};
+    }
+    // Integer STP/LDP signed offset, no pre/post-index or non-temporal forms.
+    if w&0x3f800000==0x29000000{
+        let width=match w>>30{0=>4,2=>8,_=>return Op::Unknown};
+        return Op::MemoryPair{load:w&(1<<22)!=0,width,base:((w>>5)&31) as u8,
+            first:(w&31) as u8,second:((w>>10)&31) as u8,
+            displacement:(sign_extend((w>>15)&127,7) as i32)*i32::from(width)};
     }
     Op::Unknown
 }
