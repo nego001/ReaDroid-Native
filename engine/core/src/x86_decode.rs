@@ -49,6 +49,12 @@ pub enum FloatFormat{PackedSingle,PackedDouble,ScalarSingle,ScalarDouble}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum SseKind{MoveUnaligned,MoveAligned,Add,Sub,Mul,Div,Min,Max,Sqrt,And,AndNot,Or,Xor}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum PackedKind{MoveAligned,MoveUnaligned,Add,Sub,Equal,GreaterSigned,And,AndNot,Or,Xor}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ConversionKind{IntToFloat,FloatToIntRounded,FloatToIntTruncated}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ConversionOperand{Xmm(u8),Gpr(u8),Memory(Memory)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum UnaryKind{Inc,Dec,Call,Jump,Push,Not,Neg,Mul,Imul,Div,Idiv}
@@ -59,6 +65,8 @@ pub enum Op{
     Nop,Return,Breakpoint,Pause,
     CountBits{kind:CountKind,width:u8,destination:u8,source:Operand},
     Sse{kind:SseKind,format:FloatFormat,destination:XmmOperand,source:XmmOperand},
+    PackedInteger{kind:PackedKind,lane_bits:Option<u8>,destination:XmmOperand,source:XmmOperand},
+    ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
     Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
     DoubleShift{right:bool,width:u8,destination:Operand,source:u8,count:ShiftCount},
@@ -88,7 +96,8 @@ impl Instruction{
     pub fn sse_feature(&self)->Option<CpuFeature>{
         match self.op{
             Op::Sse{format:FloatFormat::PackedSingle|FloatFormat::ScalarSingle,..}=>Some(CpuFeature::Sse),
-            Op::Sse{format:FloatFormat::PackedDouble|FloatFormat::ScalarDouble,..}=>Some(CpuFeature::Sse2),
+            Op::Sse{format:FloatFormat::PackedDouble|FloatFormat::ScalarDouble,..}|Op::PackedInteger{..}|Op::ScalarConvert{float_bits:64,..}=>Some(CpuFeature::Sse2),
+            Op::ScalarConvert{float_bits:32,..}=>Some(CpuFeature::Sse),
             _=>None
         }
     }
@@ -215,9 +224,24 @@ fn sse_kind(opcode:u8)->Option<SseKind>{match opcode{
     0x51=>Some(SseKind::Sqrt),0x54=>Some(SseKind::And),0x55=>Some(SseKind::AndNot),0x56=>Some(SseKind::Or),0x57=>Some(SseKind::Xor),
     0x58=>Some(SseKind::Add),0x59=>Some(SseKind::Mul),0x5c=>Some(SseKind::Sub),0x5d=>Some(SseKind::Min),0x5e=>Some(SseKind::Div),0x5f=>Some(SseKind::Max),_=>None
 }}
+fn packed_kind(op:u8)->Option<(PackedKind,Option<u8>)>{
+    use PackedKind::*;
+    Some(match op{
+        0xfc=>(Add,Some(8)),0xfd=>(Add,Some(16)),0xfe=>(Add,Some(32)),0xd4=>(Add,Some(64)),
+        0xf8=>(Sub,Some(8)),0xf9=>(Sub,Some(16)),0xfa=>(Sub,Some(32)),0xfb=>(Sub,Some(64)),
+        0x74=>(Equal,Some(8)),0x75=>(Equal,Some(16)),0x76=>(Equal,Some(32)),
+        0x64=>(GreaterSigned,Some(8)),0x65=>(GreaterSigned,Some(16)),0x66=>(GreaterSigned,Some(32)),
+        0xdb=>(And,None),0xdf=>(AndNot,None),0xeb=>(Or,None),0xef=>(Xor,None),
+        0x6f|0x7f=>(MoveAligned,None),_=>return None
+    })
+}
+fn conversion_rm(rm:Operand,gpr:bool)->Result<ConversionOperand,Local>{
+    match rm{Operand::Register(r)=>Ok(if gpr{ConversionOperand::Gpr(r)}else{ConversionOperand::Xmm(r)}),Operand::Memory(m)=>Ok(ConversionOperand::Memory(m)),_=>Err(Local::Unsupported)}
+}
 fn explicit_memory(op:Op)->bool{
     match op{
-        Op::Sse{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
+        Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
+        Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
         Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
         Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}|Op::CountBits{source,..}=>matches!(source,Operand::Memory(_)),
@@ -283,6 +307,34 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
     }else if group1==Some(0xf3)&&opcode==0x90{
         if rex!=0||override16||address_override||segment.is_some(){return Err(Local::Unsupported);}
         (i+1,Op::Pause)
+    }else if opcode==0x0f&&b.get(i+1).copied().and_then(packed_kind).is_some(){
+        let secondary=b[i+1];let (mut kind,lane_bits)=packed_kind(secondary).unwrap();
+        // 66 selects XMM rather than MMX. F3 selects MOVDQU only.
+        if rex&8!=0||locked{return Err(Local::Unsupported);}
+        match (override16,group1){
+            (true,None)=>{},
+            (false,Some(0xf3)) if matches!(secondary,0x6f|0x7f)=>kind=PackedKind::MoveUnaligned,
+            _=>return Err(Local::Unsupported)
+        }
+        let (end,reg,rm)=modrm(mode,pc,b,i+2,rex,address_override)?;
+        let rm=xmm_operand(rm)?;let reg=XmmOperand::Register(reg);
+        let (destination,source)=if secondary==0x7f{(rm,reg)}else{(reg,rm)};
+        let op=Op::PackedInteger{kind,lane_bits,destination,source};
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
+    }else if opcode==0x0f&&matches!(b.get(i+1),Some(0x2a|0x2c|0x2d)){
+        // Scalar signed integer conversions: F3=single, F2=double. REX.W selects 64-bit integer.
+        if override16||locked{return Err(Local::Unsupported);}
+        let float_bits=match group1{Some(0xf3)=>32,Some(0xf2)=>64,_=>return Err(Local::Unsupported)};
+        let int_bits=if rex&8!=0{64}else{32};
+        let kind=match b[i+1]{0x2a=>ConversionKind::IntToFloat,0x2c=>ConversionKind::FloatToIntTruncated,_=>ConversionKind::FloatToIntRounded};
+        let (end,reg,rm)=modrm(mode,pc,b,i+2,rex,address_override)?;
+        let to_float=kind==ConversionKind::IntToFloat;
+        let destination=if to_float{ConversionOperand::Xmm(reg)}else{ConversionOperand::Gpr(reg)};
+        let source=conversion_rm(rm,to_float)?;
+        let op=Op::ScalarConvert{kind,float_bits,int_bits,destination,source};
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
     }else if opcode==0x0f&&b.get(i+1).copied().and_then(sse_kind).is_some(){
         let secondary=b[i+1];
         let kind=sse_kind(secondary).unwrap();
