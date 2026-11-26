@@ -21,6 +21,8 @@ pub enum MemKind{Word,Half,Byte,SignedByte,SignedHalf}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    WideMove{top:bool,destination:u8,value:u16},
+    WideAddSub{subtract:bool,destination:u8,source:u8,value:u16},
     ShiftImmediate{kind:ShiftKind,amount:u8,destination:u8,source:u8},
     AddSub{subtract:bool,destination:u8,source:u8,operand:Operand},
     Alu{kind:AluKind,rdn:u8,source:u8},
@@ -124,8 +126,45 @@ fn short(pc:u32,h:u16)->Op{
     Op::Unknown
 }
 fn wide(pc:u32,a:u16,b:u16)->Op{
-    // T4 B.W and T1 BL, with inverted J1/J2 encoding; no BLX or
-    // conditional wide branches in this initial subset.
+    // T3 conditional branch: J2/J1 are not inverted as in B.W/BL.
+    if a&0xf800==0xf000&&b&0xd000==0x8000{
+        let cond=((a>>6)&15) as u8;
+        if cond<14{
+            let field=(u32::from((a>>10)&1)<<20)|(u32::from((b>>11)&1)<<19)|
+                (u32::from((b>>13)&1)<<18)|(u32::from(a&63)<<12)|(u32::from(b&0x7ff)<<1);
+            return Op::Branch{link:false,condition:Some(cond),target:address(i64::from(pc)+4,sign(field,21))};
+        }
+        // Other opcodes in this encoding space are not conditional branches.
+        return Op::Unknown;
+    }
+    // MOVW/MOVT: immediate assembled from imm4:i:imm3:imm8.
+    let key=a&0xfbf0;
+    if (key==0xf240||key==0xf2c0)&&b&0x8000==0{
+        let destination=((b>>8)&15) as u8;
+        if destination==13||destination==15{return Op::Unknown;}
+        let value=((a&15)<<12)|(((a>>10)&1)<<11)|(((b>>12)&7)<<8)|(b&255);
+        return Op::WideMove{top:key==0xf2c0,destination,value};
+    }
+    // ADDW/SUBW immediate, no PC-relative aliases or SP forms in this subset.
+    if (key==0xf200||key==0xf2a0)&&b&0x8000==0{
+        let destination=((b>>8)&15) as u8;let source=(a&15) as u8;
+        if [destination,source].iter().any(|&x|x==13||x==15){return Op::Unknown;}
+        let value=(((a>>10)&1)<<11)|(((b>>12)&7)<<8)|(b&255);
+        return Op::WideAddSub{subtract:key==0xf2a0,destination,source,value};
+    }
+    // Unsigned imm12 single transfers, excluding literal/PC and special Rt forms.
+    let memory=match a&0xfff0{
+        0xf8c0=>Some((false,MemKind::Word)),0xf8d0=>Some((true,MemKind::Word)),
+        0xf880=>Some((false,MemKind::Byte)),0xf890=>Some((true,MemKind::Byte)),
+        0xf8a0=>Some((false,MemKind::Half)),0xf8b0=>Some((true,MemKind::Half)),
+        0xf990=>Some((true,MemKind::SignedByte)),0xf9b0=>Some((true,MemKind::SignedHalf)),_=>None
+    };
+    if let Some((load,kind))=memory{
+        let base=(a&15) as u8;let register=(b>>12) as u8;
+        if base==15||register==13||register==15{return Op::Unknown;}
+        return Op::MemoryImmediate{load,kind,base,register,displacement:b&0xfff};
+    }
+    // T4 B.W and T1 BL, with inverted J1/J2 encoding; no BLX.
     if a&0xf800==0xf000{
         let link=match b&0xd000{0x9000=>false,0xd000=>true,_=>return Op::Unknown};
         let s=u32::from((a>>10)&1);

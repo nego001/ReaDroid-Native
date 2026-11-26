@@ -29,7 +29,7 @@ fn wide_branch_and_bl_signed_offsets(){
     assert_eq!(one(0x1000,&[0xf000,0xb802]),Op::Branch{link:false,condition:None,target:Target::Address(0x1008)});
     assert_eq!(one(0x1000,&[0xf7ff,0xfffc]),Op::Branch{link:true,condition:None,target:Target::Address(0xffc)});
     assert_eq!(one(0x1000,&[0xf000,0xe800]),Op::Unknown);
-    assert_eq!(one(0x1000,&[0xf000,0x8000]),Op::Unknown);
+    assert_eq!(one(0x1000,&[0xf000,0x8000]),Op::Branch{link:false,condition:Some(0),target:Target::Address(0x1004)});
 }
 #[test]
 fn checked_target_overflow(){
