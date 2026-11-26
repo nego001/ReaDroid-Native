@@ -14,8 +14,13 @@ pub enum Shift{Lsl,Lsr,Asr,Ror}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum LogicalKind{And,Orr,Eor,Ands}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum BitfieldKind{Signed,Merge,Unsigned}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    LogicalImmediate{kind:LogicalKind,wide:bool,destination:u8,source:u8,n:u8,immr:u8,imms:u8,mask:u64},
+    Bitfield{kind:BitfieldKind,wide:bool,destination:u8,source:u8,immr:u8,imms:u8},
+    Extract{wide:bool,destination:u8,left:u8,right:u8,lsb:u8},
     AddSubRegister{wide:bool,subtract:bool,set_flags:bool,destination:u8,left:u8,right:u8,shift:Shift,amount:u8},
     LogicalRegister{kind:LogicalKind,wide:bool,invert:bool,destination:u8,left:u8,right:u8,shift:Shift,amount:u8},
     MultiplyAdd{wide:bool,subtract:bool,destination:u8,left:u8,right:u8,accumulator:u8},
@@ -46,6 +51,54 @@ fn scaled_target(pc:u64,field:u32,bits:u32,scale:i64)->Target{
     let signed=sign_extend(field,bits)*scale;
     let value=if signed<0{pc.checked_sub(signed.unsigned_abs())}else{pc.checked_add(signed as u64)};
     match value{Some(v)=>Target::Address(v),None=>Target::Overflow}
+}
+/// Expand one encoded logical immediate. Reject reserved encodings.
+/// The result is a bitmask of the selected register width, zero-extended
+/// to u64; high immr bits may be ignored by the architectural encoding.
+pub fn logical_mask(wide:bool,n:u8,immr:u8,imms:u8)->Option<u64>{
+    if n>1||immr>63||imms>63||(!wide&&n!=0){return None;}
+    let selector=(u32::from(n)<<6)|u32::from((!imms)&63);
+    if selector<2{return None;}
+    let len=31-selector.leading_zeros();
+    let element=1u32<<len;let width=if wide{64}else{32};
+    if element>width{return None;}
+    let levels=element-1;
+    let ones=(u32::from(imms)&levels)+1;
+    if ones==element{return None;}
+    let rotation=u32::from(immr)&levels;
+    let bits=(1u64<<ones)-1;
+    let element_mask=if element==64{u64::MAX}else{(1u64<<element)-1};
+    let rotated=if rotation==0{bits}else{((bits>>rotation)|(bits<<(element-rotation)))&element_mask};
+    let mut result=0u64;
+    for shift in (0..width).step_by(element as usize){result|=rotated<<shift;}
+    Some(result)
+}
+/// Register encoding 31 has context-dependent meaning. These helpers
+/// cover only the operand positions explicitly represented here.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Register{General{wide:bool,index:u8},StackPointer{wide:bool},Zero{wide:bool}}
+fn register(wide:bool,index:u8,stack:bool)->Register{
+    if index==31{
+        if stack{Register::StackPointer{wide}}else{Register::Zero{wide}}
+    }else{Register::General{wide,index}}
+}
+impl Op{
+    /// Destination and first source for supported arithmetic/bitmask forms.
+    /// None means this helper has no semantic contract for that operation.
+    /// Public enum values can be constructed by callers; reject invalid indexes.
+    pub fn arithmetic_registers(&self)->Option<(Register,Register)>{
+        let (wide,d,s,ds,ss)=match *self{
+            Op::AddSubImmediate{wide,destination,source,set_flags,..}=>(wide,destination,source,!set_flags,true),
+            Op::LogicalImmediate{wide,destination,source,kind,..}=>(wide,destination,source,kind!=LogicalKind::Ands,false),
+            Op::AddSubRegister{wide,destination,left,..}|Op::LogicalRegister{wide,destination,left,..}|
+            Op::MultiplyAdd{wide,destination,left,..}|Op::Divide{wide,destination,left,..}|
+            Op::Extract{wide,destination,left,..}=>(wide,destination,left,false,false),
+            Op::Bitfield{wide,destination,source,..}|Op::VariableShift{wide,destination,source,..}=>(wide,destination,source,false,false),
+            _=>return None,
+        };
+        if d>31||s>31{return None;}
+        Some((register(wide,d,ds),register(wide,s,ss)))
+    }
 }
 fn op(pc:u64,w:u32)->Op{
     if w==0xd503201f{return Op::Nop;}
@@ -146,6 +199,30 @@ fn op(pc:u64,w:u32)->Op{
         let shift=match (w>>10)&3{0=>Shift::Lsl,1=>Shift::Lsr,2=>Shift::Asr,_=>Shift::Ror};
         return Op::VariableShift{wide:w>>31!=0,shift,destination:(w&31) as u8,
             source:((w>>5)&31) as u8,amount_register:((w>>16)&31) as u8};
+    }
+    // Logical immediate: decode the architectural repeated bitmask, not
+    // the result of applying it to any register.
+    if w&0x1f800000==0x12000000{
+        let wide=w>>31!=0;
+        let n=((w>>22)&1) as u8;let immr=((w>>16)&63) as u8;let imms=((w>>10)&63) as u8;
+        let Some(mask)=logical_mask(wide,n,immr,imms)else{return Op::Unknown;};
+        let kind=match (w>>29)&3{0=>LogicalKind::And,1=>LogicalKind::Orr,2=>LogicalKind::Eor,_=>LogicalKind::Ands};
+        return Op::LogicalImmediate{kind,wide,destination:(w&31) as u8,source:((w>>5)&31) as u8,n,immr,imms,mask};
+    }
+    // SBFM/BFM/UBFM, retain raw rotate and mask fields, not aliases.
+    if w&0x1f800000==0x13000000{
+        let wide=w>>31!=0;let n=w&(1<<22)!=0;
+        let immr=((w>>16)&63) as u8;let imms=((w>>10)&63) as u8;
+        if n!=wide||(!wide&&(immr>=32||imms>=32)){return Op::Unknown;}
+        let kind=match (w>>29)&3{0=>BitfieldKind::Signed,1=>BitfieldKind::Merge,2=>BitfieldKind::Unsigned,_=>return Op::Unknown};
+        return Op::Bitfield{kind,wide,destination:(w&31) as u8,source:((w>>5)&31) as u8,immr,imms};
+    }
+    // EXTR: same-width integer form, no execution or alias expansion.
+    if w&0x7fa00000==0x13800000{
+        let wide=w>>31!=0;let n=w&(1<<22)!=0;
+        let lsb=((w>>10)&63) as u8;
+        if n!=wide||(!wide&&lsb>=32){return Op::Unknown;}
+        return Op::Extract{wide,destination:(w&31) as u8,left:((w>>5)&31) as u8,right:((w>>16)&31) as u8,lsb};
     }
     Op::Unknown
 }
