@@ -39,7 +39,7 @@ fn one(mode:Mode,pc:u64,b:&[u8])->x86_decode::Instruction{
  let i=one(Mode::X64,0x1_0000_1000,&[0x67,0xc5,0xfc,0x11,0x05,0,0,0,0]);assert_eq!(i.address_width,32);assert!(matches!(i.op,Op::AvxFloat{destination:VectorOperand::Memory(m),source1:None,..} if m.base==Base::Eip&&m.rip_target==Some(Target::Address(0x1009))));
 }
 #[test] fn vex_sib_and_x86_address_override(){
- let i=one(Mode::X64,0,&[0xc4,0x81,0x7c,0x58,0x04,0x48]);assert!(matches!(i.op,Op::AvxFloat{destination:VectorOperand::Register(8),source2:VectorOperand::Memory(m),..} if m.base==Base::Register(8)&&m.index==Some(9)&&m.scale==2));
+ let i=one(Mode::X64,0,&[0xc4,0x01,0x7c,0x58,0x04,0x48]);assert!(matches!(i.op,Op::AvxFloat{destination:VectorOperand::Register(8),source2:VectorOperand::Memory(m),..} if m.base==Base::Register(8)&&m.index==Some(9)&&m.scale==2));
  let i=one(Mode::X86,0,&[0x67,0xc5,0xf8,0x58,0x00]);assert_eq!(i.address_width,16);assert!(matches!(i.op,Op::AvxFloat{source2:VectorOperand::Memory(m),..} if m.base==Base::Register(3)&&m.index==Some(6)));
 }
 #[test] fn unsupported_vex_forms(){
