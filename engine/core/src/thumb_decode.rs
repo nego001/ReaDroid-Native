@@ -9,8 +9,26 @@ pub enum Target{Address(u32),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum ImmKind{Mov,Cmp,Add,Sub}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ShiftKind{Lsl,Lsr,Asr}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Operand{Register(u8),Immediate(u8)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum AluKind{And,Eor,Lsl,Lsr,Asr,Adc,Sbc,Ror,Tst,Rsb,Cmp,Cmn,Orr,Mul,Bic,Mvn}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum HighKind{Add,Cmp,Mov}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum MemKind{Word,Half,Byte,SignedByte,SignedHalf}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    ShiftImmediate{kind:ShiftKind,amount:u8,destination:u8,source:u8},
+    AddSub{subtract:bool,destination:u8,source:u8,operand:Operand},
+    Alu{kind:AluKind,rdn:u8,source:u8},
+    HighRegister{kind:HighKind,destination:u8,source:u8},
+    MemoryRegister{load:bool,kind:MemKind,base:u8,register:u8,offset:u8},
+    MemoryImmediate{load:bool,kind:MemKind,base:u8,register:u8,displacement:u16},
+    StackList{pop:bool,list:u16},
+    BlockTransfer{load:bool,base:u8,list:u8},
     Branch{link:bool,condition:Option<u8>,target:Target},
     Exchange{link:bool,register:u8},
     Immediate{kind:ImmKind,register:u8,value:u8},
@@ -50,6 +68,58 @@ fn short(pc:u32,h:u16)->Op{
     }
     if h&0xf000==0x6000{
         return Op::MemoryWord{load:h&(1<<11)!=0,base:((h>>3)&7) as u8,register:(h&7) as u8,displacement:((h>>6)&31)*4};
+    }
+    // T1 immediate shifts. Zero encodes 32 for LSR and ASR.
+    if h&0xe000==0&&h&0x1800!=0x1800{
+        let kind=match (h>>11)&3{0=>ShiftKind::Lsl,1=>ShiftKind::Lsr,_=>ShiftKind::Asr};
+        let mut amount=((h>>6)&31) as u8;
+        if amount==0&&kind!=ShiftKind::Lsl{amount=32;}
+        return Op::ShiftImmediate{kind,amount,destination:(h&7) as u8,source:((h>>3)&7) as u8};
+    }
+    if h&0xf800==0x1800{
+        let field=((h>>6)&7) as u8;
+        return Op::AddSub{subtract:h&0x0200!=0,destination:(h&7) as u8,source:((h>>3)&7) as u8,
+            operand:if h&0x0400!=0{Operand::Immediate(field)}else{Operand::Register(field)}};
+    }
+    if h&0xfc00==0x4000{
+        let kind=[AluKind::And,AluKind::Eor,AluKind::Lsl,AluKind::Lsr,AluKind::Asr,AluKind::Adc,AluKind::Sbc,
+            AluKind::Ror,AluKind::Tst,AluKind::Rsb,AluKind::Cmp,AluKind::Cmn,AluKind::Orr,AluKind::Mul,AluKind::Bic,AluKind::Mvn][((h>>6)&15) as usize];
+        return Op::Alu{kind,rdn:(h&7) as u8,source:((h>>3)&7) as u8};
+    }
+    // High-register ADD/CMP/MOV, excluding PC and SP forms. BX/BLX handled above.
+    if h&0xfc00==0x4400{
+        let kind=match (h>>8)&3{0=>HighKind::Add,1=>HighKind::Cmp,2=>HighKind::Mov,_=>return Op::Unknown};
+        let destination=((h&7)|((h>>4)&8)) as u8;let source=((h>>3)&15) as u8;
+        if destination==15||source==15||destination==13||source==13||
+            (kind==HighKind::Cmp&&destination<8&&source<8){return Op::Unknown;}
+        return Op::HighRegister{kind,destination,source};
+    }
+    if h&0xf000==0x5000{
+        let (load,kind)=match (h>>9)&7{
+            0=>(false,MemKind::Word),1=>(false,MemKind::Half),2=>(false,MemKind::Byte),3=>(true,MemKind::SignedByte),
+            4=>(true,MemKind::Word),5=>(true,MemKind::Half),6=>(true,MemKind::Byte),_=>(true,MemKind::SignedHalf)};
+        return Op::MemoryRegister{load,kind,base:((h>>3)&7) as u8,register:(h&7) as u8,offset:((h>>6)&7) as u8};
+    }
+    if h&0xf000==0x7000||h&0xf000==0x8000{
+        let half=h&0xf000==0x8000;
+        return Op::MemoryImmediate{load:h&0x0800!=0,kind:if half{MemKind::Half}else{MemKind::Byte},
+            base:((h>>3)&7) as u8,register:(h&7) as u8,displacement:((h>>6)&31)*if half{2}else{1}};
+    }
+    if h&0xf000==0x9000{
+        return Op::MemoryImmediate{load:h&0x0800!=0,kind:MemKind::Word,base:13,
+            register:((h>>8)&7) as u8,displacement:(h&255)*4};
+    }
+    if h&0xfe00==0xb400||h&0xfe00==0xbc00{
+        let pop=h&0x0800!=0;
+        let list=(h&255)|if h&0x100!=0{if pop{1<<15}else{1<<14}}else{0};
+        if list==0{return Op::Unknown;}
+        return Op::StackList{pop,list};
+    }
+    if h&0xf000==0xc000{
+        let load=h&0x0800!=0;let base=((h>>8)&7) as u8;let list=(h&255) as u8;
+        // Exclude base-in-list cases, where writeback/overlap semantics vary.
+        if list==0||list&(1<<base)!=0{return Op::Unknown;}
+        return Op::BlockTransfer{load,base,list};
     }
     Op::Unknown
 }
