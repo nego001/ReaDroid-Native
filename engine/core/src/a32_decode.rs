@@ -10,8 +10,17 @@ pub enum DataKind{And,Eor,Sub,Rsb,Add,Adc,Sbc,Rsc,Tst,Teq,Cmp,Cmn,Orr,Mov,Bic,Mv
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Shift{Lsl(u8),Lsr(u8),Asr(u8),Ror(u8),Rrx}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ShiftKind{Lsl,Lsr,Asr,Ror}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ExtraKind{Halfword,SignedByte,SignedHalfword}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ExtraOffset{Immediate(i16),Register{register:u8,add:bool}}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    DataRegisterShift{kind:DataKind,set_flags:bool,destination:Option<u8>,source:Option<u8>,operand:u8,shift:ShiftKind,amount_register:u8},
+    LongMultiply{signed:bool,accumulate:bool,set_flags:bool,high:u8,low:u8,left:u8,right:u8},
+    ExtraMemory{kind:ExtraKind,load:bool,base:u8,register:u8,offset:ExtraOffset},
     DataRegister{kind:DataKind,set_flags:bool,destination:Option<u8>,source:Option<u8>,operand:u8,shift:Shift},
     Multiply{set_flags:bool,destination:u8,left:u8,right:u8,accumulator:Option<u8>},
     MemoryRegister{load:bool,byte:bool,base:u8,register:u8,offset:u8,add:bool,shift:Shift},
@@ -123,6 +132,47 @@ fn op(pc:u32,w:u32)->Op{
         if base==15||list==0||list&0x8000!=0||(writeback&&list&(1u16<<base)!=0){return Op::Unknown;}
         return Op::BlockTransfer{load:x&(1<<20)!=0,pre:x&(1<<24)!=0,increment:x&(1<<23)!=0,
             writeback,base,list};
+    }
+    // Classic data-processing register with register-controlled shift.
+    // Bit 7 must be zero; multiply and extra-transfer spaces are separate.
+    if x&0x0e000090==0x00000010{
+        let k=(x>>21)&15;let flags=x&(1<<20)!=0;
+        let rn=((x>>16)&15) as u8;let rd=((x>>12)&15) as u8;
+        let rm=(x&15) as u8;let rs=((x>>8)&15) as u8;
+        let test=(8..=11).contains(&k);let unary=k==13||k==15;
+        if (test&&(!flags||rd!=0))||(unary&&rn!=0)||(!test&&rd==15)||(!unary&&rn==15)||rm==15||rs==15{return Op::Unknown;}
+        let shift=match (x>>5)&3{0=>ShiftKind::Lsl,1=>ShiftKind::Lsr,2=>ShiftKind::Asr,_=>ShiftKind::Ror};
+        return Op::DataRegisterShift{kind:data_kind(k),set_flags:flags,destination:(!test).then_some(rd),
+            source:(!unary).then_some(rn),operand:rm,shift,amount_register:rs};
+    }
+    // UMULL/UMLAL/SMULL/SMLAL: no operand evaluation.
+    if x&0x0f8000f0==0x00800090{
+        let high=((x>>16)&15) as u8;let low=((x>>12)&15) as u8;
+        let left=(x&15) as u8;let right=((x>>8)&15) as u8;
+        if high==low||[high,low,left,right].contains(&15){return Op::Unknown;}
+        return Op::LongMultiply{signed:x&(1<<22)!=0,accumulate:x&(1<<21)!=0,set_flags:x&(1<<20)!=0,
+            high,low,left,right};
+    }
+    // Extra load/store: pre-index no writeback, halfword or signed load.
+    // Excludes doubleword, unprivileged, PC and writeback variants.
+    if x&0x0f200090==0x01000090{
+        let load=x&(1<<20)!=0;
+        let kind=match ((x>>5)&3,load){
+            (1,_)=>ExtraKind::Halfword,(2,true)=>ExtraKind::SignedByte,
+            (3,true)=>ExtraKind::SignedHalfword,_=>return Op::Unknown,
+        };
+        let base=((x>>16)&15) as u8;let register=((x>>12)&15) as u8;
+        if base==15||register==15{return Op::Unknown;}
+        let add=x&(1<<23)!=0;
+        let offset=if x&(1<<22)!=0{
+            let n=(((x>>8)&15)*16+(x&15)) as i16;
+            ExtraOffset::Immediate(if add{n}else{-n})
+        }else{
+            let rm=(x&15) as u8;
+            if x&0xf00!=0||rm==15{return Op::Unknown;}
+            ExtraOffset::Register{register:rm,add}
+        };
+        return Op::ExtraMemory{kind,load,base,register,offset};
     }
     Op::Unknown
 }

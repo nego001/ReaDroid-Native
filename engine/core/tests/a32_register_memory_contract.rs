@@ -16,7 +16,8 @@ fn register_data_roles_and_flags(){
 }
 #[test]
 fn register_special_and_pc_forms_excluded(){
-    for w in [0xe081f003,0xe08f2003,0xe081200f,0xe0812413,0xe1a12003,0xe1501002,0xe1000000]{
+    assert_eq!(one(0xe0812413),Op::DataRegisterShift{kind:DataKind::Add,set_flags:false,destination:Some(2),source:Some(1),operand:3,shift:a32_decode::ShiftKind::Lsl,amount_register:4});
+    for w in [0xe081f003,0xe08f2003,0xe081200f,0xe0812f13,0xe1a12003,0xe1501002,0xe1000000]{
         assert_eq!(one(w),Op::Unknown,"{w:08x}");
     }
 }
