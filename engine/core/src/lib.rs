@@ -19,6 +19,7 @@ pub mod hex;
 pub mod binary_pages;
 pub mod binary_search;
 pub mod text_encoding;
+pub mod data_inspector;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
