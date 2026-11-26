@@ -227,3 +227,6 @@ ModRM/SIB Core #45831596684 Windows445/Linux450/macOS449 =1344/1344, zero failed
 
 ## U4.5 x86 operand width candidate
 Opcode groups #45832319183 Windows455/Linux460/macOS459=1374 Rust, zero failed/ignored. Adds selected byte MOV/ALU/group forms, typed high-byte parent index distinct from REX low byte registers, single 66 before optional single REX, selected 16-bit MOV/ALU/LEA/group/stack forms, REX.W precedence for ordinary operands, checked full-length RIP. No address-size override, general prefix parser, 16-bit branches, VEX/EVEX, full ISA, execution or dereference. Ten tests planned (1404 cumulative), 4096 byte immediate/register cases per OS. Existing unsupported prefix test changed to 67; old 66 NOP remains excluded. No promotion pending PR and descendant Android gates.
+
+## U4.5 x86 advanced instruction candidate
+Operand-width Core matrix 1404/1404 passed. Adds selected MOVZX/MOVSX, two- and three-operand IMUL, CMOVcc and canonical SETcc with typed operand widths, ModRM/SIB and final-length RIP targets. Ten new tests planned; 4096 CMOV register/condition combinations per OS. No execution, dereference, address-size override, general prefix parsing, vector map, JNI/UI, promotion, merge, APK or OTA. Android operand-width and PR functional gates still pending at branch creation.

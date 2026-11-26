@@ -27,6 +27,11 @@ pub enum Op{
     Unary{kind:UnaryKind,width:u8,operand:Operand},
     Binary{kind:BinaryKind,width:u8,destination:Operand,source:Operand},
     Lea{width:u8,destination:u8,memory:Memory},
+    ExtendMove{signed:bool,destination_width:u8,source_width:u8,destination:u8,source:Operand},
+    Multiply{width:u8,destination:u8,source:Operand},
+    MultiplyImmediate{width:u8,destination:u8,source:Operand,immediate:Immediate},
+    ConditionalMove{condition:u8,width:u8,destination:u8,source:Operand},
+    SetCondition{condition:u8,destination:Operand},
     PushPop{pop:bool,register:u8,width:u8},
     IncDec{decrement:bool,register:u8},
     MoveImmediate{register:u8,width:u8,value:u64},
@@ -188,6 +193,36 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
         let n=if width==16{2}else{4};
         let value=immediate(b,i,n,width)?;
         return Ok((i+n,Op::BinaryImmediate{kind,width,operand:Operand::Register(0),immediate:value}));
+    }
+    // Selected two-byte legacy map; no mandatory F2/F3 or vector maps.
+    if opcode==0x0f{
+        let secondary=take(b,i,1)?[0];
+        if matches!(secondary,0xb6|0xb7|0xbe|0xbf|0xaf|0x40..=0x4f|0x90..=0x9f){
+            i+=1;
+            // SETcc has a reserved/ignored reg field; accept canonical /0 only.
+            if (0x90..=0x9f).contains(&secondary)&&(rex&4!=0||take(b,i,1)?[0]&0x38!=0){
+                return Err(Local::Unsupported);
+            }
+            let (end,reg,rm)=modrm(mode,pc,b,i,rex)?;
+            let op=match secondary{
+                0xb6|0xb7|0xbe|0xbf=>{
+                    let source_width=if secondary&1==0{8}else{16};
+                    if source_width>=operand_width{return Err(Local::Unsupported);}
+                    Op::ExtendMove{signed:secondary&8!=0,destination_width:operand_width,source_width,destination:reg,source:if source_width==8{byte_operand(rm,rex)}else{rm}}
+                },
+                0xaf=>Op::Multiply{width:operand_width,destination:reg,source:rm},
+                0x40..=0x4f=>Op::ConditionalMove{condition:secondary&15,width:operand_width,destination:reg,source:rm},
+                _=>Op::SetCondition{condition:secondary&15,destination:byte_operand(rm,rex)}
+            };
+            return Ok((end,op));
+        }
+    }
+    if matches!(opcode,0x69|0x6b){
+        let (at,reg,rm)=modrm(mode,pc,b,i,rex)?;
+        let n=if opcode==0x6b{1}else if operand_width==16{2}else{4};
+        let value=immediate(b,at,n,operand_width)?;
+        let end=at+n;
+        return Ok((end,Op::MultiplyImmediate{width:operand_width,destination:reg,source:finish_rip(mode,pc,end,rm),immediate:value}));
     }
     if rex!=0||override16{return Err(Local::Unsupported);}
     match opcode{
