@@ -56,7 +56,10 @@ fn excludes_special_immediate_forms_and_pc_operands(){
 fn immediate_memory_forms_and_exclusions(){
     assert_eq!(one(0,0xe59d2010),Op::MemoryImmediate{load:true,byte:false,base:13,register:2,displacement:16});
     assert_eq!(one(0,0xe5434007),Op::MemoryImmediate{load:false,byte:true,base:3,register:4,displacement:-7});
-    for w in [0xe49d2010,0xe5bd2010,0xe79d2001,0xe59f0000,0xe59df000]{assert_eq!(one(0,w),Op::Unknown);}
+    assert_eq!(one(0,0xe49d2010),Op::MemoryWriteback{load:true,byte:false,base:13,register:2,pre:false,displacement:16});
+    assert_eq!(one(0,0xe5bd2010),Op::MemoryWriteback{load:true,byte:false,base:13,register:2,pre:true,displacement:16});
+    assert_eq!(one(0,0xe79d2001),Op::MemoryRegister{load:true,byte:false,base:13,register:2,offset:1,add:true,shift:a32_decode::Shift::Lsl(0)});
+    for w in [0xe59f0000,0xe59df000]{assert_eq!(one(0,w),Op::Unknown);}
 }
 #[test]
 fn bounds_and_alignment(){

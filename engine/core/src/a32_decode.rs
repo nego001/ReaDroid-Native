@@ -8,8 +8,15 @@ pub enum Target{Address(u32),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum DataKind{And,Eor,Sub,Rsb,Add,Adc,Sbc,Rsc,Tst,Teq,Cmp,Cmn,Orr,Mov,Bic,Mvn}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Shift{Lsl(u8),Lsr(u8),Asr(u8),Ror(u8),Rrx}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    DataRegister{kind:DataKind,set_flags:bool,destination:Option<u8>,source:Option<u8>,operand:u8,shift:Shift},
+    Multiply{set_flags:bool,destination:u8,left:u8,right:u8,accumulator:Option<u8>},
+    MemoryRegister{load:bool,byte:bool,base:u8,register:u8,offset:u8,add:bool,shift:Shift},
+    MemoryWriteback{load:bool,byte:bool,base:u8,register:u8,pre:bool,displacement:i32},
+    BlockTransfer{load:bool,pre:bool,increment:bool,writeback:bool,base:u8,list:u16},
     Branch{link:bool,target:Target},
     Exchange{link:bool,register:u8},
     DataImmediate{kind:DataKind,set_flags:bool,destination:Option<u8>,source:Option<u8>,imm8:u8,rotate:u8,value:u32},
@@ -24,6 +31,18 @@ fn branch_target(pc:u32,w:u32)->Target{
     // Checked coordinates, not wrapping CPU address arithmetic.
     let v=i64::from(pc)+8+signed;
     match u32::try_from(v){Ok(v)=>Target::Address(v),Err(_)=>Target::Overflow}
+}
+fn shift_immediate(x:u32)->Shift{
+    let n=((x>>7)&31) as u8;
+    match ((x>>5)&3,n){
+        (0,n)=>Shift::Lsl(n),(1,0)=>Shift::Lsr(32),(1,n)=>Shift::Lsr(n),
+        (2,0)=>Shift::Asr(32),(2,n)=>Shift::Asr(n),(3,0)=>Shift::Rrx,(_,n)=>Shift::Ror(n),
+    }
+}
+fn data_kind(k:u32)->DataKind{
+    [DataKind::And,DataKind::Eor,DataKind::Sub,DataKind::Rsb,DataKind::Add,DataKind::Adc,
+        DataKind::Sbc,DataKind::Rsc,DataKind::Tst,DataKind::Teq,DataKind::Cmp,DataKind::Cmn,
+        DataKind::Orr,DataKind::Mov,DataKind::Bic,DataKind::Mvn][k as usize]
 }
 fn op(pc:u32,w:u32)->Op{
     if w>>28==15{return Op::Unknown;}
@@ -59,6 +78,51 @@ fn op(pc:u32,w:u32)->Op{
         let imm=(x&4095) as i32;
         return Op::MemoryImmediate{load:x&(1<<20)!=0,byte:x&(1<<22)!=0,base,register,
             displacement:if x&(1<<23)!=0{imm}else{-imm}};
+    }
+    // Classic data-processing register with immediate shift. Exclude
+    // register-controlled shifts, miscellaneous opcodes and PC operands.
+    if x&0x0e000010==0{
+        let k=(x>>21)&15;let flags=x&(1<<20)!=0;
+        let rn=((x>>16)&15) as u8;let rd=((x>>12)&15) as u8;let rm=(x&15) as u8;
+        let test=(8..=11).contains(&k);let unary=k==13||k==15;
+        if (test&&(!flags||rd!=0))||(unary&&rn!=0)||(!test&&rd==15)||(!unary&&rn==15)||rm==15{
+            return Op::Unknown;
+        }
+        return Op::DataRegister{kind:data_kind(k),set_flags:flags,destination:(!test).then_some(rd),
+            source:(!unary).then_some(rn),operand:rm,shift:shift_immediate(x)};
+    }
+    // MUL/MLA classic encoding, no widening, DSP or PC operands.
+    if x&0x0fc000f0==0x00000090{
+        let accumulate=x&(1<<21)!=0;let flags=x&(1<<20)!=0;
+        let rd=((x>>16)&15) as u8;let ra=((x>>12)&15) as u8;
+        let rs=((x>>8)&15) as u8;let rm=(x&15) as u8;
+        if rd==15||rs==15||rm==15||(accumulate&&ra==15)||(!accumulate&&ra!=0){return Op::Unknown;}
+        return Op::Multiply{set_flags:flags,destination:rd,left:rm,right:rs,accumulator:accumulate.then_some(ra)};
+    }
+    // Single-transfer register offset, pre-index without writeback.
+    if x&0x0f200010==0x07000000{
+        let base=((x>>16)&15) as u8;let register=((x>>12)&15) as u8;let offset=(x&15) as u8;
+        if base==15||register==15||offset==15{return Op::Unknown;}
+        return Op::MemoryRegister{load:x&(1<<20)!=0,byte:x&(1<<22)!=0,base,register,offset,
+            add:x&(1<<23)!=0,shift:shift_immediate(x)};
+    }
+    // Immediate single-transfer writeback/post-index (not unprivileged).
+    if x&0x0e000000==0x04000000{
+        let pre=x&(1<<24)!=0;let wback=x&(1<<21)!=0;
+        if pre!=wback{return Op::Unknown;} // pre without writeback handled above; P=0,W=1 unprivileged
+        let base=((x>>16)&15) as u8;let register=((x>>12)&15) as u8;
+        if base==15||register==15||base==register{return Op::Unknown;}
+        let imm=(x&4095) as i32;
+        return Op::MemoryWriteback{load:x&(1<<20)!=0,byte:x&(1<<22)!=0,base,register,
+            pre,displacement:if x&(1<<23)!=0{imm}else{-imm}};
+    }
+    // Block transfer with ordinary register list, no user-bank/exception
+    // return, PC in list or writeback with base in list.
+    if x&0x0e400000==0x08000000{
+        let base=((x>>16)&15) as u8;let list=(x&0xffff) as u16;let writeback=x&(1<<21)!=0;
+        if base==15||list==0||list&0x8000!=0||(writeback&&list&(1u16<<base)!=0){return Op::Unknown;}
+        return Op::BlockTransfer{load:x&(1<<20)!=0,pre:x&(1<<24)!=0,increment:x&(1<<23)!=0,
+            writeback,base,list};
     }
     Op::Unknown
 }
