@@ -13,6 +13,14 @@ pub enum StringKind{Movs,Cmps,Stos,Lods,Scas}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Repeat{None,Rep,Repe,Repne}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ShiftKind{Rol,Ror,Rcl,Rcr,Shl,Shr,Sar}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ShiftCount{One,Cl,Immediate(u8)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum BitKind{Test,Set,Reset,Complement}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum BitIndex{Register(u8),Immediate(u8)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Base{None,Register(u8),Rip,Eip}
@@ -30,6 +38,10 @@ pub struct Immediate{pub encoded_bits:u8,pub raw:u64,pub value:u64}
 pub enum Op{
     Nop,Return,Breakpoint,
     String{kind:StringKind,width:u8,repeat:Repeat},
+    Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
+    DoubleShift{right:bool,width:u8,destination:Operand,source:u8,count:ShiftCount},
+    Bit{kind:BitKind,width:u8,operand:Operand,index:BitIndex},
+    BitScan{reverse:bool,width:u8,destination:u8,source:Operand},
     BinaryImmediate{kind:BinaryKind,width:u8,operand:Operand,immediate:Immediate},
     Unary{kind:UnaryKind,width:u8,operand:Operand},
     Binary{kind:BinaryKind,width:u8,destination:Operand,source:Operand},
@@ -149,7 +161,8 @@ fn explicit_memory(op:Op)->bool{
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
         Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
         Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}=>matches!(source,Operand::Memory(_)),
-        Op::SetCondition{destination,..}=>matches!(destination,Operand::Memory(_)),
+        Op::SetCondition{destination,..}|Op::DoubleShift{destination,..}=>matches!(destination,Operand::Memory(_)),
+        Op::Shift{operand,..}|Op::Bit{operand,..}|Op::BitScan{source:operand,..}=>matches!(operand,Operand::Memory(_)),
         // LEA computes an offset; it is not a segmented memory access.
         _=>false
     }
@@ -163,6 +176,7 @@ fn lockable(op:Op)->bool{
     match op{
         Op::Binary{kind,destination:Operand::Memory(_),..}|Op::BinaryImmediate{kind,operand:Operand::Memory(_),..}=>alu(kind),
         Op::Unary{kind:UnaryKind::Inc|UnaryKind::Dec|UnaryKind::Not|UnaryKind::Neg,operand:Operand::Memory(_),..}=>true,
+        Op::Bit{kind:BitKind::Set|BitKind::Reset|BitKind::Complement,operand:Operand::Memory(_),..}=>true,
         _=>false
     }
 }
@@ -221,7 +235,7 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
     // Only one REX and only on the forms explicitly supported below.
     // Unique 66/67 in either order before optional single REX.
     // 67 is accepted only for explicitly supported memory forms, not ignored prefixes.
-    if address_override&&!matches!(opcode,0x00..=0x03|0x08..=0x0b|0x10..=0x13|0x18..=0x1b|0x20..=0x23|0x28..=0x2b|0x30..=0x33|0x38..=0x3b|0x69|0x6b|0x80|0x81|0x83|0x84|0x85|0x88..=0x8b|0x8d|0xc6|0xc7|0xf6|0xf7|0xff|0x0f){return Err(Local::Unsupported);}
+    if address_override&&!matches!(opcode,0x00..=0x03|0x08..=0x0b|0x10..=0x13|0x18..=0x1b|0x20..=0x23|0x28..=0x2b|0x30..=0x33|0x38..=0x3b|0x69|0x6b|0x80|0x81|0x83|0x84|0x85|0x88..=0x8b|0x8d|0xc0|0xc1|0xc6|0xc7|0xd0..=0xd3|0xf6|0xf7|0xff|0x0f){return Err(Local::Unsupported);}
     let operand_width=if rex&8!=0{64}else if override16{16}else{32};
     if (0xb0..=0xb7).contains(&opcode){
         let raw=u64::from(take(b,i,1)?[0]);
@@ -254,6 +268,17 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
         let (n,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
         let Operand::Memory(memory)=rm else{return Err(Local::Unsupported);};
         return Ok((n,Op::Lea{width:operand_width,destination:reg,memory}));
+    }
+    // Group 2: preserve encoded counts, not computed flag or register values.
+    if matches!(opcode,0xc0|0xc1|0xd0..=0xd3){
+        if rex&4!=0{return Err(Local::Unsupported);}
+        let selector=(take(b,i,1)?[0]>>3)&7;
+        let kind=match selector{0=>ShiftKind::Rol,1=>ShiftKind::Ror,2=>ShiftKind::Rcl,3=>ShiftKind::Rcr,4=>ShiftKind::Shl,5=>ShiftKind::Shr,7=>ShiftKind::Sar,_=>return Err(Local::Unsupported)};
+        let width=if opcode&1==0{8}else{operand_width};
+        let (at,_,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+        let (end,count)=match opcode{0xc0|0xc1=>(at+1,ShiftCount::Immediate(take(b,at,1)?[0])),0xd0|0xd1=>(at,ShiftCount::One),_=>(at,ShiftCount::Cl)};
+        let operand=if width==8{byte_operand(rm,rex)}else{rm};
+        return Ok((end,Op::Shift{kind,width,operand:finish_rip(mode,pc,end,operand),count}));
     }
     // Group selectors are the raw three ModRM bits, not extended by REX.R.
     // This subset conservatively excludes REX.R on group opcodes.
@@ -297,6 +322,27 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
     // Selected two-byte legacy map; no mandatory F2/F3 or vector maps.
     if opcode==0x0f{
         let secondary=take(b,i,1)?[0];
+        if matches!(secondary,0xa4|0xa5|0xac|0xad){
+            i+=1;
+            let (at,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+            let (end,count)=if secondary&1==0{(at+1,ShiftCount::Immediate(take(b,at,1)?[0]))}else{(at,ShiftCount::Cl)};
+            return Ok((end,Op::DoubleShift{right:secondary&8!=0,width:operand_width,destination:finish_rip(mode,pc,end,rm),source:reg,count}));
+        }
+        if matches!(secondary,0xa3|0xab|0xb3|0xbb|0xba){
+            i+=1;
+            let kind=if secondary==0xba{
+                if rex&4!=0{return Err(Local::Unsupported);}
+                match (take(b,i,1)?[0]>>3)&7{4=>BitKind::Test,5=>BitKind::Set,6=>BitKind::Reset,7=>BitKind::Complement,_=>return Err(Local::Unsupported)}
+            }else{match secondary{0xa3=>BitKind::Test,0xab=>BitKind::Set,0xb3=>BitKind::Reset,_=>BitKind::Complement}};
+            let (at,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+            let (end,index)=if secondary==0xba{(at+1,BitIndex::Immediate(take(b,at,1)?[0]))}else{(at,BitIndex::Register(reg))};
+            return Ok((end,Op::Bit{kind,width:operand_width,operand:finish_rip(mode,pc,end,rm),index}));
+        }
+        if matches!(secondary,0xbc|0xbd){
+            i+=1;
+            let (end,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+            return Ok((end,Op::BitScan{reverse:secondary==0xbd,width:operand_width,destination:reg,source:rm}));
+        }
         if matches!(secondary,0xb6|0xb7|0xbe|0xbf|0xaf|0x40..=0x4f|0x90..=0x9f){
             i+=1;
             // SETcc has a reserved/ignored reg field; accept canonical /0 only.

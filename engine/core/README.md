@@ -239,3 +239,6 @@ Address-size Core 1464/1464 passed; all five isolated address-size workflows pas
 
 ## U4.5 x86 LOCK/REP string candidate
 Segment Core 1494/1494 passed, Android isolated pending. Adds selected LOCK memory-destination ALU, immediate and unary forms, typed MOVS/CMPS/STOS/LODS/SCAS with element width, address width, REP/REPE/REPNE and source segment override. Unique group-1 prefix; rejects unsupported combinations and register-only LOCK. 10 new tests planned (1524 cumulative), 672 LOCK ALU cases per OS. No actual repetition, memory access, atomic execution, direction flag simulation, I/O strings, PAUSE, HLE, general ignored prefix handling, SIMD, JNI/UI, promotion, merge, APK or OTA.
+
+## U4.5 x86 shift/rotate/bit candidate
+Adds canonical group2 ROL/ROR/RCL/RCR/SHL/SHR/SAR, raw immediate/one/CL count metadata, SHLD/SHRD, BT/BTS/BTR/BTC register and immediate indices, BSF/BSR. LOCK accepted only for modifying bit memory forms; segment/address metadata and final-length RIP/EIP offsets preserved. Ten tests planned (1554 cumulative if prior layer passes), 5376 shift immediate/selector/width and 1024 bit immediate cases per OS. No count execution/masking, bit-string effective offset resolution, flag evaluation, alias /6, mandatory-prefix TZCNT/LZCNT/POPCNT, SIMD, JNI/UI, promotion, merge, APK or OTA. Prior LOCK/REP gates pending at branch creation.
