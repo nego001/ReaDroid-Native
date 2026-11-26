@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -43,6 +43,12 @@ pub struct Memory{pub base:Base,pub index:Option<u8>,pub scale:u8,pub displaceme
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Operand{Register(u8),HighByte(u8),Memory(Memory)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum XmmOperand{Register(u8),Memory(Memory)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FloatFormat{PackedSingle,PackedDouble,ScalarSingle,ScalarDouble}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum SseKind{MoveUnaligned,MoveAligned,Add,Sub,Mul,Div,Min,Max,Sqrt,And,AndNot,Or,Xor}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum UnaryKind{Inc,Dec,Call,Jump,Push,Not,Neg,Mul,Imul,Div,Idiv}
@@ -52,6 +58,7 @@ pub struct Immediate{pub encoded_bits:u8,pub raw:u64,pub value:u64}
 pub enum Op{
     Nop,Return,Breakpoint,Pause,
     CountBits{kind:CountKind,width:u8,destination:u8,source:Operand},
+    Sse{kind:SseKind,format:FloatFormat,destination:XmmOperand,source:XmmOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
     Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
     DoubleShift{right:bool,width:u8,destination:Operand,source:u8,count:ShiftCount},
@@ -77,6 +84,14 @@ pub enum Op{
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>,pub locked:bool}
 impl Instruction{
+    /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
+    pub fn sse_feature(&self)->Option<CpuFeature>{
+        match self.op{
+            Op::Sse{format:FloatFormat::PackedSingle|FloatFormat::ScalarSingle,..}=>Some(CpuFeature::Sse),
+            Op::Sse{format:FloatFormat::PackedDouble|FloatFormat::ScalarDouble,..}=>Some(CpuFeature::Sse2),
+            _=>None
+        }
+    }
     /// Selected count feature requirements, not a complete ISA inventory.
     pub fn count_feature(&self)->Option<FeatureRequirement>{
         let (feature,without)=match self.op{
@@ -192,8 +207,17 @@ fn byte_register(index:u8,rex:u8)->Operand{
 fn byte_operand(operand:Operand,rex:u8)->Operand{
     match operand{Operand::Register(index)=>byte_register(index,rex),_=>operand}
 }
+fn xmm_operand(op:Operand)->Result<XmmOperand,Local>{
+    match op{Operand::Register(r)=>Ok(XmmOperand::Register(r)),Operand::Memory(m)=>Ok(XmmOperand::Memory(m)),_=>Err(Local::Unsupported)}
+}
+fn sse_kind(opcode:u8)->Option<SseKind>{match opcode{
+    0x10|0x11=>Some(SseKind::MoveUnaligned),0x28|0x29=>Some(SseKind::MoveAligned),
+    0x51=>Some(SseKind::Sqrt),0x54=>Some(SseKind::And),0x55=>Some(SseKind::AndNot),0x56=>Some(SseKind::Or),0x57=>Some(SseKind::Xor),
+    0x58=>Some(SseKind::Add),0x59=>Some(SseKind::Mul),0x5c=>Some(SseKind::Sub),0x5d=>Some(SseKind::Min),0x5e=>Some(SseKind::Div),0x5f=>Some(SseKind::Max),_=>None
+}}
 fn explicit_memory(op:Op)->bool{
     match op{
+        Op::Sse{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
         Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
         Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}|Op::CountBits{source,..}=>matches!(source,Operand::Memory(_)),
@@ -259,6 +283,22 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
     }else if group1==Some(0xf3)&&opcode==0x90{
         if rex!=0||override16||address_override||segment.is_some(){return Err(Local::Unsupported);}
         (i+1,Op::Pause)
+    }else if opcode==0x0f&&b.get(i+1).copied().and_then(sse_kind).is_some(){
+        let secondary=b[i+1];
+        let kind=sse_kind(secondary).unwrap();
+        // No conflicting mandatory prefixes, ignored REX.W, or LOCK in this subset.
+        if locked||rex&8!=0||override16&&group1.is_some(){return Err(Local::Unsupported);}
+        let format=match group1{
+            Some(0xf3)=>FloatFormat::ScalarSingle,Some(0xf2)=>FloatFormat::ScalarDouble,
+            None if override16=>FloatFormat::PackedDouble,None=>FloatFormat::PackedSingle,_=>return Err(Local::Unsupported)
+        };
+        if matches!(format,FloatFormat::ScalarSingle|FloatFormat::ScalarDouble)&&matches!(kind,SseKind::MoveAligned|SseKind::And|SseKind::AndNot|SseKind::Or|SseKind::Xor){return Err(Local::Unsupported);}
+        let (end,reg,rm)=modrm(mode,pc,b,i+2,rex,address_override)?;
+        let rm=xmm_operand(rm)?;let reg=XmmOperand::Register(reg);
+        let (destination,source)=if matches!(secondary,0x11|0x29){(rm,reg)}else{(reg,rm)};
+        let op=Op::Sse{kind,format,destination,source};
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
     }else if group1==Some(0xf3)&&opcode==0x0f{
         let secondary=take(b,i+1,1)?[0];
         let kind=match secondary{0xb8=>CountKind::Population,0xbc=>CountKind::TrailingZeros,0xbd=>CountKind::LeadingZeros,_=>return Err(Local::Unsupported)};
