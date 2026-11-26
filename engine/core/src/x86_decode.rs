@@ -13,7 +13,7 @@ pub enum Base{None,Register(u8),Rip}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub struct Memory{pub base:Base,pub index:Option<u8>,pub scale:u8,pub displacement:i64,pub rip_target:Option<Target>}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum Operand{Register(u8),Memory(Memory)}
+pub enum Operand{Register(u8),HighByte(u8),Memory(Memory)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -95,70 +95,88 @@ fn finish_rip(mode:Mode,pc:u64,end:usize,operand:Operand)->Operand{
     }
 }
 fn immediate(b:&[u8],i:usize,n:usize,width:u8)->Result<Immediate,Local>{
-    let raw=match n{1=>u64::from(take(b,i,1)?[0]),4=>u64::from(u32::from_le_bytes(take(b,i,4)?.try_into().unwrap())),_=>return Err(Local::Unsupported)};
+    let raw=match n{1=>u64::from(take(b,i,1)?[0]),2=>u64::from(u16::from_le_bytes(take(b,i,2)?.try_into().unwrap())),4=>u64::from(u32::from_le_bytes(take(b,i,4)?.try_into().unwrap())),_=>return Err(Local::Unsupported)};
     let extended=if n==1{(raw as i8 as i64) as u64}else if width==64{(raw as i32 as i64) as u64}else{raw};
-    Ok(Immediate{encoded_bits:(n*8) as u8,raw,value:if width==32{extended&0xffff_ffff}else{extended}})
+    Ok(Immediate{encoded_bits:(n*8) as u8,raw,value:match width{8=>extended&255,16=>extended&65535,32=>extended&0xffff_ffff,_=>extended}})
+}
+// HighByte stores the parent register index (0=AH, 1=CH, 2=DH, 3=BH).
+fn byte_register(index:u8,rex:u8)->Operand{
+    if rex==0&&(4..8).contains(&index){Operand::HighByte(index-4)}else{Operand::Register(index)}
+}
+fn byte_operand(operand:Operand,rex:u8)->Operand{
+    match operand{Operand::Register(index)=>byte_register(index,rex),_=>operand}
 }
 fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
     let mut i=0;
     let mut rex=0u8;
-    if mode==Mode::X64&&(0x40..=0x4f).contains(&b[0]){
-        rex=b[0];i=1;
+    let override16=b[0]==0x66;
+    if override16{i+=1;}
+    if mode==Mode::X64&&b.get(i).is_some_and(|v|(0x40..=0x4f).contains(v)){
+        rex=b[i];i+=1;
     }
     let opcode=*b.get(i).ok_or(Local::Truncated)?;i+=1;
     // Only one REX and only on the forms explicitly supported below.
-    // No legacy prefixes, VEX/EVEX or multiple REX prefixes.
+    // One 66 before optional single REX on selected operand-width forms.
+    let operand_width=if rex&8!=0{64}else if override16{16}else{32};
+    if (0xb0..=0xb7).contains(&opcode){
+        let raw=u64::from(take(b,i,1)?[0]);
+        return Ok((i+1,Op::BinaryImmediate{kind:BinaryKind::Mov,width:8,operand:byte_register((opcode&7)|((rex&1)<<3),rex),immediate:Immediate{encoded_bits:8,raw,value:raw}}));
+    }
     if (0xb8..=0xbf).contains(&opcode){
-        let width=if rex&8!=0{64}else{32};
-        let n=if width==64{8}else{4};
+        let width=operand_width;
+        let n=match width{64=>8,16=>2,_=>4};
         let raw=take(b,i,n)?;
         let mut padded=[0u8;8];padded[..n].copy_from_slice(raw);
         return Ok((i+n,Op::MoveImmediate{register:(opcode&7)|((rex&1)<<3),width,value:u64::from_le_bytes(padded)}));
     }
     if (0x50..=0x5f).contains(&opcode){
-        return Ok((i,Op::PushPop{pop:opcode>=0x58,register:(opcode&7)|((rex&1)<<3),width:if mode==Mode::X64{64}else{32}}));
+        return Ok((i,Op::PushPop{pop:opcode>=0x58,register:(opcode&7)|((rex&1)<<3),width:if override16{16}else if mode==Mode::X64{64}else{32}}));
     }
     let binary=match opcode{
-        0x89|0x8b=>Some(BinaryKind::Mov),0x01|0x03=>Some(BinaryKind::Add),
-        0x09|0x0b=>Some(BinaryKind::Or),0x21|0x23=>Some(BinaryKind::And),
-        0x29|0x2b=>Some(BinaryKind::Sub),0x31|0x33=>Some(BinaryKind::Xor),
-        0x39|0x3b=>Some(BinaryKind::Cmp),0x85=>Some(BinaryKind::Test),_=>None
+        0x88..=0x8b=>Some(BinaryKind::Mov),0x00..=0x03=>Some(BinaryKind::Add),
+        0x08..=0x0b=>Some(BinaryKind::Or),0x10..=0x13=>Some(BinaryKind::Adc),0x18..=0x1b=>Some(BinaryKind::Sbb),0x20..=0x23=>Some(BinaryKind::And),
+        0x28..=0x2b=>Some(BinaryKind::Sub),0x30..=0x33=>Some(BinaryKind::Xor),
+        0x38..=0x3b=>Some(BinaryKind::Cmp),0x84|0x85=>Some(BinaryKind::Test),_=>None
     };
     if let Some(kind)=binary{
         let (n,reg,rm)=modrm(mode,pc,b,i,rex)?;
-        let (destination,source)=if opcode&2!=0{(Operand::Register(reg),rm)}else{(rm,Operand::Register(reg))};
-        return Ok((n,Op::Binary{kind,width:if rex&8!=0{64}else{32},destination,source}));
+        let width=if opcode&1==0{8}else{operand_width};
+        let (reg,rm)=if width==8{(byte_register(reg,rex),byte_operand(rm,rex))}else{(Operand::Register(reg),rm)};
+        let (destination,source)=if opcode&2!=0{(reg,rm)}else{(rm,reg)};
+        return Ok((n,Op::Binary{kind,width,destination,source}));
     }
     if opcode==0x8d{
         let (n,reg,rm)=modrm(mode,pc,b,i,rex)?;
         let Operand::Memory(memory)=rm else{return Err(Local::Unsupported);};
-        return Ok((n,Op::Lea{width:if rex&8!=0{64}else{32},destination:reg,memory}));
+        return Ok((n,Op::Lea{width:operand_width,destination:reg,memory}));
     }
     // Group selectors are the raw three ModRM bits, not extended by REX.R.
     // This subset conservatively excludes REX.R on group opcodes.
-    if matches!(opcode,0x81|0x83|0xc7|0xf7|0xff){
+    if matches!(opcode,0x80|0x81|0x83|0xc6|0xc7|0xf6|0xf7|0xff){
         if rex&4!=0{return Err(Local::Unsupported);}
         let selector=(take(b,i,1)?[0]>>3)&7;
-        let width=if rex&8!=0{64}else{32};
+        let width=if matches!(opcode,0x80|0xc6|0xf6){8}else{operand_width};
         if opcode==0xff{
             let kind=match selector{0=>UnaryKind::Inc,1=>UnaryKind::Dec,2=>UnaryKind::Call,4=>UnaryKind::Jump,6=>UnaryKind::Push,_=>return Err(Local::Unsupported)};
             let (end,_,operand)=modrm(mode,pc,b,i,rex)?;
-            let width=if matches!(kind,UnaryKind::Call|UnaryKind::Jump|UnaryKind::Push)&&mode==Mode::X64{64}else{width};
+            if override16&&matches!(kind,UnaryKind::Call|UnaryKind::Jump){return Err(Local::Unsupported);}
+            let width=if matches!(kind,UnaryKind::Call|UnaryKind::Jump|UnaryKind::Push)&&mode==Mode::X64{if override16{16}else{64}}else{width};
             return Ok((end,Op::Unary{kind,width,operand}));
         }
-        if opcode==0xf7&&selector>=2{
+        if matches!(opcode,0xf6|0xf7)&&selector>=2{
             let kind=match selector{2=>UnaryKind::Not,3=>UnaryKind::Neg,4=>UnaryKind::Mul,5=>UnaryKind::Imul,6=>UnaryKind::Div,_=>UnaryKind::Idiv};
             let (end,_,operand)=modrm(mode,pc,b,i,rex)?;
-            return Ok((end,Op::Unary{kind,width,operand}));
+            return Ok((end,Op::Unary{kind,width,operand:if width==8{byte_operand(operand,rex)}else{operand}}));
         }
         let kind=match opcode{
-            0x81|0x83=>[BinaryKind::Add,BinaryKind::Or,BinaryKind::Adc,BinaryKind::Sbb,BinaryKind::And,BinaryKind::Sub,BinaryKind::Xor,BinaryKind::Cmp][selector as usize],
-            0xc7 if selector==0=>BinaryKind::Mov,
-            0xf7 if selector==0=>BinaryKind::Test,
+            0x80|0x81|0x83=>[BinaryKind::Add,BinaryKind::Or,BinaryKind::Adc,BinaryKind::Sbb,BinaryKind::And,BinaryKind::Sub,BinaryKind::Xor,BinaryKind::Cmp][selector as usize],
+            0xc6|0xc7 if selector==0=>BinaryKind::Mov,
+            0xf6|0xf7 if selector==0=>BinaryKind::Test,
             _=>return Err(Local::Unsupported)
         };
         let (at,_,operand)=modrm(mode,pc,b,i,rex)?;
-        let n=if opcode==0x83{1}else{4};
+        let operand=if width==8{byte_operand(operand,rex)}else{operand};
+        let n=if width==8||opcode==0x83{1}else if width==16{2}else{4};
         let value=immediate(b,at,n,width)?;
         let end=at+n;
         return Ok((end,Op::BinaryImmediate{kind,width,operand:finish_rip(mode,pc,end,operand),immediate:value}));
@@ -166,11 +184,12 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
     if matches!(opcode,0x05|0x0d|0x15|0x1d|0x25|0x2d|0x35|0x3d|0xa9){
         let kind=match opcode{0x05=>BinaryKind::Add,0x0d=>BinaryKind::Or,0x15=>BinaryKind::Adc,0x1d=>BinaryKind::Sbb,
             0x25=>BinaryKind::And,0x2d=>BinaryKind::Sub,0x35=>BinaryKind::Xor,0x3d=>BinaryKind::Cmp,_=>BinaryKind::Test};
-        let width=if rex&8!=0{64}else{32};
-        let value=immediate(b,i,4,width)?;
-        return Ok((i+4,Op::BinaryImmediate{kind,width,operand:Operand::Register(0),immediate:value}));
+        let width=operand_width;
+        let n=if width==16{2}else{4};
+        let value=immediate(b,i,n,width)?;
+        return Ok((i+n,Op::BinaryImmediate{kind,width,operand:Operand::Register(0),immediate:value}));
     }
-    if rex!=0{return Err(Local::Unsupported);}
+    if rex!=0||override16{return Err(Local::Unsupported);}
     match opcode{
         0x90=>Ok((i,Op::Nop)),
         0xc3=>Ok((i,Op::Return)),
