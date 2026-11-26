@@ -16,8 +16,20 @@ pub enum LogicalKind{And,Orr,Eor,Ands}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BitfieldKind{Signed,Merge,Unsigned}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FpFormat{Single,Double}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FpBinaryKind{Add,Sub,Mul,Div,Max,Min}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FpUnaryKind{Move,Abs,Neg,Sqrt}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum VectorLogicalKind{And,Bic,Orr,Eor}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    FpBinary{kind:FpBinaryKind,format:FpFormat,destination:u8,left:u8,right:u8},
+    FpUnary{kind:FpUnaryKind,format:FpFormat,destination:u8,source:u8},
+    VectorArithmetic{subtract:bool,vector_bits:u8,element_bits:u8,destination:u8,left:u8,right:u8},
+    VectorLogical{kind:VectorLogicalKind,vector_bits:u8,destination:u8,left:u8,right:u8},
     LogicalImmediate{kind:LogicalKind,wide:bool,destination:u8,source:u8,n:u8,immr:u8,imms:u8,mask:u64},
     Bitfield{kind:BitfieldKind,wide:bool,destination:u8,source:u8,immr:u8,imms:u8},
     Extract{wide:bool,destination:u8,left:u8,right:u8,lsb:u8},
@@ -223,6 +235,41 @@ fn op(pc:u64,w:u32)->Op{
         let lsb=((w>>10)&63) as u8;
         if n!=wide||(!wide&&lsb>=32){return Op::Unknown;}
         return Op::Extract{wide,destination:(w&31) as u8,left:((w>>5)&31) as u8,right:((w>>16)&31) as u8,lsb};
+    }
+    // Scalar FP two-source S/D subset. Type 2/3 (other formats) excluded.
+    let fp2=match w&0xffa0fc00{
+        0x1e200800=>Some(FpBinaryKind::Mul),0x1e201800=>Some(FpBinaryKind::Div),
+        0x1e202800=>Some(FpBinaryKind::Add),0x1e203800=>Some(FpBinaryKind::Sub),
+        0x1e204800=>Some(FpBinaryKind::Max),0x1e205800=>Some(FpBinaryKind::Min),_=>None
+    };
+    if let Some(kind)=fp2{
+        return Op::FpBinary{kind,format:if w&(1<<22)!=0{FpFormat::Double}else{FpFormat::Single},
+            destination:(w&31) as u8,left:((w>>5)&31) as u8,right:((w>>16)&31) as u8};
+    }
+    let fp1=match w&0xffbffc00{
+        0x1e204000=>Some(FpUnaryKind::Move),0x1e20c000=>Some(FpUnaryKind::Abs),
+        0x1e214000=>Some(FpUnaryKind::Neg),0x1e21c000=>Some(FpUnaryKind::Sqrt),_=>None
+    };
+    if let Some(kind)=fp1{
+        return Op::FpUnary{kind,format:if w&(1<<22)!=0{FpFormat::Double}else{FpFormat::Single},
+            destination:(w&31) as u8,source:((w>>5)&31) as u8};
+    }
+    // Advanced SIMD same-width integer ADD/SUB. 1D is not this vector form.
+    if w&0x9f20fc00==0x0e208400{
+        let vector_bits=if w&(1<<30)!=0{128}else{64};
+        let element_bits=8u8<<((w>>22)&3);
+        if element_bits==64&&vector_bits==64{return Op::Unknown;}
+        return Op::VectorArithmetic{subtract:w&(1<<29)!=0,vector_bits,element_bits,
+            destination:(w&31) as u8,left:((w>>5)&31) as u8,right:((w>>16)&31) as u8};
+    }
+    // Selected byte-vector logical forms, no bit-select or ORN.
+    let vlogic=match w&0xbfe0fc00{
+        0x0e201c00=>Some(VectorLogicalKind::And),0x0e601c00=>Some(VectorLogicalKind::Bic),
+        0x0ea01c00=>Some(VectorLogicalKind::Orr),0x2e201c00=>Some(VectorLogicalKind::Eor),_=>None
+    };
+    if let Some(kind)=vlogic{
+        return Op::VectorLogical{kind,vector_bits:if w&(1<<30)!=0{128}else{64},
+            destination:(w&31) as u8,left:((w>>5)&31) as u8,right:((w>>16)&31) as u8};
     }
     Op::Unknown
 }
