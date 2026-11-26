@@ -31,6 +31,7 @@ pub mod pe_symbols;
 pub mod dex_identifiers;
 pub mod aarch64_decode;
 pub mod a32_decode;
+pub mod thumb_decode;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
