@@ -21,6 +21,12 @@ pub enum BitKind{Test,Set,Reset,Complement}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BitIndex{Register(u8),Immediate(u8)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ExchangeKind{Xchg,Xadd,Cmpxchg}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FenceKind{Load,Store,Full}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum LockKind{None,Explicit,Implicit}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Base{None,Register(u8),Rip,Eip}
@@ -42,6 +48,9 @@ pub enum Op{
     DoubleShift{right:bool,width:u8,destination:Operand,source:u8,count:ShiftCount},
     Bit{kind:BitKind,width:u8,operand:Operand,index:BitIndex},
     BitScan{reverse:bool,width:u8,destination:u8,source:Operand},
+    Exchange{kind:ExchangeKind,width:u8,destination:Operand,source:Operand},
+    CompareExchangePair{width:u8,memory:Memory},
+    Fence{kind:FenceKind},
     BinaryImmediate{kind:BinaryKind,width:u8,operand:Operand,immediate:Immediate},
     Unary{kind:UnaryKind,width:u8,operand:Operand},
     Binary{kind:BinaryKind,width:u8,destination:Operand,source:Operand},
@@ -58,6 +67,14 @@ pub enum Op{
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>,pub locked:bool}
+impl Instruction{
+    /// Encoded LOCK versus implicit memory XCHG locking; not a runtime atomicity guarantee.
+    pub fn lock_kind(&self)->LockKind{
+        if self.locked{LockKind::Explicit}
+        else if matches!(self.op,Op::Exchange{kind:ExchangeKind::Xchg,destination:Operand::Memory(_),..}){LockKind::Implicit}
+        else{LockKind::None}
+    }
+}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Stop{Complete,Unsupported{offset:usize},Truncated{offset:usize}}
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -161,7 +178,8 @@ fn explicit_memory(op:Op)->bool{
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
         Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
         Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}=>matches!(source,Operand::Memory(_)),
-        Op::SetCondition{destination,..}|Op::DoubleShift{destination,..}=>matches!(destination,Operand::Memory(_)),
+        Op::SetCondition{destination,..}|Op::DoubleShift{destination,..}|Op::Exchange{destination,..}=>matches!(destination,Operand::Memory(_)),
+        Op::CompareExchangePair{..}=>true,
         Op::Shift{operand,..}|Op::Bit{operand,..}|Op::BitScan{source:operand,..}=>matches!(operand,Operand::Memory(_)),
         // LEA computes an offset; it is not a segmented memory access.
         _=>false
@@ -177,6 +195,7 @@ fn lockable(op:Op)->bool{
         Op::Binary{kind,destination:Operand::Memory(_),..}|Op::BinaryImmediate{kind,operand:Operand::Memory(_),..}=>alu(kind),
         Op::Unary{kind:UnaryKind::Inc|UnaryKind::Dec|UnaryKind::Not|UnaryKind::Neg,operand:Operand::Memory(_),..}=>true,
         Op::Bit{kind:BitKind::Set|BitKind::Reset|BitKind::Complement,operand:Operand::Memory(_),..}=>true,
+        Op::Exchange{destination:Operand::Memory(_),..}|Op::CompareExchangePair{..}=>true,
         _=>false
     }
 }
@@ -235,7 +254,7 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
     // Only one REX and only on the forms explicitly supported below.
     // Unique 66/67 in either order before optional single REX.
     // 67 is accepted only for explicitly supported memory forms, not ignored prefixes.
-    if address_override&&!matches!(opcode,0x00..=0x03|0x08..=0x0b|0x10..=0x13|0x18..=0x1b|0x20..=0x23|0x28..=0x2b|0x30..=0x33|0x38..=0x3b|0x69|0x6b|0x80|0x81|0x83|0x84|0x85|0x88..=0x8b|0x8d|0xc0|0xc1|0xc6|0xc7|0xd0..=0xd3|0xf6|0xf7|0xff|0x0f){return Err(Local::Unsupported);}
+    if address_override&&!matches!(opcode,0x00..=0x03|0x08..=0x0b|0x10..=0x13|0x18..=0x1b|0x20..=0x23|0x28..=0x2b|0x30..=0x33|0x38..=0x3b|0x69|0x6b|0x80|0x81|0x83|0x84..=0x87|0x88..=0x8b|0x8d|0xc0|0xc1|0xc6|0xc7|0xd0..=0xd3|0xf6|0xf7|0xff|0x0f){return Err(Local::Unsupported);}
     let operand_width=if rex&8!=0{64}else if override16{16}else{32};
     if (0xb0..=0xb7).contains(&opcode){
         let raw=u64::from(take(b,i,1)?[0]);
@@ -250,6 +269,17 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
     }
     if (0x50..=0x5f).contains(&opcode){
         return Ok((i,Op::PushPop{pop:opcode>=0x58,register:(opcode&7)|((rex&1)<<3),width:if override16{16}else if mode==Mode::X64{64}else{32}}));
+    }
+    if matches!(opcode,0x86|0x87){
+        let (end,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+        let width=if opcode==0x86{8}else{operand_width};
+        let (destination,source)=if width==8{(byte_operand(rm,rex),byte_register(reg,rex))}else{(rm,Operand::Register(reg))};
+        return Ok((end,Op::Exchange{kind:ExchangeKind::Xchg,width,destination,source}));
+    }
+    // 90 and prefixed 90 stay under the existing conservative NOP policy.
+    if (0x91..=0x97).contains(&opcode){
+        if rex&6!=0{return Err(Local::Unsupported);}
+        return Ok((i,Op::Exchange{kind:ExchangeKind::Xchg,width:operand_width,destination:Operand::Register(0),source:Operand::Register((opcode&7)|((rex&1)<<3))}));
     }
     let binary=match opcode{
         0x88..=0x8b=>Some(BinaryKind::Mov),0x00..=0x03=>Some(BinaryKind::Add),
@@ -322,6 +352,27 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
     // Selected two-byte legacy map; no mandatory F2/F3 or vector maps.
     if opcode==0x0f{
         let secondary=take(b,i,1)?[0];
+        if matches!(secondary,0xb0|0xb1|0xc0|0xc1){
+            i+=1;
+            let (end,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+            let width=if secondary&1==0{8}else{operand_width};
+            let (destination,source)=if width==8{(byte_operand(rm,rex),byte_register(reg,rex))}else{(rm,Operand::Register(reg))};
+            let kind=if secondary<0xc0{ExchangeKind::Cmpxchg}else{ExchangeKind::Xadd};
+            return Ok((end,Op::Exchange{kind,width,destination,source}));
+        }
+        if secondary==0xc7{
+            i+=1;
+            if override16||rex&4!=0||(take(b,i,1)?[0]>>3)&7!=1{return Err(Local::Unsupported);}
+            let (end,_,rm)=modrm(mode,pc,b,i,rex,address_override)?;
+            let Operand::Memory(memory)=rm else{return Err(Local::Unsupported);};
+            return Ok((end,Op::CompareExchangePair{width:if rex&8!=0{128}else{64},memory}));
+        }
+        if secondary==0xae{
+            i+=1;
+            if rex!=0||override16||address_override{return Err(Local::Unsupported);}
+            let kind=match take(b,i,1)?[0]{0xe8=>FenceKind::Load,0xf0=>FenceKind::Full,0xf8=>FenceKind::Store,_=>return Err(Local::Unsupported)};
+            return Ok((i+1,Op::Fence{kind}));
+        }
         if matches!(secondary,0xa4|0xa5|0xac|0xad){
             i+=1;
             let (at,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
