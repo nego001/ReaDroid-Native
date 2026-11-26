@@ -51,3 +51,19 @@ fn one(mode:Mode,pc:u64,b:&[u8])->x86_decode::Instruction{
 #[test] fn mixed_scalar_and_packed_stream(){
  let p=x86_decode::decode(Mode::X64,0,&[0x66,0x0f,0xfc,0xc0,0xf3,0x0f,0x2a,0xc0,0xf2,0x0f,0x58,0xc0,0x90]).unwrap();assert_eq!(p.stop,Stop::Complete);assert_eq!(p.instructions.len(),4);assert!(matches!(p.instructions[0].op,Op::PackedInteger{..}));assert!(matches!(p.instructions[1].op,Op::ScalarConvert{..}));assert!(matches!(p.instructions[2].op,Op::Sse{..}));assert_eq!(p.instructions[3].op,Op::Nop);
 }
+
+#[test] fn incomplete_escape_is_truncated_before_prefix_dispatch(){
+ for mode in [Mode::X86,Mode::X64]{
+  for tail in [&[0x0f][..],&[0x66,0x0f],&[0xf2,0x0f],&[0xf3,0x0f],&[0xf0,0x0f],&[0x67,0xf2,0x0f]]{
+   let mut stream=vec![0x90];stream.extend(tail);let p=x86_decode::decode(mode,0,&stream).unwrap();
+   assert_eq!(p.stop,Stop::Truncated{offset:1});assert_eq!(p.consumed,1);assert_eq!(p.instructions.len(),1);
+  }
+ }
+ for tail in [&[0xf2,0x48,0x0f][..],&[0x64,0xf2,0x44,0x0f]]{
+  let p=x86_decode::decode(Mode::X64,0,tail).unwrap();assert_eq!(p.stop,Stop::Truncated{offset:0});assert_eq!(p.consumed,0);
+ }
+ // A complete unsupported map entry still stops without guessing its length.
+ for tail in [&[0xf2,0x0f,0x90][..],&[0xf3,0x0f,0x2b]]{
+  let p=x86_decode::decode(Mode::X64,0,tail).unwrap();assert_eq!(p.stop,Stop::Unsupported{offset:0});assert_eq!(p.consumed,0);
+ }
+}

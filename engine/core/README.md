@@ -254,3 +254,6 @@ Mandatory F3 Core 1614/1614 passed; Android isolated pending at branch creation.
 
 ## U4.5 x86 SSE2 packed integer/scalar conversion candidate
 SSE/XMM 1644/1644 Rust and five isolated workflows passed. Selected SSE2 PADDB/W/D/Q, PSUBB/W/D/Q, PCMPEQB/W/D, PCMPGTB/W/D, PAND/PANDN/POR/PXOR, MOVDQA/MOVDQU; typed lane widths or full-vector logic. Selected scalar signed CVTSI2SS/SD, CVTSS/SD2SI, CVTTSS/SD2SI distinguish GPR/XMM/memory, float and integer widths and rounding vs truncation. SSE/SSE2 static requirement. Ten tests planned (1674 cumulative); 4608 packed and 3072 conversion register cases per OS. Prior excluded conversion fixtures replaced by unsupported F3 0F 2B. No MMX, packed conversions, saturation, CPU feature probing, MXCSR evaluation, execution, AVX/VEX/EVEX, JNI/UI, promotion, merge, APK or OTA.
+
+### SSE2 truncation repair
+Initial Core #45870328909 failed on all three OS in truncation_every_boundary: F2 REX 0F without secondary opcode was rejected before opcode-map selection. Require the second byte of 0F before dispatch; preserve all original tests and add a dedicated cross-mode escape/prefix regression (11 tests in this layer; 1677 cumulative expected). No extra opcode coverage until repair validation. No execution, merge, APK or OTA.

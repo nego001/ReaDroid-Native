@@ -291,6 +291,9 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
         rex=b[i];i+=1;
     }
     let opcode=*b.get(i).ok_or(Local::Truncated)?;
+    // The escape byte alone is not enough to select a mandatory-prefix map.
+    // Classify a missing secondary opcode before rejecting unsupported forms.
+    if opcode==0x0f{take(b,i+1,1)?;}
     let locked=group1==Some(0xf0);
     let (n,op)=if let Some(kind)=string_kind(opcode){
         // Conservatively accept only REX.W, not ignored register-extension bits.
