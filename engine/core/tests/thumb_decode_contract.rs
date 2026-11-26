@@ -44,7 +44,7 @@ fn immediate_and_exchange_operands(){
     assert_eq!(one(0,&[0x4798]),Op::Exchange{link:true,register:3});
     assert_eq!(one(0,&[0x4778]),Op::Unknown);
     assert_eq!(one(0,&[0xbf00]),Op::Nop);
-    assert_eq!(one(0,&[0xbf08]),Op::Unknown);
+    assert_eq!(one(0,&[0xbf08]),Op::It{condition:0,mask:8});
 }
 #[test]
 fn literal_alignment_and_word_memory(){

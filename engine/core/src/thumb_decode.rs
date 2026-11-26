@@ -1,6 +1,6 @@
 //! Selected little-endian Thumb/Thumb-2 static instruction encodings.
 //! Width is inferred only from the first halfword at a caller-supplied
-//! instruction boundary. No resynchronization, IT-state tracking or execution.
+//! instruction boundary. No resynchronization or execution; contextual IT annotation is explicit.
 use crate::ReadSession;
 use std::io::{self,Read,Seek};
 pub const MAX_BYTES:usize=4096;
@@ -21,6 +21,7 @@ pub enum MemKind{Word,Half,Byte,SignedByte,SignedHalf}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    It{condition:u8,mask:u8},
     WideMove{top:bool,destination:u8,value:u16},
     WideAddSub{subtract:bool,destination:u8,source:u8,value:u16},
     ShiftImmediate{kind:ShiftKind,amount:u8,destination:u8,source:u8},
@@ -49,6 +50,11 @@ fn address(base:i64,delta:i64)->Target{
 pub fn is_wide(first:u16)->bool{matches!(first>>11,0b11101..=0b11111)}
 fn short(pc:u32,h:u16)->Op{
     if h==0xbf00{return Op::Nop;}
+    if h&0xff00==0xbf00&&h&15!=0{
+        let condition=((h>>4)&15) as u8;
+        if condition>=14{return Op::Unknown;}
+        return Op::It{condition,mask:(h&15) as u8};
+    }
     let base=i64::from(pc)+4;
     if h&0xf800==0xe000{return Op::Branch{link:false,condition:None,target:address(base,sign(u32::from(h&0x7ff)<<1,12))};}
     if h&0xf000==0xd000{
@@ -202,4 +208,58 @@ pub fn read<R:Read+Seek>(s:&mut ReadSession<R>,offset:u64,pc:u32,size:usize)->io
     let w=s.read_window(offset,size)?;
     let result=decode(pc,&w.bytes).map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"incomplete Thumb instruction window"))?;
     s.cancellation.check()?;Ok(result)
+}
+
+
+/// Sequential IT context, supplied by the caller at a known entry boundary.
+/// This is a static annotation, not CPU state or proof of executable control flow.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct Context{next:u32,state:u8}
+impl Context{
+    pub fn outside(next:u32)->Self{Self{next,state:0}}
+    pub fn next_address(self)->u32{self.next}
+    pub fn pending_condition(self)->Option<u8>{if self.state==0{None}else{Some(self.state>>4)}}
+}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct Annotated{pub instruction:Instruction,pub it_condition:Option<u8>,pub last_in_it:bool}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ContextError{Decode(Error),Discontinuous,UnsupportedIt{address:u32},NestedIt{address:u32},
+    ConditionalBranchInIt{address:u32},ControlFlowBeforeLast{address:u32}}
+fn advance(state:u8)->u8{
+    if state&7==0{0}else{(state&0xe0)|((state<<1)&0x1f)}
+}
+/// Annotate consecutive decoded instructions. Unknown instructions consume
+/// one IT slot regardless of width; their legality and effects are not inferred.
+/// An unfinished block is returned as opaque context for the next window.
+/// No partial result or updated context escapes on error.
+pub fn decode_context(pc:u32,bytes:&[u8],entry:Context)->Result<(Vec<Annotated>,Context),ContextError>{
+    if entry.next!=pc{return Err(ContextError::Discontinuous);}
+    let decoded=decode(pc,bytes).map_err(ContextError::Decode)?;
+    let mut state=entry.state;
+    let mut result=Vec::with_capacity(decoded.len());
+    for instruction in decoded{
+        let at=instruction.address;
+        let raw=instruction.first;
+        if instruction.second.is_none()&&raw&0xff00==0xbf00&&raw&15!=0{
+            if state!=0{return Err(ContextError::NestedIt{address:at});}
+            let Op::It{condition,mask}=instruction.op else{return Err(ContextError::UnsupportedIt{address:at});};
+            state=(condition<<4)|mask;
+            result.push(Annotated{instruction,it_condition:None,last_in_it:false});
+            continue;
+        }
+        let it_condition=if state==0{None}else{Some(state>>4)};
+        let last_in_it=state!=0&&state&7==0;
+        if state!=0{
+            if matches!(instruction.op,Op::Branch{condition:Some(_),..}){
+                return Err(ContextError::ConditionalBranchInIt{address:at});
+            }
+            let control=matches!(instruction.op,Op::Branch{..}|Op::Exchange{..})||
+                matches!(instruction.op,Op::StackList{pop:true,list} if list&0x8000!=0);
+            if control&&!last_in_it{return Err(ContextError::ControlFlowBeforeLast{address:at});}
+            state=advance(state);
+        }
+        result.push(Annotated{instruction,it_condition,last_in_it});
+    }
+    // decode already validated checked exclusive end.
+    Ok((result,Context{next:pc+bytes.len() as u32,state}))
 }
