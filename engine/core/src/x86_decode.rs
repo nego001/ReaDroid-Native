@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -61,6 +61,12 @@ pub enum ExtendedPackedKind{ShuffleBytes,Abs,HorizontalAdd,HorizontalSub,Multipl
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum RoundFormat{PackedSingle,PackedDouble,ScalarSingle,ScalarDouble}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum VectorWidth{Bits128,Bits256}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum VectorOperand{Register(u8),Memory(Memory)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum VectorZero{Upper,All}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum UnaryKind{Inc,Dec,Call,Jump,Push,Not,Neg,Mul,Imul,Div,Idiv}
@@ -75,6 +81,8 @@ pub enum Op{
     HorizontalFloat{kind:HorizontalKind,format:FloatFormat,destination:XmmOperand,source:XmmOperand},
     ExtendedPacked{kind:ExtendedPackedKind,lane_bits:Option<u8>,destination:XmmOperand,source:XmmOperand,feature:CpuFeature},
     RoundFloat{format:RoundFormat,destination:XmmOperand,source:XmmOperand,control:u8},
+    AvxFloat{kind:SseKind,format:FloatFormat,width:VectorWidth,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand},
+    AvxZero{kind:VectorZero},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
     Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
@@ -101,6 +109,10 @@ pub enum Op{
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>,pub locked:bool}
 impl Instruction{
+    /// AVX encoding requirement; OSXSAVE/XCR0 and target CPU state are not evaluated.
+    pub fn avx_feature(&self)->Option<CpuFeature>{
+        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),_=>None}
+    }
     /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
     pub fn sse_feature(&self)->Option<CpuFeature>{
         match self.op{
@@ -262,8 +274,50 @@ fn extended_packed_kind(op:u8)->Option<(ExtendedPackedKind,Option<u8>,CpuFeature
         _=>return None
     })
 }
+fn vector_operand(rm:Operand)->Result<VectorOperand,Local>{
+    match rm{Operand::Register(r)=>Ok(VectorOperand::Register(r)),Operand::Memory(m)=>Ok(VectorOperand::Memory(m)),_=>Err(Local::Unsupported)}
+}
+// VEX map 1, canonical W=0 only; decoded inverted extension and vvvv fields.
+// Address offsets are relative to the original instruction start.
+fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op),Local>{
+    let first=take(b,i+1,1)?[0];
+    // In 32-bit mode C4/C5 may be LES/LDS; only accept unambiguous VEX.
+    if mode==Mode::X86&&first&0xc0!=0xc0{return Err(Local::Unsupported);}
+    let (at,rex,fields)=if b[i]==0xc5{
+        (i+2,0x40|(((!first>>7)&1)<<2),first)
+    }else{
+        if first&31!=1{return Err(Local::Unsupported);}
+        let fields=take(b,i+2,1)?[0];
+        if fields&0x80!=0{return Err(Local::Unsupported);}
+        (i+3,0x40|((!first>>5)&7),fields)
+    };
+    let v=(!fields>>3)&15;
+    if mode==Mode::X86&&(rex&7!=0||v>=8){return Err(Local::Unsupported);}
+    let wide=fields&4!=0;
+    let pp=fields&3;
+    let opcode=take(b,at,1)?[0];
+    if opcode==0x77{
+        if pp!=0||v!=0||rex&7!=0||address_override{return Err(Local::Unsupported);}
+        return Ok((at+1,Op::AvxZero{kind:if wide{VectorZero::All}else{VectorZero::Upper}}));
+    }
+    let kind=sse_kind(opcode).ok_or(Local::Unsupported)?;
+    let format=match pp{0=>FloatFormat::PackedSingle,1=>FloatFormat::PackedDouble,2=>FloatFormat::ScalarSingle,_=>FloatFormat::ScalarDouble};
+    let scalar=pp>=2;
+    let is_move=matches!(kind,SseKind::MoveAligned|SseKind::MoveUnaligned);
+    let is_logic=matches!(kind,SseKind::And|SseKind::AndNot|SseKind::Or|SseKind::Xor);
+    // Scalar moves have distinct merge/load/store forms, excluded here.
+    if scalar&&(wide||is_move||is_logic){return Err(Local::Unsupported);}
+    let three=!is_move&&(kind!=SseKind::Sqrt||scalar);
+    if !three&&v!=0{return Err(Local::Unsupported);}
+    let width=if wide{VectorWidth::Bits256}else{VectorWidth::Bits128};
+    let (end,reg,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+    let reg=VectorOperand::Register(reg);let rm=vector_operand(rm)?;
+    let (destination,source2)=if matches!(opcode,0x11|0x29){(rm,reg)}else{(reg,rm)};
+    Ok((end,Op::AvxFloat{kind,format,width,destination,source1:if three{Some(v)}else{None},source2}))
+}
 fn explicit_memory(op:Op)->bool{
     match op{
+        Op::AvxFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
         Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
@@ -319,7 +373,13 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
     // Classify a missing secondary opcode before rejecting unsupported forms.
     if opcode==0x0f{take(b,i+1,1)?;}
     let locked=group1==Some(0xf0);
-    let (n,op)=if let Some(kind)=string_kind(opcode){
+    let (n,op)=if matches!(opcode,0xc4|0xc5){
+        // VEX carries its own mandatory-prefix and register-extension fields.
+        if rex!=0||override16||group1.is_some(){return Err(Local::Unsupported);}
+        let (n,op)=vex(mode,pc,b,i,address_override)?;
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (n,op)
+    }else if let Some(kind)=string_kind(opcode){
         // Conservatively accept only REX.W, not ignored register-extension bits.
         if rex!=0&&rex!=0x48||locked{return Err(Local::Unsupported);}
         let compare=matches!(kind,StringKind::Cmps|StringKind::Scas);

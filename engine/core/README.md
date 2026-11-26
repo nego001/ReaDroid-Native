@@ -260,3 +260,6 @@ Initial Core #45870328909 failed on all three OS in truncation_every_boundary: F
 
 ## U4.5 SSE3/SSSE3/SSE4 candidate
 SSE2 repair Core 1677/1677 passed all three jobs. Adds selected HADD/HSUB/ADDSUB packed float (SSE3), PSHUFB/PHADD/PH SUB/PABS (SSSE3), PTEST/PCMPEQQ/PMULLD/ROUNDPS/PD/SS/SD (SSE4.1), PCMPGTQ (SSE4.2); three-byte maps, explicit feature metadata, raw ROUND imm8, final-length RIP/EIP. Ten tests planned (1707 cumulative), 1536+3072+1024 matrix cases per OS. Old excluded 66 PSHUFB fixture replaced by unsupported 66 0F38 FF; bare MMX still excluded. No CRC32, string compare, full SSE coverage, MXCSR/flag evaluation, CPU probe, VEX/EVEX, execution, promotion, merge, APK or OTA.
+
+## U4.5 AVX/VEX candidate
+SSE3/SSSE3/SSE4 1707/1707 and five isolated gates passed. Adds VEX2/VEX3 map 1 canonical W=0, selected AVX float arithmetic, packed moves/logic/sqrt, scalar arithmetic/sqrt, VZEROUPPER/VZEROALL. Typed 128/256 vector width, inverted R/X/B/vvvv, explicit third source, x86 ambiguity rejection, memory/segment/RIP/EIP. Ten tests planned (1737 cumulative), 32768 VEX3 and 8192 VEX2 register cases per OS. Replaced two now-supported exclusion fixtures by unsupported VEX conversion. No scalar moves, W=1 aliases, noncanonical zero forms, AVX2, EVEX, OSXSAVE/XCR0 probes, execution, lane semantics, promotion, merge, APK or OTA.
