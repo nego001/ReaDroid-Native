@@ -7,6 +7,8 @@ pub const MAX_BYTES:usize=4096;
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Mode{X86,X64}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Segment{Es,Cs,Ss,Ds,Fs,Gs}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Base{None,Register(u8),Rip,Eip}
@@ -38,7 +40,7 @@ pub enum Op{
     Branch{call:bool,condition:Option<u8>,target:Target},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
-pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8}
+pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Stop{Complete,Unsupported{offset:usize},Truncated{offset:usize}}
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -137,19 +139,46 @@ fn byte_register(index:u8,rex:u8)->Operand{
 fn byte_operand(operand:Operand,rex:u8)->Operand{
     match operand{Operand::Register(index)=>byte_register(index,rex),_=>operand}
 }
-fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
+fn explicit_memory(op:Op)->bool{
+    match op{
+        Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
+        Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
+        Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}=>matches!(source,Operand::Memory(_)),
+        Op::SetCondition{destination,..}=>matches!(destination,Operand::Memory(_)),
+        // LEA computes an offset; it is not a segmented memory access.
+        _=>false
+    }
+}
+fn segment_prefix(b:u8)->Option<Segment>{match b{
+    0x26=>Some(Segment::Es),0x2e=>Some(Segment::Cs),0x36=>Some(Segment::Ss),
+    0x3e=>Some(Segment::Ds),0x64=>Some(Segment::Fs),0x65=>Some(Segment::Gs),_=>None
+}}
+fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>),Local>{
     let mut i=0;
     let mut rex=0u8;
-    let mut override16=false;let mut address_override=false;
+    let mut override16=false;let mut address_override=false;let mut segment=None;
     while let Some(prefix)=b.get(i){match *prefix{
         0x66 if !override16=>{override16=true;i+=1;},
         0x67 if !address_override=>{address_override=true;i+=1;},
         0x66|0x67=>return Err(Local::Unsupported),
+        v if segment_prefix(v).is_some()=>{
+            let seg=segment_prefix(v).unwrap();
+            if segment.is_some()||mode==Mode::X64&&!matches!(seg,Segment::Fs|Segment::Gs){return Err(Local::Unsupported);}
+            segment=Some(seg);i+=1;
+        },
         _=>break
     }}
     if mode==Mode::X64&&b.get(i).is_some_and(|v|(0x40..=0x4f).contains(v)){
         rex=b[i];i+=1;
     }
+    let (n,op)=one_opcode(mode,pc,b,i,rex,override16,address_override)?;
+    if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+    let address_width=match (mode,address_override){(Mode::X86,false)|(Mode::X64,true)=>32,(Mode::X86,true)=>16,(Mode::X64,false)=>64};
+    // Keep the architectural instruction-length limit explicit.
+    if n>15{return Err(Local::Unsupported);}
+    Ok((n,op,address_width,segment))
+}
+fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,address_override:bool)->Result<(usize,Op),Local>{
     let opcode=*b.get(i).ok_or(Local::Truncated)?;i+=1;
     // Only one REX and only on the forms explicitly supported below.
     // Unique 66/67 in either order before optional single REX.
@@ -290,10 +319,8 @@ pub fn decode(mode:Mode,pc:u64,bytes:&[u8])->Result<Page,Error>{
     let mut instructions=Vec::new();let mut i=0;
     while i<bytes.len(){
         match one(mode,pc+i as u64,&bytes[i..]){
-            Ok((n,op))=>{
-                let address_override=bytes[i..i+n].iter().take_while(|&&v|matches!(v,0x66|0x67)).any(|&v|v==0x67);
-                let address_width=match (mode,address_override){(Mode::X86,false)|(Mode::X64,true)=>32,(Mode::X86,true)=>16,(Mode::X64,false)=>64};
-                instructions.push(Instruction{address:pc+i as u64,bytes:bytes[i..i+n].to_vec(),op,address_width});
+            Ok((n,op,address_width,segment_override))=>{
+                instructions.push(Instruction{address:pc+i as u64,bytes:bytes[i..i+n].to_vec(),op,address_width,segment_override});
                 i+=n;
             },
             Err(Local::Unsupported)=>return Ok(Page{instructions,consumed:i,stop:Stop::Unsupported{offset:i}}),
