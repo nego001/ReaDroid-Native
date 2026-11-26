@@ -1,7 +1,7 @@
 name: JNI host laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session]
+    branches: [validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session, validation/universal-core-u2-6-final]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:

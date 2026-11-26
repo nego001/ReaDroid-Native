@@ -1,7 +1,7 @@
 name: SQLite native storage validation
 on:
   push:
-    branches: [validation/universal-core-u1-11-1, validation/universal-core-u1-11-2, validation/universal-core-u1-11-3, validation/universal-core-u1-11-4, validation/universal-core-u1-11-5, validation/universal-core-u1-12-1, validation/universal-core-u1-12-2, validation/universal-core-u1-12-3, validation/universal-core-u1-12-4, validation/universal-core-u1-12-5, validation/universal-core-u1-12-6, validation/universal-core-u1-final, validation/universal-core-u2-1-hex-parity, validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session]
+    branches: [validation/universal-core-u1-11-1, validation/universal-core-u1-11-2, validation/universal-core-u1-11-3, validation/universal-core-u1-11-4, validation/universal-core-u1-11-5, validation/universal-core-u1-12-1, validation/universal-core-u1-12-2, validation/universal-core-u1-12-3, validation/universal-core-u1-12-4, validation/universal-core-u1-12-5, validation/universal-core-u1-12-6, validation/universal-core-u1-final, validation/universal-core-u2-1-hex-parity, validation/universal-core-u2-2-jni, validation/universal-core-u2-3-android-build, validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session, validation/universal-core-u2-6-final]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:

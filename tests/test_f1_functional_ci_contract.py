@@ -18,6 +18,8 @@ PRODUCTION = {
     "ExplorerView.java",
     "ApkImagePreview.java",
     "ApkHexPreview.java",
+    "NativeHexBackend.java",
+    "NativeHexSession.java",
     "EditPlan.java",
     "RecoveryVault.java",
     "RecoveryDirectoryGuard.java",
@@ -46,6 +48,8 @@ ANDROID_TESTS = {
     "EditPlanStateInstrumentedTest",
     "ApkImagePreviewInstrumentedTest",
     "ApkHexPreviewInstrumentedTest",
+    "NativeHexIntegrationInstrumentedTest",
+    "NativeHexSessionInstrumentedTest",
     "RecoveryVaultInstrumentedTest",
     "F133RecoverySpaceConcurrencyInstrumentedTest",
     "F134RecoveryStageIntegrityInstrumentedTest",
@@ -117,6 +121,9 @@ class FunctionalCIContract(unittest.TestCase):
                         f"Missing Android instrumentation: {required - actual}")
         self.assertIn("set -eu", self.workflow)
         self.assertIn("api: [29, 35]", self.workflow)
+        self.assertIn("-Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false", self.workflow)
+        self.assertIn("      - 'app/build.gradle.kts'", self.workflow)
+        self.assertIn("      - 'engine/android-bridge/**'", self.workflow)
 
     def test_f114_export_picker_bound_to_project_and_lifecycle(self):
         activity = (ROOT / "app/src/main/java/com/readroid/app/MainActivity.java").read_text(

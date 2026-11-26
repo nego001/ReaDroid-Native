@@ -1,7 +1,7 @@
 name: Android hex integration laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session]
+    branches: [validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session, validation/universal-core-u2-6-final]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
@@ -47,6 +47,12 @@ jobs:
           work="$(mktemp -d)"
           bash engine/android-bridge/android/build.sh "$work"
           echo "NATIVE_HEX_DIR=$work/libs" >> "$GITHUB_ENV"
+      - name: Check QA and release isolation with debug opt-in present
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon "-PnegrodroidNativeHexDir=$NATIVE_HEX_DIR" :app:generateQaBuildConfig :app:generateReleaseBuildConfig :app:mergeQaNativeLibs :app:mergeReleaseNativeLibs
+          python3 engine/android-bridge/android/verify_variant_isolation.py app/build
       - name: Enable KVM
         run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
       - name: Run default Java and opt-in native previews on Android
@@ -68,4 +74,7 @@ jobs:
             adb shell am force-stop com.readroid.app
             gradle --no-daemon :app:connectedDebugAndroidTest "-PnegrodroidNativeHexDir=$NATIVE_HEX_DIR" -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=true -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
             python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk true
-            echo "U2_4_ANDROID_HEX_INTEGRATION_PASS api=${{ matrix.api }}"
+            adb shell am force-stop com.readroid.app
+            gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
+            python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk false
+            echo "U2_6_DEFAULT_NATIVE_DEFAULT_PASS api=${{ matrix.api }}"
