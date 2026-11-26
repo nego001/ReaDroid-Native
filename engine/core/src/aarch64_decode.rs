@@ -10,8 +10,17 @@ pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WideKind{Movn,Movz,Movk}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Shift{Lsl,Lsr,Asr,Ror}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum LogicalKind{And,Orr,Eor,Ands}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Unknown,Nop,
+    AddSubRegister{wide:bool,subtract:bool,set_flags:bool,destination:u8,left:u8,right:u8,shift:Shift,amount:u8},
+    LogicalRegister{kind:LogicalKind,wide:bool,invert:bool,destination:u8,left:u8,right:u8,shift:Shift,amount:u8},
+    MultiplyAdd{wide:bool,subtract:bool,destination:u8,left:u8,right:u8,accumulator:u8},
+    Divide{wide:bool,signed:bool,destination:u8,left:u8,right:u8},
+    VariableShift{wide:bool,shift:Shift,destination:u8,source:u8,amount_register:u8},
     PcAddress{page:bool,register:u8,target:Target},
     LiteralLoad{width:u8,signed:bool,register:u8,target:Target},
     MemoryImmediate{load:bool,width:u8,scaled:bool,base:u8,register:u8,displacement:i32},
@@ -104,6 +113,39 @@ fn op(pc:u64,w:u32)->Op{
         return Op::MemoryPair{load:w&(1<<22)!=0,width,base:((w>>5)&31) as u8,
             first:(w&31) as u8,second:((w>>10)&31) as u8,
             displacement:(sign_extend((w>>15)&127,7) as i32)*i32::from(width)};
+    }
+    // ADD/SUB shifted register. Shift selector 3 is reserved.
+    if w&0x1f200000==0x0b000000{
+        let wide=w>>31!=0;let amount=((w>>10)&63) as u8;
+        if !wide&&amount>=32{return Op::Unknown;}
+        let shift=match (w>>22)&3{0=>Shift::Lsl,1=>Shift::Lsr,2=>Shift::Asr,_=>return Op::Unknown};
+        return Op::AddSubRegister{wide,subtract:w&(1<<30)!=0,set_flags:w&(1<<29)!=0,
+            destination:(w&31) as u8,left:((w>>5)&31) as u8,right:((w>>16)&31) as u8,shift,amount};
+    }
+    // AND/BIC/ORR/ORN/EOR/EON/ANDS/BICS shifted register.
+    if w&0x1f000000==0x0a000000{
+        let wide=w>>31!=0;let amount=((w>>10)&63) as u8;
+        if !wide&&amount>=32{return Op::Unknown;}
+        let shift=match (w>>22)&3{0=>Shift::Lsl,1=>Shift::Lsr,2=>Shift::Asr,_=>Shift::Ror};
+        let kind=match (w>>29)&3{0=>LogicalKind::And,1=>LogicalKind::Orr,2=>LogicalKind::Eor,_=>LogicalKind::Ands};
+        return Op::LogicalRegister{kind,wide,invert:w&(1<<21)!=0,destination:(w&31) as u8,
+            left:((w>>5)&31) as u8,right:((w>>16)&31) as u8,shift,amount};
+    }
+    // MADD/MSUB (same-width integer form), not widening or high-half forms.
+    if w&0x7fe00000==0x1b000000{
+        return Op::MultiplyAdd{wide:w>>31!=0,subtract:w&(1<<15)!=0,destination:(w&31) as u8,
+            left:((w>>5)&31) as u8,right:((w>>16)&31) as u8,accumulator:((w>>10)&31) as u8};
+    }
+    // UDIV/SDIV: operands only; never calculate a quotient.
+    if w&0x7fe0f800==0x1ac00800{
+        return Op::Divide{wide:w>>31!=0,signed:w&(1<<10)!=0,destination:(w&31) as u8,
+            left:((w>>5)&31) as u8,right:((w>>16)&31) as u8};
+    }
+    // LSLV/LSRV/ASRV/RORV.
+    if w&0x7fe0f000==0x1ac02000{
+        let shift=match (w>>10)&3{0=>Shift::Lsl,1=>Shift::Lsr,2=>Shift::Asr,_=>Shift::Ror};
+        return Op::VariableShift{wide:w>>31!=0,shift,destination:(w&31) as u8,
+            source:((w>>5)&31) as u8,amount_register:((w>>16)&31) as u8};
     }
     Op::Unknown
 }
