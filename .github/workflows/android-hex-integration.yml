@@ -1,7 +1,7 @@
 name: Android hex integration laboratory
 on:
   push:
-    branches: [validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session, validation/universal-core-u2-6-final, validation/universal-core-u3-1-binary-pages, validation/universal-core-u3-2-hex-search, validation/universal-core-u3-3-text-encoding, validation/universal-core-u3-4-data-inspector, validation/universal-core-u3-5-binary-comparison, validation/universal-core-u3-6-virtual-overlay, validation/universal-core-u3-7-undo-redo, validation/universal-core-u3-8-final, validation/universal-core-u4-1-pe-structure, validation/universal-core-u4-2-elf-structure]
+    branches: [validation/universal-core-u2-4-hex-fallback, validation/universal-core-u2-5-native-session, validation/universal-core-u2-6-final, validation/universal-core-u3-1-binary-pages, validation/universal-core-u3-2-hex-search, validation/universal-core-u3-3-text-encoding, validation/universal-core-u3-4-data-inspector, validation/universal-core-u3-5-binary-comparison, validation/universal-core-u3-6-virtual-overlay, validation/universal-core-u3-7-undo-redo, validation/universal-core-u3-8-final, validation/universal-core-u4-1-pe-structure, validation/universal-core-u4-2-elf-structure, validation/universal-core-u4-3-dex-structure]
   pull_request:
     branches: [feature/p7-negrecodroid-visual-foundation]
     paths:
