@@ -21,6 +21,7 @@ pub mod binary_search;
 pub mod text_encoding;
 pub mod data_inspector;
 pub mod binary_comparison;
+pub mod virtual_overlay;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
