@@ -18,6 +18,7 @@ pub mod context_export;
 pub mod hex;
 pub mod binary_pages;
 pub mod binary_search;
+pub mod text_encoding;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
