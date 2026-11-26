@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -55,6 +55,12 @@ pub enum ConversionKind{IntToFloat,FloatToIntRounded,FloatToIntTruncated}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum ConversionOperand{Xmm(u8),Gpr(u8),Memory(Memory)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum HorizontalKind{Add,Sub,AddSub}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ExtendedPackedKind{ShuffleBytes,Abs,HorizontalAdd,HorizontalSub,MultiplyLow,Equal,GreaterSigned,Test}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum RoundFormat{PackedSingle,PackedDouble,ScalarSingle,ScalarDouble}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum UnaryKind{Inc,Dec,Call,Jump,Push,Not,Neg,Mul,Imul,Div,Idiv}
@@ -66,6 +72,9 @@ pub enum Op{
     CountBits{kind:CountKind,width:u8,destination:u8,source:Operand},
     Sse{kind:SseKind,format:FloatFormat,destination:XmmOperand,source:XmmOperand},
     PackedInteger{kind:PackedKind,lane_bits:Option<u8>,destination:XmmOperand,source:XmmOperand},
+    HorizontalFloat{kind:HorizontalKind,format:FloatFormat,destination:XmmOperand,source:XmmOperand},
+    ExtendedPacked{kind:ExtendedPackedKind,lane_bits:Option<u8>,destination:XmmOperand,source:XmmOperand,feature:CpuFeature},
+    RoundFloat{format:RoundFormat,destination:XmmOperand,source:XmmOperand,control:u8},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
     Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
@@ -98,6 +107,9 @@ impl Instruction{
             Op::Sse{format:FloatFormat::PackedSingle|FloatFormat::ScalarSingle,..}=>Some(CpuFeature::Sse),
             Op::Sse{format:FloatFormat::PackedDouble|FloatFormat::ScalarDouble,..}|Op::PackedInteger{..}|Op::ScalarConvert{float_bits:64,..}=>Some(CpuFeature::Sse2),
             Op::ScalarConvert{float_bits:32,..}=>Some(CpuFeature::Sse),
+            Op::HorizontalFloat{..}=>Some(CpuFeature::Sse3),
+            Op::ExtendedPacked{feature,..}=>Some(feature),
+            Op::RoundFloat{..}=>Some(CpuFeature::Sse41),
             _=>None
         }
     }
@@ -238,9 +250,21 @@ fn packed_kind(op:u8)->Option<(PackedKind,Option<u8>)>{
 fn conversion_rm(rm:Operand,gpr:bool)->Result<ConversionOperand,Local>{
     match rm{Operand::Register(r)=>Ok(if gpr{ConversionOperand::Gpr(r)}else{ConversionOperand::Xmm(r)}),Operand::Memory(m)=>Ok(ConversionOperand::Memory(m)),_=>Err(Local::Unsupported)}
 }
+fn extended_packed_kind(op:u8)->Option<(ExtendedPackedKind,Option<u8>,CpuFeature)>{
+    use ExtendedPackedKind::*;
+    Some(match op{
+        0x00=>(ShuffleBytes,Some(8),CpuFeature::Ssse3),
+        0x01=>(HorizontalAdd,Some(16),CpuFeature::Ssse3),0x02=>(HorizontalAdd,Some(32),CpuFeature::Ssse3),
+        0x05=>(HorizontalSub,Some(16),CpuFeature::Ssse3),0x06=>(HorizontalSub,Some(32),CpuFeature::Ssse3),
+        0x1c=>(Abs,Some(8),CpuFeature::Ssse3),0x1d=>(Abs,Some(16),CpuFeature::Ssse3),0x1e=>(Abs,Some(32),CpuFeature::Ssse3),
+        0x17=>(Test,None,CpuFeature::Sse41),0x29=>(Equal,Some(64),CpuFeature::Sse41),
+        0x40=>(MultiplyLow,Some(32),CpuFeature::Sse41),0x37=>(GreaterSigned,Some(64),CpuFeature::Sse42),
+        _=>return None
+    })
+}
 fn explicit_memory(op:Op)->bool{
     match op{
-        Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
+        Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
         Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
@@ -310,6 +334,34 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
     }else if group1==Some(0xf3)&&opcode==0x90{
         if rex!=0||override16||address_override||segment.is_some(){return Err(Local::Unsupported);}
         (i+1,Op::Pause)
+    }else if opcode==0x0f&&matches!(b.get(i+1),Some(0x7c|0x7d|0xd0)){
+        if rex&8!=0||locked{return Err(Local::Unsupported);}
+        let format=match (override16,group1){
+            (true,None)=>FloatFormat::PackedDouble,(false,Some(0xf2))=>FloatFormat::PackedSingle,_=>return Err(Local::Unsupported)
+        };
+        let kind=match b[i+1]{0x7c=>HorizontalKind::Add,0x7d=>HorizontalKind::Sub,_=>HorizontalKind::AddSub};
+        let (end,reg,rm)=modrm(mode,pc,b,i+2,rex,address_override)?;
+        let op=Op::HorizontalFloat{kind,format,destination:XmmOperand::Register(reg),source:xmm_operand(rm)?};
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
+    }else if opcode==0x0f&&matches!(b.get(i+1),Some(0x38|0x3a)){
+        // Selected three-byte XMM maps require 66, with no MMX or CRC32 aliases.
+        if !override16||group1.is_some()||rex&8!=0{return Err(Local::Unsupported);}
+        let tertiary=take(b,i+2,1)?[0];
+        let (end,op)=if b[i+1]==0x38{
+            let (kind,lane_bits,feature)=extended_packed_kind(tertiary).ok_or(Local::Unsupported)?;
+            let (end,reg,rm)=modrm(mode,pc,b,i+3,rex,address_override)?;
+            (end,Op::ExtendedPacked{kind,lane_bits,feature,destination:XmmOperand::Register(reg),source:xmm_operand(rm)?})
+        }else{
+            let format=match tertiary{0x08=>RoundFormat::PackedSingle,0x09=>RoundFormat::PackedDouble,0x0a=>RoundFormat::ScalarSingle,0x0b=>RoundFormat::ScalarDouble,_=>return Err(Local::Unsupported)};
+            let (at,reg,rm)=modrm(mode,pc,b,i+3,rex,address_override)?;
+            let control=take(b,at,1)?[0];
+            // Preserve all encoded control bits, without evaluating MXCSR.
+            let end=at+1;
+            (end,Op::RoundFloat{format,destination:XmmOperand::Register(reg),source:xmm_operand(finish_rip(mode,pc,end,rm))?,control})
+        };
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
     }else if opcode==0x0f&&b.get(i+1).copied().and_then(packed_kind).is_some(){
         let secondary=b[i+1];let (mut kind,lane_bits)=packed_kind(secondary).unwrap();
         // 66 selects XMM rather than MMX. F3 selects MOVDQU only.

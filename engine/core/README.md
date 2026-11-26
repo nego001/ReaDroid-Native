@@ -257,3 +257,6 @@ SSE/XMM 1644/1644 Rust and five isolated workflows passed. Selected SSE2 PADDB/W
 
 ### SSE2 truncation repair
 Initial Core #45870328909 failed on all three OS in truncation_every_boundary: F2 REX 0F without secondary opcode was rejected before opcode-map selection. Require the second byte of 0F before dispatch; preserve all original tests and add a dedicated cross-mode escape/prefix regression (11 tests in this layer; 1677 cumulative expected). No extra opcode coverage until repair validation. No execution, merge, APK or OTA.
+
+## U4.5 SSE3/SSSE3/SSE4 candidate
+SSE2 repair Core 1677/1677 passed all three jobs. Adds selected HADD/HSUB/ADDSUB packed float (SSE3), PSHUFB/PHADD/PH SUB/PABS (SSSE3), PTEST/PCMPEQQ/PMULLD/ROUNDPS/PD/SS/SD (SSE4.1), PCMPGTQ (SSE4.2); three-byte maps, explicit feature metadata, raw ROUND imm8, final-length RIP/EIP. Ten tests planned (1707 cumulative), 1536+3072+1024 matrix cases per OS. Old excluded 66 PSHUFB fixture replaced by unsupported 66 0F38 FF; bare MMX still excluded. No CRC32, string compare, full SSE coverage, MXCSR/flag evaluation, CPU probe, VEX/EVEX, execution, promotion, merge, APK or OTA.
