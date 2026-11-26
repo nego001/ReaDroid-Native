@@ -245,3 +245,6 @@ Adds canonical group2 ROL/ROR/RCL/RCR/SHL/SHR/SAR, raw immediate/one/CL count me
 
 ## U4.5 x86 atomic/exchange/fence candidate
 Shift/bit Core 1554/1554 passed; Android isolated pending. Adds selected XCHG (ModRM and 91–97), XADD, CMPXCHG, CMPXCHG8B/16B, canonical LFENCE/MFENCE/SFENCE. Instruction.locked remains encoded prefix; lock_kind distinguishes explicit and implicit memory XCHG. Ten tests planned (1584 cumulative), 768 register-pair cases per OS. Prior unsupported XCHG fixtures switched to still-unsupported POP r/m, preserving stop/budget assertions. No runtime atomicity, alignment/CPU feature checks, memory evaluation, HLE, PAUSE, other 90 encodings, general fence aliases, SIMD, JNI/UI, promotion, merge, APK or OTA.
+
+## U4.5 x86 mandatory F3 count/pause candidate
+Atomic Core 1584/1584 passed. Canonical F3 PAUSE and F3 0F B8/BC/BD POPCNT/TZCNT/LZCNT, typed widths and memory addressing. count_feature reports selected count requirements and behavior without feature: POPCNT invalid opcode, TZCNT BSF, LZCNT BSR. No host or target CPUID probe. Ten tests planned (1614 cumulative), 768 extended register combinations per OS. Prior unsupported fixtures updated to still-excluded F2/mandatory-SIMD encodings while preserving stop assertions. No complete feature inventory, SIMD, execution, JNI/UI, promotion, merge, APK or OTA.

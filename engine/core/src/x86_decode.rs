@@ -27,6 +27,14 @@ pub enum FenceKind{Load,Store,Full}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum CountKind{Population,LeadingZeros,TrailingZeros}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct FeatureRequirement{pub feature:CpuFeature,pub without:WithoutFeature}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Base{None,Register(u8),Rip,Eip}
@@ -42,7 +50,8 @@ pub enum UnaryKind{Inc,Dec,Call,Jump,Push,Not,Neg,Mul,Imul,Div,Idiv}
 pub struct Immediate{pub encoded_bits:u8,pub raw:u64,pub value:u64}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
-    Nop,Return,Breakpoint,
+    Nop,Return,Breakpoint,Pause,
+    CountBits{kind:CountKind,width:u8,destination:u8,source:Operand},
     String{kind:StringKind,width:u8,repeat:Repeat},
     Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
     DoubleShift{right:bool,width:u8,destination:Operand,source:u8,count:ShiftCount},
@@ -68,6 +77,16 @@ pub enum Op{
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>,pub locked:bool}
 impl Instruction{
+    /// Selected count feature requirements, not a complete ISA inventory.
+    pub fn count_feature(&self)->Option<FeatureRequirement>{
+        let (feature,without)=match self.op{
+            Op::CountBits{kind:CountKind::Population,..}=>(CpuFeature::Popcnt,WithoutFeature::InvalidOpcode),
+            Op::CountBits{kind:CountKind::LeadingZeros,..}=>(CpuFeature::Lzcnt,WithoutFeature::BitScan{reverse:true}),
+            Op::CountBits{kind:CountKind::TrailingZeros,..}=>(CpuFeature::Bmi1,WithoutFeature::BitScan{reverse:false}),
+            _=>return None
+        };
+        Some(FeatureRequirement{feature,without})
+    }
     /// Encoded LOCK versus implicit memory XCHG locking; not a runtime atomicity guarantee.
     pub fn lock_kind(&self)->LockKind{
         if self.locked{LockKind::Explicit}
@@ -177,7 +196,7 @@ fn explicit_memory(op:Op)->bool{
     match op{
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
         Op::BinaryImmediate{operand,..}|Op::Unary{operand,..}=>matches!(operand,Operand::Memory(_)),
-        Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}=>matches!(source,Operand::Memory(_)),
+        Op::ExtendMove{source,..}|Op::Multiply{source,..}|Op::MultiplyImmediate{source,..}|Op::ConditionalMove{source,..}|Op::CountBits{source,..}=>matches!(source,Operand::Memory(_)),
         Op::SetCondition{destination,..}|Op::DoubleShift{destination,..}|Op::Exchange{destination,..}=>matches!(destination,Operand::Memory(_)),
         Op::CompareExchangePair{..}=>true,
         Op::Shift{operand,..}|Op::Bit{operand,..}|Op::BitScan{source:operand,..}=>matches!(operand,Operand::Memory(_)),
@@ -237,6 +256,17 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
         if segment.is_some()&&!matches!(kind,StringKind::Movs|StringKind::Cmps|StringKind::Lods){return Err(Local::Unsupported);}
         let width=if opcode&1==0{8}else if rex&8!=0{64}else if override16{16}else{32};
         (i+1,Op::String{kind,width,repeat})
+    }else if group1==Some(0xf3)&&opcode==0x90{
+        if rex!=0||override16||address_override||segment.is_some(){return Err(Local::Unsupported);}
+        (i+1,Op::Pause)
+    }else if group1==Some(0xf3)&&opcode==0x0f{
+        let secondary=take(b,i+1,1)?[0];
+        let kind=match secondary{0xb8=>CountKind::Population,0xbc=>CountKind::TrailingZeros,0xbd=>CountKind::LeadingZeros,_=>return Err(Local::Unsupported)};
+        let width=if rex&8!=0{64}else if override16{16}else{32};
+        let (end,destination,source)=modrm(mode,pc,b,i+2,rex,address_override)?;
+        let op=Op::CountBits{kind,width,destination,source};
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
     }else{
         if matches!(group1,Some(0xf2|0xf3)){return Err(Local::Unsupported);}
         let (n,op)=one_opcode(mode,pc,b,i,rex,override16,address_override)?;
@@ -349,7 +379,7 @@ fn one_opcode(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,override16:bool,addres
         let value=immediate(b,i,n,width)?;
         return Ok((i+n,Op::BinaryImmediate{kind,width,operand:Operand::Register(0),immediate:value}));
     }
-    // Selected two-byte legacy map; no mandatory F2/F3 or vector maps.
+    // Selected unprefixed two-byte legacy map; mandatory F3 count forms handled above.
     if opcode==0x0f{
         let secondary=take(b,i,1)?[0];
         if matches!(secondary,0xb0|0xb1|0xc0|0xc1){
