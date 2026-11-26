@@ -28,6 +28,7 @@ pub mod elf_structure;
 pub mod dex_structure;
 pub mod elf_symbols;
 pub mod pe_symbols;
+pub mod dex_identifiers;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
