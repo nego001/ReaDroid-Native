@@ -9,8 +9,18 @@ pub enum Mode{X86,X64}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Base{None,Register(u8),Rip}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct Memory{pub base:Base,pub index:Option<u8>,pub scale:u8,pub displacement:i64,pub rip_target:Option<Target>}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum Operand{Register(u8),Memory(Memory)}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum BinaryKind{Mov,Add,Or,And,Sub,Xor,Cmp,Test}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Op{
     Nop,Return,Breakpoint,
+    Binary{kind:BinaryKind,width:u8,destination:Operand,source:Operand},
+    Lea{width:u8,destination:u8,memory:Memory},
     PushPop{pop:bool,register:u8,width:u8},
     IncDec{decrement:bool,register:u8},
     MoveImmediate{register:u8,width:u8,value:u64},
@@ -40,6 +50,35 @@ enum Local{Unsupported,Truncated}
 fn take(b:&[u8],start:usize,n:usize)->Result<&[u8],Local>{
     b.get(start..start+n).ok_or(Local::Truncated)
 }
+fn modrm(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8)->Result<(usize,u8,Operand),Local>{
+    let m=take(b,i,1)?[0];i+=1;
+    let form=m>>6;let raw=m&7;
+    let reg=((m>>3)&7)|(((rex>>2)&1)<<3);
+    let extension=(rex&1)<<3;
+    if form==3{return Ok((i,reg,Operand::Register(raw|extension)));}
+    let mut base=Base::Register(raw|extension);
+    let mut index=None;let mut scale=1;
+    let mut disp32=form==2;
+    if raw==4{
+        let sib=take(b,i,1)?[0];i+=1;
+        let ix=(sib>>3)&7;
+        if ix!=4||rex&2!=0{index=Some(ix|(((rex>>1)&1)<<3));scale=1<<(sib>>6);}
+        let bs=sib&7;
+        base=if form==0&&bs==5{disp32=true;Base::None}else{Base::Register(bs|extension)};
+    }else if form==0&&raw==5{
+        disp32=true;
+        base=if mode==Mode::X64{Base::Rip}else{Base::None};
+    }
+    let displacement=if disp32{
+        let v=u32::from_le_bytes(take(b,i,4)?.try_into().unwrap());i+=4;
+        if mode==Mode::X86&&base==Base::None{i64::from(v)}else{i64::from(v as i32)}
+    }else if form==1{
+        let v=take(b,i,1)?[0] as i8;i+=1;i64::from(v)
+    }else{0};
+    // All supported ModRM instructions end at the addressing fields.
+    let rip_target=if base==Base::Rip{Some(target(mode,pc+i as u64,displacement))}else{None};
+    Ok((i,reg,Operand::Memory(Memory{base,index,scale,displacement,rip_target})))
+}
 fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
     let mut i=0;
     let mut rex=0u8;
@@ -48,7 +87,7 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
     }
     let opcode=*b.get(i).ok_or(Local::Truncated)?;i+=1;
     // Only one REX and only on the forms explicitly supported below.
-    // No legacy prefixes, VEX/EVEX, ModRM or SIB in this first subset.
+    // No legacy prefixes, VEX/EVEX or multiple REX prefixes.
     if (0xb8..=0xbf).contains(&opcode){
         let width=if rex&8!=0{64}else{32};
         let n=if width==64{8}else{4};
@@ -58,6 +97,22 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
     }
     if (0x50..=0x5f).contains(&opcode){
         return Ok((i,Op::PushPop{pop:opcode>=0x58,register:(opcode&7)|((rex&1)<<3),width:if mode==Mode::X64{64}else{32}}));
+    }
+    let binary=match opcode{
+        0x89|0x8b=>Some(BinaryKind::Mov),0x01|0x03=>Some(BinaryKind::Add),
+        0x09|0x0b=>Some(BinaryKind::Or),0x21|0x23=>Some(BinaryKind::And),
+        0x29|0x2b=>Some(BinaryKind::Sub),0x31|0x33=>Some(BinaryKind::Xor),
+        0x39|0x3b=>Some(BinaryKind::Cmp),0x85=>Some(BinaryKind::Test),_=>None
+    };
+    if let Some(kind)=binary{
+        let (n,reg,rm)=modrm(mode,pc,b,i,rex)?;
+        let (destination,source)=if opcode&2!=0{(Operand::Register(reg),rm)}else{(rm,Operand::Register(reg))};
+        return Ok((n,Op::Binary{kind,width:if rex&8!=0{64}else{32},destination,source}));
+    }
+    if opcode==0x8d{
+        let (n,reg,rm)=modrm(mode,pc,b,i,rex)?;
+        let Operand::Memory(memory)=rm else{return Err(Local::Unsupported);};
+        return Ok((n,Op::Lea{width:if rex&8!=0{64}else{32},destination:reg,memory}));
     }
     if rex!=0{return Err(Local::Unsupported);}
     match opcode{

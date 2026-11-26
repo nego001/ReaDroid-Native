@@ -39,7 +39,7 @@ fn all_short_and_near_conditions(){
 }
 #[test]
 fn unsupported_never_guesses_length(){
-    for suffix in [&[0x66,0x90][..],&[0x8b,0xc0,0x90],&[0x0f,0x1f,0x00],&[0x48,0x90],&[0xc5,0xf8,0x77],&[0xf3,0x90]]{
+    for suffix in [&[0x66,0x90][..],&[0x87,0xc0,0x90],&[0x0f,0x1f,0x00],&[0x48,0x90],&[0xc5,0xf8,0x77],&[0xf3,0x90]]{
         let mut b=vec![0x90];b.extend(suffix);
         let p=x86_decode::decode(Mode::X64,0,&b).unwrap();
         assert_eq!(p.stop,Stop::Unsupported{offset:1});assert_eq!(p.consumed,1);assert_eq!(p.instructions.len(),1);
@@ -63,7 +63,7 @@ fn target_overflow_and_window_limits(){
 }
 #[test]
 fn read_exact_budget_even_on_unsupported(){
-    let c=Cancellation::default();let mut s=ReadSession::new(Cursor::new([0xff,0x90,0x8b,0xc0]),4,3,c.clone());
+    let c=Cancellation::default();let mut s=ReadSession::new(Cursor::new([0xff,0x90,0x87,0xc0]),4,3,c.clone());
     let p=x86_decode::read(&mut s,1,Mode::X64,0x1000,3).unwrap();
     assert_eq!(p.stop,Stop::Unsupported{offset:1});assert_eq!(s.remaining_budget(),0);
     c.cancel();assert_eq!(x86_decode::read(&mut s,1,Mode::X64,0x1000,1).unwrap_err().kind(),io::ErrorKind::Interrupted);
