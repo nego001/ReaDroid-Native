@@ -9,7 +9,7 @@ pub enum Mode{X86,X64}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Target{Address(u64),Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum Base{None,Register(u8),Rip}
+pub enum Base{None,Register(u8),Rip,Eip}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub struct Memory{pub base:Base,pub index:Option<u8>,pub scale:u8,pub displacement:i64,pub rip_target:Option<Target>}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -38,7 +38,7 @@ pub enum Op{
     Branch{call:bool,condition:Option<u8>,target:Target},
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
-pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op}
+pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Stop{Complete,Unsupported{offset:usize},Truncated{offset:usize}}
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -61,12 +61,29 @@ enum Local{Unsupported,Truncated}
 fn take(b:&[u8],start:usize,n:usize)->Result<&[u8],Local>{
     b.get(start..start+n).ok_or(Local::Truncated)
 }
-fn modrm(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8)->Result<(usize,u8,Operand),Local>{
+fn modrm(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8,address_override:bool)->Result<(usize,u8,Operand),Local>{
     let m=take(b,i,1)?[0];i+=1;
     let form=m>>6;let raw=m&7;
     let reg=((m>>3)&7)|(((rex>>2)&1)<<3);
     let extension=(rex&1)<<3;
-    if form==3{return Ok((i,reg,Operand::Register(raw|extension)));}
+    if form==3{
+        if address_override{return Err(Local::Unsupported);}
+        return Ok((i,reg,Operand::Register(raw|extension)));
+    }
+    // 32-bit mode with 67 uses the legacy 16-bit ModRM table, never SIB.
+    if mode==Mode::X86&&address_override{
+        let (base,index)=match raw{
+            0=>(Base::Register(3),Some(6)),1=>(Base::Register(3),Some(7)),
+            2=>(Base::Register(5),Some(6)),3=>(Base::Register(5),Some(7)),
+            4=>(Base::Register(6),None),5=>(Base::Register(7),None),
+            6 if form==0=>(Base::None,None),6=>(Base::Register(5),None),_ =>(Base::Register(3),None)
+        };
+        let displacement=if form==0&&raw==6||form==2{
+            let v=u16::from_le_bytes(take(b,i,2)?.try_into().unwrap());i+=2;
+            if base==Base::None{i64::from(v)}else{i64::from(v as i16)}
+        }else if form==1{let v=take(b,i,1)?[0] as i8;i+=1;i64::from(v)}else{0};
+        return Ok((i,reg,Operand::Memory(Memory{base,index,scale:1,displacement,rip_target:None})));
+    }
     let mut base=Base::Register(raw|extension);
     let mut index=None;let mut scale=1;
     let mut disp32=form==2;
@@ -78,22 +95,31 @@ fn modrm(mode:Mode,pc:u64,b:&[u8],mut i:usize,rex:u8)->Result<(usize,u8,Operand)
         base=if form==0&&bs==5{disp32=true;Base::None}else{Base::Register(bs|extension)};
     }else if form==0&&raw==5{
         disp32=true;
-        base=if mode==Mode::X64{Base::Rip}else{Base::None};
+        base=if mode==Mode::X64{if address_override{Base::Eip}else{Base::Rip}}else{Base::None};
     }
     let displacement=if disp32{
         let v=u32::from_le_bytes(take(b,i,4)?.try_into().unwrap());i+=4;
-        if mode==Mode::X86&&base==Base::None{i64::from(v)}else{i64::from(v as i32)}
+        if (mode==Mode::X86||address_override)&&base==Base::None{i64::from(v)}else{i64::from(v as i32)}
     }else if form==1{
         let v=take(b,i,1)?[0] as i8;i+=1;i64::from(v)
     }else{0};
     // Provisional RIP target; trailing-immediate forms must finish it at instruction end.
-    let rip_target=if base==Base::Rip{Some(target(mode,pc+i as u64,displacement))}else{None};
+    let rip_target=ip_target(mode,base,pc+i as u64,displacement);
     Ok((i,reg,Operand::Memory(Memory{base,index,scale,displacement,rip_target})))
+}
+// EIP-relative effective addresses are reduced modulo 2^32 and zero-extended.
+// Existing RIP coordinates retain the checked (non-wrapping) policy.
+fn ip_target(mode:Mode,base:Base,next:u64,delta:i64)->Option<Target>{
+    match base{
+        Base::Rip=>Some(target(mode,next,delta)),
+        Base::Eip=>Some(Target::Address(u64::from((next as u32).wrapping_add(delta as u32)))),
+        _=>None
+    }
 }
 fn finish_rip(mode:Mode,pc:u64,end:usize,operand:Operand)->Operand{
     match operand{
-        Operand::Memory(mut m) if m.base==Base::Rip=>{
-            m.rip_target=Some(target(mode,pc+end as u64,m.displacement));
+        Operand::Memory(mut m) if matches!(m.base,Base::Rip|Base::Eip)=>{
+            m.rip_target=ip_target(mode,m.base,pc+end as u64,m.displacement);
             Operand::Memory(m)
         }
         _=>operand
@@ -114,14 +140,21 @@ fn byte_operand(operand:Operand,rex:u8)->Operand{
 fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
     let mut i=0;
     let mut rex=0u8;
-    let override16=b[0]==0x66;
-    if override16{i+=1;}
+    let mut override16=false;let mut address_override=false;
+    while let Some(prefix)=b.get(i){match *prefix{
+        0x66 if !override16=>{override16=true;i+=1;},
+        0x67 if !address_override=>{address_override=true;i+=1;},
+        0x66|0x67=>return Err(Local::Unsupported),
+        _=>break
+    }}
     if mode==Mode::X64&&b.get(i).is_some_and(|v|(0x40..=0x4f).contains(v)){
         rex=b[i];i+=1;
     }
     let opcode=*b.get(i).ok_or(Local::Truncated)?;i+=1;
     // Only one REX and only on the forms explicitly supported below.
-    // One 66 before optional single REX on selected operand-width forms.
+    // Unique 66/67 in either order before optional single REX.
+    // 67 is accepted only for explicitly supported memory forms, not ignored prefixes.
+    if address_override&&!matches!(opcode,0x00..=0x03|0x08..=0x0b|0x10..=0x13|0x18..=0x1b|0x20..=0x23|0x28..=0x2b|0x30..=0x33|0x38..=0x3b|0x69|0x6b|0x80|0x81|0x83|0x84|0x85|0x88..=0x8b|0x8d|0xc6|0xc7|0xf6|0xf7|0xff|0x0f){return Err(Local::Unsupported);}
     let operand_width=if rex&8!=0{64}else if override16{16}else{32};
     if (0xb0..=0xb7).contains(&opcode){
         let raw=u64::from(take(b,i,1)?[0]);
@@ -144,14 +177,14 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
         0x38..=0x3b=>Some(BinaryKind::Cmp),0x84|0x85=>Some(BinaryKind::Test),_=>None
     };
     if let Some(kind)=binary{
-        let (n,reg,rm)=modrm(mode,pc,b,i,rex)?;
+        let (n,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
         let width=if opcode&1==0{8}else{operand_width};
         let (reg,rm)=if width==8{(byte_register(reg,rex),byte_operand(rm,rex))}else{(Operand::Register(reg),rm)};
         let (destination,source)=if opcode&2!=0{(reg,rm)}else{(rm,reg)};
         return Ok((n,Op::Binary{kind,width,destination,source}));
     }
     if opcode==0x8d{
-        let (n,reg,rm)=modrm(mode,pc,b,i,rex)?;
+        let (n,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
         let Operand::Memory(memory)=rm else{return Err(Local::Unsupported);};
         return Ok((n,Op::Lea{width:operand_width,destination:reg,memory}));
     }
@@ -163,14 +196,14 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
         let width=if matches!(opcode,0x80|0xc6|0xf6){8}else{operand_width};
         if opcode==0xff{
             let kind=match selector{0=>UnaryKind::Inc,1=>UnaryKind::Dec,2=>UnaryKind::Call,4=>UnaryKind::Jump,6=>UnaryKind::Push,_=>return Err(Local::Unsupported)};
-            let (end,_,operand)=modrm(mode,pc,b,i,rex)?;
+            let (end,_,operand)=modrm(mode,pc,b,i,rex,address_override)?;
             if override16&&matches!(kind,UnaryKind::Call|UnaryKind::Jump){return Err(Local::Unsupported);}
             let width=if matches!(kind,UnaryKind::Call|UnaryKind::Jump|UnaryKind::Push)&&mode==Mode::X64{if override16{16}else{64}}else{width};
             return Ok((end,Op::Unary{kind,width,operand}));
         }
         if matches!(opcode,0xf6|0xf7)&&selector>=2{
             let kind=match selector{2=>UnaryKind::Not,3=>UnaryKind::Neg,4=>UnaryKind::Mul,5=>UnaryKind::Imul,6=>UnaryKind::Div,_=>UnaryKind::Idiv};
-            let (end,_,operand)=modrm(mode,pc,b,i,rex)?;
+            let (end,_,operand)=modrm(mode,pc,b,i,rex,address_override)?;
             return Ok((end,Op::Unary{kind,width,operand:if width==8{byte_operand(operand,rex)}else{operand}}));
         }
         let kind=match opcode{
@@ -179,7 +212,7 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
             0xf6|0xf7 if selector==0=>BinaryKind::Test,
             _=>return Err(Local::Unsupported)
         };
-        let (at,_,operand)=modrm(mode,pc,b,i,rex)?;
+        let (at,_,operand)=modrm(mode,pc,b,i,rex,address_override)?;
         let operand=if width==8{byte_operand(operand,rex)}else{operand};
         let n=if width==8||opcode==0x83{1}else if width==16{2}else{4};
         let value=immediate(b,at,n,width)?;
@@ -203,7 +236,7 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
             if (0x90..=0x9f).contains(&secondary)&&(rex&4!=0||take(b,i,1)?[0]&0x38!=0){
                 return Err(Local::Unsupported);
             }
-            let (end,reg,rm)=modrm(mode,pc,b,i,rex)?;
+            let (end,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
             let op=match secondary{
                 0xb6|0xb7|0xbe|0xbf=>{
                     let source_width=if secondary&1==0{8}else{16};
@@ -218,13 +251,13 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op),Local>{
         }
     }
     if matches!(opcode,0x69|0x6b){
-        let (at,reg,rm)=modrm(mode,pc,b,i,rex)?;
+        let (at,reg,rm)=modrm(mode,pc,b,i,rex,address_override)?;
         let n=if opcode==0x6b{1}else if operand_width==16{2}else{4};
         let value=immediate(b,at,n,operand_width)?;
         let end=at+n;
         return Ok((end,Op::MultiplyImmediate{width:operand_width,destination:reg,source:finish_rip(mode,pc,end,rm),immediate:value}));
     }
-    if rex!=0||override16{return Err(Local::Unsupported);}
+    if rex!=0||override16||address_override{return Err(Local::Unsupported);}
     match opcode{
         0x90=>Ok((i,Op::Nop)),
         0xc3=>Ok((i,Op::Return)),
@@ -258,7 +291,9 @@ pub fn decode(mode:Mode,pc:u64,bytes:&[u8])->Result<Page,Error>{
     while i<bytes.len(){
         match one(mode,pc+i as u64,&bytes[i..]){
             Ok((n,op))=>{
-                instructions.push(Instruction{address:pc+i as u64,bytes:bytes[i..i+n].to_vec(),op});
+                let address_override=bytes[i..i+n].iter().take_while(|&&v|matches!(v,0x66|0x67)).any(|&v|v==0x67);
+                let address_width=match (mode,address_override){(Mode::X86,false)|(Mode::X64,true)=>32,(Mode::X86,true)=>16,(Mode::X64,false)=>64};
+                instructions.push(Instruction{address:pc+i as u64,bytes:bytes[i..i+n].to_vec(),op,address_width});
                 i+=n;
             },
             Err(Local::Unsupported)=>return Ok(Page{instructions,consumed:i,stop:Stop::Unsupported{offset:i}}),
