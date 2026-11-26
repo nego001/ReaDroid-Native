@@ -16,6 +16,7 @@ pub mod context_budget;
 pub mod context_guard;
 pub mod context_export;
 pub mod hex;
+pub mod binary_pages;
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
