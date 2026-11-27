@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2,Adx}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -79,6 +79,8 @@ pub enum BmiKind{AndNot,Extract,ZeroHigh,Deposit,ExtractParallel,ShiftLeft,Shift
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BmiUnaryKind{ResetLowest,MaskLowest,IsolateLowest}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum CarryChain{Carry,Overflow}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum EvexExtensionKind{Integer(PackedKind),Float(SseKind)}
 /// AVX512F is required by this selected subset; extension specifies any
 /// additional family (or F alone), and vl indicates an additional VL requirement.
@@ -112,6 +114,10 @@ pub enum Op{
     BmiBinary{kind:BmiKind,width:u8,destination:u8,source1:Operand,source2:Operand},
     BmiUnary{kind:BmiUnaryKind,width:u8,destination:u8,source:Operand},
     RotateRightImmediate{width:u8,destination:u8,source:Operand,count:u8},
+    // MULX has an implicit EDX/RDX input and two explicit destinations.
+    MultiplyUnsignedDouble{width:u8,high_destination:u8,low_destination:u8,source:Operand,implicit_source:u8},
+    // ADCX reads/writes CF; ADOX reads/writes OF. Other flags are preserved.
+    AddCarryChain{chain:CarryChain,width:u8,destination:u8,source:Operand},
     EvexExtension{kind:EvexExtensionKind,width:VectorWidth,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,feature:CpuFeature},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
@@ -152,9 +158,12 @@ impl Instruction{
     pub fn bmi_feature(&self)->Option<CpuFeature>{
         match self.op{
             Op::BmiBinary{kind:BmiKind::AndNot|BmiKind::Extract,..}|Op::BmiUnary{..}=>Some(CpuFeature::Bmi1),
-            Op::BmiBinary{..}|Op::RotateRightImmediate{..}=>Some(CpuFeature::Bmi2),
+            Op::BmiBinary{..}|Op::RotateRightImmediate{..}|Op::MultiplyUnsignedDouble{..}=>Some(CpuFeature::Bmi2),
             _=>None
         }
+    }
+    pub fn adx_feature(&self)->Option<CpuFeature>{
+        match self.op{Op::AddCarryChain{..}=>Some(CpuFeature::Adx),_=>None}
     }
     pub fn avx_feature(&self)->Option<CpuFeature>{
         match self.op{Op::FusedFloat{..}=>Some(CpuFeature::Fma),Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}|Op::EvexExtension{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
@@ -363,6 +372,13 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
         let (end,destination,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
         return Ok((end,Op::FusedFloat{kind,order,format,width,destination,source1:v,source2:vector_operand(rm)?}));
     }
+    // MULX: VEX.F2.0F38.W0/W1 F6, two GPR outputs, implicit DX input.
+    if map==2&&opcode==0xf6{
+        if pp!=3||wide||mode==Mode::X86&&fields&0x80!=0{return Err(Local::Unsupported);}
+        let bits=if fields&0x80!=0{64}else{32};
+        let (end,high_destination,source)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        return Ok((end,Op::MultiplyUnsignedDouble{width:bits,high_destination,low_destination:v,source,implicit_source:2}));
+    }
     // Selected BMI GPR encodings. W=1 is canonical only in long mode.
     // L=0 is required; pp and map select distinct integer operations.
     if map==2&&matches!(opcode,0xf2|0xf3|0xf5|0xf7){
@@ -564,7 +580,7 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
 fn explicit_memory(op:Op)->bool{
     match op{
         Op::BmiBinary{source1,source2,..}=>matches!(source1,Operand::Memory(_))||matches!(source2,Operand::Memory(_)),
-        Op::BmiUnary{source,..}|Op::RotateRightImmediate{source,..}=>matches!(source,Operand::Memory(_)),
+        Op::BmiUnary{source,..}|Op::RotateRightImmediate{source,..}|Op::MultiplyUnsignedDouble{source,..}|Op::AddCarryChain{source,..}=>matches!(source,Operand::Memory(_)),
         Op::EvexBroadcast{..}=>true,
         Op::FusedFloat{source2,..}|Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
         Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
@@ -657,6 +673,16 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
         let kind=match b[i+1]{0x7c=>HorizontalKind::Add,0x7d=>HorizontalKind::Sub,_=>HorizontalKind::AddSub};
         let (end,reg,rm)=modrm(mode,pc,b,i+2,rex,address_override)?;
         let op=Op::HorizontalFloat{kind,format,destination:XmmOperand::Register(reg),source:xmm_operand(rm)?};
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (end,op)
+    }else if opcode==0x0f&&b.get(i+1)==Some(&0x38)
+        &&matches!((override16,group1),(true,None)|(false,Some(0xf3)))
+        &&take(b,i+2,1)?[0]==0xf6{
+        // Mandatory 66 is ADCX, mandatory F3 is ADOX; not a 16-bit override.
+        let chain=if override16{CarryChain::Carry}else{CarryChain::Overflow};
+        let width=if rex&8!=0{64}else{32};
+        let (end,destination,source)=modrm(mode,pc,b,i+3,rex,address_override)?;
+        let op=Op::AddCarryChain{chain,width,destination,source};
         if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
         (end,op)
     }else if opcode==0x0f&&matches!(b.get(i+1),Some(0x38|0x3a)){

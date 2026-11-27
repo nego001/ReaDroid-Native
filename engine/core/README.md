@@ -287,3 +287,6 @@ BW/DQ/VL 1860/1860 Core and 5/5 isolated gates passed. Selected VEX3 map2 mandat
 
 ## U4.5 BMI1/BMI2 candidate
 FMA3 Core 1890/1890 passed; Android integration pending. Selected BMI1 ANDN/BEXTR/BLSR/BLSMSK/BLSI, BMI2 BZHI/PDEP/PEXT/SHLX/SHRX/SARX/RORX. GPR width 32/64, canonical VEX L=0, operand order, raw rotate imm8, RIP/EIP after immediate, separate BMI feature metadata independent of AVX state. Twelve GNU as/objdump reference instructions independently verified without execution. Ten tests planned (1920 cumulative); 65536 binary triples +1536 unary pairs +512 immediate values per OS. No MULX, complete BMI coverage, flags evaluation, runtime CPU probe, execution, promotion, merge, APK or OTA.
+
+## U4.5 ADX/MULX candidate
+BMI Core 1920/1920 passed. MULX VEX.F2 map2 F6 GPR32/64 high/low destinations and implicit EDX/RDX; ADCX mandatory 66 and ADOX mandatory F3 legacy 0F38 F6, separate CF/OF chain metadata, ADX feature independent of BMI2 and AVX. Seven independent GNU assembler/objdump 2.44 fixtures verified locally, objects never linked/executed. Ten tests planned (1950 cumulative), 8192 MULX triples and 1024 ADX pairs per OS. No arithmetic or flags evaluation, CPU probes, merge, APK or OTA.
