@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -71,6 +71,10 @@ pub enum WriteMask{None,Merge(u8),Zero(u8)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum MaskLogic{And,Or,Xor,Not}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FmaOrder{Order132,Order213,Order231}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum FmaKind{Add,Sub,NegAdd,NegSub,AddSub,SubAdd}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum EvexExtensionKind{Integer(PackedKind),Float(SseKind)}
 /// AVX512F is required by this selected subset; extension specifies any
 /// additional family (or F alone), and vl indicates an additional VL requirement.
@@ -99,6 +103,7 @@ pub enum Op{
     EvexBroadcast{kind:SseKind,format:FloatFormat,destination:u8,source1:u8,memory:Memory,mask:WriteMask},
     EvexInteger{kind:PackedKind,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,broadcast:bool},
     MaskWord{kind:MaskLogic,destination:u8,source1:Option<u8>,source2:u8},
+    FusedFloat{kind:FmaKind,order:FmaOrder,format:FloatFormat,width:VectorWidth,destination:u8,source1:u8,source2:VectorOperand},
     EvexExtension{kind:EvexExtensionKind,width:VectorWidth,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,feature:CpuFeature},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
@@ -136,7 +141,7 @@ impl Instruction{
         }
     }
     pub fn avx_feature(&self)->Option<CpuFeature>{
-        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}|Op::EvexExtension{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
+        match self.op{Op::FusedFloat{..}=>Some(CpuFeature::Fma),Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}|Op::EvexExtension{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
     }
     /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
     pub fn sse_feature(&self)->Option<CpuFeature>{
@@ -314,7 +319,6 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
         let map=first&31;
         if !(1..=3).contains(&map){return Err(Local::Unsupported);}
         let fields=take(b,i+2,1)?[0];
-        if fields&0x80!=0{return Err(Local::Unsupported);}
         (i+3,0x40|((!first>>5)&7),fields,map)
     };
     let v=(!fields>>3)&15;
@@ -323,6 +327,28 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
     let pp=fields&3;
     let opcode=take(b,at,1)?[0];
     let width=if wide{VectorWidth::Bits256}else{VectorWidth::Bits128};
+    // FMA3 VEX map 0F38, mandatory 66; W selects single/double.
+    // Destination is also an input. Preserve encoded order rather than
+    // reordering or evaluating fused arithmetic.
+    if map==2&&matches!(opcode,0x96..=0x9f|0xa6..=0xaf|0xb6..=0xbf){
+        if pp!=1{return Err(Local::Unsupported);}
+        let order=match opcode>>4{9=>FmaOrder::Order132,10=>FmaOrder::Order213,_=>FmaOrder::Order231};
+        let low=opcode&15;
+        let scalar=low>=9&&low&1!=0;
+        if scalar&&wide{return Err(Local::Unsupported);}
+        let kind=match low{
+            6=>FmaKind::AddSub,7=>FmaKind::SubAdd,8|9=>FmaKind::Add,
+            10|11=>FmaKind::Sub,12|13=>FmaKind::NegAdd,_=>FmaKind::NegSub
+        };
+        let format=match (fields>>7,scalar){
+            (0,false)=>FloatFormat::PackedSingle,(1,false)=>FloatFormat::PackedDouble,
+            (0,true)=>FloatFormat::ScalarSingle,_=>FloatFormat::ScalarDouble
+        };
+        let (end,destination,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        return Ok((end,Op::FusedFloat{kind,order,format,width,destination,source1:v,source2:vector_operand(rm)?}));
+    }
+    // Retain the previous W=0 restriction on every other selected VEX3 form.
+    if b[i]==0xc4&&fields&0x80!=0{return Err(Local::Unsupported);}
     // Canonical VEX2 word-sized opmask logic (AVX512F); K0 is a valid operand.
     if map==1&&matches!(opcode,0x41|0x45|0x47|0x44){
         if b[i]!=0xc5||rex&7!=0||pp!=0||address_override||v>=8{return Err(Local::Unsupported);}
@@ -489,7 +515,7 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
 fn explicit_memory(op:Op)->bool{
     match op{
         Op::EvexBroadcast{..}=>true,
-        Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
+        Op::FusedFloat{source2,..}|Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
         Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
         Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),

@@ -281,3 +281,6 @@ Core #45930797293 failed assembler_integer_examples, truncation and integer_regi
 
 ## U4.5 selected AVX512BW/DQ/VL candidate
 Advanced EVEX recovery Core 1830/1830 passed; Android gate pending at branch creation. Selected BW VPADDB/W VPSUBB/W, DQ VAND/ANDN/OR/XOR PS/PD, VL packed float arithmetic; 128/256/512 full-vector tuple scaling 16/32/64, separate extension+VL metadata with AVX512F baseline. Ten tests planned (1860 cumulative), 98304 BW, 12288 DQ, 4096 VL register cases and 768 compressed displacement cases per OS. Nine independent GNU as 2.44 fixtures. Two prior exclusions updated to reserved LL=3 and excluded b=1 register forms. No broadcast for new forms, scalar, WIG aliases, full extensions, execution, CPUID/XCR0, promotion, merge, APK or OTA.
+
+## U4.5 FMA3 candidate
+BW/DQ/VL 1860/1860 Core and 5/5 isolated gates passed. Selected VEX3 map2 mandatory 66 FMA3 132/213/231, packed single/double 128/256 and scalar single/double 128; add/sub/negative variants and alternating add/sub. Preserve encoded destination as an input and operand order; W precision only in FMA3, all previous canonical W restrictions retained. Ten tests planned (1890 cumulative), 49152 packed register triples, 24576 scalar triples and 60 opcode/format examples per OS. No arithmetic execution, EVEX FMA, FMA4, CPU probes, merge, APK or OTA.
