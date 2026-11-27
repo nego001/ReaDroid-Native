@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2,Adx}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2,Adx,Aes,Pclmulqdq,Sha}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -81,6 +81,8 @@ pub enum BmiUnaryKind{ResetLowest,MaskLowest,IsolateLowest}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CarryChain{Carry,Overflow}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum CryptoKind{AesInverseMix,AesEncrypt,AesEncryptLast,AesDecrypt,AesDecryptLast,AesKeygen,CarrylessMultiply,Sha1NextE,Sha1Message1,Sha1Message2,Sha1Rounds4,Sha256Rounds2,Sha256Message1,Sha256Message2}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum EvexExtensionKind{Integer(PackedKind),Float(SseKind)}
 /// AVX512F is required by this selected subset; extension specifies any
 /// additional family (or F alone), and vl indicates an additional VL requirement.
@@ -118,6 +120,7 @@ pub enum Op{
     MultiplyUnsignedDouble{width:u8,high_destination:u8,low_destination:u8,source:Operand,implicit_source:u8},
     // ADCX reads/writes CF; ADOX reads/writes OF. Other flags are preserved.
     AddCarryChain{chain:CarryChain,width:u8,destination:u8,source:Operand},
+    CryptoXmm{kind:CryptoKind,destination:u8,source:XmmOperand,control:Option<u8>,implicit_xmm0:bool},
     EvexExtension{kind:EvexExtensionKind,width:VectorWidth,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,feature:CpuFeature},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
@@ -159,6 +162,15 @@ impl Instruction{
         match self.op{
             Op::BmiBinary{kind:BmiKind::AndNot|BmiKind::Extract,..}|Op::BmiUnary{..}=>Some(CpuFeature::Bmi1),
             Op::BmiBinary{..}|Op::RotateRightImmediate{..}|Op::MultiplyUnsignedDouble{..}=>Some(CpuFeature::Bmi2),
+            _=>None
+        }
+    }
+    /// Encoding requirements only; no cryptographic computation or CPUID.
+    pub fn crypto_feature(&self)->Option<CpuFeature>{
+        match self.op{
+            Op::CryptoXmm{kind:CryptoKind::AesInverseMix|CryptoKind::AesEncrypt|CryptoKind::AesEncryptLast|CryptoKind::AesDecrypt|CryptoKind::AesDecryptLast|CryptoKind::AesKeygen,..}=>Some(CpuFeature::Aes),
+            Op::CryptoXmm{kind:CryptoKind::CarrylessMultiply,..}=>Some(CpuFeature::Pclmulqdq),
+            Op::CryptoXmm{..}=>Some(CpuFeature::Sha),
             _=>None
         }
     }
@@ -581,6 +593,7 @@ fn explicit_memory(op:Op)->bool{
     match op{
         Op::BmiBinary{source1,source2,..}=>matches!(source1,Operand::Memory(_))||matches!(source2,Operand::Memory(_)),
         Op::BmiUnary{source,..}|Op::RotateRightImmediate{source,..}|Op::MultiplyUnsignedDouble{source,..}|Op::AddCarryChain{source,..}=>matches!(source,Operand::Memory(_)),
+        Op::CryptoXmm{source,..}=>matches!(source,XmmOperand::Memory(_)),
         Op::EvexBroadcast{..}=>true,
         Op::FusedFloat{source2,..}|Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
         Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
@@ -686,10 +699,34 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
         if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
         (end,op)
     }else if opcode==0x0f&&matches!(b.get(i+1),Some(0x38|0x3a)){
-        // Selected three-byte XMM maps require 66, with no MMX or CRC32 aliases.
-        if !override16||group1.is_some()||rex&8!=0{return Err(Local::Unsupported);}
+        // Read the third opcode before deciding the mandatory-prefix family.
+        if group1.is_some()||rex&8!=0{return Err(Local::Unsupported);}
         let tertiary=take(b,i+2,1)?[0];
-        let (end,op)=if b[i+1]==0x38{
+        let crypto=match (override16,b[i+1],tertiary){
+            (true,0x38,0xdb)=>Some((CryptoKind::AesInverseMix,false)),
+            (true,0x38,0xdc)=>Some((CryptoKind::AesEncrypt,false)),
+            (true,0x38,0xdd)=>Some((CryptoKind::AesEncryptLast,false)),
+            (true,0x38,0xde)=>Some((CryptoKind::AesDecrypt,false)),
+            (true,0x38,0xdf)=>Some((CryptoKind::AesDecryptLast,false)),
+            (true,0x3a,0xdf)=>Some((CryptoKind::AesKeygen,true)),
+            (true,0x3a,0x44)=>Some((CryptoKind::CarrylessMultiply,true)),
+            (false,0x38,0xc8)=>Some((CryptoKind::Sha1NextE,false)),
+            (false,0x38,0xc9)=>Some((CryptoKind::Sha1Message1,false)),
+            (false,0x38,0xca)=>Some((CryptoKind::Sha1Message2,false)),
+            (false,0x38,0xcb)=>Some((CryptoKind::Sha256Rounds2,false)),
+            (false,0x38,0xcc)=>Some((CryptoKind::Sha256Message1,false)),
+            (false,0x38,0xcd)=>Some((CryptoKind::Sha256Message2,false)),
+            (false,0x3a,0xcc)=>Some((CryptoKind::Sha1Rounds4,true)),
+            _=>None
+        };
+        let (end,op)=if let Some((kind,immediate))=crypto{
+            let (at,destination,rm)=modrm(mode,pc,b,i+3,rex,address_override)?;
+            let control=if immediate{Some(take(b,at,1)?[0])}else{None};
+            let end=at+usize::from(immediate);
+            let source=xmm_operand(finish_rip(mode,pc,end,rm))?;
+            (end,Op::CryptoXmm{kind,destination,source,control,implicit_xmm0:kind==CryptoKind::Sha256Rounds2})
+        }else if !override16{return Err(Local::Unsupported);}
+        else if b[i+1]==0x38{
             let (kind,lane_bits,feature)=extended_packed_kind(tertiary).ok_or(Local::Unsupported)?;
             let (end,reg,rm)=modrm(mode,pc,b,i+3,rex,address_override)?;
             (end,Op::ExtendedPacked{kind,lane_bits,feature,destination:XmmOperand::Register(reg),source:xmm_operand(rm)?})

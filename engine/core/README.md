@@ -290,3 +290,6 @@ FMA3 Core 1890/1890 passed; Android integration pending. Selected BMI1 ANDN/BEXT
 
 ## U4.5 ADX/MULX candidate
 BMI Core 1920/1920 passed. MULX VEX.F2 map2 F6 GPR32/64 high/low destinations and implicit EDX/RDX; ADCX mandatory 66 and ADOX mandatory F3 legacy 0F38 F6, separate CF/OF chain metadata, ADX feature independent of BMI2 and AVX. Seven independent GNU assembler/objdump 2.44 fixtures verified locally, objects never linked/executed. Ten tests planned (1950 cumulative), 8192 MULX triples and 1024 ADX pairs per OS. No arithmetic or flags evaluation, CPU probes, merge, APK or OTA.
+
+## U4.5 legacy AES-NI / SHA / PCLMULQDQ candidate
+ADX/MULX Core 1950/1950 and five isolated gates passed; PR previous 8/8, fast-forwarded six commits to 8e70a5b. Selected legacy XMM AES round/inverse mix/keygen, PCLMULQDQ and SHA1/SHA256 instructions; separate feature metadata, raw immediate controls, implicit XMM0 input for SHA256RNDS2. Seven GNU assembler/objdump reference encodings verified locally, without linking or executing objects. Ten tests planned (1980 cumulative), 1280 AES pairs, 1536 SHA pairs, 768 immediate values per OS. No cryptographic computation, VEX/EVEX crypto, CPU probes, merge, APK or OTA.
