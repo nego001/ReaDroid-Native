@@ -266,3 +266,6 @@ SSE3/SSSE3/SSE4 1707/1707 and five isolated gates passed. Adds VEX2/VEX3 map 1 c
 
 ## U4.5 AVX2 integer candidate
 AVX/VEX 1737/1737 Core and five isolated gates passed; PR prior checkpoint 8/8 passed and fast-forwarded to a38de0e. Selected VEX map1 integer arithmetic/comparisons/logic (AVX at 128-bit, AVX2 at 256-bit), VMOVDQA/DQU both AVX; selected map2 256-bit VPERMD, shuffle/horizontal/abs/multiply/compare; map3 VPBLENDD both widths, raw imm8 and final RIP/EIP. Ten tests planned (1767 cumulative), 32768+8192+512 matrix cases per OS. No AVX2 execution, gathers, shifts, map2 128-bit aliases, W=1, EVEX, CPU/OS state probe, merge, APK or OTA.
+
+## U4.5 initial AVX512F EVEX candidate
+AVX2 Core 1767/1767 passed; Android integration pending at start. Long-mode EVEX map1 512-bit packed PS/PD moves, add/sub/mul/div/min/max/sqrt; ZMM0-31, k1-k7 encoded merge/zero masking, no mask evaluation. Full tuple compressed disp8*64, ordinary disp32, segment/RIP/EIP. Ten tests planned (1797 cumulative), 131072 register combinations and 256 disp8 values per OS. Three independent GNU assembler fixtures. Prior unsupported EVEX example replaced by broadcast/rounding-excluded form. No EVEX 32-bit, VL, DQ/BW, broadcast, SAE/rounding, mask instructions, execution, CPUID/XCR0, merge, APK or OTA.

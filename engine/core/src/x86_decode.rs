@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -61,11 +61,13 @@ pub enum ExtendedPackedKind{ShuffleBytes,Abs,HorizontalAdd,HorizontalSub,Multipl
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum RoundFormat{PackedSingle,PackedDouble,ScalarSingle,ScalarDouble}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum VectorWidth{Bits128,Bits256}
+pub enum VectorWidth{Bits128,Bits256,Bits512}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum VectorOperand{Register(u8),Memory(Memory)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum VectorZero{Upper,All}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum WriteMask{None,Merge(u8),Zero(u8)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum AvxIntegerKind{Packed(PackedKind),Extended(ExtendedPackedKind),PermuteDwords,BlendDwords}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -85,6 +87,7 @@ pub enum Op{
     RoundFloat{format:RoundFormat,destination:XmmOperand,source:XmmOperand,control:u8},
     AvxFloat{kind:SseKind,format:FloatFormat,width:VectorWidth,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand},
     AvxZero{kind:VectorZero},
+    EvexFloat{kind:SseKind,format:FloatFormat,width:VectorWidth,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,mask:WriteMask},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
@@ -114,7 +117,7 @@ pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_w
 impl Instruction{
     /// AVX encoding requirement; OSXSAVE/XCR0 and target CPU state are not evaluated.
     pub fn avx_feature(&self)->Option<CpuFeature>{
-        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}=>Some(feature),_=>None}
+        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}=>Some(feature),Op::EvexFloat{..}=>Some(CpuFeature::Avx512F),_=>None}
     }
     /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
     pub fn sse_feature(&self)->Option<CpuFeature>{
@@ -356,9 +359,56 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
     let (destination,source2)=if matches!(opcode,0x11|0x29){(rm,reg)}else{(reg,rm)};
     Ok((end,Op::AvxFloat{kind,format,width,destination,source1:if three{Some(v)}else{None},source2}))
 }
+// Initial EVEX subset: long mode, map 1, full 512-bit packed float tuples.
+// No broadcast, embedded rounding, SAE or AVX512VL/DQ/BW forms.
+fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op),Local>{
+    if mode!=Mode::X64{return Err(Local::Unsupported);}
+    let p0=take(b,i+1,1)?[0];
+    if p0&15!=1{return Err(Local::Unsupported);}
+    let p1=take(b,i+2,1)?[0];
+    if p1&4==0{return Err(Local::Unsupported);}
+    let format=match (p1&3,p1>>7){
+        (0,0)=>FloatFormat::PackedSingle,(1,1)=>FloatFormat::PackedDouble,_=>return Err(Local::Unsupported)
+    };
+    let p2=take(b,i+3,1)?[0];
+    if p2&0x70!=0x40{return Err(Local::Unsupported);}
+    let k=p2&7;let zero=p2&0x80!=0;
+    let mask=match (k,zero){(0,false)=>WriteMask::None,(0,true)=>return Err(Local::Unsupported),(k,false)=>WriteMask::Merge(k),(k,true)=>WriteMask::Zero(k)};
+    let v=((!p1>>3)&15)|(((!p2>>3)&1)<<4);
+    let opcode=take(b,i+4,1)?[0];
+    // EVEX floating bitwise logic requires AVX512DQ, intentionally excluded.
+    let kind=match opcode{
+        0x10|0x11=>SseKind::MoveUnaligned,0x28|0x29=>SseKind::MoveAligned,
+        0x51=>SseKind::Sqrt,0x58=>SseKind::Add,0x59=>SseKind::Mul,
+        0x5c=>SseKind::Sub,0x5d=>SseKind::Min,0x5e=>SseKind::Div,0x5f=>SseKind::Max,
+        _=>return Err(Local::Unsupported)
+    };
+    let is_move=matches!(kind,SseKind::MoveAligned|SseKind::MoveUnaligned);
+    let three=!is_move&&kind!=SseKind::Sqrt;
+    if !three&&v!=0{return Err(Local::Unsupported);}
+    let modrm_at=i+5;
+    let raw=take(b,modrm_at,1)?[0];
+    // R/B/X retain their ordinary low-extension meaning for memory.
+    // For mod=3, EVEX.X instead extends the vector r/m register to bit 4.
+    let rex=0x40|((!p0>>5)&7);
+    let (end,reg,rm)=modrm(mode,pc,b,modrm_at,rex,address_override)?;
+    let reg=VectorOperand::Register(reg|(((!p0>>4)&1)<<4));
+    let rm=match rm{
+        Operand::Register(r)=>VectorOperand::Register(r|(((!p0>>6)&1)<<4)),
+        Operand::Memory(mut m)=>{
+            // Full vector tuple: disp8*N, N=64 bytes. disp32 is unscaled.
+            if raw>>6==1{m.displacement*=64;}
+            VectorOperand::Memory(m)
+        },
+        _=>return Err(Local::Unsupported)
+    };
+    let (destination,source2)=if matches!(opcode,0x11|0x29){(rm,reg)}else{(reg,rm)};
+    if zero&&matches!(destination,VectorOperand::Memory(_)){return Err(Local::Unsupported);}
+    Ok((end,Op::EvexFloat{kind,format,width:VectorWidth::Bits512,destination,source1:if three{Some(v)}else{None},source2,mask}))
+}
 fn explicit_memory(op:Op)->bool{
     match op{
-        Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
+        Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
         Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
@@ -414,7 +464,12 @@ fn one(mode:Mode,pc:u64,b:&[u8])->Result<(usize,Op,u8,Option<Segment>,bool),Loca
     // Classify a missing secondary opcode before rejecting unsupported forms.
     if opcode==0x0f{take(b,i+1,1)?;}
     let locked=group1==Some(0xf0);
-    let (n,op)=if matches!(opcode,0xc4|0xc5){
+    let (n,op)=if opcode==0x62{
+        if rex!=0||override16||group1.is_some(){return Err(Local::Unsupported);}
+        let (n,op)=evex(mode,pc,b,i,address_override)?;
+        if segment.is_some()&&!explicit_memory(op){return Err(Local::Unsupported);}
+        (n,op)
+    }else if matches!(opcode,0xc4|0xc5){
         // VEX carries its own mandatory-prefix and register-extension fields.
         if rex!=0||override16||group1.is_some(){return Err(Local::Unsupported);}
         let (n,op)=vex(mode,pc,b,i,address_override)?;
