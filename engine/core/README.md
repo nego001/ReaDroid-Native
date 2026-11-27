@@ -263,3 +263,6 @@ SSE2 repair Core 1677/1677 passed all three jobs. Adds selected HADD/HSUB/ADDSUB
 
 ## U4.5 AVX/VEX candidate
 SSE3/SSSE3/SSE4 1707/1707 and five isolated gates passed. Adds VEX2/VEX3 map 1 canonical W=0, selected AVX float arithmetic, packed moves/logic/sqrt, scalar arithmetic/sqrt, VZEROUPPER/VZEROALL. Typed 128/256 vector width, inverted R/X/B/vvvv, explicit third source, x86 ambiguity rejection, memory/segment/RIP/EIP. Ten tests planned (1737 cumulative), 32768 VEX3 and 8192 VEX2 register cases per OS. Replaced two now-supported exclusion fixtures by unsupported VEX conversion. No scalar moves, W=1 aliases, noncanonical zero forms, AVX2, EVEX, OSXSAVE/XCR0 probes, execution, lane semantics, promotion, merge, APK or OTA.
+
+## U4.5 AVX2 integer candidate
+AVX/VEX 1737/1737 Core and five isolated gates passed; PR prior checkpoint 8/8 passed and fast-forwarded to a38de0e. Selected VEX map1 integer arithmetic/comparisons/logic (AVX at 128-bit, AVX2 at 256-bit), VMOVDQA/DQU both AVX; selected map2 256-bit VPERMD, shuffle/horizontal/abs/multiply/compare; map3 VPBLENDD both widths, raw imm8 and final RIP/EIP. Ten tests planned (1767 cumulative), 32768+8192+512 matrix cases per OS. No AVX2 execution, gathers, shifts, map2 128-bit aliases, W=1, EVEX, CPU/OS state probe, merge, APK or OTA.

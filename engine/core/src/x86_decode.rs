@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -67,6 +67,8 @@ pub enum VectorOperand{Register(u8),Memory(Memory)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum VectorZero{Upper,All}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum AvxIntegerKind{Packed(PackedKind),Extended(ExtendedPackedKind),PermuteDwords,BlendDwords}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum UnaryKind{Inc,Dec,Call,Jump,Push,Not,Neg,Mul,Imul,Div,Idiv}
@@ -83,6 +85,7 @@ pub enum Op{
     RoundFloat{format:RoundFormat,destination:XmmOperand,source:XmmOperand,control:u8},
     AvxFloat{kind:SseKind,format:FloatFormat,width:VectorWidth,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand},
     AvxZero{kind:VectorZero},
+    AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
     Shift{kind:ShiftKind,width:u8,operand:Operand,count:ShiftCount},
@@ -111,7 +114,7 @@ pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_w
 impl Instruction{
     /// AVX encoding requirement; OSXSAVE/XCR0 and target CPU state are not evaluated.
     pub fn avx_feature(&self)->Option<CpuFeature>{
-        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),_=>None}
+        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}=>Some(feature),_=>None}
     }
     /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
     pub fn sse_feature(&self)->Option<CpuFeature>{
@@ -277,25 +280,64 @@ fn extended_packed_kind(op:u8)->Option<(ExtendedPackedKind,Option<u8>,CpuFeature
 fn vector_operand(rm:Operand)->Result<VectorOperand,Local>{
     match rm{Operand::Register(r)=>Ok(VectorOperand::Register(r)),Operand::Memory(m)=>Ok(VectorOperand::Memory(m)),_=>Err(Local::Unsupported)}
 }
-// VEX map 1, canonical W=0 only; decoded inverted extension and vvvv fields.
+// Selected VEX maps 1/2/3, canonical W=0 only; inverted extension and vvvv fields.
 // Address offsets are relative to the original instruction start.
 fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op),Local>{
     let first=take(b,i+1,1)?[0];
     // In 32-bit mode C4/C5 may be LES/LDS; only accept unambiguous VEX.
     if mode==Mode::X86&&first&0xc0!=0xc0{return Err(Local::Unsupported);}
-    let (at,rex,fields)=if b[i]==0xc5{
-        (i+2,0x40|(((!first>>7)&1)<<2),first)
+    let (at,rex,fields,map)=if b[i]==0xc5{
+        (i+2,0x40|(((!first>>7)&1)<<2),first,1)
     }else{
-        if first&31!=1{return Err(Local::Unsupported);}
+        let map=first&31;
+        if !(1..=3).contains(&map){return Err(Local::Unsupported);}
         let fields=take(b,i+2,1)?[0];
         if fields&0x80!=0{return Err(Local::Unsupported);}
-        (i+3,0x40|((!first>>5)&7),fields)
+        (i+3,0x40|((!first>>5)&7),fields,map)
     };
     let v=(!fields>>3)&15;
     if mode==Mode::X86&&(rex&7!=0||v>=8){return Err(Local::Unsupported);}
     let wide=fields&4!=0;
     let pp=fields&3;
     let opcode=take(b,at,1)?[0];
+    let width=if wide{VectorWidth::Bits256}else{VectorWidth::Bits128};
+    // Map 1 packed integer forms: 128-bit operations and both move widths
+    // require AVX; 256-bit integer arithmetic/logic requires AVX2.
+    if map==1{
+        if let Some((mut packed,lane_bits))=packed_kind(opcode){
+            let is_move=matches!(opcode,0x6f|0x7f);
+            if pp==2&&is_move{packed=PackedKind::MoveUnaligned;}
+            else if pp!=1{return Err(Local::Unsupported);}
+            if is_move&&v!=0{return Err(Local::Unsupported);}
+            let (end,reg,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+            let reg=VectorOperand::Register(reg);let rm=vector_operand(rm)?;
+            let (destination,source2)=if opcode==0x7f{(rm,reg)}else{(reg,rm)};
+            let feature=if wide&&!is_move{CpuFeature::Avx2}else{CpuFeature::Avx};
+            return Ok((end,Op::AvxInteger{kind:AvxIntegerKind::Packed(packed),width,lane_bits,destination,source1:if is_move{None}else{Some(v)},source2,control:None,feature}));
+        }
+    }
+    if map==2{
+        // Selected 256-bit forms only. VEX.128 equivalents remain excluded here.
+        if pp!=1||!wide{return Err(Local::Unsupported);}
+        let (kind,lane_bits,three)=match opcode{
+            0x36=>(AvxIntegerKind::PermuteDwords,Some(32),true),
+            0x00|0x01|0x02|0x05|0x06|0x1c|0x1d|0x1e|0x29|0x37|0x40=>{
+                let (k,l,_)=extended_packed_kind(opcode).ok_or(Local::Unsupported)?;
+                (AvxIntegerKind::Extended(k),l,!matches!(k,ExtendedPackedKind::Abs))
+            },
+            _=>return Err(Local::Unsupported)
+        };
+        if !three&&v!=0{return Err(Local::Unsupported);}
+        let (end,reg,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        return Ok((end,Op::AvxInteger{kind,width,lane_bits,destination:VectorOperand::Register(reg),source1:if three{Some(v)}else{None},source2:vector_operand(rm)?,control:None,feature:CpuFeature::Avx2}));
+    }
+    if map==3{
+        // VPBLENDD: both widths require AVX2, with an encoded imm8 mask.
+        if pp!=1||opcode!=0x02{return Err(Local::Unsupported);}
+        let (imm_at,reg,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        let control=take(b,imm_at,1)?[0];let end=imm_at+1;
+        return Ok((end,Op::AvxInteger{kind:AvxIntegerKind::BlendDwords,width,lane_bits:Some(32),destination:VectorOperand::Register(reg),source1:Some(v),source2:vector_operand(finish_rip(mode,pc,end,rm))?,control:Some(control),feature:CpuFeature::Avx2}));
+    }
     if opcode==0x77{
         if pp!=0||v!=0||rex&7!=0||address_override{return Err(Local::Unsupported);}
         return Ok((at+1,Op::AvxZero{kind:if wide{VectorZero::All}else{VectorZero::Upper}}));
@@ -309,7 +351,6 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
     if scalar&&(wide||is_move||is_logic){return Err(Local::Unsupported);}
     let three=!is_move&&(kind!=SseKind::Sqrt||scalar);
     if !three&&v!=0{return Err(Local::Unsupported);}
-    let width=if wide{VectorWidth::Bits256}else{VectorWidth::Bits128};
     let (end,reg,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
     let reg=VectorOperand::Register(reg);let rm=vector_operand(rm)?;
     let (destination,source2)=if matches!(opcode,0x11|0x29){(rm,reg)}else{(reg,rm)};
@@ -317,7 +358,7 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
 }
 fn explicit_memory(op:Op)->bool{
     match op{
-        Op::AvxFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
+        Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
         Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
         Op::Binary{destination,source,..}=>matches!(destination,Operand::Memory(_))||matches!(source,Operand::Memory(_)),
