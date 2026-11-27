@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -71,6 +71,12 @@ pub enum WriteMask{None,Merge(u8),Zero(u8)}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum MaskLogic{And,Or,Xor,Not}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum EvexExtensionKind{Integer(PackedKind),Float(SseKind)}
+/// AVX512F is required by this selected subset; extension specifies any
+/// additional family (or F alone), and vl indicates an additional VL requirement.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct Avx512Requirements{pub extension:CpuFeature,pub vl:bool}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum AvxIntegerKind{Packed(PackedKind),Extended(ExtendedPackedKind),PermuteDwords,BlendDwords}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BinaryKind{Mov,Add,Or,Adc,Sbb,And,Sub,Xor,Cmp,Test}
@@ -93,6 +99,7 @@ pub enum Op{
     EvexBroadcast{kind:SseKind,format:FloatFormat,destination:u8,source1:u8,memory:Memory,mask:WriteMask},
     EvexInteger{kind:PackedKind,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,broadcast:bool},
     MaskWord{kind:MaskLogic,destination:u8,source1:Option<u8>,source2:u8},
+    EvexExtension{kind:EvexExtensionKind,width:VectorWidth,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,feature:CpuFeature},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
     String{kind:StringKind,width:u8,repeat:Repeat},
@@ -121,8 +128,15 @@ pub enum Op{
 pub struct Instruction{pub address:u64,pub bytes:Vec<u8>,pub op:Op,pub address_width:u8,pub segment_override:Option<Segment>,pub locked:bool}
 impl Instruction{
     /// AVX encoding requirement; OSXSAVE/XCR0 and target CPU state are not evaluated.
+    pub fn avx512_requirements(&self)->Option<Avx512Requirements>{
+        match self.op{
+            Op::EvexExtension{feature,width,..}=>Some(Avx512Requirements{extension:feature,vl:width!=VectorWidth::Bits512}),
+            Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(Avx512Requirements{extension:CpuFeature::Avx512F,vl:false}),
+            _=>None
+        }
+    }
     pub fn avx_feature(&self)->Option<CpuFeature>{
-        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
+        match self.op{Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}|Op::EvexExtension{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
     }
     /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
     pub fn sse_feature(&self)->Option<CpuFeature>{
@@ -388,12 +402,38 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
         (0,0)=>Some(FloatFormat::PackedSingle),(1,1)=>Some(FloatFormat::PackedDouble),_=>None
     };
     let p2=take(b,i+3,1)?[0];
-    if p2&0x60!=0x40{return Err(Local::Unsupported);}
+    let (width,vector_bytes)=match (p2>>5)&3{0=>(VectorWidth::Bits128,16),1=>(VectorWidth::Bits256,32),2=>(VectorWidth::Bits512,64),_=>return Err(Local::Unsupported)};
     let broadcast=p2&0x10!=0;
     let k=p2&7;let zero=p2&0x80!=0;
     let mask=match (k,zero){(0,false)=>WriteMask::None,(0,true)=>return Err(Local::Unsupported),(k,false)=>WriteMask::Merge(k),(k,true)=>WriteMask::Zero(k)};
     let v=((!p1>>3)&15)|(((!p2>>3)&1)<<4);
     let opcode=take(b,i+4,1)?[0];
+    // New families are classified before legacy 512-bit dispatch.
+    // BW uses canonical W=0; DQ bitwise PS/PD uses W0/W1 respectively.
+    // VL subset: ordinary packed float arithmetic, without broadcast.
+    let extension=match (opcode,p1&3,p1>>7){
+        (0xfc,1,0)=>Some((EvexExtensionKind::Integer(PackedKind::Add),8,CpuFeature::Avx512Bw)),
+        (0xfd,1,0)=>Some((EvexExtensionKind::Integer(PackedKind::Add),16,CpuFeature::Avx512Bw)),
+        (0xf8,1,0)=>Some((EvexExtensionKind::Integer(PackedKind::Sub),8,CpuFeature::Avx512Bw)),
+        (0xf9,1,0)=>Some((EvexExtensionKind::Integer(PackedKind::Sub),16,CpuFeature::Avx512Bw)),
+        (0x54|0x55|0x56|0x57,_,_) if format.is_some()=>Some((EvexExtensionKind::Float(sse_kind(opcode).ok_or(Local::Unsupported)?),if p1>>7==0{32}else{64},CpuFeature::Avx512Dq)),
+        (0x58|0x59|0x5c|0x5d|0x5e|0x5f,_,_) if width!=VectorWidth::Bits512&&format.is_some()=>Some((EvexExtensionKind::Float(sse_kind(opcode).ok_or(Local::Unsupported)?),if p1>>7==0{32}else{64},CpuFeature::Avx512F)),
+        _=>None
+    };
+    if let Some((kind,lane_bits,feature))=extension{
+        if broadcast{return Err(Local::Unsupported);}
+        let at=i+5;let raw=take(b,at,1)?[0];
+        let rex=0x40|((!p0>>5)&7);
+        let (end,reg,rm)=modrm(mode,pc,b,at,rex,address_override)?;
+        let destination=reg|(((!p0>>4)&1)<<4);
+        let source2=match rm{
+            Operand::Register(r)=>VectorOperand::Register(r|(((!p0>>6)&1)<<4)),
+            Operand::Memory(mut m)=>{if raw>>6==1{m.displacement*=vector_bytes;}VectorOperand::Memory(m)},
+            _=>return Err(Local::Unsupported)
+        };
+        return Ok((end,Op::EvexExtension{kind,width,lane_bits,destination,source1:v,source2,mask,feature}));
+    }
+    if width!=VectorWidth::Bits512{return Err(Local::Unsupported);}
     // AVX512F integer dword/qword subset. pp=66, W distinguishes D/Q.
     let integer=if p1&3==1{
         match (opcode,p1>>7){
@@ -449,7 +489,7 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
 fn explicit_memory(op:Op)->bool{
     match op{
         Op::EvexBroadcast{..}=>true,
-        Op::EvexInteger{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
+        Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
         Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
         Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
