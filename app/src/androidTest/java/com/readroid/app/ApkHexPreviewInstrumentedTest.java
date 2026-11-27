@@ -87,6 +87,28 @@ public final class ApkHexPreviewInstrumentedTest {
         } finally { apk.delete(); }
     }
 
+    // Diagnostics only: same selectors, timeout and assertion contract.
+    private static UiObject2 requireVisible(UiDevice device,
+            androidx.test.uiautomator.BySelector selector, String stage) {
+        UiObject2 node = device.wait(Until.findObject(selector), 10000);
+        if (node == null) {
+            android.util.Log.e("HexUiContract", "Missing UI stage: " + stage
+                + "; current package=" + device.getCurrentPackageName());
+            try (java.io.ByteArrayOutputStream hierarchy = new java.io.ByteArrayOutputStream()) {
+                device.dumpWindowHierarchy(hierarchy);
+                String xml = hierarchy.toString("UTF-8");
+                for (int i = 0; i < xml.length(); i += 2000) {
+                    android.util.Log.e("HexUiContract", "hierarchy[" + i + "] "
+                        + xml.substring(i, Math.min(i + 2000, xml.length())));
+                }
+            } catch (Exception diagnosticFailure) {
+                android.util.Log.w("HexUiContract", "Unable to capture hierarchy", diagnosticFailure);
+            }
+        }
+        assertNotNull(stage, node);
+        return node;
+    }
+
     @Test public void actualHexMenuDisplaysBytesWithoutChangingPlan() throws Exception {
         File apk = archive(new byte[]{65, 66, 67});
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
@@ -103,18 +125,17 @@ public final class ApkHexPreviewInstrumentedTest {
                 } catch (Exception failure) { throw new AssertionError(failure); }
             });
             UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
-            UiObject2 action = device.wait(Until.findObject(By.text("Ver hexadecimal")), 10000);
-            assertNotNull(action);
+            UiObject2 action = requireVisible(device, By.text("Ver hexadecimal"), "hex action menu");
             action.click();
-            assertNotNull(device.wait(Until.findObject(By.text("Prévia hexadecimal")), 10000));
-            assertNotNull(device.wait(Until.findObject(By.textContains("00000000  41 42 43")), 10000));
-            assertNotNull(device.wait(Until.findObject(By.textContains("3 de 3 bytes")), 10000));
+            requireVisible(device, By.text("Prévia hexadecimal"), "hex preview title");
+            requireVisible(device, By.textContains("00000000  41 42 43"), "hex preview bytes");
+            requireVisible(device, By.textContains("3 de 3 bytes"), "hex preview byte count");
             device.pressBack();
             scenario.onActivity(a -> {
                 try {
                     java.lang.reflect.Field field = MainActivity.class.getDeclaredField("explorerView");
                     field.setAccessible(true);
-                    assertEquals(0, ((ExplorerView) field.get(a)).getEditPlan().size());
+                    assertEquals("preview must not change edit plan", 0, ((ExplorerView) field.get(a)).getEditPlan().size());
                 } catch (Exception failure) { throw new AssertionError(failure); }
             });
         } finally { apk.delete(); }

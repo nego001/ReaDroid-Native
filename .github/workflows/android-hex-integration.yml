@@ -12,6 +12,7 @@ on:
       - 'app/src/androidTest/java/com/readroid/app/NativeHexSessionInstrumentedTest.java'
       - 'app/src/main/java/com/readroid/app/ApkHexPreview.java'
       - 'app/src/androidTest/java/com/readroid/app/NativeHexIntegrationInstrumentedTest.java'
+      - 'app/src/androidTest/java/com/readroid/app/ApkHexPreviewInstrumentedTest.java'
       - 'app/build.gradle.kts'
       - '.github/workflows/android-hex-integration.yml'
   workflow_dispatch:
@@ -69,12 +70,31 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu ${{ matrix.api == 35 && 'software' || 'swiftshader_indirect' }}
           script: |
             set -eu
+            mkdir -p hex-ci-diagnostics
+            phase=default-initial
+            trap 'status=$?; if [ "$status" -ne 0 ]; then printf "%s\n" "$phase" > hex-ci-diagnostics/failed-phase.txt; adb logcat -d -t 2500 > hex-ci-diagnostics/logcat.txt 2>&1 || true; fi; exit "$status"' EXIT
+            echo "HEX_CI_PHASE=$phase"
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
             python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk false
             adb shell am force-stop com.readroid.app
+            phase=native-opt-in
+            echo "HEX_CI_PHASE=$phase"
             gradle --no-daemon :app:connectedDebugAndroidTest "-PnegrodroidNativeHexDir=$NATIVE_HEX_DIR" -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=true -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
             python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk true
             adb shell am force-stop com.readroid.app
+            phase=default-restored
+            echo "HEX_CI_PHASE=$phase"
             gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.nativeHexExpected=false -Pandroid.testInstrumentationRunnerArguments.class=com.readroid.app.NativeHexSessionInstrumentedTest,com.readroid.app.NativeHexIntegrationInstrumentedTest,com.readroid.app.ApkHexPreviewInstrumentedTest
             python3 engine/android-bridge/android/verify_debug_apk.py app/build/outputs/apk/debug/app-debug.apk false
             echo "U2_6_DEFAULT_NATIVE_DEFAULT_PASS api=${{ matrix.api }}"
+      - name: Preserve failed hex regression evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hex-regression-api-${{ matrix.api }}-attempt-${{ github.run_attempt }}
+          path: |
+            hex-ci-diagnostics/
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+          retention-days: 7
