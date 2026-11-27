@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -75,6 +75,10 @@ pub enum FmaOrder{Order132,Order213,Order231}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum FmaKind{Add,Sub,NegAdd,NegSub,AddSub,SubAdd}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum BmiKind{AndNot,Extract,ZeroHigh,Deposit,ExtractParallel,ShiftLeft,ShiftRight,ShiftArithmetic}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum BmiUnaryKind{ResetLowest,MaskLowest,IsolateLowest}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum EvexExtensionKind{Integer(PackedKind),Float(SseKind)}
 /// AVX512F is required by this selected subset; extension specifies any
 /// additional family (or F alone), and vl indicates an additional VL requirement.
@@ -104,6 +108,10 @@ pub enum Op{
     EvexInteger{kind:PackedKind,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,broadcast:bool},
     MaskWord{kind:MaskLogic,destination:u8,source1:Option<u8>,source2:u8},
     FusedFloat{kind:FmaKind,order:FmaOrder,format:FloatFormat,width:VectorWidth,destination:u8,source1:u8,source2:VectorOperand},
+    // Encoded operands in assembly order, independent of execution.
+    BmiBinary{kind:BmiKind,width:u8,destination:u8,source1:Operand,source2:Operand},
+    BmiUnary{kind:BmiUnaryKind,width:u8,destination:u8,source:Operand},
+    RotateRightImmediate{width:u8,destination:u8,source:Operand,count:u8},
     EvexExtension{kind:EvexExtensionKind,width:VectorWidth,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,feature:CpuFeature},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
@@ -137,6 +145,14 @@ impl Instruction{
         match self.op{
             Op::EvexExtension{feature,width,..}=>Some(Avx512Requirements{extension:feature,vl:width!=VectorWidth::Bits512}),
             Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(Avx512Requirements{extension:CpuFeature::Avx512F,vl:false}),
+            _=>None
+        }
+    }
+    /// BMI uses VEX encoding, but does not require AVX vector state.
+    pub fn bmi_feature(&self)->Option<CpuFeature>{
+        match self.op{
+            Op::BmiBinary{kind:BmiKind::AndNot|BmiKind::Extract,..}|Op::BmiUnary{..}=>Some(CpuFeature::Bmi1),
+            Op::BmiBinary{..}|Op::RotateRightImmediate{..}=>Some(CpuFeature::Bmi2),
             _=>None
         }
     }
@@ -347,6 +363,39 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
         let (end,destination,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
         return Ok((end,Op::FusedFloat{kind,order,format,width,destination,source1:v,source2:vector_operand(rm)?}));
     }
+    // Selected BMI GPR encodings. W=1 is canonical only in long mode.
+    // L=0 is required; pp and map select distinct integer operations.
+    if map==2&&matches!(opcode,0xf2|0xf3|0xf5|0xf7){
+        if wide||mode==Mode::X86&&fields&0x80!=0{return Err(Local::Unsupported);}
+        let bits=if fields&0x80!=0{64}else{32};
+        if opcode==0xf3{
+            if pp!=0||rex&4!=0{return Err(Local::Unsupported);}
+            let (end,group,source)=modrm(mode,pc,b,at+1,rex,address_override)?;
+            let kind=match group{1=>BmiUnaryKind::ResetLowest,2=>BmiUnaryKind::MaskLowest,3=>BmiUnaryKind::IsolateLowest,_=>return Err(Local::Unsupported)};
+            return Ok((end,Op::BmiUnary{kind,width:bits,destination:v,source}));
+        }
+        let (kind,v_first)=match (opcode,pp){
+            (0xf2,0)=>(BmiKind::AndNot,true),
+            (0xf7,0)=>(BmiKind::Extract,false),
+            (0xf5,0)=>(BmiKind::ZeroHigh,false),
+            (0xf5,3)=>(BmiKind::Deposit,true),
+            (0xf5,2)=>(BmiKind::ExtractParallel,true),
+            (0xf7,1)=>(BmiKind::ShiftLeft,false),
+            (0xf7,3)=>(BmiKind::ShiftRight,false),
+            (0xf7,2)=>(BmiKind::ShiftArithmetic,false),
+            _=>return Err(Local::Unsupported)
+        };
+        let (end,destination,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        let (source1,source2)=if v_first{(Operand::Register(v),rm)}else{(rm,Operand::Register(v))};
+        return Ok((end,Op::BmiBinary{kind,width:bits,destination,source1,source2}));
+    }
+    if map==3&&opcode==0xf0{
+        if pp!=3||wide||v!=0||mode==Mode::X86&&fields&0x80!=0{return Err(Local::Unsupported);}
+        let bits=if fields&0x80!=0{64}else{32};
+        let (at,destination,source)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        let count=take(b,at,1)?[0];let end=at+1;
+        return Ok((end,Op::RotateRightImmediate{width:bits,destination,source:finish_rip(mode,pc,end,source),count}));
+    }
     // Retain the previous W=0 restriction on every other selected VEX3 form.
     if b[i]==0xc4&&fields&0x80!=0{return Err(Local::Unsupported);}
     // Canonical VEX2 word-sized opmask logic (AVX512F); K0 is a valid operand.
@@ -514,6 +563,8 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
 }
 fn explicit_memory(op:Op)->bool{
     match op{
+        Op::BmiBinary{source1,source2,..}=>matches!(source1,Operand::Memory(_))||matches!(source2,Operand::Memory(_)),
+        Op::BmiUnary{source,..}|Op::RotateRightImmediate{source,..}=>matches!(source,Operand::Memory(_)),
         Op::EvexBroadcast{..}=>true,
         Op::FusedFloat{source2,..}|Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
         Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),

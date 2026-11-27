@@ -284,3 +284,6 @@ Advanced EVEX recovery Core 1830/1830 passed; Android gate pending at branch cre
 
 ## U4.5 FMA3 candidate
 BW/DQ/VL 1860/1860 Core and 5/5 isolated gates passed. Selected VEX3 map2 mandatory 66 FMA3 132/213/231, packed single/double 128/256 and scalar single/double 128; add/sub/negative variants and alternating add/sub. Preserve encoded destination as an input and operand order; W precision only in FMA3, all previous canonical W restrictions retained. Ten tests planned (1890 cumulative), 49152 packed register triples, 24576 scalar triples and 60 opcode/format examples per OS. No arithmetic execution, EVEX FMA, FMA4, CPU probes, merge, APK or OTA.
+
+## U4.5 BMI1/BMI2 candidate
+FMA3 Core 1890/1890 passed; Android integration pending. Selected BMI1 ANDN/BEXTR/BLSR/BLSMSK/BLSI, BMI2 BZHI/PDEP/PEXT/SHLX/SHRX/SARX/RORX. GPR width 32/64, canonical VEX L=0, operand order, raw rotate imm8, RIP/EIP after immediate, separate BMI feature metadata independent of AVX state. Twelve GNU as/objdump reference instructions independently verified without execution. Ten tests planned (1920 cumulative); 65536 binary triples +1536 unary pairs +512 immediate values per OS. No MULX, complete BMI coverage, flags evaluation, runtime CPU probe, execution, promotion, merge, APK or OTA.
