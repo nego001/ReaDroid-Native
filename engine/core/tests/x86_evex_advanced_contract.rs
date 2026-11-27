@@ -42,3 +42,14 @@ fn one(pc:u64,b:&[u8])->x86_decode::Instruction{
 #[test] fn mask_and_vector_stream(){
  let p=x86_decode::decode(Mode::X64,0,&[0xc5,0xec,0x41,0xcb,0x62,0xf1,0x6c,0xda,0x58,0x48,1,0x90]).unwrap();assert_eq!(p.stop,Stop::Complete);assert_eq!(p.instructions.len(),3);assert_eq!(p.instructions[0].avx_feature(),Some(CpuFeature::Avx512F));assert_eq!(p.instructions[2].avx_feature(),None);
 }
+
+#[test] fn prefix_rules_follow_opcode_family(){
+ // Same pp/W=66/W0: valid VPADDD, invalid VADDPS/VADDPD.
+ assert!(matches!(one(0,&[0x62,0xf1,0x7d,0x48,0xfe,0xc0]).op,Op::EvexInteger{lane_bits:32,..}));
+ for b in [&[0x62,0xf1,0x7d,0x48,0x58,0xc0][..],&[0x62,0xf1,0xfd,0x48,0xfe,0xc0],&[0x62,0xf1,0x7d,0x48,0xd4,0xc0],&[0x62,0xf1,0x7c,0x48,0xfe,0xc0]]{
+  let p=x86_decode::decode(Mode::X64,0,b).unwrap();assert_eq!(p.stop,Stop::Unsupported{offset:0});assert_eq!(p.consumed,0);
+ }
+ assert!(matches!(one(0,&[0x62,0xf1,0xfd,0x48,0xd4,0xc0]).op,Op::EvexInteger{lane_bits:64,..}));
+ assert!(matches!(one(0,&[0x62,0xf1,0xfd,0x48,0x58,0xc0]).op,Op::EvexFloat{format:FloatFormat::PackedDouble,..}));
+ for b in [&[0x62,0xf1,0x7d][..],&[0x62,0xf1,0x7d,0x48]]{let p=x86_decode::decode(Mode::X64,0,b).unwrap();assert_eq!(p.stop,Stop::Truncated{offset:0});assert_eq!(p.consumed,0);}
+}

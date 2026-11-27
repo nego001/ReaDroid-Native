@@ -382,8 +382,10 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
     if p0&15!=1{return Err(Local::Unsupported);}
     let p1=take(b,i+2,1)?[0];
     if p1&4==0{return Err(Local::Unsupported);}
+    // pp/W select different forms in floating and integer opcode families.
+    // Do not reject an integer prefix before reading its opcode.
     let format=match (p1&3,p1>>7){
-        (0,0)=>FloatFormat::PackedSingle,(1,1)=>FloatFormat::PackedDouble,_=>return Err(Local::Unsupported)
+        (0,0)=>Some(FloatFormat::PackedSingle),(1,1)=>Some(FloatFormat::PackedDouble),_=>None
     };
     let p2=take(b,i+3,1)?[0];
     if p2&0x60!=0x40{return Err(Local::Unsupported);}
@@ -401,6 +403,8 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
             (0xeb,_)=>Some(PackedKind::Or),(0xef,_)=>Some(PackedKind::Xor),_=>None
         }
     }else{None};
+    // Validate the floating prefix only for the floating opcode family.
+    if integer.is_none()&&format.is_none(){return Err(Local::Unsupported);}
     // EVEX floating bitwise logic requires AVX512DQ, intentionally excluded.
     let kind=if integer.is_some(){SseKind::Add}else{match opcode{
         0x10|0x11=>SseKind::MoveUnaligned,0x28|0x29=>SseKind::MoveAligned,
@@ -433,6 +437,7 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
         let VectorOperand::Register(destination)=reg else{unreachable!()};
         return Ok((end,Op::EvexInteger{kind,lane_bits:if p1>>7==0{32}else{64},destination,source1:v,source2:rm,mask,broadcast}));
     }
+    let format=format.ok_or(Local::Unsupported)?;
     if broadcast{
         let (VectorOperand::Register(destination),VectorOperand::Memory(memory))=(reg,rm) else{return Err(Local::Unsupported);};
         return Ok((end,Op::EvexBroadcast{kind,format,destination,source1:v,memory,mask}));
