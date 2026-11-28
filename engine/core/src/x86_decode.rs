@@ -29,7 +29,7 @@ pub enum LockKind{None,Explicit,Implicit}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum CountKind{Population,LeadingZeros,TrailingZeros}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2,Adx,Aes,Pclmulqdq,Sha}
+pub enum CpuFeature{Popcnt,Lzcnt,Bmi1,Sse,Sse2,Sse3,Ssse3,Sse41,Sse42,Avx,Avx2,Avx512F,Avx512Bw,Avx512Dq,Avx512Vl,Fma,Bmi2,Adx,Aes,Pclmulqdq,Sha,Vaes,Vpclmulqdq}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum WithoutFeature{InvalidOpcode,BitScan{reverse:bool}}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -121,6 +121,7 @@ pub enum Op{
     // ADCX reads/writes CF; ADOX reads/writes OF. Other flags are preserved.
     AddCarryChain{chain:CarryChain,width:u8,destination:u8,source:Operand},
     CryptoXmm{kind:CryptoKind,destination:u8,source:XmmOperand,control:Option<u8>,implicit_xmm0:bool},
+    VectorCrypto{kind:CryptoKind,width:VectorWidth,evex:bool,destination:u8,source1:u8,source2:VectorOperand,control:Option<u8>},
     EvexExtension{kind:EvexExtensionKind,width:VectorWidth,lane_bits:u8,destination:u8,source1:u8,source2:VectorOperand,mask:WriteMask,feature:CpuFeature},
     AvxInteger{kind:AvxIntegerKind,width:VectorWidth,lane_bits:Option<u8>,destination:VectorOperand,source1:Option<u8>,source2:VectorOperand,control:Option<u8>,feature:CpuFeature},
     ScalarConvert{kind:ConversionKind,float_bits:u8,int_bits:u8,destination:ConversionOperand,source:ConversionOperand},
@@ -153,6 +154,7 @@ impl Instruction{
     pub fn avx512_requirements(&self)->Option<Avx512Requirements>{
         match self.op{
             Op::EvexExtension{feature,width,..}=>Some(Avx512Requirements{extension:feature,vl:width!=VectorWidth::Bits512}),
+            Op::VectorCrypto{kind,width,evex:true,..}=>Some(Avx512Requirements{extension:if kind==CryptoKind::CarrylessMultiply{CpuFeature::Vpclmulqdq}else{CpuFeature::Vaes},vl:width!=VectorWidth::Bits512}),
             Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(Avx512Requirements{extension:CpuFeature::Avx512F,vl:false}),
             _=>None
         }
@@ -171,6 +173,12 @@ impl Instruction{
             Op::CryptoXmm{kind:CryptoKind::AesInverseMix|CryptoKind::AesEncrypt|CryptoKind::AesEncryptLast|CryptoKind::AesDecrypt|CryptoKind::AesDecryptLast|CryptoKind::AesKeygen,..}=>Some(CpuFeature::Aes),
             Op::CryptoXmm{kind:CryptoKind::CarrylessMultiply,..}=>Some(CpuFeature::Pclmulqdq),
             Op::CryptoXmm{..}=>Some(CpuFeature::Sha),
+            // VEX.128 uses the original AES/PCLMUL feature with AVX;
+            // VEX.256 and EVEX forms require the respective vector extension.
+            Op::VectorCrypto{kind,width,evex,..}=>Some(match (kind==CryptoKind::CarrylessMultiply,evex||width!=VectorWidth::Bits128){
+                (true,true)=>CpuFeature::Vpclmulqdq,(true,false)=>CpuFeature::Pclmulqdq,
+                (false,true)=>CpuFeature::Vaes,(false,false)=>CpuFeature::Aes
+            }),
             _=>None
         }
     }
@@ -178,7 +186,7 @@ impl Instruction{
         match self.op{Op::AddCarryChain{..}=>Some(CpuFeature::Adx),_=>None}
     }
     pub fn avx_feature(&self)->Option<CpuFeature>{
-        match self.op{Op::FusedFloat{..}=>Some(CpuFeature::Fma),Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}|Op::EvexExtension{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
+        match self.op{Op::VectorCrypto{evex:false,..}=>Some(CpuFeature::Avx),Op::VectorCrypto{evex:true,..}=>Some(CpuFeature::Avx512F),Op::FusedFloat{..}=>Some(CpuFeature::Fma),Op::AvxFloat{..}|Op::AvxZero{..}=>Some(CpuFeature::Avx),Op::AvxInteger{feature,..}|Op::EvexExtension{feature,..}=>Some(feature),Op::EvexFloat{..}|Op::EvexBroadcast{..}|Op::EvexInteger{..}|Op::MaskWord{..}=>Some(CpuFeature::Avx512F),_=>None}
     }
     /// Selected SSE/SSE2 encoding requirement, independent of the host CPU.
     pub fn sse_feature(&self)->Option<CpuFeature>{
@@ -346,6 +354,13 @@ fn vector_operand(rm:Operand)->Result<VectorOperand,Local>{
 }
 // Selected VEX maps 1/2/3, canonical W=0 only; inverted extension and vvvv fields.
 // Address offsets are relative to the original instruction start.
+fn vector_crypto_kind(map:u8,opcode:u8)->Option<CryptoKind>{
+    match (map,opcode){
+        (2,0xdc)=>Some(CryptoKind::AesEncrypt),(2,0xdd)=>Some(CryptoKind::AesEncryptLast),
+        (2,0xde)=>Some(CryptoKind::AesDecrypt),(2,0xdf)=>Some(CryptoKind::AesDecryptLast),
+        (3,0x44)=>Some(CryptoKind::CarrylessMultiply),_=>None
+    }
+}
 fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op),Local>{
     let first=take(b,i+1,1)?[0];
     // In 32-bit mode C4/C5 may be LES/LDS; only accept unambiguous VEX.
@@ -364,6 +379,15 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
     let pp=fields&3;
     let opcode=take(b,at,1)?[0];
     let width=if wide{VectorWidth::Bits256}else{VectorWidth::Bits128};
+    // Selected canonical W=0, mandatory 66 vector crypto forms.
+    if let Some(kind)=vector_crypto_kind(map,opcode){
+        if pp!=1||fields&0x80!=0{return Err(Local::Unsupported);}
+        let (at,destination,rm)=modrm(mode,pc,b,at+1,rex,address_override)?;
+        let immediate=kind==CryptoKind::CarrylessMultiply;
+        let control=if immediate{Some(take(b,at,1)?[0])}else{None};
+        let end=at+usize::from(immediate);
+        return Ok((end,Op::VectorCrypto{kind,width,evex:false,destination,source1:v,source2:vector_operand(finish_rip(mode,pc,end,rm))?,control}));
+    }
     // FMA3 VEX map 0F38, mandatory 66; W selects single/double.
     // Destination is also an input. Preserve encoded order rather than
     // reordering or evaluating fused arithmetic.
@@ -496,7 +520,8 @@ fn vex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op
 fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,Op),Local>{
     if mode!=Mode::X64{return Err(Local::Unsupported);}
     let p0=take(b,i+1,1)?[0];
-    if p0&15!=1{return Err(Local::Unsupported);}
+    let map=p0&15;
+    if !(1..=3).contains(&map){return Err(Local::Unsupported);}
     let p1=take(b,i+2,1)?[0];
     if p1&4==0{return Err(Local::Unsupported);}
     // pp/W select different forms in floating and integer opcode families.
@@ -511,6 +536,24 @@ fn evex(mode:Mode,pc:u64,b:&[u8],i:usize,address_override:bool)->Result<(usize,O
     let mask=match (k,zero){(0,false)=>WriteMask::None,(0,true)=>return Err(Local::Unsupported),(k,false)=>WriteMask::Merge(k),(k,true)=>WriteMask::Zero(k)};
     let v=((!p1>>3)&15)|(((!p2>>3)&1)<<4);
     let opcode=take(b,i+4,1)?[0];
+    // EVEX crypto has full-vector tuples, no writemask, broadcast or SAE.
+    if map!=1{
+        let kind=vector_crypto_kind(map,opcode).ok_or(Local::Unsupported)?;
+        if p1&3!=1||p1&0x80!=0||broadcast||mask!=WriteMask::None{return Err(Local::Unsupported);}
+        let at=i+5;let raw=take(b,at,1)?[0];
+        let rex=0x40|((!p0>>5)&7);
+        let (at,reg,rm)=modrm(mode,pc,b,at,rex,address_override)?;
+        let immediate=kind==CryptoKind::CarrylessMultiply;
+        let control=if immediate{Some(take(b,at,1)?[0])}else{None};
+        let end=at+usize::from(immediate);
+        let destination=reg|(((!p0>>4)&1)<<4);
+        let source2=match finish_rip(mode,pc,end,rm){
+            Operand::Register(r)=>VectorOperand::Register(r|(((!p0>>6)&1)<<4)),
+            Operand::Memory(mut m)=>{if raw>>6==1{m.displacement*=vector_bytes;}VectorOperand::Memory(m)},
+            _=>return Err(Local::Unsupported)
+        };
+        return Ok((end,Op::VectorCrypto{kind,width,evex:true,destination,source1:v,source2,control}));
+    }
     // New families are classified before legacy 512-bit dispatch.
     // BW uses canonical W=0; DQ bitwise PS/PD uses W0/W1 respectively.
     // VL subset: ordinary packed float arithmetic, without broadcast.
@@ -595,7 +638,7 @@ fn explicit_memory(op:Op)->bool{
         Op::BmiUnary{source,..}|Op::RotateRightImmediate{source,..}|Op::MultiplyUnsignedDouble{source,..}|Op::AddCarryChain{source,..}=>matches!(source,Operand::Memory(_)),
         Op::CryptoXmm{source,..}=>matches!(source,XmmOperand::Memory(_)),
         Op::EvexBroadcast{..}=>true,
-        Op::FusedFloat{source2,..}|Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
+        Op::VectorCrypto{source2,..}|Op::FusedFloat{source2,..}|Op::EvexInteger{source2,..}|Op::EvexExtension{source2,..}=>matches!(source2,VectorOperand::Memory(_)),
         Op::AvxFloat{destination,source2,..}|Op::AvxInteger{destination,source2,..}|Op::EvexFloat{destination,source2,..}=>matches!(destination,VectorOperand::Memory(_))||matches!(source2,VectorOperand::Memory(_)),
         Op::Sse{destination,source,..}|Op::PackedInteger{destination,source,..}|Op::HorizontalFloat{destination,source,..}|Op::ExtendedPacked{destination,source,..}|Op::RoundFloat{destination,source,..}=>matches!(destination,XmmOperand::Memory(_))||matches!(source,XmmOperand::Memory(_)),
         Op::ScalarConvert{destination,source,..}=>matches!(destination,ConversionOperand::Memory(_))||matches!(source,ConversionOperand::Memory(_)),
