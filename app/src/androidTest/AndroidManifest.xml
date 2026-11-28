@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <provider android:authorities="com.readroid.f130fixture.provider" />
+    </queries>
+    <application>
+        <!-- Test APK only; never packaged in the production application. -->
+        <provider
+            android:name="com.readroid.app.F129FaultyContentProvider"
+            android:authorities="com.readroid.app.f129.testprovider"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

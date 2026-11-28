@@ -1,0 +1,6 @@
+{
+  global:
+    Java_com_readroid_app_NativeHexBridge_abiVersion;
+    Java_com_readroid_app_NativeHexBridge_format;
+  local: *;
+};

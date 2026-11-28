@@ -10,6 +10,10 @@ import java.util.Map;
 public final class EditPlan {
     private static final int MAX_REPLACEMENT_BYTES = 128 * 1024;
     private final LinkedHashMap<String, String> replacements = new LinkedHashMap<>();
+    // F1.48: in-memory content revision, independent of APK binding.
+    // UI-thread confined for the live Explorer plan; temporary plans are local.
+    private long revision;
+    long revision() { return revision; }
 
     /**
      * Reject over-budget text and malformed UTF-16 (unpaired surrogates).
@@ -37,7 +41,9 @@ public final class EditPlan {
         if (!isEditable(path)) throw new IllegalArgumentException("Tipo de arquivo não suportado para edição textual");
         if (invalidReplacement(replacement))
             throw new IllegalArgumentException("Texto inválido ou acima de 128 KiB em UTF-8");
+        if (replacement.equals(replacements.get(path))) return;
         replacements.put(path, replacement);
+        revision++;
     }
 
     /** The functional result of an edit, separate from visual presentation. */
@@ -56,7 +62,7 @@ public final class EditPlan {
             || !isEditable(path) || invalidReplacement(replacement))
             throw new IllegalArgumentException("Caminho ou edição inválida (UTF-8, máximo 128 KiB)");
         if (replacement.equals(original))
-            return replacements.remove(path) == null ? EditResult.UNCHANGED : EditResult.REMOVED;
+            return remove(path) ? EditResult.REMOVED : EditResult.UNCHANGED;
         String previous = replacements.get(path);
         if (replacement.equals(previous)) return EditResult.UNCHANGED;
         addTextReplacement(path, replacement);
@@ -72,7 +78,11 @@ public final class EditPlan {
 
     public int size() { return replacements.size(); }
 
-    public boolean remove(String path) { return replacements.remove(path) != null; }
+    public boolean remove(String path) {
+        if (replacements.remove(path) == null) return false;
+        revision++;
+        return true;
+    }
 
     public boolean contains(String path) { return replacements.containsKey(path); }
 
@@ -80,7 +90,61 @@ public final class EditPlan {
 
     public Map<String, String> snapshot() { return new LinkedHashMap<>(replacements); }
 
-    public void clear() { replacements.clear(); }
+    public void clear() {
+        if (replacements.isEmpty()) return;
+        replacements.clear();
+        revision++;
+    }
+
+    /**
+     * Restore a recovery snapshot atomically. Validate every entry in a
+     * temporary plan BEFORE touching the user's pending edits. The recovery
+     * format supports at most 100 changes, regardless of a caller Map's
+     * potentially deceptive size() value.
+     */
+    void replaceAllValidated(Map<String, String> changes) {
+        if (changes == null || changes.isEmpty())
+            throw new IllegalArgumentException("Cópia de recuperação sem alterações");
+        EditPlan candidate = new EditPlan();
+        int count = 0;
+        for (Map.Entry<String, String> edit : changes.entrySet()) {
+            if (edit == null || ++count > 100)
+                throw new IllegalArgumentException("Cópia de recuperação inválida ou acima de 100 alterações");
+            candidate.addTextReplacement(edit.getKey(), edit.getValue());
+        }
+        if (candidate.replacements.isEmpty())
+            throw new IllegalArgumentException("Cópia de recuperação sem alterações");
+        // No validation after this point: the current plan cannot be left
+        // partially cleared by a malformed path, Unicode value or size.
+        if (replacements.equals(candidate.replacements)) return;
+        replacements.clear();
+        replacements.putAll(candidate.replacements);
+        revision++;
+    }
+
+    // Binder's transaction buffer is shared with other transactions. Keep
+    // plaintext text sharing well below it (UTF-16 plus parcel overhead).
+    // This is a conservative application budget, not a Binder guarantee.
+    static final int MAX_SHARE_JSON_CHARS = 128 * 1024;
+
+    String toShareJson() throws Exception {
+        long rawChars = 0;
+        for (Map.Entry<String, String> change : replacements.entrySet()) {
+            rawChars += (long) change.getKey().length() + change.getValue().length();
+            if (rawChars > MAX_SHARE_JSON_CHARS) throw shareTooLarge();
+        }
+        // Escapes and JSON syntax also consume space. Check the actual
+        // serialized text before constructing or dispatching any Intent.
+        String json = toJson().toString(2);
+        if (json.length() > MAX_SHARE_JSON_CHARS) throw shareTooLarge();
+        return json;
+    }
+
+    private static java.io.IOException shareTooLarge() {
+        return new java.io.IOException("Plano grande demais para compartilhar como texto. "
+            + "Reduza as alterações ou use a cópia de recuperação criptografada, "
+            + "se estiver dentro dos limites de recuperação.");
+    }
 
     public JSONObject toJson() throws Exception {
         JSONObject result = new JSONObject();

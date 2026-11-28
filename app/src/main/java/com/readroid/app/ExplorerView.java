@@ -43,6 +43,67 @@ public final class ExplorerView {
     private java.io.File indexFile;
     private int indexPageOffset = 0;
     private final EditPlan editPlan = new EditPlan();
+    // Every accepted project binding invalidates edits opened against the
+    // previous APK, including dialogs and in-flight background reads.
+    private long projectGeneration;
+    // At most one image decode across Explorer instances, including recreation.
+    private static final java.util.concurrent.atomic.AtomicBoolean IMAGE_PREVIEW_BUSY =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean HEX_PREVIEW_BUSY =
+        new java.util.concurrent.atomic.AtomicBoolean();
+
+    static final class EditSession {
+        final java.io.File source;
+        final long generation;
+
+        EditSession(java.io.File source, long generation) {
+            this.source = source;
+            this.generation = generation;
+        }
+    }
+
+    EditSession captureEditSession() {
+        return new EditSession(apkFile, projectGeneration);
+    }
+
+    boolean isCurrentEditSession(EditSession session) {
+        return session != null && session.source != null
+            && session.generation == projectGeneration
+            && session.source == apkFile && session.source.isFile();
+    }
+
+    /** Called only on UI thread. Never show results from an obsolete APK. */
+    boolean showForCurrentSession(EditSession session, Runnable show) {
+        if (!isCurrentEditSession(session)
+                || activity.isFinishing() || activity.isDestroyed()) return false;
+        show.run();
+        return true;
+    }
+
+    EditPlan.EditResult applyTextEditForSession(EditSession session,
+            String path, String original, String replacement) {
+        if (!isCurrentEditSession(session))
+            throw new IllegalStateException(
+                "Edição cancelada: outro APK foi aberto. Abra o arquivo no projeto atual.");
+        return editPlan.applyTextEdit(path, original, replacement);
+    }
+
+    /** Restores only into the original, still-open project session. */
+    void restoreEditPlanForSession(EditSession session,
+            java.util.Map<String, String> changes) {
+        restoreEditPlanForSession(session, changes, true);
+    }
+
+    /** F1.52: allow the caller to refresh outside the vault transaction lock. */
+    void restoreEditPlanForSession(EditSession session,
+            java.util.Map<String, String> changes, boolean refreshNow) {
+        if (!isCurrentEditSession(session))
+            throw new IllegalStateException(
+                "Recuperação cancelada: outro APK foi aberto.");
+        editPlan.replaceAllValidated(changes);
+        if (refreshNow) render();
+    }
+
     private static final String[] CATEGORIES = {
         "Todos", "Smali", "Recursos", "Imagens", "XML",
         "Código DEX", "Bibliotecas", "Assets", "Assinaturas/metadados",
@@ -283,6 +344,9 @@ public final class ExplorerView {
     }
 
     public void setFiles(JSONArray array, java.io.File apkFile) {
+        // Called when a candidate APK is accepted (or when the workspace is
+        // cleared). Never let an older edit dialog mutate this new binding.
+        projectGeneration++;
         this.apkFile = apkFile;
         this.indexFile = null;
         indexUnavailable = false; // A new APK starts a fresh browsing session.
@@ -601,16 +665,25 @@ public final class ExplorerView {
 
     private void showFileActions(String label, String path, String category,
             long sizeBytes, boolean editable) {
-        String[] choices = editable
-            ? new String[]{"Ver texto", "Planejar edição", "Detalhes técnicos",
-                "Copiar caminho"}
-            : new String[]{"Ver texto", "Detalhes técnicos", "Copiar caminho"};
-        new android.app.AlertDialog.Builder(activity)
-            .setTitle(label)
-            .setMessage("Tipo: " + category + "  •  " + formatBytes(sizeBytes))
-            .setItems(choices, (dialog, selected) -> {
+        boolean image = ApkImagePreview.supports(path);
+        final EditSession menuSession = captureEditSession();
+        String[] choices = image
+            ? new String[]{"Visualizar imagem", "Ver hexadecimal", "Detalhes técnicos", "Copiar caminho"}
+            : editable
+                ? new String[]{"Ver texto", "Planejar edição", "Ver hexadecimal",
+                    "Detalhes técnicos", "Copiar caminho"}
+                : new String[]{"Ver texto", "Ver hexadecimal", "Detalhes técnicos", "Copiar caminho"};
+        android.app.AlertDialog.Builder menu = new android.app.AlertDialog.Builder(activity)
+            .setTitle(label);
+        // Keep the native action list visible for every file type. The row
+        // and technical details already show metadata.
+        menu.setItems(choices, (dialog, selected) -> {
                 String action = choices[selected];
-                if ("Ver texto".equals(action)) preview(path);
+                if (!isCurrentEditSession(menuSession)
+                        || activity.isFinishing() || activity.isDestroyed()) return;
+                if ("Visualizar imagem".equals(action)) previewImage(menuSession, path);
+                else if ("Ver hexadecimal".equals(action)) previewHex(menuSession, path);
+                else if ("Ver texto".equals(action)) preview(path);
                 else if ("Planejar edição".equals(action)) planEdit(path);
                 else if ("Detalhes técnicos".equals(action)) inspectEntry(path);
                 else copyPath(path);
@@ -629,24 +702,145 @@ public final class ExplorerView {
 
     public void refresh() { render(); }
 
+    private void previewHex(EditSession session, String path) {
+        if (!HEX_PREVIEW_BUSY.compareAndSet(false, true)) {
+            new android.app.AlertDialog.Builder(activity)
+                .setMessage("Uma prévia hexadecimal já está sendo processada.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        try {
+            new Thread(() -> {
+                ApkHexPreview.Result decoded = null;
+                String error = null;
+                try { decoded = ApkHexPreview.read(session.source, path); }
+                catch (Exception failure) { error = failure.getMessage(); }
+                final ApkHexPreview.Result result = decoded;
+                final String message = error;
+                activity.runOnUiThread(() -> {
+                    try {
+                        showForCurrentSession(session, () -> {
+                            if (result == null) {
+                                new android.app.AlertDialog.Builder(activity)
+                                    .setTitle("Prévia indisponível")
+                                    .setMessage(message == null ? "Entrada inválida." : message)
+                                    .setPositiveButton("OK", null).show();
+                                return;
+                            }
+                            LinearLayout content = new LinearLayout(activity);
+                            content.setOrientation(LinearLayout.VERTICAL);
+                            TextView info = new TextView(activity);
+                            info.setText(result.shown + " de " + result.size
+                                + " bytes • offsets da entrada\n"
+                                + (result.truncated
+                                    ? "Prévia parcial; CRC completo não verificado."
+                                    : "Entrada completa; CRC verificado."));
+                            info.setPadding(16, 12, 16, 12);
+                            content.addView(info);
+                            ScrollView vertical = new ScrollView(activity);
+                            HorizontalScrollView horizontal = new HorizontalScrollView(activity);
+                            TextView dump = new TextView(activity);
+                            dump.setTypeface(android.graphics.Typeface.MONOSPACE);
+                            dump.setTextSize(12);
+                            dump.setTextColor(NegrescoTheme.TEXT);
+                            dump.setTextIsSelectable(true);
+                            dump.setText(result.shown == 0 ? "Entrada vazia" : result.dump);
+                            dump.setPadding(16, 12, 16, 12);
+                            horizontal.addView(dump);
+                            vertical.addView(horizontal);
+                            content.addView(vertical, new LinearLayout.LayoutParams(-1,
+                                NegrescoTheme.dp(activity, 260)));
+                            new android.app.AlertDialog.Builder(activity)
+                                .setTitle("Prévia hexadecimal")
+                                .setView(content)
+                                .setPositiveButton("Fechar", null).show();
+                        });
+                    } finally { HEX_PREVIEW_BUSY.set(false); }
+                });
+            }, "apk-hex-preview").start();
+        } catch (RuntimeException failure) {
+            HEX_PREVIEW_BUSY.set(false);
+            throw failure;
+        }
+    }
+
+    private void previewImage(EditSession session, String path) {
+        if (!isCurrentEditSession(session) || activity.isFinishing() || activity.isDestroyed())
+            return;
+        if (!IMAGE_PREVIEW_BUSY.compareAndSet(false, true)) {
+            new android.app.AlertDialog.Builder(activity)
+                .setMessage("Uma prévia já está sendo processada.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        try {
+            new Thread(() -> {
+                ApkImagePreview.Result decoded = null;
+                String error = null;
+                try { decoded = ApkImagePreview.read(session.source, path); }
+                catch (Exception failure) { error = failure.getMessage(); }
+                catch (OutOfMemoryError failure) { error = "Memória insuficiente para a prévia."; }
+                final ApkImagePreview.Result result = decoded;
+                final String message = error;
+                activity.runOnUiThread(() -> {
+                    try {
+                        boolean shown = showForCurrentSession(session, () -> {
+                            if (result == null) {
+                                new android.app.AlertDialog.Builder(activity)
+                                    .setTitle("Prévia indisponível")
+                                    .setMessage(message == null ? "Imagem inválida." : message)
+                                    .setPositiveButton("OK", null).show();
+                                return;
+                            }
+                            LinearLayout content = new LinearLayout(activity);
+                            content.setOrientation(LinearLayout.VERTICAL);
+                            TextView info = new TextView(activity);
+                            info.setText(result.width + " × " + result.height + " px • "
+                                + result.mime + "\nPrévia estática, somente leitura");
+                            info.setPadding(16, 12, 16, 12);
+                            content.addView(info);
+                            android.widget.ImageView view = new android.widget.ImageView(activity);
+                            view.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                            view.setImageBitmap(result.bitmap);
+                            view.setContentDescription("Imagem do APK: " + path);
+                            content.addView(view, new LinearLayout.LayoutParams(-1,
+                                NegrescoTheme.dp(activity, 240)));
+                            new android.app.AlertDialog.Builder(activity)
+                                .setTitle("Prévia da imagem")
+                                .setView(content)
+                                .setPositiveButton("Fechar", null).show();
+                        });
+                        if (!shown && result != null) result.bitmap.recycle();
+                    } finally { IMAGE_PREVIEW_BUSY.set(false); }
+                });
+            }, "apk-image-preview").start();
+        } catch (RuntimeException failure) {
+            IMAGE_PREVIEW_BUSY.set(false);
+            throw failure;
+        }
+    }
+
     private void inspectEntry(String path) {
         if (apkFile == null || !apkFile.isFile()) return;
-        final java.io.File source = apkFile;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String details;
             try { details = ApkEntryInspector.inspect(source, path); }
             catch (Exception error) { details = "Inspeção indisponível: " + error.getMessage(); }
             final String message = details;
-            activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Propriedades do arquivo")
-                .setMessage(message)
-                .setPositiveButton("Fechar", null)
-                .setNeutralButton("Copiar dados", (dialog, which) -> {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
-                        activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null) clipboard.setPrimaryClip(
-                        android.content.ClipData.newPlainText("Dados do arquivo", message));
-                }).show());
+            activity.runOnUiThread(() -> showForCurrentSession(session, () ->
+                new android.app.AlertDialog.Builder(activity)
+                    .setTitle("Propriedades do arquivo")
+                    .setMessage(message)
+                    .setPositiveButton("Fechar", null)
+                    .setNeutralButton("Copiar dados", (dialog, which) -> {
+                        android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) activity.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE);
+                        if (clipboard != null) clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText("Dados do arquivo", message));
+                    }).show()));
         }).start();
     }
 
@@ -655,16 +849,24 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("Edição textual ainda não suportada para este formato.").setPositiveButton("OK", null).show();
             return;
         }
-        if (apkFile == null || !apkFile.exists()) return;
-        final java.io.File source = apkFile;
+        if (apkFile == null || !apkFile.isFile()) return;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String original;
             try { original = ApkPreview.readText(source, path); }
             catch (Exception error) {
-                activity.runOnUiThread(() -> new android.app.AlertDialog.Builder(activity).setMessage(error.getMessage()).setPositiveButton("OK", null).show());
+                activity.runOnUiThread(() -> showForCurrentSession(session, () ->
+                    new android.app.AlertDialog.Builder(activity)
+                        .setMessage(error.getMessage())
+                        .setPositiveButton("OK", null).show()));
                 return;
             }
             activity.runOnUiThread(() -> {
+                // The import might have committed while the worker read ZIP.
+                // In that case never present an editor for the old project.
+                if (!isCurrentEditSession(session)
+                        || activity.isFinishing() || activity.isDestroyed()) return;
                 EditText editor = new EditText(activity);
                 editor.setText(editPlan.contains(path) ? editPlan.get(path) : original);
                 editor.setTextColor(NegrescoTheme.TEXT);
@@ -687,8 +889,10 @@ public final class ExplorerView {
                     .setPositiveButton("Salvar no plano", (dialog, which) -> {
                         try {
                             String replacement = editor.getText().toString();
+                            // Re-check when saving: a new APK might have
+                            // opened while the old edit dialog was visible.
                             EditPlan.EditResult result =
-                                editPlan.applyTextEdit(path, original, replacement);
+                                applyTextEditForSession(session, path, original, replacement);
                             render();
                             String title;
                             String description;
@@ -727,13 +931,14 @@ public final class ExplorerView {
             new android.app.AlertDialog.Builder(activity).setMessage("APK temporário indisponível. Analise o arquivo novamente.").setPositiveButton("OK", null).show();
             return;
         }
-        final java.io.File source = apkFile;
+        final EditSession session = captureEditSession();
+        final java.io.File source = session.source;
         new Thread(() -> {
             String value;
             try { value = ApkPreview.readText(source, path); }
             catch (Exception error) { value = "Não foi possível visualizar: " + error.getMessage(); }
             final String text = value;
-            activity.runOnUiThread(() -> {
+            activity.runOnUiThread(() -> showForCurrentSession(session, () -> {
                 ScrollView scroll = new ScrollView(activity);
                 TextView content = new TextView(activity);
                 content.setText(text);
@@ -745,7 +950,7 @@ public final class ExplorerView {
                 content.setPadding(24, 20, 24, 20);
                 scroll.addView(content);
                 new android.app.AlertDialog.Builder(activity).setTitle(path).setView(scroll).setPositiveButton("Fechar", null).show();
-            });
+            }));
         }).start();
     }
 

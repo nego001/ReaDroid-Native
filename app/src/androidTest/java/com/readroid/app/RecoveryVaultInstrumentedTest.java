@@ -703,4 +703,58 @@ public final class RecoveryVaultInstrumentedTest {
             }
         }
     }
+
+    @Test public void f150OldDeletionProofCannotDeleteResavedSamePlan() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            RecoveryVault.DeletionProof old = f.vault.captureDeletionProof();
+            f.vault.save(f.original, example());
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] newer = Files.readAllBytes(checkpoint.toPath());
+            try {
+                f.vault.clearIfCurrent(old);
+                fail("A new ciphertext requires fresh deletion consent");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("mudou"));
+            }
+            assertArrayEquals(newer, Files.readAllBytes(checkpoint.toPath()));
+            assertEquals(example(), f.vault.loadForSource(f.original));
+            f.vault.clearIfCurrent(f.vault.captureDeletionProof());
+            assertFalse(f.vault.hasCheckpoint());
+        }
+    }
+
+    @Test public void f150AbsentDeletionProofCannotDeleteLaterSave() throws Exception {
+        try (Fixture f = new Fixture()) {
+            RecoveryVault.DeletionProof absent = f.vault.captureDeletionProof();
+            f.vault.save(f.original, example());
+            try {
+                f.vault.clearIfCurrent(absent);
+                fail("An empty slot offer must not authorize deleting a later save");
+            } catch (IOException expected) {
+                assertEquals(example(), f.vault.loadForSource(f.original));
+            }
+        }
+    }
+
+    @Test public void f150ChangedCiphertextRejectsOldDeletionProof() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.vault.save(f.original, example());
+            RecoveryVault.DeletionProof offered = f.vault.captureDeletionProof();
+            File checkpoint = new File(f.folder, "edit-plan-checkpoint.v1");
+            byte[] changed = Files.readAllBytes(checkpoint.toPath());
+            changed[changed.length - 1] ^= 1;
+            Files.write(checkpoint.toPath(), changed);
+            try {
+                f.vault.clearIfCurrent(offered);
+                fail("Same-size modified ciphertext must require new consent");
+            } catch (IOException expected) {
+                assertArrayEquals(changed, Files.readAllBytes(checkpoint.toPath()));
+            }
+            // Even unauthentic ciphertext can be explicitly removed without
+            // decrypting or regenerating the user's Keystore key.
+            f.vault.clearIfCurrent(f.vault.captureDeletionProof());
+            assertFalse(f.vault.hasCheckpoint());
+        }
+    }
 }

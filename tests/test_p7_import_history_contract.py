@@ -31,7 +31,7 @@ class AcceptedImportHistoryContract(unittest.TestCase):
 
     def test_schedule_follows_project_commit_not_validation(self):
         for piece in (
-            "if (sequence != analysisSequence || isFinishing() || isDestroyed())",
+            "if (!importToken.isActive() || sequence != analysisSequence",
             "currentApk = candidate.file;",
             "selectedApkUri = uri;",
             "pendingApkUri = null;",
@@ -41,13 +41,16 @@ class AcceptedImportHistoryContract(unittest.TestCase):
             self.assertIn(piece, self.import_body)
         positions = [self.import_body.index(piece) for piece in (
             "runOnUiThread(() -> {",
-            "if (sequence != analysisSequence || isFinishing() || isDestroyed())",
+            "if (!importToken.isActive() || sequence != analysisSequence",
             "currentApk = candidate.file;",
             "selectedApkUri = uri;",
             "displayAnalyzedReport(candidate.report);",
             "recordAcceptedProject(uri, packageName, candidate.file, sequence);",
         )]
         self.assertEqual(positions, sorted(positions))
+        self.assertIn("importSessions.begin()", self.import_body)
+        self.assertIn("importToken.requireActive()", self.import_body)
+        self.assertIn("|| isFinishing() || isDestroyed())", self.import_body)
 
     def test_accepted_history_remains_off_ui_and_best_effort(self):
         self.assertIn("executor.execute(() -> {", self.metadata_body)

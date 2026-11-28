@@ -3,11 +3,16 @@ package com.readroid.app;
 import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructStat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -52,17 +57,77 @@ public final class RecoveryVault {
     private static final int MAX_STAGE_SCAN = 256;
     // All vault instances share one application process and Keystore identity.
     // Serialize full save/load/clear transactions, not just their file moves.
-    private static final Object IN_PROCESS_LOCK = new Object();
+    private static final java.util.concurrent.locks.ReentrantLock IN_PROCESS_LOCK =
+        new java.util.concurrent.locks.ReentrantLock();
+    // F1.52: process-wide, conservative revision. All vault writes invalidate
+    // previously authenticated application tickets, including post-move errors.
+    private static long checkpointRevision;
     private static final byte[] AAD = "NegrescoDroid:recovery:v1"
         .getBytes(StandardCharsets.US_ASCII);
 
     private final File storage;
     private final String alias;
     private final BeforeCommit beforeCommit;
+    private final RecoveryStorageBudget.FreeSpace freeSpace;
+    private final StageReadObserver stageReadObserver;
+    private final BeforeMove beforeMove;
+    private final AfterAtomicMove afterAtomicMove;
+    private final AfterDirectorySync afterDirectorySync;
+    private final StageReadObserver finalReadObserver;
+    private final AfterFinalAttestation afterFinalAttestation;
 
     /** Failure injection for Android instrumented tests, never user-controlled. */
     interface BeforeCommit {
         void run(File staged) throws IOException;
+    }
+
+    /** Package-private CI seam: observe a verified chunk, no user callback. */
+    interface StageReadObserver {
+        void onChunk(int bytesVerified, int totalBytes) throws IOException;
+    }
+
+    /** F1.36 pre-move fault injection: only package-private instrumentation. */
+    interface BeforeMove {
+        void run(File verifiedStage) throws IOException;
+    }
+
+    /**
+     * F1.39 CI-only seam, called AFTER successful ATOMIC_MOVE and BEFORE
+     * directory fsync. Production installs a no-op; never user controlled.
+     * The previous checkpoint is already replaced at this boundary.
+     */
+    interface AfterAtomicMove {
+        void run(File promotedCheckpoint) throws IOException;
+    }
+
+    /**
+     * F1.40 package-private CI probe. Fires only AFTER directory fsync
+     * returns, and BEFORE final content/inode verification. Production
+     * installs a no-op observer; never exposed to user input.
+     */
+    interface AfterDirectorySync {
+        void run(File promotedCheckpoint) throws IOException;
+    }
+
+    /**
+     * F1.42 isolated test callback AFTER final descriptor/inode/ciphertext
+     * attestation finishes and BEFORE save() returns to its caller.
+     * On production paths this is ALWAYS a no-op.
+     */
+    interface AfterFinalAttestation {
+        void run(File attestedCheckpoint) throws IOException;
+    }
+
+    /**
+     * F1.45: the atomic promotion already happened, but the source became
+     * different or could not be verified before the save acknowledgement.
+     * No automatic rollback is possible or attempted in this state.
+     */
+    static final class PostCommitSourceException extends IOException {
+        PostCommitSourceException(String message) { super(message); }
+        PostCommitSourceException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     public RecoveryVault(Context context) {
@@ -76,21 +141,132 @@ public final class RecoveryVault {
 
     /** Test-only seam to simulate failure after durable write and before commit. */
     RecoveryVault(File storage, String alias, BeforeCommit beforeCommit) {
-        if (storage == null || alias == null || alias.isEmpty() || beforeCommit == null)
+        this(storage, alias, beforeCommit,
+            RecoveryStorageBudget.forDirectory(storage));
+    }
+
+    /** Deterministic free-space changes are injected only by instrumentation. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace) {
+        this(storage, alias, beforeCommit, freeSpace,
+            (verified, total) -> {});
+    }
+
+    /**
+     * Package-private seam for deterministic stage-verification interruption
+     * in isolated Android tests. Production always uses the no-op observer.
+     */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            stage -> {});
+    }
+
+    /** F1.36 test seam; production has a no-op before-move observer. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            beforeMove, checkpoint -> {});
+    }
+
+    /** Isolated F1.39 fault injection; all production constructors use no-op. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            beforeMove, afterAtomicMove, checkpoint -> {});
+    }
+
+    /** F1.40 isolated post-fsync injection. Not used by production callers. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver,
+            beforeMove, afterAtomicMove, afterDirectorySync, (verified, total) -> {});
+    }
+
+    /**
+     * F1.41 CI-only observer of the FINAL ciphertext reread after directory
+     * fsync, distinct from the pre-move staging observer. All production
+     * constructors install a no-op. This never exposes a new app API.
+     */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync,
+            StageReadObserver finalReadObserver) {
+        this(storage, alias, beforeCommit, freeSpace, stageReadObserver, beforeMove,
+            afterAtomicMove, afterDirectorySync, finalReadObserver, checkpoint -> {});
+    }
+
+    /** F1.42 end-of-attestation test probe. Never available to app callers. */
+    RecoveryVault(File storage, String alias, BeforeCommit beforeCommit,
+            RecoveryStorageBudget.FreeSpace freeSpace,
+            StageReadObserver stageReadObserver, BeforeMove beforeMove,
+            AfterAtomicMove afterAtomicMove, AfterDirectorySync afterDirectorySync,
+            StageReadObserver finalReadObserver,
+            AfterFinalAttestation afterFinalAttestation) {
+        if (storage == null || alias == null || alias.isEmpty()
+                || beforeCommit == null || freeSpace == null
+                || stageReadObserver == null || beforeMove == null
+                || afterAtomicMove == null || afterDirectorySync == null
+                || finalReadObserver == null || afterFinalAttestation == null)
             throw new IllegalArgumentException("Armazenamento de recuperação inválido");
         this.storage = storage;
         this.alias = alias;
         this.beforeCommit = beforeCommit;
+        this.freeSpace = freeSpace;
+        this.stageReadObserver = stageReadObserver;
+        this.beforeMove = beforeMove;
+        this.afterAtomicMove = afterAtomicMove;
+        this.afterDirectorySync = afterDirectorySync;
+        this.finalReadObserver = finalReadObserver;
+        this.afterFinalAttestation = afterFinalAttestation;
     }
 
+    // Retain the legacy no-throws query for existing callers.
     public boolean hasCheckpoint() {
-        synchronized (IN_PROCESS_LOCK) {
+        IN_PROCESS_LOCK.lock();
+        try {
             return new File(storage, FILE_NAME).isFile();
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    /** Worker-only acquisition: interrupted Activity workers never wait
+     * indefinitely for another recovery operation to release the vault. */
+    private static void lockInterruptibly() throws InterruptedIOException {
+        try {
+            IN_PROCESS_LOCK.lockInterruptibly();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            InterruptedIOException error =
+                new InterruptedIOException("Espera pelo cofre de recuperação interrompida");
+            error.initCause(interrupted);
+            throw error;
+        }
+    }
+
+    boolean hasCheckpointInterruptibly() throws IOException {
+        lockInterruptibly();
+        try {
+            ExportSessionGuard.check(null);
+            return new File(storage, FILE_NAME).isFile();
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
     public void clear() throws IOException {
-        synchronized (IN_PROCESS_LOCK) {
+        lockInterruptibly();
+        try {
+            ExportSessionGuard.check(null);
+            checkpointRevision++;
             // Explicit user deletion also removes encrypted, possibly recent
             // staging files. Never report success if cleanup is incomplete.
             // The old checkpoint remains available if cleanup fails.
@@ -98,18 +274,172 @@ public final class RecoveryVault {
             File backup = new File(storage, FILE_NAME);
             if (backup.exists() && !backup.delete())
                 throw new IOException("Não foi possível remover a cópia de recuperação");
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    /**
+     * F1.50: consent to delete one specific ciphertext, not merely the
+     * single-slot filename. No plaintext or Keystore key is needed.
+     */
+    static final class DeletionProof {
+        private final File location;
+        private final StageIdentity identity;
+        private final byte[] digest;
+        private final long revision;
+
+        private DeletionProof(File location, StageIdentity identity, byte[] digest,
+                long revision) {
+            this.location = location;
+            this.identity = identity;
+            this.digest = digest;
+            this.revision = revision;
+        }
+
+        // F1.56: an empty slot is not the same authorization after a
+        // save/clear cycle. Conservatively invalidate on any vault mutation.
+        private boolean matches(DeletionProof current) {
+            return revision == current.revision && matchesCiphertext(current);
+        }
+
+        private boolean matchesCiphertext(DeletionProof current) {
+            if (!location.equals(current.location)) return false;
+            if (identity == null || current.identity == null)
+                return identity == null && current.identity == null;
+            return identity.sameFile(current.identity)
+                && identity.size == current.identity.size
+                && MessageDigest.isEqual(digest, current.digest);
+        }
+    }
+
+    /** Worker-only; snapshot current ciphertext or explicitly absent slot. */
+    DeletionProof captureDeletionProof() throws IOException {
+        lockInterruptibly();
+        try {
+            return captureDeletionProofLocked();
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    private DeletionProof captureDeletionProofLocked() throws IOException {
+        ExportSessionGuard.check(null);
+        File backup = new File(storage, FILE_NAME).getAbsoluteFile();
+        Path path = backup.toPath();
+        if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
+            return new DeletionProof(backup, null, null, checkpointRevision);
+        // No symlink following, no plaintext, and bounded memory even when
+        // the checkpoint is corrupted. Refuse ambiguous filesystem state.
+        StageIdentity before = stageIdentity(backup);
+        byte[] encoded = null;
+        try (FileInputStream input = new FileInputStream(Os.open(
+                backup.getAbsolutePath(), OsConstants.O_RDONLY
+                    | OsConstants.O_CLOEXEC | OsConstants.O_NOFOLLOW, 0))) {
+            StageIdentity opened = stageIdentity(input.getFD());
+            if (!before.sameFile(opened) || before.size != opened.size)
+                throw new IOException("Cópia de recuperação mudou durante a leitura");
+            encoded = readBounded(input);
+            StageIdentity after = stageIdentity(backup);
+            StageIdentity descriptor = stageIdentity(input.getFD());
+            if (!opened.sameFile(after) || !opened.sameFile(descriptor)
+                    || opened.size != after.size || opened.size != descriptor.size
+                    || encoded.length != opened.size)
+                throw new IOException("Cópia de recuperação mudou durante a leitura");
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(encoded);
+            return new DeletionProof(backup, after, digest, checkpointRevision);
+        } catch (ErrnoException | java.security.NoSuchAlgorithmException error) {
+            throw new IOException("Não foi possível identificar a cópia de recuperação", error);
+        } finally {
+            if (encoded != null) Arrays.fill(encoded, (byte) 0);
+        }
+    }
+
+    /**
+     * Compare and clear under the existing transaction lock. An old dialog
+     * cannot delete a replacement saved by another vault in this process.
+     * Not an OS-level lock against hostile external filesystem writers.
+     */
+    void clearIfCurrent(DeletionProof offered) throws IOException {
+        lockInterruptibly();
+        try {
+            if (offered == null || !offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou. "
+                    + "Solicite a exclusão novamente.");
+            // This admitted clear itself advances the revision. Its
+            // second comparison checks the ciphertext, not its old revision.
+            checkpointRevision++;
+            clearEncryptedStages(storage);
+            if (!offered.matchesCiphertext(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou. "
+                    + "Solicite a exclusão novamente.");
+            ExportSessionGuard.check(null);
+            File backup = new File(storage, FILE_NAME);
+            if (backup.exists() && !backup.delete())
+                throw new IOException("Não foi possível remover a cópia de recuperação");
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
     public void save(File sourceApk, Map<String, String> changes) throws Exception {
-        synchronized (IN_PROCESS_LOCK) {
-            saveSerialized(sourceApk, changes);
+        save(sourceApk, changes, null);
+    }
+
+    /**
+     * F1.43: Activity-bound save, canceled before promotion if the project
+     * changes. The ordinary public overload preserves the existing behavior.
+     */
+    void save(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token) throws Exception {
+        save(sourceApk, changes, token, null);
+    }
+
+    /**
+     * F1.44: bind an Activity save to the SHA already accepted by the UI.
+     * Reject a changed source both before staging and immediately before
+     * promotion. Existing public saves retain their original semantics.
+     */
+    void save(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token, String expectedSourceSha256)
+            throws Exception {
+        lockInterruptibly();
+        try {
+            saveSerialized(sourceApk, changes, token, expectedSourceSha256, null);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
-    private void saveSerialized(File sourceApk, Map<String, String> changes)
-            throws Exception {
+    /** F1.55: a confirmation to replace one slot version is not permission
+     * to overwrite a later checkpoint. Absence is also an explicit proof. */
+    void save(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token, String expectedSourceSha256,
+            DeletionProof offered) throws Exception {
+        lockInterruptibly();
+        try {
+            ExportSessionGuard.check(token);
+            requireSaveSlot(offered);
+            saveSerialized(sourceApk, changes, token, expectedSourceSha256, offered);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    private void requireSaveSlot(DeletionProof offered) throws IOException {
+        if (offered == null || !offered.matches(captureDeletionProofLocked()))
+            throw new IOException("A cópia de recuperação mudou. "
+                + "Solicite o salvamento novamente.");
+    }
+
+    private void saveSerialized(File sourceApk, Map<String, String> changes,
+            ExportSessionGuard.Token token, String expectedSourceSha256,
+            DeletionProof offered) throws Exception {
+        ExportSessionGuard.check(token);
         String fingerprint = sha256(sourceApk);
+        if (expectedSourceSha256 != null
+                && !expectedSourceSha256.equals(fingerprint))
+            throw new IOException("APK original mudou antes do salvamento protegido");
         if (changes == null || changes.isEmpty() || changes.size() > MAX_CHANGES)
             throw new IllegalArgumentException("O plano deve ter de 1 a 100 alterações");
         EditPlan plan = new EditPlan();
@@ -127,6 +457,7 @@ public final class RecoveryVault {
         byte[] encrypted = null;
         byte[] encoded = null;
         File temporary = null;
+        RecoveryDirectoryGuard pinnedDirectory = null;
         boolean committed = false;
         // This finally must cover oversize, Keystore/crypto, folder creation
         // and atomic-move errors, not only the final file write.
@@ -146,6 +477,12 @@ public final class RecoveryVault {
             encoded = buffer.array();
             if (!storage.isDirectory() && !storage.mkdirs())
                 throw new IOException("Não foi possível criar o diretório privado");
+            // Pin THIS directory before staging bytes, refuse symlink roots.
+            // The final path may not be rebound during the transaction.
+            pinnedDirectory = RecoveryDirectoryGuard.open(storage);
+            // Refuse low-space saves BEFORE staging new ciphertext. Never
+            // touch an already committed checkpoint on budget failure.
+            RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
             pruneAbandonedStages(storage, System.currentTimeMillis());
             temporary = File.createTempFile("checkpoint-", ".tmp", storage);
             try (FileOutputStream out = new FileOutputStream(temporary)) {
@@ -157,31 +494,330 @@ public final class RecoveryVault {
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Gravação da recuperação interrompida");
             beforeCommit.run(temporary);
+            ExportSessionGuard.check(token);
             if (Thread.currentThread().isInterrupted())
                 throw new InterruptedIOException("Gravação da recuperação interrompida");
+            // Recheck AFTER fsync and callback, just before atomic promotion:
+            // free space may have vanished while the encrypted file was saved.
+            RecoveryStorageBudget.requireStagingRoom(freeSpace, encoded.length);
+            // F1.34: a synced temporary is not necessarily an intact one.
+            // Re-read the exact encrypted bytes before replacing the last
+            // usable recovery checkpoint, and refuse swapped symlinks.
+            verifyStagedCiphertext(temporary, encoded, stageReadObserver);
+            ExportSessionGuard.check(token);
+            // F1.36: remember the actual inode, not just the path's bytes.
+            // An identical-byte replacement must not silently inherit the
+            // permission to become the new recovery checkpoint.
+            final StageIdentity verifiedIdentity = stageIdentity(temporary);
+            beforeMove.run(temporary);
+            ExportSessionGuard.check(token);
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Confirmação da recuperação interrompida");
+            pinnedDirectory.requireSameDirectory();
+            // Recheck AFTER any intervening work and directly BEFORE rename.
+            // No untrusted callback may run between this second read and move.
+            verifyStagedCiphertext(temporary, encoded, (verified, total) -> {});
+            if (!verifiedIdentity.sameFile(stageIdentity(temporary)))
+                throw new IOException("Arquivo temporário substituído antes da confirmação");
+            pinnedDirectory.requireSameDirectory();
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Confirmação da recuperação interrompida");
+            // Final cancellation boundary: stale sessions cannot intentionally
+            // replace the last accepted checkpoint after the final stage read.
+            ExportSessionGuard.check(token);
+            // F1.44: an initially valid source APK may change during staging.
+            // Recompute the digest while the last-good checkpoint is still
+            // untouched; abort if the accepted report no longer matches.
+            // This is a last-moment check, not an OS-level source-file lock.
+            if (expectedSourceSha256 != null
+                    && !expectedSourceSha256.equals(sha256(sourceApk)))
+                throw new IOException("APK original mudou durante o salvamento protegido");
+            if (offered != null) requireSaveSlot(offered);
+            ExportSessionGuard.check(token);
             try {
                 Files.move(temporary.toPath(), new File(storage, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException unavailable) {
                 throw new IOException("Armazenamento sem troca atômica segura", unavailable);
             }
+            // An atomic move is the commit boundary: never automatically
+            // roll back or delete the new checkpoint on post-move errors.
             committed = true;
+            checkpointRevision++;
+            // F1.39: deliberately terminate a disposable CI process HERE:
+            // the new ciphertext is already promoted, but directory fsync
+            // has not been invoked. An exception cannot roll back this move.
+            afterAtomicMove.run(new File(storage, FILE_NAME));
+            pinnedDirectory.syncAfterRename();
+            // F1.40: a force-stop at this test-only callback occurs AFTER
+            // the directory fsync, not at the F1.39 pre-sync boundary.
+            File promotedCheckpoint = new File(storage, FILE_NAME);
+            afterDirectorySync.run(promotedCheckpoint);
+            pinnedDirectory.requireSameDirectory();
+            StageIdentity promoted = stageIdentity(promotedCheckpoint);
+            if (!verifiedIdentity.sameFile(promoted)
+                    || promoted.size != encoded.length)
+                throw new IOException("Identidade do checkpoint promovido divergiu");
+            // Inode and length alone cannot detect a same-size bit flip
+            // after fsync. Reopen with O_NOFOLLOW and attest all ciphertext.
+            // A failure here is POST-commit: it must never claim rollback.
+            // F1.41: stop a disposable CI writer inside the FINAL read,
+            // with ciphertext still unread. After the move there is no
+            // automatic rollback, even if verification is interrupted.
+            verifyStagedCiphertext(promotedCheckpoint, encoded,
+                finalReadObserver);
+            // F1.42: the checkpoint is committed and fully attested, but
+            // save() has not returned. A disposable CI process is terminated
+            // here; NEVER delete/roll back an already-promoted checkpoint.
+            afterFinalAttestation.run(promotedCheckpoint);
+            // F1.45: a source can change AFTER the last pre-commit hash check
+            // and the atomic promotion. Never claim normal save success if
+            // the original APK is already different at acknowledgement.
+            // The new encrypted checkpoint remains promoted: an error HERE
+            // must communicate uncertainty, not an imaginary rollback.
+            if (expectedSourceSha256 != null) {
+                final String afterCommitSha256;
+                try {
+                    afterCommitSha256 = sha256(sourceApk);
+                } catch (Exception unavailable) {
+                    throw new PostCommitSourceException(
+                        "Cópia criptografada já gravada, mas não foi possível "
+                            + "conferir o APK original após a gravação. "
+                            + "Reabra o APK original antes de recuperar o plano.",
+                        unavailable);
+                }
+                if (!expectedSourceSha256.equals(afterCommitSha256))
+                    throw new PostCommitSourceException(
+                        "Cópia criptografada já gravada, mas o APK original "
+                            + "mudou após a confirmação dos dados. "
+                            + "Reabra o APK original antes de recuperar o plano.");
+            }
         } finally {
             if (!committed && temporary != null) temporary.delete();
-            Arrays.fill(plaintext, (byte) 0);
-            if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
-            if (encoded != null) Arrays.fill(encoded, (byte) 0);
+            try {
+                if (pinnedDirectory != null) pinnedDirectory.close();
+            } finally {
+                Arrays.fill(plaintext, (byte) 0);
+                if (encrypted != null) Arrays.fill(encrypted, (byte) 0);
+                if (encoded != null) Arrays.fill(encoded, (byte) 0);
+            }
+        }
+    }
+
+    /**
+     * F1.34: verify staged encrypted bytes against those actually produced by
+     * AES-GCM, before the atomic rename. This covers truncated / tampered /
+     * vanished temporary files, and does not follow symlinks even if the
+     * symlink points to matching bytes.
+     *
+     * A process-local transaction lock still guards concurrent vault calls.
+     * This is not a power-loss proof or a defense against processes with
+     * filesystem write access racing the final rename.
+     */
+    private static void verifyStagedCiphertext(File stage, byte[] expected,
+            StageReadObserver observer) throws IOException {
+        if (stage == null || expected == null || expected.length < 33)
+            throw new IOException("Estágio criptografado inválido");
+        Path path = stage.toPath();
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(path) != expected.length)
+            throw new IOException("Estágio criptografado incompleto ou substituído");
+        byte[] chunk = new byte[8192];
+        int mismatch = 0;
+        int offset = 0;
+        // F1.37: O_NOFOLLOW binds the read to ONE inode. Merely testing
+        // Files.isRegularFile(path) before Files.newInputStream(path) leaves
+        // a gap in which an identical-byte replacement could become the
+        // stream source without being noticed by the path-only checks.
+        try (FileInputStream in = new FileInputStream(Os.open(
+                stage.getAbsolutePath(),
+                OsConstants.O_RDONLY | OsConstants.O_CLOEXEC
+                    | OsConstants.O_NOFOLLOW, 0))) {
+            StageIdentity opened = stageIdentity(in.getFD());
+            if (!opened.sameFile(stageIdentity(stage))
+                    || opened.size != expected.length)
+                throw new IOException("Arquivo de estágio substituído na abertura");
+            while (offset < expected.length) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("Verificação do estágio interrompida");
+                int n = in.read(chunk, 0, Math.min(chunk.length,
+                    expected.length - offset));
+                if (n <= 0)
+                    throw new IOException("Leitura incompleta do estágio criptografado");
+                for (int i = 0; i < n; i++)
+                    mismatch |= chunk[i] ^ expected[offset + i];
+                offset += n;
+                // F1.35 still observes real first-block reads. F1.37
+                // additionally catches path swaps AND new hardlinks made
+                // while this pinned descriptor is held open.
+                observer.onChunk(offset, expected.length);
+                if (Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException(
+                        "Verificação do estágio interrompida");
+            }
+            if (in.read() != -1)
+                throw new IOException("Estágio criptografado cresceu durante a leitura");
+            if (!opened.sameFile(stageIdentity(in.getFD()))
+                    || !opened.sameFile(stageIdentity(stage)))
+                throw new IOException("Identidade do estágio mudou durante a leitura");
+        } catch (ErrnoException unreadable) {
+            throw new IOException("Não foi possível abrir estágio sem seguir links",
+                unreadable);
+        } finally {
+            Arrays.fill(chunk, (byte) 0);
+        }
+        if (mismatch != 0
+                || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                || Files.size(path) != expected.length)
+            throw new IOException("Conteúdo do estágio criptografado foi alterado");
+    }
+
+    /**
+     * Linux device/inode identity is reliable on Android's private filesystems.
+     * Requiring it supplements byte equality: a newly renamed file containing
+     * identical bytes must still be rejected after initial verification.
+     * A fully hostile same-UID actor racing between final stat and rename
+     * remains outside this guarantee.
+     */
+    private static StageIdentity stageIdentity(File staged) throws IOException {
+        try {
+            StructStat stat = Os.lstat(staged.getAbsolutePath());
+            if (!Files.isRegularFile(staged.toPath(), LinkOption.NOFOLLOW_LINKS))
+                throw new IOException("Estágio deixou de ser arquivo regular");
+            return checkedStageIdentity(stat);
+        } catch (ErrnoException badStage) {
+            throw new IOException("Não foi possível conferir identidade do estágio",
+                badStage);
+        }
+    }
+
+    private static StageIdentity stageIdentity(FileDescriptor openDescriptor)
+            throws IOException {
+        try {
+            return checkedStageIdentity(Os.fstat(openDescriptor));
+        } catch (ErrnoException badStage) {
+            throw new IOException("Não foi possível conferir descritor do estágio",
+                badStage);
+        }
+    }
+
+    private static StageIdentity checkedStageIdentity(StructStat stat)
+            throws IOException {
+        // A second hardlink aliases this ciphertext under another path.
+        // A same-UID writer could mutate that alias AFTER the move and
+        // destroy the user's last recoverable checkpoint. Fail closed.
+        if (!OsConstants.S_ISREG(stat.st_mode))
+            throw new IOException("Estágio criptografado não é arquivo regular");
+        requireSingleStageLinkCount(stat.st_nlink);
+        return new StageIdentity(stat.st_dev, stat.st_ino, stat.st_size);
+    }
+
+    /** Pure link-count policy, exercised even if an emulator forbids hardlink(). */
+    static void requireSingleStageLinkCount(long count) throws IOException {
+        if (count != 1L)
+            throw new IOException("Estágio não regular ou com múltiplos links");
+    }
+
+    private static final class StageIdentity {
+        final long device;
+        final long inode;
+        final long size;
+        StageIdentity(long device, long inode, long size) {
+            this.device = device;
+            this.inode = inode;
+            this.size = size;
+        }
+        boolean sameFile(StageIdentity other) {
+            return other != null && device == other.device && inode == other.inode;
         }
     }
 
     /** Pure read/verification: caller must get consent before modifying live EditPlan. */
     public Map<String, String> loadForSource(File sourceApk) throws Exception {
-        synchronized (IN_PROCESS_LOCK) {
-            return loadSerialized(sourceApk);
+        lockInterruptibly();
+        try {
+            return loadSerialized(sourceApk, null);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
         }
     }
 
-    private Map<String, String> loadSerialized(File sourceApk) throws Exception {
+    /**
+     * F1.51: authenticate only the ciphertext version offered to the user.
+     * Compare the actual bytes being decrypted, not just the surrounding
+     * filename observations. The transaction lock excludes other vault writes.
+     */
+    Map<String, String> loadForSource(File sourceApk, DeletionProof offered)
+            throws Exception {
+        lockInterruptibly();
+        try {
+            if (offered == null || offered.identity == null
+                    || !offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou. "
+                    + "Solicite a recuperação novamente.");
+            Map<String, String> changes = loadSerialized(sourceApk, offered);
+            if (!offered.matches(captureDeletionProofLocked()))
+                throw new IOException("A cópia de recuperação mudou durante a leitura.");
+            return changes;
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    /** F1.52: authenticated data plus a one-shot, in-process application ticket. */
+    static final class RestoreApplication {
+        private final long revision;
+        private final Map<String, String> changes;
+        private boolean consumed;
+
+        private RestoreApplication(long revision, Map<String, String> changes) {
+            this.revision = revision;
+            this.changes = java.util.Collections.unmodifiableMap(
+                new java.util.LinkedHashMap<>(changes));
+        }
+
+        Map<String, String> changes() { return changes; }
+
+        /**
+         * UI thread: never wait for filesystem I/O or a busy vault. The
+         * caller supplies ONLY the in-memory plan mutation, not rendering.
+         * The lock excludes concurrent in-process saves/clears until it ends.
+         */
+        void applyIfCurrent(ExportSessionGuard.Token token, Runnable apply)
+                throws IOException {
+            token.requireActive();
+            if (!IN_PROCESS_LOCK.tryLock())
+                throw new IOException("Cópia de recuperação em uso. "
+                    + "Solicite a recuperação novamente.");
+            try {
+                token.requireActive();
+                if (consumed || checkpointRevision != revision)
+                    throw new IOException("A cópia de recuperação mudou. "
+                        + "Solicite a recuperação novamente.");
+                consumed = true;
+                apply.run();
+            } finally {
+                IN_PROCESS_LOCK.unlock();
+            }
+        }
+    }
+
+    /** Worker-only: capture revision atomically with authenticated data. */
+    RestoreApplication prepareRestoreApplication(File source, DeletionProof offered,
+            ExportSessionGuard.Token token) throws Exception {
+        lockInterruptibly();
+        try {
+            token.requireActive();
+            Map<String, String> changes = loadForSource(source, offered);
+            token.requireActive();
+            return new RestoreApplication(checkpointRevision, changes);
+        } finally {
+            IN_PROCESS_LOCK.unlock();
+        }
+    }
+
+    private Map<String, String> loadSerialized(File sourceApk, DeletionProof offered)
+            throws Exception {
         String fingerprint = sha256(sourceApk);
         File file = new File(storage, FILE_NAME);
         if (!file.isFile() || file.length() < 4 + 1 + 12 + 16
@@ -197,6 +833,11 @@ public final class RecoveryVault {
         byte[] ciphertext = null;
         byte[] plaintext = null;
         try {
+            // F1.51: match the exact bounded bytes that will be authenticated.
+            if (offered != null && (encoded.length != offered.identity.size
+                    || !MessageDigest.isEqual(offered.digest,
+                        MessageDigest.getInstance("SHA-256").digest(encoded))))
+                throw new IOException("A cópia de recuperação mudou durante a leitura.");
             // Recheck after reading in case the file changed since length().
             if (encoded.length < MAGIC.length + 1 + 12 + 16
                 || encoded.length > MAX_FILE)
